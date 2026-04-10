@@ -218,6 +218,8 @@ function Interview() {
       ? "bg-moss/10 text-moss"
       : engagementLabel === "Low Engagement"
       ? "bg-ember/10 text-ember"
+      : engagementLabel === "Uncertain"
+      ? "bg-amber-100 text-amber-700"
       : "bg-ink/10 text-ink/70";
 
   return (
@@ -229,6 +231,7 @@ function Interview() {
         muted
         playsInline
         className="absolute -top-[9999px] -left-[9999px] w-1 h-1"
+        aria-label="Engagement detection camera feed"
         aria-hidden="true"
       />
 
