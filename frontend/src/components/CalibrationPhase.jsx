@@ -141,7 +141,7 @@ function CalibrationPhase({ onComplete }) {
           </h1>
           <p className="mt-2 text-sm text-ink/70">
             Sit naturally and look at the camera for {CALIBRATION_SECONDS} seconds.
-            This captures your resting face to personalise your engagement score.
+            This captures your resting face to personalize your engagement score.
           </p>
         </div>
 

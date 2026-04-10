@@ -108,7 +108,7 @@ function DifficultyEloChart({
             if (dataset.yAxisID === "yDiff") {
               const map = { 1: "Easy", 2: "Medium", 3: "Hard" };
               const rounded = Math.round(parsed.y * 2) / 2;
-              return `Difficulty MA: ${map[Math.round(parsed.y)] ?? parsed.y.toFixed(1)}`;
+              return `Difficulty MA: ${map[Math.round(rounded)] ?? rounded.toFixed(1)}`;
             }
             return `Elo: ${Math.round(parsed.y)}`;
           },

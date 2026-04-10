@@ -154,7 +154,7 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
         # the clean list so downstream modules (SVM1 Skill Topic Mapper) get
         # accurate Cold Start data rather than the raw parser output.
         if request.confirmed_skills is not None:
-            confirmed = [s.strip() for s in request.confirmed_skills if s.strip()]
+            confirmed = [s for raw in request.confirmed_skills if (s := raw.strip())]
             if confirmed:
                 candidate_update["$set"]["resume_skills"] = confirmed
 
