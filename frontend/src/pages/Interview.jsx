@@ -1,12 +1,14 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import CalibrationPhase from "../components/CalibrationPhase";
 import FeedbackCard from "../components/FeedbackCard";
+import { useEngagementDetection } from "../hooks/useEngagementDetection";
 import {
   buildAnswerMetrics,
   clearInterviewState,
   loadInterviewState,
   saveInterviewState,
-  submitAnswer
+  submitAnswer,
 } from "../lib/api";
 
 function Interview() {
@@ -29,6 +31,20 @@ function Interview() {
   const [timeLeft, setTimeLeft] = useState(180);
   const [isListening, setIsListening] = useState(false);
   const [animationKey, setAnimationKey] = useState(0);
+
+  // ── Calibration phase ─────────────────────────────────────
+  const [calibrated, setCalibrated] = useState(false);
+
+  // ── Webcam ref for engagement detection ──────────────────
+  const webcamRef = useRef(null);
+  const {
+    engagementLabel,
+    modelsLoaded,
+    lowLight,
+    getAggregatedLabel,
+    resetCounts,
+  } = useEngagementDetection({ videoRef: webcamRef, enabled: calibrated });
+
   const recognitionRef = useRef(null);
 
   useEffect(() => {
@@ -78,22 +94,48 @@ function Interview() {
     }
   };
 
+  // ── Webcam stream for live engagement badge ───────────────
   useEffect(() => {
+    if (!calibrated) return;
+
+    let stream = null;
+    async function startWebcam() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 160 }, height: { ideal: 120 } },
+          audio: false,
+        });
+        if (webcamRef.current) {
+          webcamRef.current.srcObject = stream;
+        }
+      } catch {
+        // Camera unavailable — engagement falls back to Neutral
+      }
+    }
+    startWebcam();
+    return () => {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [calibrated]);
+
+  useEffect(() => {
+    if (!calibrated) return;
     if (timeLeft <= 0) {
       if (!isSubmitting && !feedback) {
         handleSubmit();
       }
       return;
     }
-    
+
     if (feedback) return;
 
     const timer = setInterval(() => {
-      setTimeLeft(prev => prev - 1);
+      setTimeLeft((prev) => prev - 1);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, isSubmitting, feedback]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, isSubmitting, feedback, calibrated]);
 
   useEffect(() => {
     setTimeLeft(180);
@@ -110,17 +152,19 @@ function Interview() {
       event.preventDefault();
     }
     const finalAnswer = answer.trim() || "No answer provided within time limit.";
-
     const metrics = buildAnswerMetrics(question, finalAnswer);
+    const aggregatedEngagement = getAggregatedLabel();
+
     setIsSubmitting(true);
     setError("");
+    resetCounts();
 
     try {
       const response = await submitAnswer({
         session_id: sessionId,
         round,
         answer_text: finalAnswer,
-        engagement_label: "Text mode",
+        engagement_label: aggregatedEngagement,
         wpm: 0,
         pause_count: 0,
         ...metrics
@@ -157,10 +201,37 @@ function Interview() {
     }
   }
 
+  // ── Calibration callback ──────────────────────────────────
+  function handleCalibrationComplete() {
+    setCalibrated(true);
+  }
+
+  // ── Render: calibration screen ───────────────────────────
+  if (!calibrated) {
+    return <CalibrationPhase onComplete={handleCalibrationComplete} />;
+  }
+
   const wordCount = answer.trim() ? answer.trim().split(/\s+/).length : 0;
+
+  const engagementBadgeClass =
+    engagementLabel === "High Engagement"
+      ? "bg-moss/10 text-moss"
+      : engagementLabel === "Low Engagement"
+      ? "bg-ember/10 text-ember"
+      : "bg-ink/10 text-ink/70";
 
   return (
     <div className="app-shell">
+      {/* Hidden webcam element for engagement analysis */}
+      <video
+        ref={webcamRef}
+        autoPlay
+        muted
+        playsInline
+        className="absolute -top-[9999px] -left-[9999px] w-1 h-1"
+        aria-hidden="true"
+      />
+
       <div className="mb-6 flex flex-col gap-4 rounded-[28px] bg-ink p-6 text-white sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.24em] text-white/65">Interview in progress</p>
@@ -173,10 +244,6 @@ function Interview() {
           <div className="rounded-[24px] bg-white/10 px-5 py-4 text-right">
             <p className="text-xs uppercase tracking-[0.18em] text-white/60">Running Elo</p>
             <p className="mt-1 text-3xl font-bold">{Math.round(elo)}</p>
-          </div>
-          <div className="rounded-[24px] border border-white/10 px-5 py-4 text-right">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/60">Mode</p>
-            <p className="mt-1 text-sm font-semibold text-white">Text answer only</p>
           </div>
           <div className="rounded-[24px] border border-white/10 px-5 py-4 text-right">
             <p className="text-xs uppercase tracking-[0.18em] text-white/60">Time Left</p>
@@ -202,7 +269,7 @@ function Interview() {
               <textarea
                 id="answer"
                 className="field-input min-h-[220px] resize-y"
-                placeholder="Type your answer here. Voice capture is planned for Month 2."
+                placeholder="Type your answer here, or use the microphone."
                 value={answer}
                 onChange={(event) => setAnswer(event.target.value)}
               />
@@ -212,7 +279,21 @@ function Interview() {
               <span className="chip border-ink/10 bg-mist/80">Words {wordCount}</span>
               <span className="chip border-ink/10 bg-mist/80">Difficulty {difficulty}</span>
               <span className="chip border-ink/10 bg-mist/80">Adaptive round {round}</span>
-              {isListening && <span className="chip bg-ember/10 border-ember/20 text-ember animate-pulse">● Recording...</span>}
+              {isListening && (
+                <span className="chip bg-ember/10 border-ember/20 text-ember animate-pulse">
+                  ● Recording…
+                </span>
+              )}
+              {modelsLoaded && (
+                <span className={`chip border ${engagementBadgeClass}`}>
+                  {engagementLabel}
+                </span>
+              )}
+              {lowLight && modelsLoaded && (
+                <span className="chip bg-amber-100 text-amber-700 border-amber-200 text-xs">
+                  ⚠ Low light
+                </span>
+              )}
             </div>
 
             {error ? (
@@ -223,9 +304,9 @@ function Interview() {
 
             <div className="flex items-center gap-3">
               <button className="primary-button" disabled={isSubmitting} type="submit">
-                {isSubmitting ? "Scoring answer..." : "Submit answer"}
+                {isSubmitting ? "Scoring answer…" : "Submit answer"}
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={toggleListening}
                 className={`rounded-[100px] border px-6 py-3.5 text-sm font-semibold transition-all ${isListening ? 'border-ember text-ember bg-ember/5 hover:bg-ember/10' : 'border-ink/20 text-ink hover:bg-mist'}`}

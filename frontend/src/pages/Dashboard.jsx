@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import DifficultyBar from "../components/DifficultyBar";
-import EloChart from "../components/EloChart";
+import DifficultyEloChart from "../components/DifficultyEloChart";
 import SkillRadar from "../components/SkillRadar";
 import { fetchDashboard } from "../lib/api";
 
@@ -89,7 +89,10 @@ function Dashboard() {
 
       <section className="grid gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2">
-          <EloChart values={dashboard.elo_progression || []} />
+          <DifficultyEloChart
+            eloValues={dashboard.elo_progression || []}
+            difficultyValues={dashboard.difficulty_progression || []}
+          />
         </div>
         <SkillRadar topicScores={topicScores} />
       </section>
