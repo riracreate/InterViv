@@ -17,6 +17,7 @@ class StartSessionRequest(BaseModel):
     candidate_id: str
     skill: str
     sub_domain: str | None = None
+    confirmed_skills: list[str] | None = None
 
 
 def _elo_to_difficulty(elo: float) -> str:
@@ -141,16 +142,23 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
 
     try:
         db["sessions"].insert_one(session.to_mongo())
-        db["candidates"].update_one(
-            {"candidate_id": request.candidate_id},
-            {
-                "$addToSet": {"session_history": session_id, "resume_skills": request.skill},
-                "$set": {
-                    f"sub_domain_profile.{request.skill}": session.sub_domain or "general",
-                    f"elo_ratings.{request.skill}": elo_before,
-                },
+
+        candidate_update: dict = {
+            "$addToSet": {"session_history": session_id, "resume_skills": request.skill},
+            "$set": {
+                f"sub_domain_profile.{request.skill}": session.sub_domain or "general",
+                f"elo_ratings.{request.skill}": elo_before,
             },
-        )
+        }
+        # If the user confirmed/edited their skill list in the Upload UI, persist
+        # the clean list so downstream modules (SVM1 Skill Topic Mapper) get
+        # accurate Cold Start data rather than the raw parser output.
+        if request.confirmed_skills is not None:
+            confirmed = [s for raw in request.confirmed_skills if (s := raw.strip())]
+            if confirmed:
+                candidate_update["$set"]["resume_skills"] = confirmed
+
+        db["candidates"].update_one({"candidate_id": request.candidate_id}, candidate_update)
     except DatabaseConnectionError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
