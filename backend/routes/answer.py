@@ -12,6 +12,14 @@ from backend.scoring.pipeline import run_scoring_pipeline
 router = APIRouter(prefix="/session", tags=["answer"])
 
 DIFFICULTY_RATINGS = {"easy": 1000, "medium": 1500, "hard": 2000}
+_LEVELS = ["easy", "medium", "hard"]
+
+# A1: Engagement label → numeric score map
+_ENGAGEMENT_LABEL_SCORES: dict[str, float] = {
+    "high engagement": 90.0,
+    "medium engagement": 65.0,
+    "low engagement": 30.0,
+}
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -52,6 +60,66 @@ def _difficulty_delta(previous: str, current: str) -> str:
     return "same"
 
 
+def _clamp_difficulty(from_level: str, to_level: str) -> str:
+    """Clamp difficulty change to ±1 level (C2 requirement)."""
+    from_idx = _LEVELS.index(from_level) if from_level in _LEVELS else 1
+    to_idx = _LEVELS.index(to_level) if to_level in _LEVELS else 1
+    clamped = max(from_idx - 1, min(from_idx + 1, to_idx))
+    return _LEVELS[clamped]
+
+
+def _moving_average_difficulty(
+    current_difficulty: str,
+    past_scores: list[float],
+    current_score: float,
+    window: int = 3,
+) -> str:
+    """
+    C2: Compute moving average of the last `window` scores and suggest difficulty.
+    Returns the difficulty suggested by the moving average.
+    """
+    recent = (past_scores + [current_score])[-window:]
+    avg = sum(recent) / len(recent)
+
+    idx = _LEVELS.index(current_difficulty) if current_difficulty in _LEVELS else 1
+    if avg >= 70.0 and idx < 2:
+        return _LEVELS[idx + 1]
+    if avg <= 40.0 and idx > 0:
+        return _LEVELS[idx - 1]
+    return current_difficulty
+
+
+def _combined_difficulty(
+    current_difficulty: str,
+    elo_difficulty: str,
+    moving_avg_difficulty: str,
+) -> str:
+    """
+    C2 + Elo: Run both engines in parallel.
+    - Both agree  → use that direction (clamped to ±1)
+    - They disagree → stay at current difficulty
+    """
+    if elo_difficulty == moving_avg_difficulty:
+        return _clamp_difficulty(current_difficulty, elo_difficulty)
+    # Conservative fallback when signals disagree
+    return current_difficulty
+
+
+def _compute_engagement_baseline(rounds: list[dict]) -> float | None:
+    """
+    A1 Baseline Calibration: average engagement score from completed rounds.
+    Returns None if no past engagement data exists.
+    """
+    scores: list[float] = []
+    for r in rounds:
+        label = r.get("engagement_label") or (r.get("metadata") or {}).get("engagement_label")
+        if label:
+            score = _ENGAGEMENT_LABEL_SCORES.get(label.strip().lower())
+            if score is not None:
+                scores.append(score)
+    return sum(scores) / len(scores) if scores else None
+
+
 @router.post("/answer")
 def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
     settings = get_settings()
@@ -82,6 +150,10 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
             detail="This round has already been submitted.",
         )
 
+    # A1: Compute engagement baseline from past completed rounds
+    completed_rounds = [r for r in rounds if r.get("final_score") is not None]
+    engagement_baseline = _compute_engagement_baseline(completed_rounds)
+
     try:
         scoring_result = run_scoring_pipeline(
             answer_text=request.answer_text,
@@ -93,6 +165,7 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
             wpm=request.wpm,
             pause_count=request.pause_count,
             question_context=active_round.get("question_context", {}),
+            engagement_baseline=engagement_baseline,
         )
     except IntegrationError as exc:
         raise HTTPException(
@@ -105,10 +178,24 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
         difficulty=active_round.get("difficulty", "medium"),
         final_score=float(scoring_result["final_score"]),
     )
-    next_difficulty = _difficulty_from_elo(elo_after)
-    difficulty_change = _difficulty_delta(
-        active_round.get("difficulty", "medium"), next_difficulty
+
+    # C2 + Elo: Run both engines in parallel and combine
+    elo_difficulty = _difficulty_from_elo(elo_after)
+
+    past_scores = [float(r["final_score"]) for r in completed_rounds]
+    current_difficulty = active_round.get("difficulty", "medium")
+    moving_avg_difficulty = _moving_average_difficulty(
+        current_difficulty=current_difficulty,
+        past_scores=past_scores,
+        current_score=float(scoring_result["final_score"]),
     )
+
+    next_difficulty = _combined_difficulty(
+        current_difficulty=current_difficulty,
+        elo_difficulty=elo_difficulty,
+        moving_avg_difficulty=moving_avg_difficulty,
+    )
+    difficulty_change = _difficulty_delta(current_difficulty, next_difficulty)
 
     for index, round_document in enumerate(rounds):
         if round_document.get("round") != request.round:
@@ -125,6 +212,7 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
             "feedback": scoring_result["feedback"],
             "elo_before": elo_before,
             "elo_after": elo_after,
+            "engagement_label": request.engagement_label,
         }
         break
 
@@ -159,6 +247,7 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
                 "elo_before": elo_after,
                 "elo_after": None,
                 "question_context": question_payload,
+                "engagement_label": None,
             }
         )
         next_question = question_payload["question"]
@@ -205,3 +294,4 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
         "elo_after": elo_after,
         "difficulty_change": difficulty_change,
     }
+
