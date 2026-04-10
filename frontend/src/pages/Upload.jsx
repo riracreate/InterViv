@@ -74,7 +74,8 @@ function Upload() {
       const response = await startSession({
         candidate_id: candidateId,
         skill: selectedSkill,
-        sub_domain: domainProfile[selectedSkill] || "general"
+        sub_domain: domainProfile[selectedSkill] || "general",
+        confirmed_skills: skills
       });
 
       const state = {
