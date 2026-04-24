@@ -1,0 +1,322 @@
+import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { uploadResume, startSession, saveInterviewState } from '../lib/api';
+
+const ROUNDS_PER_SKILL = 3;
+
+const DOMAIN_PRESETS = [
+  { name: 'Data Structures & Algorithms', short: 'DSA', tags: ['Arrays', 'Trees', 'Graphs', 'DP'] },
+  { name: 'Backend Engineering', short: 'Python', tags: ['Python', 'Node.js', 'REST', 'Databases'] },
+  { name: 'System Design', short: 'System Design', tags: ['Scalability', 'Docker', 'Cloud', 'Kafka'] },
+  { name: 'Frontend Engineering', short: 'JavaScript', tags: ['React', 'TypeScript', 'CSS', 'Performance'] },
+  { name: 'Machine Learning', short: 'ML', tags: ['PyTorch', 'scikit-learn', 'NLP', 'CV'] },
+  { name: 'Databases', short: 'DBMS', tags: ['SQL', 'MongoDB', 'Redis', 'Indexing'] },
+];
+
+export default function Upload() {
+  const navigate = useNavigate();
+  const [step, setStep] = useState('upload');
+  const [file, setFile] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [extractedSkills, setExtractedSkills] = useState([]);
+  const [candidateId, setCandidateId] = useState('');
+  const [domainProfile, setDomainProfile] = useState({});
+  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleFile = (f) => {
+    if (f && f.type === 'application/pdf') { setFile(f); setError(''); }
+    else setError('Please upload a PDF file.');
+  };
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleFile(e.dataTransfer.files[0]);
+  }, []);
+
+  const processResume = async () => {
+    if (!file) return;
+    setIsProcessing(true);
+    setError('');
+    try {
+      const r = await uploadResume(file);
+      setCandidateId(r.candidate_id);
+      setExtractedSkills(r.skills || []);
+      setDomainProfile(r.domain_profile || {});
+      setSelectedSkills((r.skills || []).slice(0, 3));
+      setStep('skills');
+    } catch (err) {
+      setError(err.message || 'Resume processing failed.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const toggleSkill = (skill) => {
+    setSelectedSkills(prev =>
+      prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]
+    );
+  };
+
+  const startInterview = async () => {
+    if (selectedSkills.length === 0) return;
+    setIsStarting(true);
+    setError('');
+    try {
+      const primarySkill = selectedSkills[0];
+      const r = await startSession({
+        candidate_id: candidateId,
+        skill: primarySkill,
+        skills: selectedSkills,
+        sub_domain: domainProfile[primarySkill] || 'general',
+        rounds_per_skill: ROUNDS_PER_SKILL,
+      });
+      const totalRounds = r.total_rounds || (selectedSkills.length * ROUNDS_PER_SKILL);
+      const resolvedCandidateId = r.candidate_id || candidateId;
+      const state = {
+        candidateId: resolvedCandidateId,
+        skill: primarySkill,
+        allSkills: selectedSkills,
+        subDomain: domainProfile[primarySkill] || 'general',
+        sessionId: r.session_id,
+        question: r.question,
+        difficulty: r.difficulty,
+        round: r.round || 1,
+        elo: r.elo || 1200,
+        totalRounds,
+        roundsPerSkill: ROUNDS_PER_SKILL,
+      };
+      saveInterviewState(state);
+      navigate(`/interview/${r.session_id}`, { state });
+    } catch (err) {
+      setError(err.message || 'Failed to start session.');
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const addSkillFromDomain = (short) => {
+    if (!extractedSkills.includes(short)) {
+      setExtractedSkills(p => [...p, short]);
+      setDomainProfile(p => ({ ...p, [short]: 'general' }));
+    }
+    if (!selectedSkills.includes(short)) setSelectedSkills(p => [...p, short]);
+  };
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Nav */}
+      <nav className="w-full border-b border-black/5">
+        <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
+            className="text-2xl tracking-tight text-black"
+            style={{ fontFamily: "'Instrument Serif', serif" }}>
+            interViv<sup className="text-xs align-super">©</sup>
+          </a>
+          <button onClick={() => {
+            if (step === 'domains') setStep('skills');
+            else if (step === 'skills') setStep('upload');
+            else navigate('/');
+          }}
+            className="text-sm text-[#6F6F6F] hover:text-black transition-colors cursor-pointer"
+            style={{ fontFamily: "'Inter', sans-serif" }}>
+            ← {step === 'upload' ? 'Home' : 'Back'}
+          </button>
+        </div>
+      </nav>
+
+      <div className="max-w-3xl mx-auto px-6 pt-16 pb-24">
+        {/* Progress */}
+        <div className="flex items-center gap-3 mb-14">
+          {['Upload', 'Skills', 'Start'].map((s, i) => {
+            const stepKeys = ['upload', 'skills', 'domains'];
+            const stepIndex = stepKeys.indexOf(step);
+            const isActive = i <= stepIndex;
+            const isDone = i < stepIndex;
+            return (
+              <React.Fragment key={s}>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full text-xs font-medium flex items-center justify-center border transition-all duration-300"
+                    style={{
+                      backgroundColor: isActive ? '#000' : 'transparent',
+                      color: isActive ? '#fff' : '#6F6F6F',
+                      borderColor: isActive ? '#000' : '#E0E0E0',
+                      fontFamily: "'Inter', sans-serif",
+                    }}>
+                    {isDone ? '✓' : i + 1}
+                  </div>
+                  <span className="text-xs font-medium hidden sm:inline"
+                    style={{ fontFamily: "'Inter', sans-serif", color: isActive ? '#000' : '#6F6F6F' }}>
+                    {s}
+                  </span>
+                </div>
+                {i < 2 && <div className="flex-1 h-px" style={{ backgroundColor: i < stepIndex ? '#000' : '#E0E0E0' }} />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* ═══ STEP 1: Upload ═══ */}
+        {step === 'upload' && (
+          <div className="animate-fade-rise">
+            <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
+              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              Upload your profile
+            </h1>
+            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+              Our AI engine extracts your skills and builds your interview profile.
+            </p>
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => !file && document.getElementById('fileInput').click()}
+              className="rounded-2xl p-20 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 border-2 border-dashed"
+              style={{ borderColor: file ? '#000' : dragOver ? '#000' : '#E0E0E0', backgroundColor: file ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+              {file ? (
+                <div className="text-center">
+                  <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  </div>
+                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>{file.name}</p>
+                  <p className="text-xs font-medium tracking-wider uppercase text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>Ready to process</p>
+                  <button onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                    className="mt-3 text-xs text-[#6F6F6F] hover:text-black transition-colors"
+                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    ✕ Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  </div>
+                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>Drag and drop your PDF resume</p>
+                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>Maximum file size 10MB</p>
+                  <input type="file" accept=".pdf" className="hidden" id="fileInput" onChange={(e) => handleFile(e.target.files[0])} />
+                  <label htmlFor="fileInput"
+                    className="rounded-full px-6 py-2.5 text-sm text-black cursor-pointer border border-black/15 hover:border-black/30 transition-colors"
+                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    Select File
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+
+            {/* Quick start without resume */}
+            <div className="mt-8">
+              <p className="text-sm text-[#6F6F6F] mb-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+                Or pick domains directly to start immediately:
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {DOMAIN_PRESETS.map(d => (
+                  <button key={d.short} onClick={() => {
+                    setCandidateId(''); setExtractedSkills([d.short]);
+                    setDomainProfile({ [d.short]: 'general' });
+                    setSelectedSkills([d.short]); setStep('domains');
+                  }}
+                    className="rounded-2xl border border-black/8 p-4 text-left hover:border-black/20 transition-all cursor-pointer">
+                    <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{d.name}</p>
+                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>{d.tags.slice(0, 2).join(' · ')}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {file && (
+              <button disabled={isProcessing} onClick={processResume}
+                className="w-full mt-6 rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
+                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+                {isProcessing ? 'Extracting Intelligence...' : 'Continue →'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ═══ STEP 2: Skills extracted ═══ */}
+        {step === 'skills' && (
+          <div className="animate-fade-rise">
+            <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
+              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              Extracted intelligence
+            </h1>
+            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+              We identified these core competencies from your resume. Select the ones to practice.
+            </p>
+
+            <div className="rounded-2xl border border-black/8 p-8 mb-6">
+              <div className="flex flex-wrap gap-2.5">
+                {extractedSkills.map(skill => (
+                  <button key={skill} onClick={() => toggleSkill(skill)}
+                    className="rounded-full px-4 py-2 text-sm border transition-all cursor-pointer"
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      borderColor: selectedSkills.includes(skill) ? '#000' : 'rgba(0,0,0,0.08)',
+                      backgroundColor: selectedSkills.includes(skill) ? '#000' : 'transparent',
+                      color: selectedSkills.includes(skill) ? '#fff' : '#000',
+                    }}>
+                    {skill}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedSkills.length > 0 && (
+              <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+                {selectedSkills.length} skill{selectedSkills.length > 1 ? 's' : ''} selected · {selectedSkills.length * ROUNDS_PER_SKILL} total rounds
+              </p>
+            )}
+
+            <button onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
+              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-30"
+              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              Choose Interview Domains →
+            </button>
+          </div>
+        )}
+
+        {/* ═══ STEP 3: Confirm & Start ═══ */}
+        {step === 'domains' && (
+          <div className="animate-fade-rise">
+            <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
+              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              Ready to begin
+            </h1>
+            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+              Your adaptive session is configured. Each skill is tested in rotation.
+            </p>
+
+            <div className="rounded-2xl border border-black/8 overflow-hidden mb-8">
+              {(selectedSkills.length > 0 ? selectedSkills : DOMAIN_PRESETS.slice(0, 3).map(d => d.short)).map((skill, i) => (
+                <div key={skill} className="px-6 py-4 border-b border-black/5 last:border-0 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold"
+                      style={{ fontFamily: "'Inter', sans-serif" }}>{i + 1}</span>
+                    <span className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{skill}</span>
+                  </div>
+                  <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    Rounds {i * ROUNDS_PER_SKILL + 1}–{(i + 1) * ROUNDS_PER_SKILL}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+
+            <button disabled={isStarting} onClick={startInterview}
+              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
+              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              {isStarting ? 'Starting Session...' : `Start Interview · ${(selectedSkills.length || 1) * ROUNDS_PER_SKILL} Rounds →`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
