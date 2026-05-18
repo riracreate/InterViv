@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { fetchCompanies, setTargetCompany } from '../lib/api';
 
 /**
@@ -176,15 +177,27 @@ export default function CompanySelector({
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={!selectedCompany || !selectedRole || saving}
-        onClick={persistSelection}
-        className="rounded-full px-5 py-2 text-sm font-medium text-white bg-black disabled:opacity-30 cursor-pointer"
-        style={{ fontFamily: "'Inter', sans-serif" }}
-      >
-        {saving ? 'Saving…' : isAuthenticated ? 'Save as my target' : 'Use for this session'}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!selectedCompany || !selectedRole || saving}
+          onClick={persistSelection}
+          className="rounded-full px-5 py-2 text-sm font-medium text-white bg-black disabled:opacity-30 cursor-pointer"
+          style={{ fontFamily: "'Inter', sans-serif" }}
+        >
+          {saving ? 'Saving…' : isAuthenticated ? 'Save as my target' : 'Use for this session'}
+        </button>
+        {selectedRole && (
+          <Link
+            to={`/gap-analysis/${isAuthenticated ? 'me' : 'anonymous'}/${selectedRole}`}
+            className="rounded-full px-5 py-2 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
+            style={{ fontFamily: "'Inter', sans-serif" }}
+            data-testid="open-gap-analysis"
+          >
+            See readiness →
+          </Link>
+        )}
+      </div>
 
       {saveMessage && (
         <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>

@@ -63,6 +63,8 @@ function mapRealDataToDashboard(session) {
   const roundsForTimeline = completed.map((r, i) => ({
     id: String(i + 1),
     question: r.question || r.question_context?.question || `Round ${i + 1}`,
+    idealAnswer: r.ideal_answer || r.question_context?.ideal_answer || "",
+    answer: r.answer_text || "",
     score: r.final_score,
     difficulty: (r.difficulty || "medium").charAt(0).toUpperCase() + (r.difficulty || "medium").slice(1),
     feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
@@ -95,7 +97,6 @@ function mapRealDataToDashboard(session) {
       dateLabel: new Date(session.started_at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       durationLabel: `${completed.length} rounds`,
       skillFocus: skills[0] || "General",
-      topPercent: avg >= 75 ? 15 : avg >= 55 ? 35 : 60,
     },
     overall: { score: Math.round(avg), gradeLabel, deltaLabel: `${Math.round(avg)}% avg score` },
     layers,
@@ -194,10 +195,22 @@ export default function Dashboard() {
             <ArrowLeft className="h-4 w-4" />
             Back to Home
           </button>
-          <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-white/75 backdrop-blur-xl">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-200" />
-            interViv Results
-          </span>
+          <div className="flex items-center gap-3">
+            {raw?.target_role_id && raw?.user_id && (
+              <Link
+                to={`/gap-analysis/${encodeURIComponent(raw.user_id)}/${encodeURIComponent(raw.target_role_id)}`}
+                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 backdrop-blur-xl transition hover:bg-cyan-500/20"
+                style={{ fontFamily: "var(--font-body)" }}
+                data-testid="dashboard-to-gap-analysis"
+              >
+                View readiness vs. target →
+              </Link>
+            )}
+            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-white/75 backdrop-blur-xl">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-200" />
+              interViv Results
+            </span>
+          </div>
         </div>
 
         <motion.div variants={stagger} initial="hidden" animate="show" className="mt-6">
@@ -213,7 +226,6 @@ export default function Dashboard() {
               dateLabel={data.session.dateLabel}
               durationLabel={data.session.durationLabel}
               skillFocus={data.session.skillFocus}
-              topPercent={data.session.topPercent}
             />
           </motion.div>
 

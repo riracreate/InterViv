@@ -4,6 +4,7 @@ import Landing from './pages/Landing.jsx';
 import Upload from './pages/Upload.jsx';
 import Interview from './pages/Interview.jsx';
 import Dashboard from './pages/Dashboard.tsx';
+import GapAnalysis from './pages/GapAnalysis.jsx';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
       <Route path="/interview/:sessionId" element={<Interview />} />
       <Route path="/dashboard/:sessionId" element={<Dashboard />} />
       <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/gap-analysis/:userId/:roleId" element={<GapAnalysis />} />
     </Routes>
   );
 }
