@@ -1,0 +1,188 @@
+# interViv — Company Hiring Graphs
+#
+# DISCLAIMER (load-bearing, surfaced in UI and API responses):
+# Company hiring profiles are curated from publicly available job descriptions,
+# observed placement patterns, and industry references. These are reference
+# profiles for practice preparation, not exact hiring criteria. Required
+# levels and importance weights are interViv's curation, not the companies'
+# stated rubric. Do not present these to users as authoritative recruiter data.
+#
+# Schema:
+#   companies[].id                  -> stable string slug (used in URLs and DB seeding)
+#   companies[].name                -> display name
+#   companies[].logo_url            -> optional, may be null
+#   companies[].public_info         -> free-form dict (careers URL, etc.)
+#   companies[].roles[].id          -> stable string slug, unique within company
+#   companies[].roles[].title       -> display title
+#   companies[].roles[].level       -> "intern" | "entry" | "mid" (free text)
+#   companies[].roles[].skill_requirements[].skill            -> canonical KG name
+#   companies[].roles[].skill_requirements[].display_name     -> optional UI label
+#   companies[].roles[].skill_requirements[].required_level   -> 0-100 target student score
+#   companies[].roles[].skill_requirements[].importance_weight-> 0-1, sums to 1.0 per role
+#
+# Canonical skill names must match modules/knowledge_graph.py keys
+# (DSA, OOP, DBMS, OS, CN, HR, System Design, Python, ML) so the scoring
+# pipeline and gap analyser can join on them without aliasing.
+
+disclaimer: "Company hiring profiles are curated from publicly available job descriptions, observed placement patterns, and industry references. These are reference profiles for practice preparation, not exact hiring criteria."
+
+companies:
+  - id: tcs
+    name: "TCS"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.tcs.com/careers"
+      notes: "TCS Ninja / Digital cadre; broad entry-level pipeline."
+    roles:
+      - id: tcs_swe
+        title: "Software Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 70
+            importance_weight: 0.25
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "OS"
+            display_name: "Operating Systems"
+            required_level: 60
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 70
+            importance_weight: 0.20
+
+  - id: infosys
+    name: "Infosys"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.infosys.com/careers/"
+      notes: "Infosys SE / Specialist Programmer tracks; HackWithInfy referenced."
+    roles:
+      - id: infosys_system_engineer
+        title: "System Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 70
+            importance_weight: 0.25
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 60
+            importance_weight: 0.15
+          - skill: "CN"
+            display_name: "Computer Networks"
+            required_level: 60
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 70
+            importance_weight: 0.25
+
+  - id: wipro
+    name: "Wipro"
+    logo_url: null
+    public_info:
+      careers_url: "https://careers.wipro.com/"
+      notes: "Wipro Elite / PEP track for graduates."
+    roles:
+      - id: wipro_pep
+        title: "Project Engineer (PEP)"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 60
+            importance_weight: 0.20
+          - skill: "OS"
+            display_name: "Operating Systems"
+            required_level: 55
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 65
+            importance_weight: 0.25
+
+  - id: amazon
+    name: "Amazon"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.amazon.jobs/en/teams/internships-for-students"
+      notes: "SDE Intern (university) track. Heavy DSA, leadership principles in HR."
+    roles:
+      - id: amazon_sde_intern
+        title: "SDE Intern"
+        level: "intern"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 85
+            importance_weight: 0.40
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 70
+            importance_weight: 0.15
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 60
+            importance_weight: 0.10
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 55
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 75
+            importance_weight: 0.25
+
+  - id: microsoft
+    name: "Microsoft"
+    logo_url: null
+    public_info:
+      careers_url: "https://careers.microsoft.com/v2/global/en/students.html"
+      notes: "SDE Intern track (Explore / Internship)."
+    roles:
+      - id: microsoft_sde_intern
+        title: "SDE Intern"
+        level: "intern"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 80
+            importance_weight: 0.35
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 75
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 60
+            importance_weight: 0.15
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 60
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 75
+            importance_weight: 0.20
