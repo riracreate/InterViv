@@ -5,10 +5,24 @@ import { MessageSquareQuote } from "lucide-react";
 type Round = {
   id: string;
   question: string;
+  idealAnswer?: string;
+  answer?: string;
   score: number;
+  /** Optional ±X band derived from layer-score variance (Task 6b). */
+  confidenceBand?: number | null;
   difficulty: "Easy" | "Medium" | "Hard" | "Expert";
   feedback: string;
 };
+
+function shortIdealAnswer(answer?: string) {
+  const normalized = (answer || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "Ideal answer is not available for this round.";
+
+  const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [normalized];
+  const firstTwo = sentences.slice(0, 2).join(" ").trim();
+  if (firstTwo.length <= 230) return firstTwo;
+  return `${firstTwo.slice(0, 227).trim()}...`;
+}
 
 function difficultyTone(diff: Round["difficulty"]) {
   switch (diff) {
@@ -72,17 +86,43 @@ export function RoundTimeline(props: { rounds: Round[] }) {
                       {round.difficulty}
                     </span>
                   </div>
-                  <div className={`text-lg font-semibold ${scoreTone(round.score)}`} style={{ fontFamily: "var(--font-body)" }}>
+                  <div className={`text-lg font-semibold ${scoreTone(round.score)}`} style={{ fontFamily: "var(--font-body)" }} data-testid="round-score">
                     {Math.round(round.score)}%
+                    {round.confidenceBand != null && (
+                      <span className="ml-1 text-xs text-white/55 font-normal" data-testid="round-confidence-band">
+                        ± {round.confidenceBand}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <p className="mt-3 text-sm leading-relaxed text-white/90" style={{ fontFamily: "var(--font-body)" }}>
-                  {round.question}
-                </p>
-                <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
-                  {round.feedback}
-                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-[minmax(180px,0.36fr)_1fr]">
+                  <div className="rounded-xl border border-emerald-300/15 bg-emerald-300/[0.05] p-3">
+                    <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-emerald-100/55" style={{ fontFamily: "var(--font-body)" }}>
+                      Ideal answer
+                    </div>
+                    <p className="text-sm leading-relaxed text-white/78" style={{ fontFamily: "var(--font-body)" }}>
+                      {shortIdealAnswer(round.idealAnswer)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm leading-relaxed text-white/90" style={{ fontFamily: "var(--font-body)" }}>
+                      {round.question}
+                    </p>
+                    <div className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.04] p-3">
+                      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-cyan-100/50" style={{ fontFamily: "var(--font-body)" }}>
+                        Answer
+                      </div>
+                      <p className="text-sm leading-relaxed text-white/75" style={{ fontFamily: "var(--font-body)" }}>
+                        {round.answer?.trim() || "No answer captured."}
+                      </p>
+                    </div>
+                    <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
+                      {round.feedback}
+                    </p>
+                  </div>
+                </div>
               </div>
             </motion.article>
           ))}
@@ -91,4 +131,3 @@ export function RoundTimeline(props: { rounds: Round[] }) {
     </section>
   );
 }
-
