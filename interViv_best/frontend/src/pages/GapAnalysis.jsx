@@ -256,6 +256,14 @@ export default function GapAnalysis() {
             Start practice on weak areas →
           </button>
           <button
+            onClick={() => navigate(`/roadmap/${userId}/${roleId}?days=30`)}
+            className="rounded-full px-6 py-3 text-sm font-medium text-white bg-black/80 hover:bg-black cursor-pointer"
+            style={{ fontFamily: "'Inter', sans-serif" }}
+            data-testid="build-roadmap-cta"
+          >
+            Build my study plan →
+          </button>
+          <button
             onClick={() => navigate('/upload')}
             className="rounded-full px-6 py-3 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
             style={{ fontFamily: "'Inter', sans-serif" }}
