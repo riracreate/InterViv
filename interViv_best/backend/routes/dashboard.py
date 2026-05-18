@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import statistics
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
@@ -7,6 +8,10 @@ from fastapi import APIRouter, HTTPException, status
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+# Confidence band constants (spec: "variance / 2, capped at 10")
+CONFIDENCE_BAND_CAP = 10.0
 
 
 def _score_bucket(score: float | None) -> str | None:
@@ -19,12 +24,40 @@ def _score_bucket(score: float | None) -> str | None:
     return "Poor"
 
 
+def compute_confidence_band(layer_scores: list[float | None]) -> float | None:
+    """Confidence band per spec — Phase 2 Task 6b.
+
+        variance        = stdev([layer1_score, layer2_score, layer3_score])
+        confidence_band = variance / 2  (capped at 10)
+
+    Returns ``None`` if we don't have at least two real layer scores
+    (stdev requires >=2 inputs and produces a noisy result on a single
+    point — better to surface the absence than fake a band).
+    """
+    usable = [float(s) for s in layer_scores if s is not None]
+    if len(usable) < 2:
+        return None
+    variance = statistics.stdev(usable)
+    band = variance / 2.0
+    return round(min(band, CONFIDENCE_BAND_CAP), 2)
+
+
 def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sanitized = []
     for round_document in rounds:
         cleaned = dict(round_document)
+        question_context = cleaned.get("question_context", {}) or {}
+        cleaned["ideal_answer"] = question_context.get("ideal_answer", "")
         cleaned.pop("question_context", None)
         cleaned["performance_band"] = _score_bucket(cleaned.get("final_score"))
+
+        breakdown = cleaned.get("scoring_breakdown") or {}
+        layer_scores = [
+            breakdown.get("layer1_score"),
+            breakdown.get("layer2_score"),
+            breakdown.get("layer3_score"),
+        ]
+        cleaned["confidence_band"] = compute_confidence_band(layer_scores)
         sanitized.append(cleaned)
     return sanitized
 
