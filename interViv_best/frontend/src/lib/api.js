@@ -61,6 +61,14 @@ export function fetchCompanyRoles(companyId) {
   return request(`/companies/${encodeURIComponent(companyId)}/roles`);
 }
 
+export function fetchGapAnalysis(userId, roleId) {
+  return request(`/gap-analysis/${encodeURIComponent(userId)}/${encodeURIComponent(roleId)}`);
+}
+
+export function fetchMyGapAnalysis(roleId) {
+  return request(`/gap-analysis/me/${encodeURIComponent(roleId)}`);
+}
+
 export function setTargetCompany(targetCompanyId, targetRoleId) {
   return request("/auth/me/target", {
     method: "PATCH",
