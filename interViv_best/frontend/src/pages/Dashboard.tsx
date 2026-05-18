@@ -12,6 +12,7 @@ import { RoundTimeline } from "../components/dashboard/RoundTimeline";
 import { StrengthsWeaknesses } from "../components/dashboard/StrengthsWeaknesses";
 import { FeedbackCards } from "../components/dashboard/FeedbackCards";
 import { ScoringBreakdownPanel } from "../components/dashboard/ScoringBreakdownPanel";
+import Phase2InsightsPanel from "../components/dashboard/Phase2InsightsPanel";
 
 function clamp01(n) { return Math.min(1, Math.max(0, n)); }
 function scoreAccent(score) {
@@ -66,6 +67,7 @@ function mapRealDataToDashboard(session) {
     idealAnswer: r.ideal_answer || r.question_context?.ideal_answer || "",
     answer: r.answer_text || "",
     score: r.final_score,
+    confidenceBand: typeof r.confidence_band === "number" ? r.confidence_band : null,
     difficulty: (r.difficulty || "medium").charAt(0).toUpperCase() + (r.difficulty || "medium").slice(1),
     feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
     scoring_breakdown: r.scoring_breakdown || null,
@@ -188,22 +190,22 @@ export default function Dashboard() {
       </div>
 
       <motion.div {...pageMotion} className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-8 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <button onClick={() => navigate('/')}
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 backdrop-blur-xl transition hover:bg-white/8"
             style={{ fontFamily: "var(--font-body)" }}>
             <ArrowLeft className="h-4 w-4" />
             Back to Home
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             {raw?.target_role_id && raw?.user_id && (
               <Link
                 to={`/gap-analysis/${encodeURIComponent(raw.user_id)}/${encodeURIComponent(raw.target_role_id)}`}
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 backdrop-blur-xl transition hover:bg-cyan-500/20"
+                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-cyan-100 backdrop-blur-xl transition hover:bg-cyan-500/20"
                 style={{ fontFamily: "var(--font-body)" }}
                 data-testid="dashboard-to-gap-analysis"
               >
-                View readiness vs. target →
+                Readiness vs. target →
               </Link>
             )}
             <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-white/75 backdrop-blur-xl">
@@ -226,6 +228,13 @@ export default function Dashboard() {
               dateLabel={data.session.dateLabel}
               durationLabel={data.session.durationLabel}
               skillFocus={data.session.skillFocus}
+            />
+          </motion.div>
+
+          <motion.div variants={item}>
+            <Phase2InsightsPanel
+              userId={raw?.user_id || null}
+              targetRoleId={raw?.target_role_id || null}
             />
           </motion.div>
 
