@@ -1,17 +1,73 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { uploadResume, startSession, saveInterviewState } from '../lib/api';
+import { uploadResume, startSession, saveInterviewState, fetchMe } from '../lib/api';
+import CompanySelector from '../components/CompanySelector';
 
 const ROUNDS_PER_SKILL = 3;
 
 const DOMAIN_PRESETS = [
-  { name: 'Data Structures & Algorithms', short: 'DSA', tags: ['Arrays', 'Trees', 'Graphs', 'DP'] },
-  { name: 'Backend Engineering', short: 'Python', tags: ['Python', 'Node.js', 'REST', 'Databases'] },
-  { name: 'System Design', short: 'System Design', tags: ['Scalability', 'Docker', 'Cloud', 'Kafka'] },
-  { name: 'Frontend Engineering', short: 'JavaScript', tags: ['React', 'TypeScript', 'CSS', 'Performance'] },
-  { name: 'Machine Learning', short: 'ML', tags: ['PyTorch', 'scikit-learn', 'NLP', 'CV'] },
-  { name: 'Databases', short: 'DBMS', tags: ['SQL', 'MongoDB', 'Redis', 'Indexing'] },
+  {
+    name: 'Data Structures & Algorithms',
+    short: 'DSA',
+    tags: ['Arrays', 'Trees', 'Graphs', 'DP'],
+    skills: ['DSA', 'Data Structures', 'Algorithms', 'Dynamic Programming', 'Graphs'],
+  },
+  {
+    name: 'Backend Engineering',
+    short: 'Backend',
+    tags: ['Python', 'Node.js', 'REST', 'Databases'],
+    skills: ['Python', 'Node.js', 'Java', 'FastAPI', 'REST', 'PostgreSQL'],
+  },
+  {
+    name: 'System Design',
+    short: 'System Design',
+    tags: ['Scalability', 'Docker', 'Cloud', 'Kafka'],
+    skills: ['System Design', 'Docker', 'Kubernetes', 'AWS', 'Kafka', 'Microservices'],
+  },
+  {
+    name: 'Frontend Engineering',
+    short: 'Frontend',
+    tags: ['React', 'TypeScript', 'CSS', 'Performance'],
+    skills: ['JavaScript', 'TypeScript', 'React', 'Next.js', 'HTML', 'CSS'],
+  },
+  {
+    name: 'Machine Learning',
+    short: 'ML',
+    tags: ['PyTorch', 'scikit-learn', 'NLP', 'CV'],
+    skills: ['ML', 'PyTorch', 'TensorFlow', 'scikit-learn', 'NLP', 'Computer Vision'],
+  },
+  {
+    name: 'Databases',
+    short: 'Databases',
+    tags: ['SQL', 'MongoDB', 'Redis', 'Indexing'],
+    skills: ['DBMS', 'SQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Indexing'],
+  },
 ];
+
+const ALL_SUGGESTED_SKILLS = Array.from(new Set(DOMAIN_PRESETS.flatMap(d => d.skills)));
+
+function mergeUnique(...groups) {
+  const seen = new Set();
+  const merged = [];
+  groups.flat().forEach((item) => {
+    const skill = String(item || '').trim();
+    const key = skill.toLowerCase();
+    if (!skill || seen.has(key)) return;
+    seen.add(key);
+    merged.push(skill);
+  });
+  return merged;
+}
+
+function hasSkill(list, skill) {
+  const key = String(skill || '').trim().toLowerCase();
+  return list.some(item => String(item || '').trim().toLowerCase() === key);
+}
+
+function withoutSkill(list, skill) {
+  const key = String(skill || '').trim().toLowerCase();
+  return list.filter(item => String(item || '').trim().toLowerCase() !== key);
+}
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -25,6 +81,16 @@ export default function Upload() {
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [targetSelection, setTargetSelection] = useState({ companyId: '', roleId: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMe()
+      .then(() => { if (!cancelled) setIsAuthenticated(true); })
+      .catch(() => { if (!cancelled) setIsAuthenticated(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleFile = (f) => {
     if (f && f.type === 'application/pdf') { setFile(f); setError(''); }
@@ -43,10 +109,11 @@ export default function Upload() {
     setError('');
     try {
       const r = await uploadResume(file);
+      const detected = r.skills || [];
       setCandidateId(r.candidate_id);
-      setExtractedSkills(r.skills || []);
+      setExtractedSkills(detected);
       setDomainProfile(r.domain_profile || {});
-      setSelectedSkills((r.skills || []).slice(0, 3));
+      setSelectedSkills(detected.slice(0, 3));
       setStep('skills');
     } catch (err) {
       setError(err.message || 'Resume processing failed.');
@@ -56,8 +123,9 @@ export default function Upload() {
   };
 
   const toggleSkill = (skill) => {
+    setExtractedSkills(prev => mergeUnique(prev, [skill]));
     setSelectedSkills(prev =>
-      prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]
+      hasSkill(prev, skill) ? withoutSkill(prev, skill) : mergeUnique(prev, [skill])
     );
   };
 
@@ -67,6 +135,10 @@ export default function Upload() {
     setError('');
     try {
       const primarySkill = selectedSkills[0];
+      // Target company/role is persisted via PATCH /auth/me/target when the
+      // user clicks "Save as my target" in CompanySelector. The session route
+      // reads it from the user record; anonymous users fall back to general
+      // practice mode for now.
       const r = await startSession({
         candidate_id: candidateId,
         skill: primarySkill,
@@ -98,13 +170,16 @@ export default function Upload() {
     }
   };
 
-  const addSkillFromDomain = (short) => {
-    if (!extractedSkills.includes(short)) {
-      setExtractedSkills(p => [...p, short]);
-      setDomainProfile(p => ({ ...p, [short]: 'general' }));
-    }
-    if (!selectedSkills.includes(short)) setSelectedSkills(p => [...p, short]);
+  const chooseDomainPreset = (domain) => {
+    const skills = domain.skills || [domain.short];
+    setCandidateId('');
+    setExtractedSkills(skills);
+    setDomainProfile(skills.reduce((profile, skill) => ({ ...profile, [skill]: 'general' }), {}));
+    setSelectedSkills(skills.slice(0, Math.min(3, skills.length)));
+    setStep('skills');
   };
+
+  const suggestedSkills = mergeUnique(ALL_SUGGESTED_SKILLS, extractedSkills);
 
   return (
     <div className="min-h-screen bg-white">
@@ -216,14 +291,12 @@ export default function Upload() {
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {DOMAIN_PRESETS.map(d => (
-                  <button key={d.short} onClick={() => {
-                    setCandidateId(''); setExtractedSkills([d.short]);
-                    setDomainProfile({ [d.short]: 'general' });
-                    setSelectedSkills([d.short]); setStep('domains');
-                  }}
+                  <button key={d.short} onClick={() => chooseDomainPreset(d)}
                     className="rounded-2xl border border-black/8 p-4 text-left hover:border-black/20 transition-all cursor-pointer">
                     <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{d.name}</p>
-                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>{d.tags.slice(0, 2).join(' · ')}</p>
+                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                      {d.skills.slice(0, 3).join(' · ')}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -251,18 +324,77 @@ export default function Upload() {
             </p>
 
             <div className="rounded-2xl border border-black/8 p-8 mb-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  {extractedSkills.length ? 'Detected skills' : 'Choose skills'}
+                </p>
+                <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Tap chips to select or remove
+                </p>
+              </div>
               <div className="flex flex-wrap gap-2.5">
-                {extractedSkills.map(skill => (
+                {(extractedSkills.length ? extractedSkills : suggestedSkills.slice(0, 8)).map(skill => (
                   <button key={skill} onClick={() => toggleSkill(skill)}
                     className="rounded-full px-4 py-2 text-sm border transition-all cursor-pointer"
                     style={{
                       fontFamily: "'Inter', sans-serif",
-                      borderColor: selectedSkills.includes(skill) ? '#000' : 'rgba(0,0,0,0.08)',
-                      backgroundColor: selectedSkills.includes(skill) ? '#000' : 'transparent',
-                      color: selectedSkills.includes(skill) ? '#fff' : '#000',
+                      borderColor: hasSkill(selectedSkills, skill) ? '#000' : 'rgba(0,0,0,0.08)',
+                      backgroundColor: hasSkill(selectedSkills, skill) ? '#000' : 'transparent',
+                      color: hasSkill(selectedSkills, skill) ? '#fff' : '#000',
                     }}>
                     {skill}
                   </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-black/8 p-6 mb-6">
+              <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-4"
+                style={{ fontFamily: "'Inter', sans-serif" }}>
+                Add more skills or languages
+              </p>
+              <div className="space-y-5">
+                {DOMAIN_PRESETS.map(domain => (
+                  <div key={domain.short}>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>
+                        {domain.name}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExtractedSkills(prev => mergeUnique(prev, domain.skills));
+                          setSelectedSkills(prev => mergeUnique(prev, domain.skills));
+                        }}
+                        className="text-xs text-[#6F6F6F] hover:text-black transition-colors"
+                        style={{ fontFamily: "'Inter', sans-serif" }}
+                      >
+                        Select all
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {domain.skills.map(skill => {
+                        const active = hasSkill(selectedSkills, skill);
+                        return (
+                          <button
+                            key={`${domain.short}-${skill}`}
+                            type="button"
+                            onClick={() => toggleSkill(skill)}
+                            className="rounded-full px-3 py-1.5 text-xs border transition-all cursor-pointer"
+                            style={{
+                              fontFamily: "'Inter', sans-serif",
+                              borderColor: active ? '#000' : 'rgba(0,0,0,0.10)',
+                              backgroundColor: active ? '#000' : 'rgba(0,0,0,0.02)',
+                              color: active ? '#fff' : '#000',
+                            }}
+                          >
+                            {skill}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -272,6 +404,13 @@ export default function Upload() {
                 {selectedSkills.length} skill{selectedSkills.length > 1 ? 's' : ''} selected · {selectedSkills.length * ROUNDS_PER_SKILL} total rounds
               </p>
             )}
+
+            <div className="mb-6">
+              <CompanySelector
+                isAuthenticated={isAuthenticated}
+                onSelectionChange={setTargetSelection}
+              />
+            </div>
 
             <button onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
               className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-30"
