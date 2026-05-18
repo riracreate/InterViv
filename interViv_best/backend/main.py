@@ -10,6 +10,7 @@ from backend.routes.auth import router as auth_router
 from backend.routes.companies import router as companies_router
 from backend.routes.dashboard import router as dashboard_router
 from backend.routes.gap_analysis import router as gap_analysis_router
+from backend.routes.roadmap import router as roadmap_router
 from backend.routes.learning import router as learning_router
 from backend.routes.resume import router as resume_router
 from backend.routes.session import router as session_router
@@ -32,6 +33,7 @@ app.include_router(resume_router)
 app.include_router(auth_router)
 app.include_router(companies_router)
 app.include_router(gap_analysis_router)
+app.include_router(roadmap_router)
 app.include_router(session_router)
 app.include_router(answer_router)
 app.include_router(dashboard_router)

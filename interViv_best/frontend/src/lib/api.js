@@ -69,6 +69,14 @@ export function fetchMyGapAnalysis(roleId) {
   return request(`/gap-analysis/me/${encodeURIComponent(roleId)}`);
 }
 
+export function fetchRoadmap(userId, roleId, days = 30) {
+  return request(`/roadmap/${encodeURIComponent(userId)}/${encodeURIComponent(roleId)}?days=${days}`);
+}
+
+export function fetchMyRoadmap(roleId, days = 30) {
+  return request(`/roadmap/me/${encodeURIComponent(roleId)}?days=${days}`);
+}
+
 export function setTargetCompany(targetCompanyId, targetRoleId) {
   return request("/auth/me/target", {
     method: "PATCH",
