@@ -14,28 +14,44 @@
 4/4 passed
 ```
 
-## What was generated
+## What was verified
 
-### `data/human_baseline_sheet.csv`
-- 200 rows (50 questions × 4 answers each)
-- system_score range: 12.0–83.6, mean: 54.3
-- Columns: question, ideal_answer, ideal_keywords, answer, system_score, annotator_1..4
+### `data/human_baseline_real_combined.xlsx`
+- 30 real human-baseline rows
+- 3 independent annotators plus `ann_mean`, `ann_std`, and `system_score`
+- `system_score` values are in the valid 0-100 range
 
 ### `docs/human_baseline_report.md`
-Generated from 10 dummy-filled rows. Sample output:
-- Average κ: 0.768 (Substantial inter-rater agreement on dummy data)
-- Pearson r: 0.987 (p=0.000) — system correlates strongly with human in this test
+Generated from the real combined workbook:
+- Average κ: 0.642 (Substantial inter-rater agreement)
+- Pearson r: 0.7392 (p=0.0000) — system correlates significantly with the human mean
 
 ## How to use for viva
 
-1. Share `data/human_baseline_sheet.csv` with 2–4 annotators
-2. Each annotator fills their column (0–30 = Poor, 31–60 = Average, 61–100 = Good)
+1. Use `data/human_baseline_real_combined.xlsx` as the primary real-human evidence
+2. Keep `data/persona_validation_final.xlsx` as separate methods validation only
 3. Run: `python scripts/baseline_analysis.py`
 4. Report saved to `docs/human_baseline_report.md` — cite in viva
+
+### `docs/persona_validation_report.md`
+Generated from `data/persona_validation_final.xlsx` (separate methods validation, not primary human baseline):
+- 4 annotators detected dynamically
+- Average κ: 0.640 (Substantial)
+- Pearson r: 0.9578 (p=0.0000)
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/human_baseline.py` | Generates annotation sheet from dataset |
-| `scripts/baseline_analysis.py` | Reads filled sheet, computes κ + Pearson r + confusion matrix |
+| `scripts/human_baseline.py` | Legacy generator for annotation sheets |
+| `scripts/baseline_analysis.py` | Reads CSV/XLSX sheets, computes κ + Pearson r + confusion matrix. Annotator columns detected dynamically. Supports `--output` flag to redirect report. |
+
+## Usage
+
+```
+# Default: reads human_baseline_real_combined.xlsx, writes docs/human_baseline_report.md
+python scripts/baseline_analysis.py
+
+# Persona validation sheet with separate output
+python scripts/baseline_analysis.py --sheet data/persona_validation_final.xlsx --output docs/persona_validation_report.md
+```
