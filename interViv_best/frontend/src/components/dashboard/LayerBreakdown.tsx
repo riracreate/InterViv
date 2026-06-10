@@ -33,7 +33,7 @@ export function LayerBreakdown(props: {
             Score Breakdown
           </div>
           <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
-            Three-layer evaluation system—content, quality, and model judge signal.
+            Three-layer deterministic scoring: content, answer quality, and classifier signal.
           </p>
         </div>
       </div>
@@ -71,4 +71,3 @@ export function LayerBreakdown(props: {
     </section>
   );
 }
-

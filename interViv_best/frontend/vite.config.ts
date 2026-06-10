@@ -8,10 +8,15 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, ""),
+      },
       "/resume": "http://localhost:8000",
       "/session": "http://localhost:8000",
-      "/dashboard": "http://localhost:8000",
       "/health": "http://localhost:8000",
+      "/transcribe": "http://localhost:8000",
     },
   },
 });

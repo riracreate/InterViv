@@ -1,7 +1,40 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+interface KeywordMatch {
+  keyword?: string;
+  covered?: boolean;
+}
+
+interface RubricScores {
+  version?: string;
+  scale?: string;
+  correctness?: number;
+  coverage?: number;
+  depth?: number;
+  clarity?: number;
+  weighted_score?: number;
+  guard_capped?: boolean;
+}
+
+interface ConceptsSummary {
+  covered?: string[];
+  missing?: string[];
+}
+
+interface GuardSummary {
+  applied?: boolean;
+  reason?: string | null;
+  score_cap?: number | null;
+  softened?: boolean;
+}
+
 interface ScoringBreakdown {
+  scoring_schema_version?: string;
+  rubric?: RubricScores;
+  concepts?: ConceptsSummary;
+  guard?: GuardSummary;
   layer1_score?: number;
   layer2_score?: number;
   layer3_score?: number;
@@ -14,13 +47,24 @@ interface ScoringBreakdown {
   final_score?: number;
   nlp_score?: number;
   guard_applied?: string | null;
+  kg_label?: string;
+  covered_concepts?: string[];
+  missing_concepts?: string[];
+  keyword_coverage_details?: {
+    matches?: KeywordMatch[];
+  };
+  structure_score?: number;
 }
 
 interface Round {
   id: string;
   question: string;
+  idealAnswer?: string;
   score: number;
   difficulty: string;
+  topic?: string;
+  questionType?: string;
+  followups?: string[];
   scoring_breakdown?: ScoringBreakdown;
 }
 
@@ -34,6 +78,33 @@ function pct(n?: number | null): string {
   return `${Math.round(Number(n) * 100)}%`;
 }
 
+function textList(items?: string[], fallback = "None recorded."): string {
+  const values = (items || []).map(item => item.trim()).filter(Boolean);
+  return values.length > 0 ? values.join(", ") : fallback;
+}
+
+function missingKeywords(bd?: ScoringBreakdown): string[] {
+  return (bd?.keyword_coverage_details?.matches || [])
+    .filter(match => match && match.covered === false && match.keyword)
+    .map(match => String(match.keyword));
+}
+
+function nextTopics(round: Round, bd?: ScoringBreakdown): string[] {
+  const concepts = bd?.concepts?.missing || bd?.missing_concepts || [];
+  const keywords = missingKeywords(bd);
+  const followups = round.followups || [];
+  const values = [...concepts, ...keywords, ...followups, round.topic || ""]
+    .map(item => String(item).trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).slice(0, 5);
+}
+
+function shortText(value?: string, max = 420): string {
+  const normalized = (value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "Ideal answer is not available for this round.";
+  return normalized.length > max ? `${normalized.slice(0, max - 3).trim()}...` : normalized;
+}
+
 function RoundBreakdown({ round }: { round: Round }) {
   const [open, setOpen] = useState(false);
   const bd = round.scoring_breakdown;
@@ -43,6 +114,13 @@ function RoundBreakdown({ round }: { round: Round }) {
   const layer2Contrib = bd ? (0.25 * (bd.layer2_score ?? 0)).toFixed(1) : "–";
   const layer3Contrib = bd ? (0.20 * (bd.layer3_score ?? 0)).toFixed(1) : "–";
   const kgScore       = bd?.kg_score ?? 0;
+  const missedKeywords = missingKeywords(bd);
+  const recommendedTopics = nextTopics(round, bd);
+  const rubric = bd?.rubric;
+  const guardReason = bd?.guard?.reason || bd?.guard_applied;
+  const guardCap = bd?.guard?.score_cap;
+  const coveredConcepts = bd?.concepts?.covered || bd?.covered_concepts || [];
+  const missingConcepts = bd?.concepts?.missing || bd?.missing_concepts || [];
 
   return (
     <div className="rounded-2xl border border-white/8 bg-white/3 overflow-hidden">
@@ -79,19 +157,77 @@ function RoundBreakdown({ round }: { round: Round }) {
           ) : (
             <div className="font-mono text-xs text-white/70 space-y-1">
               {/* Guard warning */}
-              {bd?.guard_applied && (
+              {guardReason && (
                 <div className="mb-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-amber-300 text-xs">
-                  ⚠ Guard applied: <strong>{bd.guard_applied}</strong> — score capped
+                  Guard applied: <strong>{guardReason}</strong>.
+                  {guardCap ? ` Score cap: ${Math.round(Number(guardCap))}.` : ""}
+                  {" "}Your answer looks incomplete or gibberish. Please write a meaningful explanation.
                 </div>
               )}
 
-              <div className="flex items-center gap-2 text-white/90 text-sm font-medium mb-1">
-                <span>Final</span>
-                <span className="text-cyan-200">{fmt(bd?.final_score, 0)}</span>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Overall score</div>
+                  <div className="mt-1 text-base font-semibold text-cyan-200">{fmt(bd?.final_score, 0)}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Content match</div>
+                  <div className="mt-1 text-base font-semibold text-white/85">{fmt(bd?.layer1_score, 0)}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Semantic similarity</div>
+                  <div className="mt-1 text-base font-semibold text-white/85">{pct(bd?.semantic_score)}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Keyword coverage</div>
+                  <div className="mt-1 text-base font-semibold text-white/85">{pct(bd?.keyword_coverage)}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Structure score</div>
+                  <div className="mt-1 text-base font-semibold text-white/85">{pct(bd?.structure_score)}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-white/40">Classifier signal</div>
+                  <div className="mt-1 text-base font-semibold text-white/85">{bd?.svm_label ?? "–"}</div>
+                </div>
               </div>
 
+              {rubric && (
+                <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-white/40">Rubric view</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/30">
+                      {rubric.version || bd?.scoring_schema_version || "rubric"}
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <div className="text-white/35">Correctness</div>
+                      <div className="mt-0.5 text-sm font-semibold text-white/85">{fmt(rubric.correctness, 1)}/10</div>
+                    </div>
+                    <div>
+                      <div className="text-white/35">Coverage</div>
+                      <div className="mt-0.5 text-sm font-semibold text-white/85">{fmt(rubric.coverage, 1)}/10</div>
+                    </div>
+                    <div>
+                      <div className="text-white/35">Depth</div>
+                      <div className="mt-0.5 text-sm font-semibold text-white/85">{fmt(rubric.depth, 1)}/10</div>
+                    </div>
+                    <div>
+                      <div className="text-white/35">Clarity</div>
+                      <div className="mt-0.5 text-sm font-semibold text-white/85">{fmt(rubric.clarity, 1)}/10</div>
+                    </div>
+                  </div>
+                  {rubric.guard_capped && (
+                    <div className="mt-2 text-[11px] text-amber-200">
+                      Rubric dimensions were capped by the answer guard.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Layer 1 */}
-              <div className="pl-2 text-white/65">
+              <div className="mt-3 pl-2 text-white/65">
                 ├── Content match &nbsp;&nbsp;×55% = <span className="text-white/85">{layer1Contrib}</span>
                 <span className="ml-2 text-white/40">
                   (Semantic: {fmt(bd?.semantic_score, 2)},&nbsp;
@@ -107,7 +243,7 @@ function RoundBreakdown({ round }: { round: Round }) {
 
               {/* Layer 3 */}
               <div className="pl-2 text-white/65">
-                ├── ML judgment &nbsp;&nbsp;&nbsp;×20% = <span className="text-white/85">{layer3Contrib}</span>
+                ├── Classifier signal ×20% = <span className="text-white/85">{layer3Contrib}</span>
                 <span className="ml-2 text-white/40">(predicted: {bd?.svm_label ?? "–"})</span>
               </div>
 
@@ -122,6 +258,54 @@ function RoundBreakdown({ round }: { round: Round }) {
                 NLP score: {fmt(bd?.nlp_score, 1)}&nbsp;·&nbsp;
                 KG score: {fmt(bd?.kg_score, 1)}&nbsp;·&nbsp;
                 Final: {fmt(bd?.final_score, 1)}
+              </div>
+
+              {/* Concept hits / misses (KG) */}
+              {(coveredConcepts.length > 0 || missingConcepts.length > 0) && (
+                <div className="mt-2 pt-2 border-t border-white/5 space-y-1 text-xs">
+                  {coveredConcepts.length > 0 && (
+                    <div className="text-white/70">
+                      <span className="text-emerald-300">Concepts you covered:</span>{" "}
+                      <span className="text-white/85">{coveredConcepts.join(", ")}</span>
+                    </div>
+                  )}
+                  {missingConcepts.length > 0 && (
+                    <div className="text-white/70">
+                      <span className="text-amber-300">Concepts you missed:</span>{" "}
+                      <span className="text-white/85">{missingConcepts.join(", ")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {missedKeywords.length > 0 && (
+                <div className="mt-2 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs">
+                  <div className="text-amber-200">Missing keywords</div>
+                  <div className="mt-1 text-white/78">{textList(missedKeywords)}</div>
+                </div>
+              )}
+
+              <div className="mt-2 rounded-xl border border-emerald-300/15 bg-emerald-300/[0.04] p-3 text-xs">
+                <div className="text-emerald-200">Ideal answer</div>
+                <p className="mt-1 leading-relaxed text-white/78">{shortText(round.idealAnswer)}</p>
+              </div>
+
+              <div className="mt-2 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] p-3 text-xs">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-cyan-200">Next recommended topics</div>
+                    <div className="mt-1 text-white/78">{textList(recommendedTopics, "Review this question's core topic again.")}</div>
+                    {round.questionType && (
+                      <div className="mt-1 text-white/40">Question type: {round.questionType}</div>
+                    )}
+                  </div>
+                  <Link
+                    to="/upload"
+                    className="inline-flex shrink-0 items-center justify-center rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 transition hover:bg-cyan-200/15"
+                  >
+                    Reattempt topic
+                  </Link>
+                </div>
               </div>
             </div>
           )}
