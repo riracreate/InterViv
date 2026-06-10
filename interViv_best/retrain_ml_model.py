@@ -1,5 +1,5 @@
 """
-retrain_ml_model.py — Retrain SVM/RF for interViv v11 scoring
+retrain_ml_model.py — Retrain answer-quality classifier for interViv scoring
 ==============================================================
 
 What changed in v11:
@@ -7,34 +7,45 @@ What changed in v11:
   • New feature: `concept_coverage` (bigram/trigram overlap with ideal)
   • Labels (Good / Average / Poor) are the same
 
-Run this script once after deploying nlp_scorer_v11.py to produce
-a new svm_model_v11.joblib that the pipeline will load automatically.
+Default dataset is now the 891-row balanced ml_training_data.csv (297/297/297).
 
-Usage:
-    python retrain_ml_model.py \
-        --dataset modules/interview_dataset_v4.csv \
-        --model_type rf \
-        --output modules/svm_model_v11.joblib
+Run:
+    python retrain_ml_model.py
+        --dataset data/ml_training_data.csv
+        --model_type lr
+        --output modules/answer_quality_lr.joblib
+        --balanced true
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
+import json
 import logging
+from datetime import date
 from pathlib import Path
 import sys
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+import sklearn
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    f1_score,
+)
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from sklearn.utils.class_weight import compute_sample_weight
 
-# Import your new scorer to compute features from the dataset
+# Import the v11 NLP scorer to compute features from the dataset
 PROJECT_ROOT = Path(__file__).resolve().parent
 for candidate in (PROJECT_ROOT / "modules", PROJECT_ROOT / "backend", PROJECT_ROOT):
     candidate_str = str(candidate)
@@ -49,6 +60,7 @@ log = logging.getLogger(__name__)
 
 def _default_path(filename: str) -> Path:
     preferred_dirs = [
+        PROJECT_ROOT / "data",
         PROJECT_ROOT / "modules",
         PROJECT_ROOT / "backend",
         PROJECT_ROOT,
@@ -67,11 +79,9 @@ def _default_path(filename: str) -> Path:
 
 def build_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute v11 feature vectors for every row in the dataset.
+    Compute v11 feature vectors for every row.
 
-    Expected columns in dataset CSV:
-        answer_text, ideal_answer, ideal_keywords, label
-        (label values: Good / Average / Poor)
+    Expected columns: answer_text (or answer), ideal_answer, ideal_keywords, label.
     """
     scorer = NLPScorer()
     rows: list[list[float]] = []
@@ -86,11 +96,11 @@ def build_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         )
 
         features = [
-            result["cosine_similarity"],                    # f1
-            result["clarity_score"],                        # f2 (was length_ratio)
-            result["keyword_coverage"],                     # f3
-            len(answer_text.split()),                       # f4 word count
-            result["concept_coverage"],                     # f5 NEW
+            result["cosine_similarity"],
+            result["clarity_score"],
+            result["keyword_coverage"],
+            len(answer_text.split()),
+            result["concept_coverage"],
         ]
         rows.append(features)
         labels.append(str(row.get("label", "Average")))
@@ -100,22 +110,63 @@ def build_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 
 # ── Model factory ─────────────────────────────────────────────────────────────
 
-def make_pipeline(model_type: str) -> Pipeline:
-    """Return a sklearn Pipeline (scaler + classifier)."""
-    if model_type == "svm":
-        clf = SVC(kernel="rbf", C=1.0, gamma="scale", probability=True)
+def make_pipeline(model_type: str, balanced: bool = True) -> Pipeline:
+    """Return a sklearn Pipeline (scaler + classifier).
+
+    GradientBoostingClassifier does not accept `class_weight`, so balancing for
+    `gb` is applied via sample_weight at fit time. LR/RF/SVM consume
+    `class_weight='balanced'` directly.
+    """
+    if model_type == "lr":
+        clf = LogisticRegression(
+            C=1.0,
+            max_iter=2000,
+            solver="lbfgs",
+            class_weight="balanced" if balanced else None,
+            random_state=42,
+        )
+    elif model_type == "svm":
+        clf = SVC(
+            kernel="rbf",
+            C=1.0,
+            gamma="scale",
+            probability=True,
+            class_weight="balanced" if balanced else None,
+        )
+    elif model_type == "gb":
+        clf = GradientBoostingClassifier(
+            n_estimators=120,
+            max_depth=2,
+            learning_rate=0.08,
+            random_state=42,
+        )
     elif model_type == "rf":
         clf = RandomForestClassifier(
             n_estimators=200,
             max_depth=6,
             min_samples_leaf=5,
             random_state=42,
-            class_weight="balanced",   # handles class imbalance
+            class_weight="balanced" if balanced else None,
         )
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Choose 'svm' or 'rf'.")
+        raise ValueError(f"Unknown model type: {model_type}. Choose 'lr', 'svm', 'rf', or 'gb'.")
 
     return Pipeline([("scaler", StandardScaler()), ("clf", clf)])
+
+
+def _fit_with_balance(
+    pipeline: Pipeline,
+    X: np.ndarray,
+    y: np.ndarray,
+    model_type: str,
+    balanced: bool,
+) -> None:
+    """Fit pipeline; for GB, apply sample_weight balancing manually."""
+    if model_type == "gb" and balanced:
+        sw = compute_sample_weight(class_weight="balanced", y=y)
+        pipeline.fit(X, y, clf__sample_weight=sw)
+    else:
+        pipeline.fit(X, y)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -124,15 +175,27 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
-        default=str(_default_path("interview_dataset_v4.csv")),
-        help="Path to interview_dataset CSV",
+        default=str(_default_path("ml_training_data.csv")),
+        help="Path to training CSV (default: data/ml_training_data.csv — 891-row balanced set)",
     )
-    parser.add_argument("--model_type", default="rf", choices=["svm", "rf"])
+    parser.add_argument("--model_type", default="lr", choices=["lr", "svm", "rf", "gb"])
     parser.add_argument(
         "--output",
-        default=str(_default_path("svm_model_v11.joblib")),
+        default=str(_default_path("answer_quality_lr.joblib")),
+    )
+    parser.add_argument(
+        "--balanced",
+        default="true",
+        choices=["true", "false"],
+        help="Use class_weight/sample_weight balancing (default: true)",
+    )
+    parser.add_argument(
+        "--metadata_out",
+        default=str(PROJECT_ROOT / "modules" / "model_metadata.json"),
+        help="Where to write model_metadata.json",
     )
     args = parser.parse_args()
+    balanced = args.balanced == "true"
 
     log.info("Loading dataset from %s", args.dataset)
     df = pd.read_csv(args.dataset)
@@ -140,22 +203,114 @@ def main() -> None:
 
     log.info("Computing v11 features …")
     X, y = build_features(df)
-    log.info("Feature matrix: %s  |  Label distribution: %s", X.shape, dict(zip(*np.unique(y, return_counts=True))))
+    label_dist = dict(zip(*np.unique(y, return_counts=True)))
+    label_dist = {str(k): int(v) for k, v in label_dist.items()}
+    log.info("Feature matrix: %s  |  Label distribution: %s", X.shape, label_dist)
 
-    pipeline = make_pipeline(args.model_type)
+    classes = sorted(np.unique(y).tolist())
 
-    # Cross-validation sanity check
+    # ── 5-fold cross-validated metrics ────────────────────────────────────────
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(pipeline, X, y, cv=cv, scoring="f1_weighted")
-    log.info("5-fold CV weighted F1: %.3f ± %.3f", cv_scores.mean(), cv_scores.std())
 
-    # Final fit on full dataset
-    pipeline.fit(X, y)
+    cv_acc = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="accuracy")
+    cv_f1 = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="f1_macro")
+    cv_f1w = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="f1_weighted")
+
+    log.info("5-fold CV accuracy:    %.4f ± %.4f", cv_acc.mean(), cv_acc.std())
+    log.info("5-fold CV F1 macro:    %.4f ± %.4f", cv_f1.mean(), cv_f1.std())
+    log.info("5-fold CV F1 weighted: %.4f ± %.4f", cv_f1w.mean(), cv_f1w.std())
+
+    # ── Held-out evaluation for confusion matrix + per-class numbers ─────────
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    eval_pipeline = make_pipeline(args.model_type, balanced=balanced)
+    _fit_with_balance(eval_pipeline, X_train, y_train, args.model_type, balanced)
+
+    y_pred = eval_pipeline.predict(X_test)
+    train_acc = float(eval_pipeline.score(X_train, y_train))
+    val_acc = float(eval_pipeline.score(X_test, y_test))
+    val_f1_macro = float(f1_score(y_test, y_pred, average="macro"))
+    val_f1_weighted = float(f1_score(y_test, y_pred, average="weighted"))
+
+    report_dict = classification_report(
+        y_test, y_pred, labels=classes, output_dict=True, zero_division=0
+    )
+    cm = confusion_matrix(y_test, y_pred, labels=classes).tolist()
+
+    print("\n=== Per-class metrics (held-out 20% test) ===")
+    print(classification_report(y_test, y_pred, labels=classes, zero_division=0))
+    print("=== Confusion matrix (rows=true, cols=pred), labels:", classes, "===")
+    for row in cm:
+        print(" ", row)
+
+    per_class = {
+        cls: {
+            "precision": float(report_dict[cls]["precision"]),
+            "recall": float(report_dict[cls]["recall"]),
+            "f1": float(report_dict[cls]["f1-score"]),
+            "support": int(report_dict[cls]["support"]),
+        }
+        for cls in classes
+    }
+
+    # ── Final fit on FULL dataset for the saved artifact ──────────────────────
+    final_pipeline = make_pipeline(args.model_type, balanced=balanced)
+    _fit_with_balance(final_pipeline, X, y, args.model_type, balanced)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, out_path)
+    joblib.dump(final_pipeline, out_path)
     log.info("Model saved → %s", out_path)
+
+    # ── Hashes for traceability ───────────────────────────────────────────────
+    dataset_bytes = Path(args.dataset).read_bytes()
+    dataset_hash = "sha256:" + hashlib.sha256(dataset_bytes).hexdigest()
+    artifact_hash = "sha256:" + hashlib.sha256(out_path.read_bytes()).hexdigest()
+
+    metadata = {
+        "model_type": type(final_pipeline.named_steps["clf"]).__name__,
+        "version": "1.1.0",
+        "training_date": date.today().isoformat(),
+        "dataset": args.dataset,
+        "dataset_hash": dataset_hash,
+        "dataset_rows": int(len(df)),
+        "label_distribution": label_dist,
+        "balanced": balanced,
+        "train_accuracy": round(train_acc, 4),
+        "val_accuracy": round(val_acc, 4),
+        "val_f1_macro": round(val_f1_macro, 4),
+        "val_f1_weighted": round(val_f1_weighted, 4),
+        "cv_5fold_accuracy_mean": round(float(cv_acc.mean()), 4),
+        "cv_5fold_accuracy_std": round(float(cv_acc.std()), 4),
+        "cv_5fold_f1_macro_mean": round(float(cv_f1.mean()), 4),
+        "cv_5fold_f1_macro_std": round(float(cv_f1.std()), 4),
+        "cv_5fold_f1_weighted_mean": round(float(cv_f1w.mean()), 4),
+        "per_class_precision_recall": per_class,
+        "confusion_matrix_2d": cm,
+        "confusion_matrix_labels": classes,
+        "sklearn_version": sklearn.__version__,
+        "artifact_sha256": artifact_hash,
+        "artifact_file": out_path.name,
+        "feature_order": [
+            "nlp_cosine_similarity",
+            "clarity_score",
+            "keyword_coverage",
+            "server_word_count",
+            "concept_coverage",
+        ],
+        "evaluation_note": (
+            f"{type(final_pipeline.named_steps['clf']).__name__} retrained on the "
+            "891-row balanced ml_training_data.csv with class balancing enabled. "
+            "5-fold stratified CV "
+            "and held-out 20% test reported."
+        ),
+    }
+
+    metadata_path = Path(args.metadata_out)
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(metadata, indent=2))
+    log.info("Metadata saved → %s", metadata_path)
 
 
 if __name__ == "__main__":
@@ -167,19 +322,16 @@ if __name__ == "__main__":
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # 1. LABEL QUALITY MATTERS MORE THAN ALGORITHM
-#    Before retraining, audit your interview_dataset_v4.csv labels.
-#    If "Good" / "Average" / "Poor" were hand-labeled inconsistently,
-#    model accuracy will plateau regardless of architecture.
+#    Audit the training CSV labels before retraining. Inconsistent
+#    Good/Average/Poor labels cap accuracy regardless of architecture.
 #
 # 2. SYNTHETIC DATA AUGMENTATION
-#    If your dataset is small (<500 rows per class), augment by:
-#    - paraphrasing ideal answers at different lengths
-#    - generating intentionally vague / repetitive "Poor" examples
+#    For <500 rows per class, augment by paraphrasing ideal answers and
+#    generating intentionally vague / repetitive "Poor" examples.
 #
 # 3. FEATURE VECTOR CONTRACT
-#    The current order is: [cos_sim, clarity, kw_cov, word_count, concept_cov]
-#    If you add or reorder features, update _run_svm_label() in pipeline_v11.py
-#    to match exactly, or predictions will be garbage.
+#    Order is: [cos_sim, clarity, kw_cov, word_count, concept_cov].
+#    If you reorder, update _run_classifier() in pipeline.py to match.
 #
 # 4. WHEN TO RETRAIN
 #    - After every 500+ new labelled answers

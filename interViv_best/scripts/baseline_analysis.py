@@ -1,14 +1,15 @@
 """
 baseline_analysis.py — Analyse human baseline annotation sheet.
 
-Reads data/human_baseline_sheet.csv (after annotators fill annotator_1..4).
+Reads data/human_baseline_real_combined.xlsx by default. Older CSV sheets are
+still supported through --sheet for compatibility.
 Produces docs/human_baseline_report.md with:
   - Inter-rater agreement (Cohen's Kappa for each pair + average)
   - System vs human correlation (Pearson r + p-value)
   - Confusion matrix (Good/Average/Poor bands)
   - Top-5 cases of system-human disagreement
 
-Usage:  python scripts/baseline_analysis.py [--sheet path/to/sheet.csv]
+Usage:  python scripts/baseline_analysis.py [--sheet path/to/sheet.xlsx] [--output path/to/report.md]
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ import argparse
 import math
 import pathlib
 import sys
+import zipfile
 from itertools import combinations
 from typing import Optional
+from xml.etree import ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -28,10 +31,115 @@ import numpy as np
 from scipy.stats import pearsonr
 from sklearn.metrics import cohen_kappa_score
 
-DATA_PATH   = ROOT / "data"  / "human_baseline_sheet.csv"
+DATA_PATH   = ROOT / "data"  / "human_baseline_real_combined.xlsx"
 REPORT_PATH = ROOT / "docs"  / "human_baseline_report.md"
 
-ANNOTATOR_COLS = ["annotator_1", "annotator_2", "annotator_3", "annotator_4"]
+
+def _cell_col_index(cell_ref: str) -> int:
+    letters = "".join(ch for ch in cell_ref if ch.isalpha())
+    index = 0
+    for ch in letters:
+        index = index * 26 + (ord(ch.upper()) - ord("A") + 1)
+    return max(index - 1, 0)
+
+
+def _first_sheet_path(archive: zipfile.ZipFile) -> str:
+    ns_main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    ns_rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    try:
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        first_sheet = workbook.find(f".//{ns_main}sheet")
+        rel_id = first_sheet.attrib.get(f"{ns_rel}id") if first_sheet is not None else None
+        if rel_id:
+            rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+            for rel in rels:
+                if rel.attrib.get("Id") == rel_id:
+                    target = rel.attrib.get("Target", "worksheets/sheet1.xml")
+                    if target.startswith("/"):
+                        return target.lstrip("/")
+                    return "xl/" + target.lstrip("/")
+    except Exception:
+        pass
+    return "xl/worksheets/sheet1.xml"
+
+
+def _read_xlsx_without_openpyxl(path: pathlib.Path) -> pd.DataFrame:
+    """Small read-only XLSX fallback for simple single-sheet annotation files."""
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+    with zipfile.ZipFile(path) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall(f"{ns}si"):
+                shared_strings.append("".join(item.itertext()))
+
+        sheet_root = ET.fromstring(archive.read(_first_sheet_path(archive)))
+        rows: list[list[object]] = []
+        for row in sheet_root.findall(f".//{ns}row"):
+            values_by_col: dict[int, object] = {}
+            for cell in row.findall(f"{ns}c"):
+                col_index = _cell_col_index(cell.attrib.get("r", "A"))
+                cell_type = cell.attrib.get("t")
+                value_node = cell.find(f"{ns}v")
+
+                if cell_type == "inlineStr":
+                    inline = cell.find(f"{ns}is")
+                    value: object = "".join(inline.itertext()) if inline is not None else None
+                elif value_node is None or value_node.text is None:
+                    value = None
+                elif cell_type == "s":
+                    value = shared_strings[int(value_node.text)]
+                elif cell_type == "b":
+                    value = bool(int(value_node.text))
+                elif cell_type in {"str", "e"}:
+                    value = value_node.text
+                else:
+                    raw = value_node.text
+                    try:
+                        numeric = float(raw)
+                        value = int(numeric) if numeric.is_integer() else numeric
+                    except (TypeError, ValueError):
+                        value = raw
+
+                values_by_col[col_index] = value
+
+            if values_by_col:
+                rows.append([
+                    values_by_col.get(i) for i in range(max(values_by_col) + 1)
+                ])
+
+    if not rows:
+        return pd.DataFrame()
+
+    headers = [
+        str(value).strip() if value not in (None, "") else f"column_{i + 1}"
+        for i, value in enumerate(rows[0])
+    ]
+    records = []
+    for row in rows[1:]:
+        records.append(row + [None] * (len(headers) - len(row)))
+    return pd.DataFrame(records, columns=headers)
+
+
+def read_annotation_sheet(path: pathlib.Path) -> pd.DataFrame:
+    """Read CSV or Excel annotation sheets and normalize answer column names."""
+    if not path.exists():
+        raise FileNotFoundError(f"Annotation sheet not found: {path}")
+
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        try:
+            df = pd.read_excel(path)
+        except ImportError:
+            df = _read_xlsx_without_openpyxl(path)
+    elif path.suffix.lower() == ".csv":
+        df = pd.read_csv(path)
+    else:
+        raise ValueError(f"Unsupported annotation sheet type: {path.suffix}")
+
+    if "answer" not in df.columns and "candidate_answer" in df.columns:
+        df["answer"] = df["candidate_answer"]
+    return df
 
 
 def score_to_band(score: float) -> str:
@@ -79,22 +187,48 @@ def top_disagreements(df: pd.DataFrame, human_mean: pd.Series, n: int = 5) -> pd
     )
 
 
-def main(sheet_path: Optional[pathlib.Path] = None) -> None:
+def clean_report_text(value: object) -> str:
+    """Clean common encoding artifacts before writing Markdown snippets."""
+    text = str(value)
+    replacements = {
+        "‚Äî": "—",
+        "‚Äì": "–",
+        "‚Äô": "'",
+        "‚Äú": '"',
+        "‚Äù": '"',
+        "‚Üí": "→",
+        "â€”": "—",
+        "â€“": "–",
+        "â€™": "'",
+        "â€œ": '"',
+        "â€�": '"',
+        "â†’": "→",
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    return text
+
+
+def main(sheet_path: Optional[pathlib.Path] = None, output_path: Optional[pathlib.Path] = None) -> None:
     path = sheet_path or DATA_PATH
     print(f"Reading {path} ...")
-    df = pd.read_csv(path)
+    df = read_annotation_sheet(path)
+
+    # Detect annotator columns dynamically
+    annotator_cols = sorted([c for c in df.columns if c.startswith("annotator_")])
+    if len(annotator_cols) < 2:
+        sys.exit("Need at least 2 annotator columns")
 
     # Coerce annotator columns to float
-    present_annotators = [c for c in ANNOTATOR_COLS if c in df.columns]
-    for col in present_annotators:
+    for col in annotator_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df["system_score"] = pd.to_numeric(df["system_score"], errors="coerce")
 
-    filled_annotators = [c for c in present_annotators if df[c].notna().any()]
+    filled_annotators = [c for c in annotator_cols if df[c].notna().any()]
     if not filled_annotators:
         print("ERROR: No annotator columns have been filled in yet.")
-        print(f"  Fill in {present_annotators} in {path.name}, then re-run.")
+        print(f"  Fill in {annotator_cols} in {path.name}, then re-run.")
         sys.exit(1)
 
     # Human mean across filled annotators
@@ -116,6 +250,16 @@ def main(sheet_path: Optional[pathlib.Path] = None) -> None:
         r, p_val = pearsonr(df.loc[valid_mask, "system_score"], human_mean[valid_mask])
     else:
         r, p_val = float("nan"), float("nan")
+
+    per_annotator_r = {}
+    for col in filled_annotators:
+        annotator_mask = df["system_score"].notna() & df[col].notna()
+        if annotator_mask.sum() >= 2:
+            annotator_r, annotator_p = pearsonr(
+                df.loc[annotator_mask, "system_score"],
+                df.loc[annotator_mask, col],
+            )
+            per_annotator_r[col] = (annotator_r, annotator_p)
 
     # ── Confusion matrix ──────────────────────────────────────────────────────
     cm = confusion_matrix_bands(human_mean, df["system_score"])
@@ -172,6 +316,15 @@ def main(sheet_path: Optional[pathlib.Path] = None) -> None:
         sig = "statistically significant (p < 0.05)" if p_val < 0.05 else "not statistically significant (p ≥ 0.05)"
         lines.append(f"> The system-human correlation is **{r:.3f}**, {sig}.")
 
+    if per_annotator_r:
+        lines += [
+            "",
+            "| Annotator | Pearson r with system | p-value |",
+            "|-----------|----------------------|---------|",
+        ]
+        for col, (annotator_r, annotator_p) in per_annotator_r.items():
+            lines.append(f"| {col} | {annotator_r:.3f} | {annotator_p:.4f} |")
+
     lines += [
         "",
         "---",
@@ -197,8 +350,8 @@ def main(sheet_path: Optional[pathlib.Path] = None) -> None:
         "|---|----------------------|--------------------|--------|-------|-------|",
     ]
     for i, row in top5.iterrows():
-        q   = str(row["question"])[:60].replace("|", "\\|")
-        ans = str(row["answer"])[:50].replace("|", "\\|")
+        q   = clean_report_text(row["question"])[:60].replace("|", "\\|")
+        ans = clean_report_text(row["answer"])[:50].replace("|", "\\|")
         lines.append(
             f"| {i+1} | {q}... | {ans}... | {row['system_score']:.0f} | {row['human_mean']:.0f} | {row['delta']:.0f} |"
         )
@@ -212,11 +365,13 @@ def main(sheet_path: Optional[pathlib.Path] = None) -> None:
         "- **System score** is the NLP score from the 3-layer hybrid scorer (v11) without KG blending.",
         "- **Annotator scale**: 0–30 = Poor, 31–60 = Average, 61–100 = Good.",
         "- Band boundaries: score < 31 → Poor, 31–60 → Average, > 60 → Good.",
+        "- `persona_validation_final.xlsx` is a separate persona simulation and is not used as the primary human baseline.",
     ]
 
+    out = output_path or REPORT_PATH
     report = "\n".join(lines)
-    REPORT_PATH.write_text(report, encoding="utf-8")
-    print(f"\nReport written to {REPORT_PATH}")
+    out.write_text(report, encoding="utf-8")
+    print(f"\nReport written to {out}")
     print(f"\nKey results:")
     print(f"  Average κ: {avg_kappa_str} ({kappa_interpret(avg_kappa)})")
     r_str = f"{r:.4f}" if not math.isnan(r) else "N/A"
@@ -227,5 +382,6 @@ def main(sheet_path: Optional[pathlib.Path] = None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sheet", type=pathlib.Path, default=None)
+    parser.add_argument("--output", type=pathlib.Path, default=None)
     args = parser.parse_args()
-    main(args.sheet)
+    main(args.sheet, args.output)

@@ -36,7 +36,7 @@ from modules.nlp_scorer_patch import PatchedNLPScorer
 
 random.seed(42)
 
-MODEL_PATH = ROOT / "modules" / "svm_model.joblib"
+MODEL_PATH = ROOT / "modules" / "answer_quality_lr.joblib"
 DATA_PATH  = ROOT / "data" / "interview_dataset_v6.csv"
 OUT_PATH   = ROOT / "data" / "human_baseline_sheet.csv"
 N_QUESTIONS = 50

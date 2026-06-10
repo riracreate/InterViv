@@ -30,27 +30,32 @@ def code(text: str) -> dict:
     }
 
 
-BUNDLE_RELATIVE_FILES = [
-    "requirements.txt",
-    "retrain_ml_model.py",
-    "modules/__init__.py",
-    "modules/c4_feedback.py",
-    "modules/knowledge_graph.py",
-    "modules/ner_scorer.py",
-    "modules/nlp_scorer.py",
-    "modules/nlp_scorer_patch.py",
-    "modules/question_bank.py",
-    "modules/resume_parser.py",
-    "modules/skill_taxonomy_v2.csv",
-    "modules/svm_model.joblib",
-    "data/ml_training_data.csv",
-    "data/interview_dataset_v6.csv",
-    "backend/__init__.py",
-    "backend/config.py",
-    "backend/integrations.py",
-    "backend/scoring/__init__.py",
-    "backend/scoring/pipeline.py",
-]
+ROOT_BUNDLE_FILES = {"requirements.txt", "retrain_ml_model.py"}
+BUNDLE_DIRS = {"modules", "data", "backend", "scripts", "tests"}
+BUNDLE_SUFFIXES = {".py", ".csv", ".joblib", ".json"}
+IGNORED_PARTS = {".venv", "__pycache__", "node_modules", "dist"}
+
+
+def _collect_bundle_relative_files(source_root: Path) -> list[str]:
+    files: set[str] = set()
+    for filename in ROOT_BUNDLE_FILES:
+        if (source_root / filename).exists():
+            files.add(filename)
+
+    for directory in BUNDLE_DIRS:
+        base = source_root / directory
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(source_root)
+            if any(part in IGNORED_PARTS for part in relative.parts):
+                continue
+            if path.suffix in BUNDLE_SUFFIXES:
+                files.add(relative.as_posix())
+
+    return sorted(files)
 
 
 def _bundle_base64() -> str:
@@ -60,7 +65,7 @@ def _bundle_base64() -> str:
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        for rel_path in BUNDLE_RELATIVE_FILES:
+        for rel_path in _collect_bundle_relative_files(source_root):
             source = source_root / rel_path
             if not source.exists():
                 raise FileNotFoundError(f"Missing bundle file: {source}")
@@ -80,7 +85,7 @@ def _write_required_files_zip() -> Path:
     source_root = Path(__file__).resolve().parents[1] / "interViv_best"
     out_path = Path(__file__).with_name("interViv_best_required_files.zip")
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        for rel_path in BUNDLE_RELATIVE_FILES:
+        for rel_path in _collect_bundle_relative_files(source_root):
             source = source_root / rel_path
             if not source.exists():
                 raise FileNotFoundError(f"Missing required file: {source}")
@@ -153,7 +158,7 @@ def copy_zip_project(zip_path: Path, target_root: Path) -> Path | None:
                 shutil.rmtree(target_root)
             target_root.mkdir(parents=True, exist_ok=True)
 
-            allowed_roots = ("modules/", "data/", "backend/")
+            allowed_roots = ("modules/", "data/", "backend/", "scripts/", "tests/")
             allowed_files = {"requirements.txt", "retrain_ml_model.py", "dotenv.py"}
             for name in names:
                 rel = name[len(prefix) + 1 :] if prefix and name.startswith(prefix + "/") else name
@@ -602,21 +607,34 @@ cells = [
             pipeline_payload = None
             if use_pipeline:
                 try:
-                    pipeline_payload = run_scoring_pipeline(
-                        answer_text=answer,
-                        cos_similarity=float(nlp_payload.get("cosine_similarity", 0.0)),
-                        length_ratio=model_features[1] if len(model_features) > 1 else answer_length_ratio(answer, ideal_answer),
-                        aligned_score=float(nlp_payload.get("keyword_coverage", 0.0)),
-                        word_count=len(answer.split()),
-                        question_context={
+                    import inspect as _inspect
+
+                    pipeline_kwargs = {
+                        "answer_text": answer,
+                        "word_count": len(answer.split()),
+                        "question_context": {
                             "question": question,
                             "ideal_answer": ideal_answer,
                             "ideal_keywords": ideal_keywords,
                             "skill": skill,
                             "sub_domain": sub_domain,
                         },
-                        difficulty=difficulty,
-                    )
+                        "difficulty": difficulty,
+                    }
+                    # Older pipeline versions accepted client-side metrics; newer
+                    # versions compute them server-side and reject these args.
+                    pipeline_parameters = _inspect.signature(run_scoring_pipeline).parameters
+                    if "cos_similarity" in pipeline_parameters:
+                        pipeline_kwargs.update(
+                            cos_similarity=float(nlp_payload.get("cosine_similarity", 0.0)),
+                            length_ratio=model_features[1] if len(model_features) > 1 else answer_length_ratio(answer, ideal_answer),
+                            aligned_score=float(nlp_payload.get("keyword_coverage", 0.0)),
+                        )
+                    pipeline_payload = run_scoring_pipeline(**pipeline_kwargs)
+                    if isinstance(pipeline_payload, dict) and "error" not in pipeline_payload:
+                        final_score = float(pipeline_payload.get("final_score", final_score))
+                        feedback = pipeline_payload.get("feedback", feedback)
+                        model_label = pipeline_payload.get("svm_label", model_label)
                 except Exception as exc:
                     pipeline_payload = {"error": str(exc)}
 
@@ -643,6 +661,10 @@ cells = [
             rows = []
             for name, result in named_results:
                 nlp = result["nlp"]
+                pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+                breakdown = pipeline.get("scoring_breakdown", {}) if isinstance(pipeline.get("scoring_breakdown"), dict) else {}
+                semantic_score = nlp.get("semantic_score", breakdown.get("semantic_score"))
+                guard_applied = pipeline.get("guard_applied") or breakdown.get("guard_applied")
                 rows.append(
                     {
                         "case": name,
@@ -652,6 +674,8 @@ cells = [
                         "nlp_score": nlp.get("overall_score", 0.0),
                         "kg_score": round(float(result["kg"].get("score", 0.0)) * 100, 2),
                         "model_label": result["model_label"],
+                        "semantic_score": semantic_score,
+                        "guard_applied": guard_applied,
                         "ner_label": result["ner"].get("label"),
                         "layer1": nlp.get("layer1_score", 0.0),
                         "layer2": nlp.get("layer2_score", 0.0),

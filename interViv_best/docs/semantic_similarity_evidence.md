@@ -45,3 +45,33 @@ final_score = 0.85 × NLP_score + 0.15 × KG_score
 
 The formula weights and final_score formula are **unchanged**. Only what feeds
 Layer 1's cosine term is different.
+
+## Blend weight calibration
+
+We tuned the semantic / TF-IDF blend against our human baseline study (n=30)
+using grid search over `w_semantic ∈ {0.00, 0.10, …, 1.00}`, computing the
+Pearson correlation of `proxy = w * semantic + (1 - w) * tfidf` against the
+mean of three annotators per row. See `scripts/tune_l1_blend.py` and the full
+grid in `docs/l1_blend_tuning.md`.
+
+| blend_w (semantic) | 1 - w (TF-IDF) | Pearson r |
+|--------------------|----------------|-----------|
+| 0.00 | 1.00 | 0.7740 |
+| 0.10 | 0.90 | 0.7745 ← max |
+| 0.20 | 0.80 | 0.7745 |
+| 0.30 | 0.70 | 0.7739 |
+| 0.40 | 0.60 | 0.7727 |
+| 0.50 | 0.50 | 0.7709 |
+| 0.60 | 0.40 | 0.7684 (current) |
+| 0.70 | 0.30 | 0.7654 |
+| 0.80 | 0.20 | 0.7617 |
+| 0.90 | 0.10 | 0.7575 |
+| 1.00 | 0.00 | 0.7526 |
+
+Optimal blend weight: **w_semantic = 0.10**, achieving Pearson **r = 0.7745**
+against the human-mean scores. Current blend (0.60) achieves r = 0.7684.
+Δ = +0.0061 — well below our 0.05 meaningful-change threshold, so the existing
+60/40 blend is **empirically validated** and not changed. The grid is also
+flat across the middle (0.10–0.50 are within 0.004 of each other), indicating
+the blend choice is robust over a wide range when the per-row signals already
+agree.
