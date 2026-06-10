@@ -1,95 +1,78 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 /* ═══════════════════════════════════════════════════════════
-   VIDEO BACKGROUND with custom fade-in / fade-out loop
+   PREMIUM NON-NATURE BACKGROUND
    ═══════════════════════════════════════════════════════════ */
-function VideoBackground() {
-  const videoRef = useRef(null);
-  const rafRef = useRef(null);
-
-  const FADE_DURATION = 0.5; // seconds
-
-  const monitorPlayback = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || video.paused) return;
-
-    const { currentTime, duration } = video;
-
-    if (duration && duration > 0) {
-      // Fade in at start
-      if (currentTime < FADE_DURATION) {
-        video.style.opacity = String(currentTime / FADE_DURATION);
-      }
-      // Fade out near end
-      else if (currentTime > duration - FADE_DURATION) {
-        const remaining = duration - currentTime;
-        video.style.opacity = String(Math.max(0, remaining / FADE_DURATION));
-      }
-      // Full opacity mid-playback
-      else {
-        video.style.opacity = '1';
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(monitorPlayback);
-  }, []);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Start with opacity 0
-    video.style.opacity = '0';
-    video.style.transition = 'none';
-
-    const handlePlay = () => {
-      rafRef.current = requestAnimationFrame(monitorPlayback);
-    };
-
-    const handleEnded = () => {
-      // Cancel animation frame
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-      // Snap to transparent
-      video.style.opacity = '0';
-
-      // Brief pause, then restart
-      setTimeout(() => {
-        video.currentTime = 0;
-        video.play().catch(() => {});
-      }, 100);
-    };
-
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('ended', handleEnded);
-
-    // Initial play
-    video.play().catch(() => {});
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('ended', handleEnded);
-    };
-  }, [monitorPlayback]);
-
+function PremiumBackground() {
   return (
-    <div
-      className="absolute z-0"
-      style={{ top: '300px', inset: 'auto 0 0 0', position: 'absolute' }}
-    >
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        preload="auto"
-        className="w-full h-full object-cover"
-        style={{ opacity: 0 }}
-        src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_083109_283f3553-e28f-428b-a723-d639c617eb2b.mp4"
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden" style={{ top: '92px' }} aria-hidden="true">
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'linear-gradient(180deg, #FFFFFF 0%, #F5F7FA 32%, #DDE5ED 100%)',
+        }}
       />
-      {/* Gradient overlays over video */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-white pointer-events-none" />
+
+      <div
+        className="absolute inset-x-0 top-0 h-[560px]"
+        style={{
+          background: 'linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(255,255,255,0.98) 58%, rgba(255,255,255,0.24) 100%)',
+        }}
+      />
+
+      <div
+        className="absolute left-1/2 top-[455px] h-[380px] w-[88vw] max-w-[1180px] -translate-x-1/2 overflow-hidden rounded-[34px] border border-white/70"
+        style={{
+          background: 'linear-gradient(135deg, rgba(7,18,32,0.96) 0%, rgba(18,34,50,0.92) 52%, rgba(99,110,118,0.78) 100%)',
+          boxShadow: '0 44px 130px rgba(9, 22, 39, 0.28), inset 0 1px 0 rgba(255,255,255,0.35)',
+        }}
+      >
+        <div
+          className="absolute inset-0 opacity-50"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.10) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)',
+            backgroundSize: '76px 76px',
+          }}
+        />
+
+        <div className="absolute left-[7%] top-[17%] h-[34%] w-[22%] rounded-[22px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md" />
+        <div className="absolute left-[33%] top-[10%] h-[46%] w-[34%] rounded-[26px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md" />
+        <div className="absolute right-[7%] top-[18%] h-[34%] w-[22%] rounded-[22px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md" />
+
+        <div className="absolute left-[11%] top-[25%] h-2 w-[13%] rounded-full bg-white/40" />
+        <div className="absolute left-[11%] top-[33%] h-2 w-[18%] rounded-full bg-cyan-100/20" />
+        <div className="absolute left-[11%] top-[41%] h-2 w-[10%] rounded-full bg-white/20" />
+
+        <div className="absolute left-[39%] top-[23%] h-2 w-[20%] rounded-full bg-white/40" />
+        <div className="absolute left-[39%] top-[32%] h-2 w-[16%] rounded-full bg-cyan-100/25" />
+        <div className="absolute left-[39%] top-[41%] h-2 w-[23%] rounded-full bg-white/20" />
+
+        <div className="absolute right-[11%] top-[26%] h-2 w-[13%] rounded-full bg-white/30" />
+        <div className="absolute right-[11%] top-[35%] h-2 w-[18%] rounded-full bg-cyan-100/20" />
+        <div className="absolute right-[11%] top-[44%] h-2 w-[10%] rounded-full bg-white/20" />
+
+        <div className="absolute inset-x-[9%] bottom-[88px] h-px bg-white/30" />
+        <div className="absolute inset-x-[18%] bottom-[56px] h-px bg-white/20" />
+        <div className="absolute bottom-0 left-1/2 h-[130px] w-[72%] -translate-x-1/2 bg-black/40" style={{ clipPath: 'polygon(11% 0, 89% 0, 100% 100%, 0 100%)' }} />
+      </div>
+
+      <div
+        className="absolute left-1/2 bottom-[82px] h-[120px] w-[76vw] max-w-[940px] -translate-x-1/2"
+        style={{
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(9,18,31,0.18) 100%)',
+          clipPath: 'polygon(14% 0, 86% 0, 100% 100%, 0 100%)',
+          filter: 'blur(0.2px)',
+        }}
+      />
+
+      <div
+        className="absolute inset-x-0 bottom-0 h-[310px]"
+        style={{
+          background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.48) 44%, rgba(255,255,255,0.96) 100%)',
+        }}
+      />
     </div>
   );
 }
@@ -104,6 +87,7 @@ function Navbar() {
     { label: 'Home', active: true },
     { label: 'Practice', active: false, action: () => navigate('/upload') },
     { label: 'Dashboard', active: false, action: () => navigate('/dashboard') },
+    { label: 'Login', active: false, action: () => navigate('/login') },
   ];
 
   return (
@@ -140,14 +124,14 @@ function Navbar() {
 
         {/* CTA Button */}
         <button
-          onClick={() => navigate('/upload')}
+          onClick={() => navigate('/signup')}
           className="rounded-full px-6 py-2.5 text-sm text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
           style={{
             backgroundColor: '#000000',
             fontFamily: "'Inter', sans-serif",
           }}
         >
-          Begin Interview
+          Sign up
         </button>
       </div>
     </nav>
@@ -171,7 +155,7 @@ function HeroSection() {
         style={{
           fontFamily: "'Instrument Serif', serif",
           lineHeight: 0.95,
-          letterSpacing: '-2.46px',
+          letterSpacing: 0,
           color: '#000000',
         }}
       >
@@ -187,18 +171,19 @@ function HeroSection() {
         className="animate-fade-rise-delay text-base sm:text-lg max-w-2xl mt-8 leading-relaxed"
         style={{
           fontFamily: "'Inter', sans-serif",
-          color: '#6F6F6F',
+          color: '#334155',
+          textShadow: '0 1px 18px rgba(255,255,255,0.96)',
         }}
       >
-        AI-powered mock interviews that adapt to your skill level in real time.
-        Upload your resume, speak your answers, and get instant feedback from
-        an intelligent scoring engine.
+        Interview readiness practice that adapts to your skill level in real time.
+        Upload your resume, speak your answers, and get deterministic feedback
+        from the scoring engine.
       </p>
 
       {/* CTA Button */}
       <button
         onClick={() => navigate('/upload')}
-        className="animate-fade-rise-delay-2 rounded-full px-14 py-5 text-base mt-12 text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
+        className="animate-fade-rise-delay-2 rounded-full px-14 py-5 text-base mt-20 text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
         style={{
           backgroundColor: '#000000',
           fontFamily: "'Inter', sans-serif",
@@ -216,8 +201,8 @@ function HeroSection() {
 export default function Landing() {
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-white">
-      {/* Video background layer */}
-      <VideoBackground />
+      {/* Premium background layer */}
+      <PremiumBackground />
 
       {/* Navigation */}
       <Navbar />

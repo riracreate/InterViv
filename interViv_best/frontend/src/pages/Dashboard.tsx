@@ -1,7 +1,23 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "motion/react";
-import { ArrowLeft, Download, Share2, Sparkles, ScrollText } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart3,
+  BookOpen,
+  Briefcase,
+  Building2,
+  Clock,
+  Download,
+  Map,
+  Play,
+  RotateCcw,
+  Share2,
+  Sparkles,
+  ScrollText,
+  Target,
+  Upload,
+} from "lucide-react";
 import { fetchDashboard } from "../lib/api";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
@@ -39,7 +55,7 @@ function mapRealDataToDashboard(session) {
   const layers = [
     { label: "Layer 1", subtitle: "Content & Relevance", score: session.averages?.nlp_score ?? avg },
     { label: "Layer 2", subtitle: "Quality & Depth",     score: session.averages?.kg_score  ?? avg * 0.9 },
-    { label: "Layer 3", subtitle: "ML Judge Signal",     score: avg * 0.95 },
+    { label: "Layer 3", subtitle: "Classifier Signal",   score: avg * 0.95 },
   ];
 
   const radarSkills = Object.keys(topicScores).length > 0
@@ -70,6 +86,9 @@ function mapRealDataToDashboard(session) {
     confidenceBand: typeof r.confidence_band === "number" ? r.confidence_band : null,
     difficulty: (r.difficulty || "medium").charAt(0).toUpperCase() + (r.difficulty || "medium").slice(1),
     feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
+    topic: r.topic || r.sub_domain || r.question_context?.topic || r.question_context?.sub_domain || "",
+    questionType: r.question_type || r.question_context?.question_type || "",
+    followups: r.followups || r.question_context?.followups || [],
     scoring_breakdown: r.scoring_breakdown || null,
   }));
 
@@ -121,6 +140,33 @@ const item = {
   show:   { opacity: 1, y: 0,  filter: "blur(0px)",  transition: { duration: 0.55, ease: [0.2, 0.8, 0.2, 1] } },
 };
 
+const PRACTICE_COMPANIES = ["TCS", "Infosys", "Accenture", "Wipro", "Amazon", "Microsoft", "Google", "Meta"];
+const PRACTICE_ROLES = [
+  "SDE Intern",
+  "Software Engineer",
+  "Full Stack Developer",
+  "Frontend Developer",
+  "Backend Developer",
+  "Data Analyst",
+  "Data Scientist",
+  "DevOps Engineer",
+];
+const PRACTICE_SKILLS = [
+  "DSA",
+  "DBMS",
+  "OS",
+  "CN",
+  "OOP",
+  "Python",
+  "Java",
+  "JavaScript",
+  "React",
+  "Node.js",
+  "FastAPI",
+  "System Design",
+  "HR / Behavioral",
+];
+
 function GlassButton({ icon, label, variant = "primary", onClick }) {
   const base = "group inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 active:translate-y-[1px]";
   const primary   = "bg-white/10 text-white border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.55)] hover:bg-white/14 hover:border-white/25";
@@ -133,6 +179,149 @@ function GlassButton({ icon, label, variant = "primary", onClick }) {
   );
 }
 
+function DashboardCard({ icon, title, value = null, detail, action = null, muted = false }) {
+  return (
+    <div className="flex min-h-[172px] flex-col justify-between rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${muted ? "bg-slate-100 text-slate-500" : "bg-slate-950 text-white"}`}>
+            {icon}
+          </div>
+          {value && <span className="rounded-md bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">{value}</span>}
+        </div>
+        <h3 className="mt-4 text-lg font-semibold tracking-normal text-slate-950">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
+      </div>
+      {action && <div className="mt-5 border-t border-slate-100 pt-3 text-sm font-semibold text-slate-950">{action}</div>}
+    </div>
+  );
+}
+
+function DashboardHome() {
+  return (
+    <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <nav className="flex flex-wrap items-center justify-between gap-3">
+          <Link to="/" className="text-3xl tracking-normal text-slate-950" style={{ fontFamily: "'Instrument Serif', serif" }}>
+            interViv
+          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/upload" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:scale-[1.02]">
+              <Play className="h-4 w-4" />
+              Start Interview
+            </Link>
+            <Link to="/signup" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-300">
+              Sign up
+            </Link>
+          </div>
+        </nav>
+
+        <section className="mt-8 border-b border-slate-200 pb-8">
+          <div className="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-end">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-700">Interview Readiness Platform</p>
+              <h1 className="mt-3 max-w-3xl text-3xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-5xl">
+                Welcome back. Build readiness by company, role, resume, and skill.
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+                interViv is a company-style, role-style, resume-aware adaptive mock interview platform for students.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+              <Link to="/upload" className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+                <Play className="h-4 w-4" />
+                Start Interview
+              </Link>
+              <Link to="/upload" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-300">
+                <Upload className="h-4 w-4" />
+                Resume Analysis
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-7 grid gap-3 border-y border-slate-200 py-4 sm:grid-cols-4">
+            <div>
+              <p className="text-2xl font-semibold text-slate-950">0</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">sessions</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-950">8</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">company tracks</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-950">8</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">role tracks</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-950">13</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">skill areas</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DashboardCard
+            icon={<BarChart3 className="h-5 w-5" />}
+            title="Overall Readiness Score"
+            value="New"
+            detail="Complete an interview session to unlock your readiness score and confidence bands."
+            action="Start with a resume upload"
+          />
+          <DashboardCard
+            icon={<Building2 className="h-5 w-5" />}
+            title="Company Practice"
+            value={`${PRACTICE_COMPANIES.length} tracks`}
+            detail={PRACTICE_COMPANIES.join(", ")}
+            action="Company-style questions"
+          />
+          <DashboardCard
+            icon={<Briefcase className="h-5 w-5" />}
+            title="Role Practice"
+            value={`${PRACTICE_ROLES.length} roles`}
+            detail={PRACTICE_ROLES.slice(0, 5).join(", ") + ", and more"}
+            action="Role-aware preparation"
+          />
+          <DashboardCard
+            icon={<BookOpen className="h-5 w-5" />}
+            title="Skill Library"
+            value={`${PRACTICE_SKILLS.length} skills`}
+            detail={PRACTICE_SKILLS.slice(0, 8).join(", ") + ", ..."}
+            action="Skill-first drills"
+          />
+          <DashboardCard
+            icon={<Target className="h-5 w-5" />}
+            title="Weak Skills"
+            detail="Your weakest skills appear here after two or more practice rounds."
+            action="Empty until you practice"
+            muted
+          />
+          <DashboardCard
+            icon={<Clock className="h-5 w-5" />}
+            title="Recent Sessions"
+            detail="Past interview sessions will show score, skill focus, and next-step summaries."
+            action="No sessions yet"
+            muted
+          />
+          <DashboardCard
+            icon={<RotateCcw className="h-5 w-5" />}
+            title="Replay / Past Questions"
+            detail="Review previous questions, your answers, and deterministic scoring breakdowns."
+            action="Available after a session"
+            muted
+          />
+          <DashboardCard
+            icon={<Map className="h-5 w-5" />}
+            title="Recommended Roadmap"
+            detail="Get a 7, 14, or 30 day plan after selecting a target role and generating a gap report."
+            action="Target role required"
+            muted
+          />
+        </section>
+      </div>
+    </main>
+  );
+}
+
 export default function Dashboard() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -141,7 +330,7 @@ export default function Dashboard() {
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    if (!sessionId) { setErr('No session ID.'); setLoading(false); return; }
+    if (!sessionId) { setLoading(false); return; }
     fetchDashboard(sessionId)
       .then(data => { setRaw(data); setLoading(false); })
       .catch(e => { setErr(e.message); setLoading(false); });
@@ -159,6 +348,10 @@ export default function Dashboard() {
         </div>
       </div>
     );
+  }
+
+  if (!sessionId) {
+    return <DashboardHome />;
   }
 
   if (err || !data) {
@@ -180,15 +373,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen w-full bg-[#0a0a0a] text-white selection:bg-cyan-300/20 selection:text-white">
-      {/* Cinematic backplate */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-40 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[90px]" />
-        <div className="absolute -bottom-56 left-0 h-[520px] w-[720px] rounded-full bg-blue-500/10 blur-[110px]" />
-        <div className="absolute right-0 top-1/3 h-[520px] w-[720px] rounded-full bg-indigo-500/10 blur-[120px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(34,211,238,0.08),transparent_35%),radial-gradient(circle_at_90%_30%,rgba(59,130,246,0.08),transparent_40%),radial-gradient(circle_at_50%_90%,rgba(99,102,241,0.07),transparent_45%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(10,10,10,0.35),rgba(10,10,10,1))]" />
-      </div>
-
       <motion.div {...pageMotion} className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button onClick={() => navigate('/')}

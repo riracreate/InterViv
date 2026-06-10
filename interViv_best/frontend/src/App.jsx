@@ -6,11 +6,16 @@ import Interview from './pages/Interview.jsx';
 import Dashboard from './pages/Dashboard.tsx';
 import GapAnalysis from './pages/GapAnalysis.jsx';
 import Roadmap from './pages/Roadmap.jsx';
+import Login from './pages/Login.jsx';
+import Signup from './pages/Signup.jsx';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/register" element={<Signup />} />
       <Route path="/upload" element={<Upload />} />
       <Route path="/interview/:sessionId" element={<Interview />} />
       <Route path="/dashboard/:sessionId" element={<Dashboard />} />

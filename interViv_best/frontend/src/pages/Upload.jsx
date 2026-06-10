@@ -10,37 +10,85 @@ const DOMAIN_PRESETS = [
     name: 'Data Structures & Algorithms',
     short: 'DSA',
     tags: ['Arrays', 'Trees', 'Graphs', 'DP'],
-    skills: ['DSA', 'Data Structures', 'Algorithms', 'Dynamic Programming', 'Graphs'],
+    skills: ['DSA', 'Data Structures', 'Algorithms', 'Dynamic Programming', 'Graphs', 'Recursion', 'Greedy', 'Sorting'],
+  },
+  {
+    name: 'CS Fundamentals',
+    short: 'CS Core',
+    tags: ['OOP', 'OS', 'DBMS', 'CN'],
+    skills: ['OOP', 'DBMS', 'OS', 'CN', 'System Design'],
   },
   {
     name: 'Backend Engineering',
     short: 'Backend',
     tags: ['Python', 'Node.js', 'REST', 'Databases'],
-    skills: ['Python', 'Node.js', 'Java', 'FastAPI', 'REST', 'PostgreSQL'],
-  },
-  {
-    name: 'System Design',
-    short: 'System Design',
-    tags: ['Scalability', 'Docker', 'Cloud', 'Kafka'],
-    skills: ['System Design', 'Docker', 'Kubernetes', 'AWS', 'Kafka', 'Microservices'],
+    skills: ['Python', 'Node.js', 'Java', 'Go', 'FastAPI', 'Spring Boot', 'REST', 'GraphQL', 'PostgreSQL'],
   },
   {
     name: 'Frontend Engineering',
     short: 'Frontend',
     tags: ['React', 'TypeScript', 'CSS', 'Performance'],
-    skills: ['JavaScript', 'TypeScript', 'React', 'Next.js', 'HTML', 'CSS'],
+    skills: ['JavaScript', 'TypeScript', 'React', 'Next.js', 'Vue', 'HTML', 'CSS', 'Tailwind CSS'],
   },
   {
-    name: 'Machine Learning',
-    short: 'ML',
-    tags: ['PyTorch', 'scikit-learn', 'NLP', 'CV'],
-    skills: ['ML', 'PyTorch', 'TensorFlow', 'scikit-learn', 'NLP', 'Computer Vision'],
+    name: 'System Design',
+    short: 'System Design',
+    tags: ['Scalability', 'Caching', 'Queues', 'Microservices'],
+    skills: ['System Design', 'Scalability', 'Microservices', 'Caching', 'Load Balancing', 'Message Queues', 'Kafka'],
   },
   {
     name: 'Databases',
     short: 'Databases',
     tags: ['SQL', 'MongoDB', 'Redis', 'Indexing'],
-    skills: ['DBMS', 'SQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Indexing'],
+    skills: ['DBMS', 'SQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Indexing', 'Transactions', 'NoSQL'],
+  },
+  {
+    name: 'DevOps & Cloud',
+    short: 'DevOps',
+    tags: ['Docker', 'Kubernetes', 'AWS', 'CI/CD'],
+    skills: ['Docker', 'Kubernetes', 'AWS', 'CI/CD', 'Terraform', 'Linux', 'Monitoring'],
+  },
+  {
+    name: 'Machine Learning',
+    short: 'ML',
+    tags: ['PyTorch', 'scikit-learn', 'NLP', 'CV'],
+    skills: ['ML', 'PyTorch', 'TensorFlow', 'scikit-learn', 'NLP', 'Computer Vision', 'Deep Learning'],
+  },
+  {
+    name: 'AI & LLMs',
+    short: 'AI / LLMs',
+    tags: ['LLMs', 'RAG', 'Prompting', 'Embeddings'],
+    skills: ['LLMs', 'Transformers', 'Prompt Engineering', 'RAG', 'Embeddings', 'Fine-tuning'],
+  },
+  {
+    name: 'Data Engineering',
+    short: 'Data Eng',
+    tags: ['Spark', 'Kafka', 'Airflow', 'ETL'],
+    skills: ['SQL', 'Spark', 'Kafka', 'Airflow', 'ETL', 'Data Warehousing', 'Pandas'],
+  },
+  {
+    name: 'Mobile Engineering',
+    short: 'Mobile',
+    tags: ['Android', 'iOS', 'Flutter', 'React Native'],
+    skills: ['Android', 'iOS', 'Swift', 'Kotlin', 'Flutter', 'React Native'],
+  },
+  {
+    name: 'Security',
+    short: 'Security',
+    tags: ['Crypto', 'OWASP', 'Auth', 'Network'],
+    skills: ['Security', 'Cryptography', 'OWASP', 'Network Security', 'Authentication'],
+  },
+  {
+    name: 'Programming Languages',
+    short: 'Languages',
+    tags: ['C++', 'Go', 'Rust', 'TypeScript'],
+    skills: ['C++', 'C', 'Java', 'Python', 'Go', 'Rust', 'TypeScript'],
+  },
+  {
+    name: 'Behavioural',
+    short: 'Behavioural',
+    tags: ['Leadership', 'Teamwork', 'Communication'],
+    skills: ['HR', 'Communication', 'Leadership', 'Teamwork', 'Problem Solving'],
   },
 ];
 
@@ -135,16 +183,16 @@ export default function Upload() {
     setError('');
     try {
       const primarySkill = selectedSkills[0];
-      // Target company/role is persisted via PATCH /auth/me/target when the
-      // user clicks "Save as my target" in CompanySelector. The session route
-      // reads it from the user record; anonymous users fall back to general
-      // practice mode for now.
+      // Authenticated users can persist target company/role. Anonymous users
+      // still pass the selected target into this one session.
       const r = await startSession({
         candidate_id: candidateId,
         skill: primarySkill,
         skills: selectedSkills,
         sub_domain: domainProfile[primarySkill] || 'general',
         rounds_per_skill: ROUNDS_PER_SKILL,
+        target_company_id: targetSelection.companyId || null,
+        target_role_id: targetSelection.roleId || null,
       });
       const totalRounds = r.total_rounds || (selectedSkills.length * ROUNDS_PER_SKILL);
       const resolvedCandidateId = r.candidate_id || candidateId;
@@ -242,7 +290,7 @@ export default function Upload() {
               Upload your profile
             </h1>
             <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
-              Our AI engine extracts your skills and builds your interview profile.
+              Our resume parser extracts your skills and builds your interview profile.
             </p>
 
             <div

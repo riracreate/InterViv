@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { Clock, Calendar, BriefcaseBusiness, Target, TrendingUp } from "lucide-react";
+import { Clock, Calendar, BriefcaseBusiness, Target } from "lucide-react";
 
 function StatPill(props: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -85,7 +85,6 @@ export function ScoreHero(props: {
   dateLabel: string;
   durationLabel: string;
   skillFocus: string;
-  topPercent: number;
   accentRingClass: string;
   accentTextClass: string;
 }) {
@@ -100,11 +99,6 @@ export function ScoreHero(props: {
             >
               Results Dashboard
             </div>
-
-            <span className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs text-cyan-100 backdrop-blur-xl">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Top {props.topPercent}%
-            </span>
           </div>
 
           <p className="mt-2 max-w-2xl text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
@@ -137,4 +131,3 @@ export function ScoreHero(props: {
     </section>
   );
 }
-
