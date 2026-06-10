@@ -1,0 +1,333 @@
+{
+  "bank_path": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/data/fallback_question_bank.csv",
+  "total_questions": 53,
+  "minimum_expected_questions": 50,
+  "schema_ok": true,
+  "counts": {
+    "company": {
+      "Accenture": 2,
+      "Amazon": 9,
+      "Google": 9,
+      "Infosys": 6,
+      "Meta": 7,
+      "Microsoft": 9,
+      "TCS": 6,
+      "Wipro": 5
+    },
+    "role": {
+      "Backend Developer": 2,
+      "Data Analyst": 2,
+      "Data Scientist": 2,
+      "Frontend Developer": 3,
+      "Full Stack Developer": 2,
+      "SDE Intern": 10,
+      "Software Engineer": 26,
+      "System Engineer": 6
+    },
+    "skill": {
+      "CN": 6,
+      "DBMS": 6,
+      "DSA": 6,
+      "FastAPI": 1,
+      "HR": 6,
+      "JavaScript": 2,
+      "Node.js": 1,
+      "OOP": 6,
+      "OS": 6,
+      "Python": 6,
+      "React": 2,
+      "System Design": 5
+    },
+    "difficulty": {
+      "easy": 17,
+      "hard": 10,
+      "medium": 26
+    },
+    "question_type": {
+      "behavioral": 6,
+      "coding": 4,
+      "conceptual": 35,
+      "system_design": 8
+    },
+    "company_skill": {
+      "Accenture / DBMS": 1,
+      "Accenture / FastAPI": 1,
+      "Amazon / CN": 1,
+      "Amazon / DBMS": 1,
+      "Amazon / DSA": 1,
+      "Amazon / HR": 1,
+      "Amazon / JavaScript": 1,
+      "Amazon / OOP": 1,
+      "Amazon / OS": 1,
+      "Amazon / Python": 1,
+      "Amazon / System Design": 1,
+      "Google / CN": 1,
+      "Google / DBMS": 1,
+      "Google / DSA": 1,
+      "Google / HR": 1,
+      "Google / OOP": 1,
+      "Google / OS": 1,
+      "Google / Python": 1,
+      "Google / React": 1,
+      "Google / System Design": 1,
+      "Infosys / CN": 1,
+      "Infosys / DSA": 1,
+      "Infosys / HR": 1,
+      "Infosys / OOP": 1,
+      "Infosys / OS": 1,
+      "Infosys / Python": 1,
+      "Meta / DBMS": 1,
+      "Meta / DSA": 1,
+      "Meta / HR": 1,
+      "Meta / JavaScript": 1,
+      "Meta / Node.js": 1,
+      "Meta / OOP": 1,
+      "Meta / System Design": 1,
+      "Microsoft / CN": 1,
+      "Microsoft / DBMS": 1,
+      "Microsoft / DSA": 1,
+      "Microsoft / HR": 1,
+      "Microsoft / OOP": 1,
+      "Microsoft / OS": 1,
+      "Microsoft / Python": 1,
+      "Microsoft / React": 1,
+      "Microsoft / System Design": 1,
+      "TCS / CN": 1,
+      "TCS / DSA": 1,
+      "TCS / OOP": 1,
+      "TCS / OS": 1,
+      "TCS / Python": 1,
+      "TCS / System Design": 1,
+      "Wipro / CN": 1,
+      "Wipro / DBMS": 1,
+      "Wipro / HR": 1,
+      "Wipro / OS": 1,
+      "Wipro / Python": 1
+    }
+  },
+  "issues": [
+    {
+      "row": 8,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 10,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 11,
+      "severity": "warning",
+      "message": "Role 'Data Analyst' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 12,
+      "severity": "warning",
+      "message": "Role 'Data Analyst' is not listed under company graph entry 'Accenture'."
+    },
+    {
+      "row": 13,
+      "severity": "warning",
+      "message": "Role 'Data Scientist' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 16,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 18,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 22,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 24,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 30,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 35,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 36,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 37,
+      "severity": "warning",
+      "message": "Role 'Data Scientist' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 38,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 39,
+      "severity": "warning",
+      "message": "Role 'Full Stack Developer' is not listed under company graph entry 'Amazon'."
+    },
+    {
+      "row": 40,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 41,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 42,
+      "severity": "warning",
+      "message": "Role 'Full Stack Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 43,
+      "severity": "warning",
+      "message": "Role 'Backend Developer' is not listed under company graph entry 'Accenture'."
+    },
+    {
+      "row": 45,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 47,
+      "severity": "warning",
+      "message": "Role 'Backend Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 50,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    }
+  ],
+  "errors": [],
+  "warnings": [
+    {
+      "row": 8,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 10,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 11,
+      "severity": "warning",
+      "message": "Role 'Data Analyst' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 12,
+      "severity": "warning",
+      "message": "Role 'Data Analyst' is not listed under company graph entry 'Accenture'."
+    },
+    {
+      "row": 13,
+      "severity": "warning",
+      "message": "Role 'Data Scientist' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 16,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 18,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 22,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 24,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 30,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 35,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    },
+    {
+      "row": 36,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 37,
+      "severity": "warning",
+      "message": "Role 'Data Scientist' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 38,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 39,
+      "severity": "warning",
+      "message": "Role 'Full Stack Developer' is not listed under company graph entry 'Amazon'."
+    },
+    {
+      "row": 40,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 41,
+      "severity": "warning",
+      "message": "Role 'Frontend Developer' is not listed under company graph entry 'Google'."
+    },
+    {
+      "row": 42,
+      "severity": "warning",
+      "message": "Role 'Full Stack Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 43,
+      "severity": "warning",
+      "message": "Role 'Backend Developer' is not listed under company graph entry 'Accenture'."
+    },
+    {
+      "row": 45,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Microsoft'."
+    },
+    {
+      "row": 47,
+      "severity": "warning",
+      "message": "Role 'Backend Developer' is not listed under company graph entry 'Meta'."
+    },
+    {
+      "row": 50,
+      "severity": "warning",
+      "message": "Role 'Software Engineer' is not listed under company graph entry 'Wipro'."
+    }
+  ]
+}

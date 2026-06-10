@@ -1,0 +1,23 @@
+{
+  "docx": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/interViv_ieee_extended_manuscript.docx",
+  "pdf": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/interViv_ieee_extended_manuscript_preview.pdf",
+  "markdown": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/interViv_ieee_extended_manuscript.md",
+  "figures": {
+    "architecture": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig01_architecture.png",
+    "pipeline": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig02_pipeline.png",
+    "question_flow": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig03_question_priority.png",
+    "fallback_skill": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig04_fallback_skill_coverage.png",
+    "difficulty": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig05_fallback_difficulty_mix.png",
+    "model": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig06_classifier_metrics.png",
+    "kappa": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig07_human_kappa.png",
+    "human_corr": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig08_system_human_correlation.png",
+    "human_cm": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig09_human_confusion.png",
+    "persona_cm": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig10_persona_confusion.png",
+    "guard_caps": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig11_guard_caps.png",
+    "tests": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig12_test_status.png",
+    "company": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/research_paper/figures/fig13_company_coverage.png"
+  },
+  "pdf_pages": 46,
+  "sections": 43,
+  "notes": "DOCX package structure validated. Full visual DOCX render was not performed because LibreOffice is unavailable in this environment."
+}

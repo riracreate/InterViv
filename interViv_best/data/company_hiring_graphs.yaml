@@ -58,6 +58,30 @@ companies:
             display_name: "Behavioural"
             required_level: 70
             importance_weight: 0.20
+      - id: tcs_digital_specialist
+        title: "Digital Specialist Engineer"
+        level: "mid"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 78
+            importance_weight: 0.25
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 72
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 70
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 62
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 72
+            importance_weight: 0.20
 
   - id: infosys
     name: "Infosys"
@@ -90,6 +114,30 @@ companies:
             display_name: "Behavioural"
             required_level: 70
             importance_weight: 0.25
+      - id: infosys_specialist_programmer
+        title: "Specialist Programmer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 82
+            importance_weight: 0.40
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 70
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 68
+            importance_weight: 0.15
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 58
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 70
+            importance_weight: 0.15
 
   - id: wipro
     name: "Wipro"
@@ -122,6 +170,30 @@ companies:
             display_name: "Behavioural"
             required_level: 65
             importance_weight: 0.25
+      - id: wipro_data_engineer
+        title: "Data Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 75
+            importance_weight: 0.30
+          - skill: "Python"
+            display_name: "Python"
+            required_level: 70
+            importance_weight: 0.25
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 58
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 65
+            importance_weight: 0.15
 
   - id: amazon
     name: "Amazon"
@@ -154,6 +226,30 @@ companies:
             display_name: "Behavioural"
             required_level: 75
             importance_weight: 0.25
+      - id: amazon_sde1
+        title: "SDE I (New Grad)"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 88
+            importance_weight: 0.40
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 75
+            importance_weight: 0.15
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 80
+            importance_weight: 0.15
 
   - id: microsoft
     name: "Microsoft"
@@ -186,3 +282,195 @@ companies:
             display_name: "Behavioural"
             required_level: 75
             importance_weight: 0.20
+      - id: microsoft_sde
+        title: "Software Engineer (New Grad)"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 85
+            importance_weight: 0.35
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 68
+            importance_weight: 0.20
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 78
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 78
+            importance_weight: 0.15
+
+  - id: accenture
+    name: "Accenture"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.accenture.com/us-en/careers"
+      notes: "Student and graduate software engineering practice track."
+    roles:
+      - id: accenture_associate_software_engineer
+        title: "Associate Software Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 70
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 55
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 70
+            importance_weight: 0.25
+      - id: accenture_ml_analyst
+        title: "AI/ML Engineering Analyst"
+        level: "entry"
+        skill_requirements:
+          - skill: "ML"
+            display_name: "Machine Learning"
+            required_level: 72
+            importance_weight: 0.30
+          - skill: "Python"
+            display_name: "Python"
+            required_level: 72
+            importance_weight: 0.25
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 60
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 70
+            importance_weight: 0.15
+
+  - id: google
+    name: "Google"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.google.com/about/careers/applications/students/"
+      notes: "Student software engineering practice track."
+    roles:
+      - id: google_software_engineer
+        title: "Software Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 88
+            importance_weight: 0.40
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 65
+            importance_weight: 0.20
+          - skill: "OOP"
+            display_name: "Object-Oriented Programming"
+            required_level: 75
+            importance_weight: 0.15
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 75
+            importance_weight: 0.15
+      - id: google_ml_engineer
+        title: "Machine Learning Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "ML"
+            display_name: "Machine Learning"
+            required_level: 80
+            importance_weight: 0.35
+          - skill: "Python"
+            display_name: "Python"
+            required_level: 80
+            importance_weight: 0.25
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 80
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 65
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 75
+            importance_weight: 0.10
+
+  - id: meta
+    name: "Meta"
+    logo_url: null
+    public_info:
+      careers_url: "https://www.metacareers.com/careerprograms/students"
+      notes: "Student software engineering practice track."
+    roles:
+      - id: meta_software_engineer
+        title: "Software Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 85
+            importance_weight: 0.35
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 70
+            importance_weight: 0.20
+          - skill: "CN"
+            display_name: "Computer Networks"
+            required_level: 65
+            importance_weight: 0.15
+          - skill: "DBMS"
+            display_name: "Databases"
+            required_level: 65
+            importance_weight: 0.10
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 75
+            importance_weight: 0.20
+      - id: meta_production_engineer
+        title: "Production Engineer"
+        level: "entry"
+        skill_requirements:
+          - skill: "OS"
+            display_name: "Operating Systems"
+            required_level: 78
+            importance_weight: 0.25
+          - skill: "DSA"
+            display_name: "Data Structures & Algorithms"
+            required_level: 75
+            importance_weight: 0.25
+          - skill: "CN"
+            display_name: "Computer Networks"
+            required_level: 72
+            importance_weight: 0.20
+          - skill: "System Design"
+            display_name: "System Design"
+            required_level: 68
+            importance_weight: 0.15
+          - skill: "HR"
+            display_name: "Behavioural"
+            required_level: 72
+            importance_weight: 0.15

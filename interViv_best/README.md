@@ -1,4 +1,6 @@
-# interViv — Best-Of Build
+# interViv - Interview Readiness Platform
+
+interViv is an **Interview Readiness Platform**. LLMs are used only for interview question generation; scoring, feedback, readiness calculations, roadmaps, and gap analysis are deterministic Python.
 
 This folder is a curated assembly of the **best files** from all versions of the project.
 Every file was chosen by reading and comparing its equivalent across all four codebases:
@@ -17,7 +19,7 @@ Every file was chosen by reading and comparing its equivalent across all four co
 | `modules/ner_scorer.py` | AI-Driven | Most recent, 70 entity patterns |
 | `modules/c4_feedback.py` | AI-Driven | Most recent |
 | `modules/resume_parser.py` | AI-Driven | Most recent |
-| `modules/svm_model.joblib` | AI-Driven v11 | Trained on more features than plain v10 |
+| `modules/answer_quality_lr.joblib` | interViv retrain | Logistic Regression classifier trained on v11 answer-quality features |
 | `backend/scoring/pipeline.py` | interview-platform | Cleanest import paths, identical logic |
 | `backend/routes/session.py` | interview-platform | Multi-skill v2: skills[], rounds_per_skill, _skill_for_round() |
 | `backend/routes/answer.py` | interview-platform | Per-skill Elo update, total_rounds, difficulty_delta |
@@ -47,7 +49,7 @@ Every file was chosen by reading and comparing its equivalent across all four co
 # 1. Python backend
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env — set INTERVIV_USE_MEMORY_DB=true for demo (no MongoDB needed)
+# Edit .env. Set DATABASE_URL for PostgreSQL persistence, or leave it blank for demo memory mode.
 uvicorn backend.main:app --reload --port 8000
 
 # 2. Frontend
@@ -56,6 +58,42 @@ npm install
 npm run dev
 # Opens at http://localhost:5173
 ```
+
+### PostgreSQL and Auth
+
+Task 1 adds SQLAlchemy/Alembic persistence and JWT auth:
+
+```bash
+docker compose up postgres
+DATABASE_URL=postgresql+psycopg://interviv:interviv@localhost:5432/interviv alembic upgrade head
+uvicorn backend.main:app --reload --port 8000
+```
+
+Auth endpoints:
+
+- `POST /auth/signup`
+- `POST /auth/login`
+- `GET /auth/me`
+
+If `DATABASE_URL` is missing, the backend keeps the in-memory fallback for local demos and CI.
+
+### Phase 2 Readiness Platform
+
+Phase 2 adds the durable readiness layer on top of the deterministic scoring
+pipeline:
+
+- persistent users, sessions, rounds, skill graph, and concept mastery
+- curated company-role hiring profiles for TCS, Infosys, Wipro, Amazon, and Microsoft
+- gap analysis against a selected target role
+- concept mastery map
+- personalized roadmap
+- dashboard readiness, gap, mastery, and confidence-band surfaces
+- adaptive question selection toward weak skills/concepts
+- Sentry/Redis/deployment hardening
+
+Evidence is tracked in `docs/post_phase2_task_1.md` through
+`docs/post_phase2_task_8.md`, with the final status in
+`docs/phase2_status.md`.
 
 ### Question Generation
 
@@ -67,6 +105,7 @@ QUESTION_LLM_PROVIDER=auto
 OPENAI_API_KEY=...
 # or
 OPENROUTER_API_KEY=...
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5
 ```
 
 The CSV dataset is still kept for evaluation, scoring references, retraining,
@@ -85,8 +124,9 @@ interViv_best/
 │   ├── config.py             Settings (Elo, max_rounds, DB mode)
 │   ├── integrations.py       Module loader, map_skills_to_domains
 │   ├── db/
-│   │   ├── __init__.py       get_database() — picks memory or MongoDB
-│   │   └── memory.py         ← IN-MEMORY DB (no MongoDB needed for demo)
+│   │   ├── __init__.py       get_database() — picks PostgreSQL or memory fallback
+│   │   ├── sqlalchemy_*.py   SQLAlchemy models + route-compatible store
+│   │   └── memory.py         In-memory DB for local demos and CI
 │   ├── models/
 │   │   ├── session.py        SessionDocument + RoundDocument (skills[], rounds_per_skill)
 │   │   └── candidate.py      CandidateDocument
@@ -107,7 +147,8 @@ interViv_best/
 │   ├── c4_feedback.py        Rule-based feedback (16 rules)
 │   ├── resume_parser.py      PDF skill extraction
 │   ├── skill_taxonomy_v2.csv Skill→domain mapping
-│   └── svm_model.joblib      Trained GradientBoosting (v11 features)
+│   ├── answer_quality_lr.joblib Trained Logistic Regression classifier (v11 features)
+│   └── svm_model.joblib      Compatibility alias → answer_quality_lr.joblib
 │
 ├── data/
 │   ├── interview_dataset_v6.csv   875+ questions, 11 skills
@@ -142,7 +183,7 @@ interViv_best/
 │   ├── tailwind.config.js
 │   └── tsconfig.json              allowJs: true (JSX + TSX mix OK)
 │
-├── retrain_ml_model.py        Rebuild svm_model.joblib from ml_training_data.csv
+├── retrain_ml_model.py        Rebuild answer-quality classifier from ml_training_data.csv
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -165,13 +206,18 @@ rounds_per_skill = 3
 ## Scoring Formula
 
 ```
-final_score = 0.85 × NLP_score + 0.15 × KG_score
+final_score = 100 × (
+  0.45 × semantic_or_lexical_match
+  + 0.25 × classifier_score
+  + 0.20 × keyword_coverage
+  + 0.10 × tfidf_overlap
+) + KG_bonus + NER_bonus - penalties
 
-NLP_score   = 0.55×Layer1 + 0.25×Layer2 + 0.20×Layer3
+NLP layer blend = 0.55×Layer1 + 0.25×Layer2 + 0.20×Layer3
 
 Layer1 (Content): TF-IDF cosine(25%) + keyword coverage(15%) + bigram/trigram(15%)
 Layer2 (Quality): depth signals(8%) + structure(7%) + anti-gaming(5%) + clarity(5%)
-Layer3 (ML):      GradientBoosting → Good(80) / Average(50) / Poor(20)
+Layer3 (ML):      Logistic Regression → Good / Average / Poor
 
 Modifiers: difficulty ×(1.00/1.05/1.12) + trade-off/example/edge-case bonus (+5 max)
 Calibration: after round 2 → 85% raw + 15% session average
@@ -179,17 +225,23 @@ Calibration: after round 2 → 85% raw + 15% session average
 
 ---
 
-## Mid-Eval Checklist
+## Phase 2 Checklist
 
 - ✅ PDF resume upload + skill extraction
 - ✅ Multi-skill session (up to 5 skills, 3 rounds each = 15 rounds)
 - ✅ Adaptive Elo per skill (separate rating per skill)
 - ✅ 3-layer NLP scoring (no external API needed)
-- ✅ Trained ML model (v11 features, svm_model.joblib)
+- ✅ Trained ML model (v11 features, answer_quality_lr.joblib)
 - ✅ Knowledge graph scoring (9 skills, 171 edges)
 - ✅ Rule-based feedback (16 C4 conditions)
 - ✅ Voice input (Web Speech API, Chrome/Safari)
-- ✅ **No MongoDB required** (memory.py in-memory DB for demo)
+- ✅ PostgreSQL persistence with in-memory fallback for local demos and CI
 - ✅ Dashboard: score ring, Elo chart, radar, layer breakdown, timeline
+- ✅ Student Skill Graph and Concept Mastery
+- ✅ Company Hiring Graphs with public-reference disclaimer
+- ✅ Gap Analysis and Personalized Roadmap
+- ✅ Dashboard readiness, skill graph, mastery map, and confidence bands
+- ✅ Adaptive question targeting driven by deterministic weak-area state
+- ✅ Deployment hardening hooks for Sentry, Redis cache/rate limits, and warm-up
 - ✅ Dark glass premium UI (Velorah aesthetic)
 - ✅ Landing page with video background
