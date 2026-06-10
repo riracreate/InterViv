@@ -46,6 +46,32 @@ def role_slug_to_db_id(slug: str) -> int | None:
     return _ROLE_SLUG_TO_DB_ID.get(slug)
 
 
+def company_db_id_to_slug(db_id: int | str | None) -> str | None:
+    if db_id is None:
+        return None
+    try:
+        target = int(db_id)
+    except (TypeError, ValueError):
+        return str(db_id)
+    for slug, mapped_id in _COMPANY_SLUG_TO_DB_ID.items():
+        if mapped_id == target:
+            return slug
+    return None
+
+
+def role_db_id_to_slug(db_id: int | str | None) -> str | None:
+    if db_id is None:
+        return None
+    try:
+        target = int(db_id)
+    except (TypeError, ValueError):
+        return str(db_id)
+    for slug, mapped_id in _ROLE_SLUG_TO_DB_ID.items():
+        if mapped_id == target:
+            return slug
+    return None
+
+
 def skill_name_to_db_id(name: str) -> int | None:
     return _SKILL_NAME_TO_DB_ID.get(name)
 
@@ -200,7 +226,9 @@ def _upsert_role_requirements(
 
 
 __all__ = [
+    "company_db_id_to_slug",
     "company_slug_to_db_id",
+    "role_db_id_to_slug",
     "role_slug_to_db_id",
     "seed_company_graph",
     "skill_name_to_db_id",

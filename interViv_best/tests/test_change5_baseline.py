@@ -2,8 +2,8 @@
 Smoke test for Change 5: Human baseline evaluation scripts.
 
 Verifies:
-  1. human_baseline.py generates a CSV with the right columns
-  2. The CSV has system_score values in a sensible range
+  1. The real human baseline workbook has the right columns
+  2. The workbook has system_score values in a sensible range
   3. baseline_analysis.py produces a report without errors given filled data
 
 Run with:  python -m pytest tests/test_change5_baseline.py -v
@@ -13,31 +13,38 @@ import sys, os, pathlib, subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+BASELINE_SHEET = ROOT / "data" / "human_baseline_real_combined.xlsx"
+
+
+def _read_baseline():
+    from scripts.baseline_analysis import read_annotation_sheet
+    return read_annotation_sheet(BASELINE_SHEET)
 
 
 def test_baseline_sheet_exists_and_has_correct_columns():
-    """human_baseline.py must have created data/human_baseline_sheet.csv with required columns."""
-    import pandas as pd
-    sheet = ROOT / "data" / "human_baseline_sheet.csv"
-    assert sheet.exists(), f"human_baseline_sheet.csv not found at {sheet}"
+    """The real human baseline workbook must have the required columns."""
+    assert BASELINE_SHEET.exists(), f"human baseline workbook not found at {BASELINE_SHEET}"
 
-    df = pd.read_csv(sheet)
-    required = {"question", "answer", "system_score", "annotator_1", "annotator_2", "annotator_3", "annotator_4"}
+    df = _read_baseline()
+    required = {
+        "row_id", "question", "ideal_answer", "candidate_answer",
+        "system_score", "annotator_1", "annotator_2", "annotator_3",
+        "ann_mean", "ann_std",
+    }
     missing = required - set(df.columns)
     assert not missing, f"Missing columns: {missing}"
 
 
 def test_baseline_sheet_row_count():
-    """Sheet must have at least 40 rows (50 questions × 4 answers each)."""
-    import pandas as pd
-    df = pd.read_csv(ROOT / "data" / "human_baseline_sheet.csv")
-    assert len(df) >= 40, f"Expected ≥40 rows, got {len(df)}"
+    """Sheet must contain the 30-row real human baseline sample."""
+    df = _read_baseline()
+    assert len(df) >= 30, f"Expected ≥30 rows, got {len(df)}"
 
 
 def test_baseline_system_scores_in_range():
     """system_score must be 0–100 for every row."""
     import pandas as pd
-    df = pd.read_csv(ROOT / "data" / "human_baseline_sheet.csv")
+    df = _read_baseline()
     df["system_score"] = pd.to_numeric(df["system_score"], errors="coerce")
     bad = df[(df["system_score"] < 0) | (df["system_score"] > 100)]
     assert len(bad) == 0, f"{len(bad)} rows have system_score out of [0,100]"

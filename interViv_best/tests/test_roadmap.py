@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
 from backend.main import app  # noqa: E402
 from modules.roadmap_generator import (  # noqa: E402

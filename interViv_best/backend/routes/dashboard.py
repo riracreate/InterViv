@@ -48,6 +48,13 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cleaned = dict(round_document)
         question_context = cleaned.get("question_context", {}) or {}
         cleaned["ideal_answer"] = question_context.get("ideal_answer", "")
+        cleaned["ideal_keywords"] = question_context.get("ideal_keywords", "")
+        cleaned["topic"] = question_context.get("topic") or question_context.get("sub_domain")
+        cleaned["sub_domain"] = question_context.get("sub_domain") or cleaned.get("sub_domain")
+        cleaned["question_type"] = question_context.get("question_type")
+        cleaned["company"] = question_context.get("company")
+        cleaned["role"] = question_context.get("role")
+        cleaned["followups"] = question_context.get("followups") or []
         cleaned.pop("question_context", None)
         cleaned["performance_band"] = _score_bucket(cleaned.get("final_score"))
 

@@ -206,8 +206,9 @@ def resolve_skill(raw_skill: str) -> tuple[str, Optional[str]]:
 
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-_DEFAULT_OPENROUTER_MODEL = "anthropic/claude-haiku-4-5"
+_DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash"
 _DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_LAST_LLM_ERROR: str | None = None
 
 _QUESTION_MODES = {
     "llm",
@@ -238,6 +239,13 @@ def _question_generation_mode() -> str:
     }
     mode = aliases.get(mode, mode)
     return mode if mode in _QUESTION_MODES else "llm"
+
+
+def _strict_llm_required(mode: str) -> bool:
+    raw = os.getenv("QUESTION_REQUIRE_LLM")
+    if raw is None:
+        return mode == "llm"
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _llm_provider() -> tuple[str | None, str | None, str | None]:
@@ -314,8 +322,12 @@ def _chat_completion_url(provider: str) -> str:
 
 
 def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, asked: list[str]) -> Optional[dict]:
+    global _LAST_LLM_ERROR
+    _LAST_LLM_ERROR = None
+
     provider, api_key, model = _llm_provider()
     if not provider or not api_key or not model:
+        _LAST_LLM_ERROR = "No supported LLM provider/key/model was configured."
         return None
 
     prompt = _build_llm_prompt(skill, sub_domain, difficulty, asked)
@@ -333,6 +345,8 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "http://localhost:5173"),
+            "X-Title": os.getenv("OPENROUTER_APP_NAME", "interViv"),
         },
         method="POST",
     )
@@ -340,9 +354,21 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
     try:
         with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
             raw = resp.read().decode("utf-8")
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        _LAST_LLM_ERROR = f"HTTP {exc.code}: {detail[:500]}"
         return None
-    except Exception:
+    except urllib.error.URLError as exc:
+        _LAST_LLM_ERROR = f"Network error: {getattr(exc, 'reason', exc)}"
+        return None
+    except TimeoutError:
+        _LAST_LLM_ERROR = "Timed out waiting for the LLM provider."
+        return None
+    except Exception as exc:
+        _LAST_LLM_ERROR = f"Unexpected request error: {exc}"
         return None
 
     try:
@@ -359,7 +385,8 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
             "llm_provider": provider,
             "llm_model": model,
         }
-    except Exception:
+    except Exception as exc:
+        _LAST_LLM_ERROR = f"Invalid LLM response: {exc}"
         return None
 
 
@@ -875,6 +902,13 @@ def get_next_question(skill: str, sub_domain: Optional[str], difficulty: str,
             row["sub_domain"] = sub_domain or "general"
             row["difficulty"] = difficulty
             return row
+        if _strict_llm_required(mode):
+            provider, _, model = _llm_provider()
+            target = f"{provider or 'unconfigured provider'} / {model or 'unconfigured model'}"
+            raise RuntimeError(
+                f"LLM question generation failed for {target}. "
+                f"{_LAST_LLM_ERROR or 'No provider error detail was available.'}"
+            )
 
     # 3) CSV is kept for evaluation/reference and is used only when configured.
     if mode in {"csv", "llm_csv_fallback"}:

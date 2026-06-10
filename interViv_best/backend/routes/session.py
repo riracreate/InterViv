@@ -15,14 +15,16 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field, validator
+from fastapi import APIRouter, Header, HTTPException, status
+from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.integrations import IntegrationError, load_module
+from backend.integrations import IntegrationError
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
+from backend.routes.auth import get_user_from_authorization
+from modules.skill_graph import StudentSkillGraph
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -39,15 +41,22 @@ class StartSessionRequest(BaseModel):
     skills: list[str] = Field(default_factory=list, description="List of skills for this session")
     sub_domain: str | None = None
     rounds_per_skill: int = Field(default=3, ge=1, le=10)
+    target_company_id: str | None = None
+    target_role_id: str | None = None
 
-    @validator("skills", pre=True, always=True)
-    def _ensure_at_least_one(cls, v, values):  # noqa: N805
-        if v:
-            return [s.strip() for s in v if s and str(s).strip()]
-        legacy = values.get("skill")
-        if legacy and str(legacy).strip():
-            return [str(legacy).strip()]
-        raise ValueError("At least one skill is required (skills=[...] or skill='...')")
+    @model_validator(mode="before")
+    @classmethod
+    def _ensure_at_least_one(cls, data):  # noqa: N805
+        if isinstance(data, dict):
+            skills = data.get("skills")
+            skill = data.get("skill")
+            if skills:
+                data["skills"] = [s.strip() for s in skills if s and str(s).strip()]
+            elif skill and str(skill).strip():
+                data["skills"] = [str(skill).strip()]
+            else:
+                raise ValueError("At least one skill is required (skills=[...] or skill='...')")
+        return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,31 +115,102 @@ def _normalize_question_payload(payload: object, *, skill: str,
                          or payload.get("text") or payload.get("query"))
         if not question_text:
             raise IntegrationError("question_bank returned a payload with no question text.")
+        raw_keywords = (
+            payload.get("ideal_keywords")
+            or payload.get("keywords")
+            or payload.get("expected_keywords")
+            or ""
+        )
+        if isinstance(raw_keywords, list):
+            ideal_keywords = ", ".join(str(item) for item in raw_keywords if str(item).strip())
+            ideal_keywords_list = [str(item) for item in raw_keywords if str(item).strip()]
+        else:
+            ideal_keywords = str(raw_keywords)
+            ideal_keywords_list = [item.strip() for item in ideal_keywords.split(",") if item.strip()]
         return {
             "question": str(question_text),
             "ideal_answer": str(payload.get("ideal_answer")
                                 or payload.get("reference_answer")
                                 or payload.get("answer") or ""),
-            "ideal_keywords": str(payload.get("ideal_keywords")
-                                  or payload.get("keywords")
-                                  or payload.get("expected_keywords") or ""),
+            "ideal_keywords": ideal_keywords,
+            "ideal_keywords_list": ideal_keywords_list,
             "skill": str(payload.get("skill") or skill),
             "sub_domain": payload.get("sub_domain") or sub_domain,
+            "topic": payload.get("topic") or payload.get("sub_domain") or sub_domain,
             "difficulty": str(payload.get("difficulty") or difficulty or ""),
+            "question_type": payload.get("question_type") or "conceptual",
+            "company": payload.get("company") or "",
+            "role": payload.get("role") or "",
+            "followups": list(payload.get("followups") or []),
             "source": str(payload.get("source") or "unknown"),
             "llm_provider": payload.get("llm_provider"),
             "llm_model": payload.get("llm_model"),
+            # Phase 2 Task 7 — adaptive selector metadata
+            "target_concepts": list(payload.get("target_concepts") or []),
+            "adaptive_selected": bool(payload.get("adaptive_selected") or False),
         }
     raise IntegrationError("question_bank returned an unsupported question format.")
 
 
-def _get_next_question(*, skill: str, sub_domain: str | None,
-                       difficulty: str, asked: list[str]) -> dict:
-    module = load_module("question_bank", "question_bank.py")
-    if not hasattr(module, "get_next_question"):
-        raise IntegrationError("question_bank does not expose get_next_question()")
+def _get_next_question(
+    *,
+    skill: str,
+    sub_domain: str | None,
+    difficulty: str,
+    asked: list[str],
+    user_id: str | None = None,
+    target_company_id: str | None = None,
+    target_role_id: str | None = None,
+    target_concepts: list[str] | None = None,
+    resume_skills: list[str] | None = None,
+    weak_skills: list[str] | None = None,
+) -> dict:
+    """Return the next question payload.
+
+    When ``user_id`` is provided we route through the Phase 2 adaptive
+    selector (``modules.adaptive_question_selector``), which prepends
+    targeting hints for the user's weakest concepts in the skill. The
+    selector itself falls back to ``question_bank.get_next_question``
+    when no target concepts are available or the LLM call fails, so
+    anonymous and first-session flows are unaffected.
+    """
+    if user_id:
+        from modules import adaptive_question_selector
+
+        try:
+            payload = adaptive_question_selector.select_next_question(
+                user_id=user_id,
+                skill=skill,
+                sub_domain=sub_domain,
+                difficulty=difficulty,
+                asked=asked,
+                target_company_id=target_company_id,
+                target_role_id=target_role_id,
+                target_concepts=target_concepts,
+                resume_skills=resume_skills,
+                weak_skills=weak_skills,
+            )
+        except Exception as exc:
+            raise IntegrationError(str(exc)) from exc
+        return _normalize_question_payload(
+            payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
+        )
+
     try:
-        payload = module.get_next_question(skill, sub_domain, difficulty, asked)
+        from modules.question_runtime import MarketQuestionContext, generate_question
+
+        payload = generate_question(
+            skill,
+            sub_domain,
+            difficulty,
+            asked,
+            market_context=MarketQuestionContext(
+                company_id=target_company_id,
+                role_id=target_role_id,
+                resume_skills=tuple(resume_skills or ()),
+                weak_skills=tuple(weak_skills or target_concepts or ()),
+            ),
+        )
     except Exception as exc:
         raise IntegrationError(str(exc)) from exc
     return _normalize_question_payload(
@@ -143,7 +223,10 @@ def _get_next_question(*, skill: str, sub_domain: str | None,
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/start")
-def start_session(request: StartSessionRequest) -> dict[str, object]:
+def start_session(
+    request: StartSessionRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
     settings = get_settings()
     try:
         db = get_database()
@@ -153,6 +236,13 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
 
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
+    user = get_user_from_authorization(authorization) if authorization else None
+    target_company_id = (
+        str(user.get("target_company_id")) if user and user.get("target_company_id") else request.target_company_id
+    )
+    target_role_id = (
+        str(user.get("target_role_id")) if user and user.get("target_role_id") else request.target_role_id
+    )
     if not candidate:
         # Allow quick-start demo sessions without a resume upload. Resume uploads
         # still create richer candidate documents through /resume.
@@ -167,6 +257,8 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
             session_history=[],
         )
         candidate = candidate_doc.to_mongo()
+        if user:
+            candidate["user_id"] = user["id"]
         try:
             db["candidates"].insert_one(candidate)
         except DatabaseConnectionError as exc:
@@ -190,6 +282,10 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
         first_question = _get_next_question(
             skill=first_skill, sub_domain=sub_domain,
             difficulty=difficulty, asked=[],
+            user_id=str(user["id"]) if user else None,
+            target_company_id=target_company_id,
+            target_role_id=target_role_id,
+            resume_skills=candidate.get("resume_skills") or request.skills,
         )
     except IntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -222,6 +318,9 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
     session_dict["rounds_per_skill"] = request.rounds_per_skill
     session_dict["total_rounds"] = total_rounds
     session_dict["current_skill"] = first_skill
+    session_dict["user_id"] = user["id"] if user else candidate.get("user_id")
+    session_dict["target_company_id"] = target_company_id
+    session_dict["target_role_id"] = target_role_id
 
     try:
         db["sessions"].insert_one(session_dict)
@@ -239,7 +338,11 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
                 candidate_update["$set"][f"elo_ratings.{s}"] = settings.initial_elo
         if sub_domain:
             candidate_update["$set"][f"sub_domain_profile.{first_skill}"] = sub_domain
+        if user:
+            candidate_update["$set"]["user_id"] = user["id"]
         db["candidates"].update_one({"candidate_id": candidate_id}, candidate_update)
+        if user:
+            StudentSkillGraph(user["id"]).initialize_from_resume(request.skills)
     except DatabaseConnectionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
@@ -254,6 +357,7 @@ def start_session(request: StartSessionRequest) -> dict[str, object]:
     return {
         "session_id": session_id,
         "candidate_id": candidate_id,
+        "user_id": user["id"] if user else candidate.get("user_id"),
         "question": first_question["question"],
         "difficulty": difficulty,
         "round": 1,
