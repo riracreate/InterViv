@@ -57,6 +57,39 @@ def test_good_answer_no_cap():
     assert result["cap_required"] is False, f"Expected no cap for good answer, got {result}"
 
 
+def test_question_parroting_exact_copy():
+    """Exact copy of the question → cap 25, reason 'question_parroting'."""
+    q = "When building a simple interactive form, how would you ensure its accessibility?"
+    result = check_answer_quality(q, ideal_keywords="form, accessibility", question_text=q)
+    assert result["cap_required"] is True, f"Expected cap, got {result}"
+    assert result["reason"] == "question_parroting", (
+        f"Expected reason='question_parroting', got {result['reason']}"
+    )
+    assert result["score_cap"] == 25, f"Expected cap=25, got {result['score_cap']}"
+
+
+def test_question_parroting_paraphrase_passes():
+    """Real answer that uses some question words must NOT be flagged."""
+    q = "When building a simple interactive form, how would you ensure accessibility?"
+    ans = (
+        "I would use semantic HTML elements like <form>, <label>, and <input>, "
+        "add ARIA attributes for screen readers, ensure keyboard navigation works "
+        "for all controls, and validate user input with clear inline error "
+        "messages near the relevant field."
+    )
+    result = check_answer_quality(ans, ideal_keywords="form, accessibility, ARIA", question_text=q)
+    assert result["cap_required"] is False, f"False positive: {result}"
+
+
+def test_no_question_text_old_call_still_works():
+    """Backward compat — existing callers that don't pass question_text."""
+    result = check_answer_quality("mjgdjrfxhfcjmgjm", "state")
+    assert result["cap_required"] is True, f"Expected cap, got {result}"
+    assert result["reason"] == "gibberish", (
+        f"Expected reason='gibberish', got {result['reason']}"
+    )
+
+
 if __name__ == "__main__":
     tests = [
         test_empty_answer,
@@ -64,6 +97,9 @@ if __name__ == "__main__":
         test_repetition_answer,
         test_too_short_answer,
         test_good_answer_no_cap,
+        test_question_parroting_exact_copy,
+        test_question_parroting_paraphrase_passes,
+        test_no_question_text_old_call_still_works,
     ]
     passed = 0
     failed = 0

@@ -14,8 +14,8 @@ Replaces v10's single-pass scorer with a multi-layer architecture:
     ├─ Accuracy (anti-gaming)       (5%)
     └─ Clarity & conciseness        (5%)
 
-  Layer 3 — ML Confidence Judge    (20%)
-    └─ SVM/RF label → numeric adj.
+  Layer 3 — ML classifier signal   (20%)
+    └─ classifier label → numeric adj.
 
 Smart modifiers applied AFTER blending:
   • Difficulty multiplier
@@ -30,6 +30,7 @@ Pipeline-compatible:  NLPScorer().compute_overall_score(**kwargs) → dict
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter
 from functools import lru_cache
@@ -48,10 +49,14 @@ _sem_logger = _logging.getLogger(__name__)
 
 _semantic_scorer = None
 _semantic_scorer_tried = False
+_semantic_fallback_reason: str | None = None
 
 
 def _get_semantic_scorer():
-    global _semantic_scorer, _semantic_scorer_tried
+    global _semantic_scorer, _semantic_scorer_tried, _semantic_fallback_reason
+    if os.getenv("DISABLE_SEMANTIC_SCORING", "").lower() in {"1", "true", "yes"}:
+        _semantic_fallback_reason = "disabled_by_env"
+        return None
     if _semantic_scorer_tried:
         return _semantic_scorer
     _semantic_scorer_tried = True
@@ -64,9 +69,24 @@ def _get_semantic_scorer():
         _spec.loader.exec_module(_mod)
         _semantic_scorer = _mod.SemanticScorer()
     except Exception as exc:
-        _sem_logger.error("nlp_scorer: failed to load SemanticScorer — %s", exc)
+        _semantic_fallback_reason = f"{type(exc).__name__}: {exc}"
+        _sem_logger.warning("nlp_scorer: failed to load SemanticScorer — %s", exc)
         _semantic_scorer = None
     return _semantic_scorer
+
+
+def _get_semantic_fallback_reason() -> str | None:
+    if _semantic_fallback_reason:
+        return _semantic_fallback_reason
+    try:
+        import semantic_scorer as _sem_mod  # type: ignore
+
+        reason = getattr(_sem_mod, "fallback_reason", lambda: None)()
+        if reason:
+            return str(reason)
+    except Exception:
+        pass
+    return None
 
 # ── Stop words ────────────────────────────────────────────────────────────────
 _STOP_WORDS: frozenset[str] = frozenset({
@@ -157,6 +177,134 @@ def _ngrams(tokens: list[str], n: int) -> list[str]:
     return [" ".join(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
 
 
+_KEYWORD_SEMANTIC_THRESHOLD = 0.72
+"""Cosine threshold for keyword paraphrase coverage.
+
+0.72 is intentionally stricter than broad sentence similarity: keyword
+ngrams are short, so lower thresholds can mark merely related terms as covered.
+"""
+
+_KEYWORD_ALIASES: dict[str, set[str]] = {
+    "resources": {"resource", "nouns", "entities", "objects", "things", "data"},
+    "uri": {"url", "urls", "endpoint", "endpoints", "route", "routes"},
+    "uniform interface": {"consistent interface", "standard interface", "consistent conventions", "standard conventions"},
+    "stateless": {"stand alone", "server-side session", "session memory", "own context", "without session"},
+    "cacheability": {"cache", "cached", "caching", "cacheable"},
+    "http methods": {"http verbs", "get", "post", "put", "delete", "patch"},
+    "decorator": {"decorators"},
+    "callable": {"function", "higher order", "higher-order"},
+    "@ syntax": {"@", "@decorator", "@login_required", "@timer"},
+    "wrapper": {"wrapped", "wraps", "returned wrapper"},
+    "authentication": {"auth", "login", "login_required", "identity verification"},
+    "authorization": {"permissions", "access control", "allowed actions"},
+    "memoization": {"cache", "caching"},
+    "virtual machines": {"vm", "vms", "hypervisor"},
+    "virtual machine": {"vm", "vms", "hypervisor"},
+    "bridge network": {"bridge"},
+    "host network": {"host mode", "host stack"},
+    "overlay network": {"overlay"},
+    "multi-host": {"multiple hosts", "across nodes", "cluster", "swarm"},
+    "index": {"indexes", "indices"},
+    "b-tree": {"btree", "tree index"},
+    "full table scan": {"checking every row", "scan every row", "scanning the whole table"},
+    "storage": {"disk space", "space"},
+    "write overhead": {"writes slower", "slower writes", "inserts slower", "updates slower"},
+    "query performance": {"reads faster", "queries faster", "faster reads"},
+    "overfitting": {"overfits", "memorizes"},
+    "training data": {"train data", "training examples"},
+    "validation": {"validation data", "unseen validation"},
+    "generalization": {"unseen data", "underlying pattern"},
+    "regularization": {"regularizing", "regularize"},
+    "early stopping": {"stopping training earlier", "stop training early"},
+    "cross-validation": {"cross validation"},
+}
+
+
+def _answer_ngram_candidates(answer_tokens: list[str]) -> list[str]:
+    candidates: set[str] = set(answer_tokens)
+    for size in (2, 3, 4):
+        candidates.update(_ngrams(answer_tokens, size))
+    return sorted(candidates, key=lambda item: (len(item.split()), item), reverse=True)
+
+
+def _keyword_coverage_details(
+    answer_text: str,
+    answer_tokens: list[str],
+    answer_token_set: set[str],
+    keywords_str: str,
+    semantic_scorer: Any | None = None,
+) -> dict[str, Any]:
+    if not keywords_str or not keywords_str.strip():
+        return {"score": 0.5, "matches": [], "semantic_threshold": _KEYWORD_SEMANTIC_THRESHOLD}
+
+    phrases = [p.strip() for p in keywords_str.split(",") if p.strip()]
+    if not phrases:
+        return {"score": 0.5, "matches": [], "semantic_threshold": _KEYWORD_SEMANTIC_THRESHOLD}
+
+    normalized_answer = _normalize_phrase(answer_text)
+    answer_lower = answer_text.lower()
+    answer_ngrams = _answer_ngram_candidates(answer_tokens)
+    weighted_hits = 0.0
+    matches: list[dict[str, Any]] = []
+
+    for phrase in phrases:
+        norm_phrase = _normalize_phrase(phrase)
+        phrase_lower = phrase.lower()
+        phrase_toks = set(_tokenize(phrase))
+
+        exact_hit = bool(
+            (norm_phrase and norm_phrase in normalized_answer)
+            or (phrase_lower and phrase_lower in answer_lower)
+        )
+
+        alias_hit = False
+        for alias in _KEYWORD_ALIASES.get(norm_phrase, set()) | _KEYWORD_ALIASES.get(phrase_lower, set()):
+            if alias in answer_lower or _normalize_phrase(alias) in normalized_answer:
+                alias_hit = True
+                break
+
+        semantic_similarity = None
+        semantic_hit = False
+        if not exact_hit and not alias_hit and semantic_scorer is not None:
+            max_similarity = getattr(semantic_scorer, "max_similarity", None)
+            if callable(max_similarity):
+                semantic_similarity = max_similarity(norm_phrase or phrase, answer_ngrams)
+                semantic_hit = (
+                    semantic_similarity is not None
+                    and semantic_similarity >= _KEYWORD_SEMANTIC_THRESHOLD
+                )
+
+        token_overlap = (
+            len(answer_token_set & phrase_toks) / len(phrase_toks)
+            if phrase_toks else 0.0
+        )
+        covered = exact_hit or alias_hit or semantic_hit
+        # Partial token overlap is useful when the semantic model is unavailable,
+        # but it is capped below a full hit so synonyms still need exact aliases
+        # or embedding similarity.
+        weighted = 1.0 if covered else min(token_overlap * 0.6, 0.6)
+        weighted_hits += weighted
+        matches.append(
+            {
+                "keyword": phrase,
+                "covered": covered,
+                "exact": exact_hit,
+                "alias": alias_hit,
+                "semantic_similarity": (
+                    round(semantic_similarity, 4)
+                    if semantic_similarity is not None else None
+                ),
+                "token_overlap": round(token_overlap, 4),
+            }
+        )
+
+    return {
+        "score": min(weighted_hits / len(phrases), 1.0),
+        "matches": matches,
+        "semantic_threshold": _KEYWORD_SEMANTIC_THRESHOLD,
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LAYER 1 — Core Content Match helpers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -179,32 +327,22 @@ def _l1_keyword_coverage(
     answer_text: str,
     answer_token_set: set[str],
     keywords_str: str,
+    answer_tokens: list[str] | None = None,
+    semantic_scorer: Any | None = None,
 ) -> float:
     """
-    Weighted keyword coverage: phrase-level (0.7) + token-level (0.3).
+    Keyword coverage with exact/substring matching plus optional semantic
+    n-gram matching for paraphrases.
     Returns 0.0–1.0.
     """
-    if not keywords_str or not keywords_str.strip():
-        return 0.5
-
-    phrases = [p.strip() for p in keywords_str.split(",") if p.strip()]
-    if not phrases:
-        return 0.5
-
-    normalized_answer = _normalize_phrase(answer_text)
-    phrase_hits = token_hits = token_total = 0
-
-    for phrase in phrases:
-        norm_phrase = _normalize_phrase(phrase)
-        if norm_phrase and norm_phrase in normalized_answer:
-            phrase_hits += 1
-        phrase_toks = set(_tokenize(phrase))
-        token_total += len(phrase_toks)
-        token_hits += len(answer_token_set & phrase_toks)
-
-    phrase_score = phrase_hits / len(phrases)
-    token_score = token_hits / token_total if token_total else 0.5
-    return min(0.7 * phrase_score + 0.3 * token_score, 1.0)
+    details = _keyword_coverage_details(
+        answer_text=answer_text,
+        answer_tokens=answer_tokens or list(answer_token_set),
+        answer_token_set=answer_token_set,
+        keywords_str=keywords_str,
+        semantic_scorer=semantic_scorer,
+    )
+    return float(details["score"])
 
 
 def _l1_key_concept_coverage(
@@ -400,7 +538,7 @@ def _baseline_calibration(
 
 @lru_cache(maxsize=1)
 def _load_ml_model(model_path: str) -> Any:
-    """Load and cache SVM / RF model from disk."""
+    """Load and cache the answer-quality classifier from disk."""
     if not _JOBLIB_OK:
         return None
     return _joblib.load(model_path)
@@ -453,7 +591,7 @@ class NLPScorer:
     Parameters
     ----------
     model_path : str | None
-        Absolute path to a joblib-serialised SVM or RF model.
+        Absolute path to a joblib-serialised answer-quality classifier.
         If None, Layer 3 is replaced by a neutral 50-point placeholder.
     """
 
@@ -540,15 +678,33 @@ class NLPScorer:
         # LAYER 1 — Core Content Match (55%)
         # ══════════════════════════════════════════════════════════════════════
         tfidf_cos     = _l1_tfidf_cosine(ans_tokens, ideal_tokens)
-        kw_coverage   = _l1_keyword_coverage(text, ans_token_set, kw_str)
         concept_cov   = _l1_key_concept_coverage(ans_tokens, ideal_tokens)
 
         # Blend TF-IDF with semantic cosine (60% semantic, 40% TF-IDF).
         # Falls back to pure TF-IDF when semantic scorer is unavailable or ideal is empty.
         semantic_sim: float | None = None
+        semantic_available = False
+        semantic_fallback_reason: str | None = None
         _sem = _get_semantic_scorer()
-        if _sem is not None:
+        if _sem is not None and ideal.strip():
             semantic_sim = _sem.score(text, ideal)
+            if semantic_sim is not None:
+                semantic_available = True
+            else:
+                semantic_fallback_reason = _get_semantic_fallback_reason() or "semantic_similarity_unavailable"
+        elif not ideal.strip():
+            semantic_fallback_reason = "missing_ideal_answer"
+        else:
+            semantic_fallback_reason = _get_semantic_fallback_reason() or "semantic_model_unavailable"
+
+        kw_details = _keyword_coverage_details(
+            answer_text=text,
+            answer_tokens=ans_tokens,
+            answer_token_set=ans_token_set,
+            keywords_str=kw_str,
+            semantic_scorer=_sem if semantic_available else None,
+        )
+        kw_coverage = float(kw_details["score"])
 
         if semantic_sim is not None:
             cos_sim = 0.40 * tfidf_cos + 0.60 * semantic_sim
@@ -628,7 +784,10 @@ class NLPScorer:
             "cosine_similarity":  round(cos_sim, 4),
             "tfidf_score":        round(tfidf_cos, 4),
             "semantic_score":     round(semantic_sim, 4) if semantic_sim is not None else None,
+            "semantic_scoring_available": semantic_available,
+            "semantic_fallback_reason": semantic_fallback_reason,
             "keyword_coverage":   round(kw_coverage, 4),
+            "keyword_coverage_details": kw_details,
             "concept_coverage":   round(concept_cov, 4),
             "depth_score":        round(depth_score, 4),
             "structure_score":    round(structure_score, 4),
@@ -658,4 +817,11 @@ class NLPScorer:
         ]
         result = {k: 0.0 for k in keys}
         result["semantic_score"] = None
+        result["semantic_scoring_available"] = False
+        result["semantic_fallback_reason"] = "empty_answer"
+        result["keyword_coverage_details"] = {
+            "score": 0.0,
+            "matches": [],
+            "semantic_threshold": _KEYWORD_SEMANTIC_THRESHOLD,
+        }
         return result

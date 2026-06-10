@@ -18,6 +18,8 @@ Run with:  python -m pytest tests/test_semantic.py -v
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Clean up leaked env variables from previous tests in same process
+os.environ.pop("DISABLE_SEMANTIC_SCORING", None)
 
 from modules.semantic_scorer import SemanticScorer
 from modules.nlp_scorer import _l1_tfidf_cosine, _tokenize
@@ -38,13 +40,17 @@ IDEAL = (
     "making them lightweight and fast to start compared to virtual machines."
 )
 
-def test_case_a_exact():
-    """Exact match: both TF-IDF and semantic > 0.9."""
+def _case_a_values() -> dict:
     tfidf = _tfidf(IDEAL, IDEAL)
     sem   = scorer.score(IDEAL, IDEAL)
-    assert tfidf > 0.9, f"TF-IDF on exact match should be >0.9, got {tfidf:.4f}"
-    assert sem   > 0.9, f"Semantic on exact match should be >0.9, got {sem:.4f}"
     return {"tfidf": round(tfidf, 4), "semantic": round(sem, 4)}
+
+
+def test_case_a_exact():
+    """Exact match: both TF-IDF and semantic > 0.9."""
+    vals = _case_a_values()
+    assert vals["tfidf"] > 0.9, f"TF-IDF on exact match should be >0.9, got {vals['tfidf']:.4f}"
+    assert vals["semantic"] > 0.9, f"Semantic on exact match should be >0.9, got {vals['semantic']:.4f}"
 
 
 # ── Case B — Paraphrase with minimal word overlap ─────────────────────────────
@@ -58,13 +64,17 @@ PARAPHRASE_B = (
     "hypervisor-managed VMs."
 )
 
-def test_case_b_paraphrase():
-    """Paraphrase: TF-IDF < 0.3 (low overlap), semantic > 0.7 (same meaning)."""
+def _case_b_values() -> dict:
     tfidf = _tfidf(PARAPHRASE_B, IDEAL)
     sem   = scorer.score(PARAPHRASE_B, IDEAL)
-    assert tfidf < 0.30, f"TF-IDF should be <0.3 for paraphrase, got {tfidf:.4f}"
-    assert sem   > 0.70, f"Semantic should be >0.7 for paraphrase, got {sem:.4f}"
     return {"tfidf": round(tfidf, 4), "semantic": round(sem, 4)}
+
+
+def test_case_b_paraphrase():
+    """Paraphrase: TF-IDF < 0.3 (low overlap), semantic > 0.7 (same meaning)."""
+    vals = _case_b_values()
+    assert vals["tfidf"] < 0.30, f"TF-IDF should be <0.3 for paraphrase, got {vals['tfidf']:.4f}"
+    assert vals["semantic"] > 0.70, f"Semantic should be >0.7 for paraphrase, got {vals['semantic']:.4f}"
 
 
 # ── Case C — Off-topic answer with borrowed Docker vocabulary ─────────────────
@@ -78,13 +88,17 @@ WRONG_C = (
     "to start production compared to virtual kitchen machines."
 )
 
-def test_case_c_wrong_shared_vocab():
-    """Off-topic answer with shared Docker vocab: TF-IDF > 0.5, semantic < 0.55."""
+def _case_c_values() -> dict:
     tfidf = _tfidf(WRONG_C, IDEAL)
     sem   = scorer.score(WRONG_C, IDEAL)
-    assert tfidf > 0.50, f"TF-IDF should be >0.5 for vocab-heavy wrong answer, got {tfidf:.4f}"
-    assert sem   < 0.55, f"Semantic should be <0.55 for off-topic answer, got {sem:.4f}"
     return {"tfidf": round(tfidf, 4), "semantic": round(sem, 4)}
+
+
+def test_case_c_wrong_shared_vocab():
+    """Off-topic answer with shared Docker vocab: TF-IDF > 0.5, semantic < 0.55."""
+    vals = _case_c_values()
+    assert vals["tfidf"] > 0.50, f"TF-IDF should be >0.5 for vocab-heavy wrong answer, got {vals['tfidf']:.4f}"
+    assert vals["semantic"] < 0.55, f"Semantic should be <0.55 for off-topic answer, got {vals['semantic']:.4f}"
 
 
 # ── Key assertion: semantic beats TF-IDF on Case B ───────────────────────────
@@ -101,24 +115,25 @@ def test_semantic_adds_signal():
 if __name__ == "__main__":
     import pathlib, datetime
 
-    tests_with_return = [
-        ("test_case_a_exact",          test_case_a_exact),
-        ("test_case_b_paraphrase",      test_case_b_paraphrase),
-        ("test_case_c_wrong_shared_vocab", test_case_c_wrong_shared_vocab),
+    cases = [
+        ("test_case_a_exact",              test_case_a_exact,              _case_a_values),
+        ("test_case_b_paraphrase",          test_case_b_paraphrase,          _case_b_values),
+        ("test_case_c_wrong_shared_vocab",  test_case_c_wrong_shared_vocab,  _case_c_values),
     ]
     plain_tests = [test_semantic_adds_signal]
 
     passed = failed = 0
     results = {}
-    for name, t in tests_with_return:
+    for name, t, values in cases:
+        vals = values()
         try:
-            ret = t()
-            print(f"  PASS  {name}  {ret}")
-            results[name] = {**ret, "status": "PASS"}
+            t()
+            print(f"  PASS  {name}  {vals}")
+            results[name] = {**vals, "status": "PASS"}
             passed += 1
         except AssertionError as e:
             print(f"  FAIL  {name}: {e}")
-            results[name] = {"status": "FAIL", "reason": str(e)}
+            results[name] = {**vals, "status": "FAIL", "reason": str(e)}
             failed += 1
 
     for t in plain_tests:

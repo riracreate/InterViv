@@ -1,0 +1,76 @@
+{
+  "model_type": "LogisticRegression",
+  "version": "1.1.0",
+  "training_date": "2026-04-28",
+  "dataset": "data/ml_training_data.csv",
+  "dataset_hash": "sha256:73cd98ef096a3e7a2808da1f66427c79d596531c9084a558e192dc04938fd104",
+  "dataset_rows": 891,
+  "label_distribution": {
+    "Average": 297,
+    "Good": 297,
+    "Poor": 297
+  },
+  "balanced": true,
+  "train_accuracy": 0.9621,
+  "val_accuracy": 0.9553,
+  "val_f1_macro": 0.9551,
+  "val_f1_weighted": 0.9552,
+  "cv_5fold_accuracy_mean": 0.9562,
+  "cv_5fold_accuracy_std": 0.0148,
+  "cv_5fold_f1_macro_mean": 0.9562,
+  "cv_5fold_f1_macro_std": 0.0148,
+  "cv_5fold_f1_weighted_mean": 0.9562,
+  "per_class_precision_recall": {
+    "Average": {
+      "precision": 0.9473684210526315,
+      "recall": 0.9152542372881356,
+      "f1": 0.9310344827586207,
+      "support": 59
+    },
+    "Good": {
+      "precision": 0.9830508474576272,
+      "recall": 0.9666666666666667,
+      "f1": 0.9747899159663865,
+      "support": 60
+    },
+    "Poor": {
+      "precision": 0.9365079365079365,
+      "recall": 0.9833333333333333,
+      "f1": 0.959349593495935,
+      "support": 60
+    }
+  },
+  "confusion_matrix_2d": [
+    [
+      54,
+      1,
+      4
+    ],
+    [
+      2,
+      58,
+      0
+    ],
+    [
+      1,
+      0,
+      59
+    ]
+  ],
+  "confusion_matrix_labels": [
+    "Average",
+    "Good",
+    "Poor"
+  ],
+  "sklearn_version": "1.8.0",
+  "artifact_sha256": "sha256:2897c8cc6283cbdb4815a78182188ea60c17b39876feefa2d67919f065f16dd7",
+  "artifact_file": "answer_quality_lr.joblib",
+  "feature_order": [
+    "nlp_cosine_similarity",
+    "clarity_score",
+    "keyword_coverage",
+    "server_word_count",
+    "concept_coverage"
+  ],
+  "evaluation_note": "LogisticRegression retrained on the 891-row balanced ml_training_data.csv with class balancing enabled. 5-fold stratified CV and held-out 20% test reported."
+}

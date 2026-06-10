@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
 from backend.main import app  # noqa: E402
 from modules.company_graph import (
@@ -20,7 +20,16 @@ from modules.company_graph import (
 )
 
 
-EXPECTED_COMPANY_IDS = {"tcs", "infosys", "wipro", "amazon", "microsoft"}
+EXPECTED_COMPANY_IDS = {
+    "tcs",
+    "infosys",
+    "accenture",
+    "wipro",
+    "amazon",
+    "microsoft",
+    "google",
+    "meta",
+}
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +37,7 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def test_loader_returns_five_companies() -> None:
+def test_loader_returns_requested_market_companies() -> None:
     graph = get_company_graph()
     ids = {c.id for c in graph.list_companies()}
     assert ids == EXPECTED_COMPANY_IDS, f"unexpected company ids: {ids}"
@@ -175,18 +184,18 @@ def test_seed_is_idempotent_on_sqlite() -> None:
             second = seed_company_graph()
             third = seed_company_graph()
 
-            assert first["companies"] == 5
-            assert first["roles"] == 5
+            assert first["companies"] == 8
+            assert first["roles"] == 16
             assert second == {"companies": 0, "roles": 0, "skills": 0, "requirements": 0}
             assert third == {"companies": 0, "roles": 0, "skills": 0, "requirements": 0}
 
             from sqlalchemy import func, select
 
             with session_scope() as s:
-                assert s.execute(select(func.count(CompanyRow.id))).scalar() == 5
-                assert s.execute(select(func.count(RoleRow.id))).scalar() == 5
-                assert s.execute(select(func.count(SkillRow.id))).scalar() == 7
-                assert s.execute(select(func.count(CompanyRoleRequirementRow.id))).scalar() == 25
+                assert s.execute(select(func.count(CompanyRow.id))).scalar() == 8
+                assert s.execute(select(func.count(RoleRow.id))).scalar() == 16
+                assert s.execute(select(func.count(SkillRow.id))).scalar() == 9
+                assert s.execute(select(func.count(CompanyRoleRequirementRow.id))).scalar() == 80
         finally:
             os.environ.pop("DATABASE_URL", None)
             get_settings.cache_clear()

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import get_settings
+from backend.observability import init_sentry
 from backend.routes.admin import router as admin_router
 from backend.routes.answer import router as answer_router
 from backend.routes.auth import router as auth_router
@@ -15,15 +17,44 @@ from backend.routes.learning import router as learning_router
 from backend.routes.resume import router as resume_router
 from backend.routes.session import router as session_router
 from backend.routes.transcribe import router as transcribe_router
-from backend.scoring.pipeline import get_model_metadata
+from backend.startup_warmup import warm_runtime_dependencies
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global WARMUP_STATUS
+    WARMUP_STATUS = warm_runtime_dependencies()
+
+    # Load company hiring graph and seed DB tables idempotently.
+    import logging
+    from modules.company_graph import get_company_graph
+    from backend.db.company_seed import seed_company_graph
+
+    logger = logging.getLogger(__name__)
+    try:
+        graph = get_company_graph()
+        logger.info("Loaded company hiring graph: %d companies", len(graph.list_companies()))
+        counts = seed_company_graph(graph)
+        if any(counts.values()):
+            logger.info("Seeded company graph rows: %s", counts)
+    except Exception as exc:  # pragma: no cover - startup logs only
+        logger.exception("Company hiring graph startup failed: %s", exc)
+
+    yield
 
 
 settings = get_settings()
-app = FastAPI(title="interViv - Interview Readiness Platform")
+SENTRY_ENABLED = init_sentry()
+WARMUP_STATUS: dict[str, object] = {}
+app = FastAPI(title="interViv - Interview Readiness Platform", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Always accept loopback origins on any port for local dev, so the app works
+    # whether it's opened via localhost or 127.0.0.1 (browsers treat those as
+    # distinct origins). Configured production origins still come from CORS_ORIGINS.
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,30 +73,13 @@ app.include_router(transcribe_router)
 app.include_router(admin_router)
 
 
-@app.on_event("startup")
-def verify_model_metadata() -> None:
-    get_model_metadata()
 
-
-@app.on_event("startup")
-def warm_company_graph() -> None:
-    """Load company hiring graph and seed DB tables idempotently."""
-    import logging
-
-    from modules.company_graph import get_company_graph
-    from backend.db.company_seed import seed_company_graph
-
-    logger = logging.getLogger(__name__)
-    try:
-        graph = get_company_graph()
-        logger.info("Loaded company hiring graph: %d companies", len(graph.list_companies()))
-        counts = seed_company_graph(graph)
-        if any(counts.values()):
-            logger.info("Seeded company graph rows: %s", counts)
-    except Exception as exc:  # pragma: no cover - startup logs only
-        logger.exception("Company hiring graph startup failed: %s", exc)
 
 
 @app.get("/health")
-def healthcheck() -> dict[str, str]:
-    return {"status": "ok"}
+def healthcheck() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "sentry_enabled": SENTRY_ENABLED,
+        "warmup": WARMUP_STATUS,
+    }

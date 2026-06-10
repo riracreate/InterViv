@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -14,6 +14,8 @@ from backend.integrations import (
     map_skills_to_domains,
 )
 from backend.models.candidate import CandidateDocument
+from backend.routes.auth import get_user_from_authorization
+from modules.skill_graph import StudentSkillGraph
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -32,7 +34,10 @@ def _normalize_skills(payload: object) -> list[str]:
 
 
 @router.post("")
-async def parse_resume(file: UploadFile = File(...)) -> dict[str, object]:
+async def parse_resume(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,6 +69,7 @@ async def parse_resume(file: UploadFile = File(...)) -> dict[str, object]:
         skills = _normalize_skills(parsed_skills)
         domain_profile = map_skills_to_domains(skills)
         candidate_id = str(uuid4())
+        user = get_user_from_authorization(authorization) if authorization else None
 
         candidate = CandidateDocument(
             candidate_id=candidate_id,
@@ -72,8 +78,13 @@ async def parse_resume(file: UploadFile = File(...)) -> dict[str, object]:
             elo_ratings={skill: settings.initial_elo for skill in skills},
             session_history=[],
         )
+        candidate_doc = candidate.to_mongo()
+        if user:
+            candidate_doc["user_id"] = user["id"]
         try:
-            get_database()["candidates"].insert_one(candidate.to_mongo())
+            get_database()["candidates"].insert_one(candidate_doc)
+            if user:
+                StudentSkillGraph(user["id"]).initialize_from_resume(skills)
         except DatabaseConnectionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -88,6 +99,7 @@ async def parse_resume(file: UploadFile = File(...)) -> dict[str, object]:
 
         return {
             "candidate_id": candidate_id,
+            "user_id": user["id"] if user else None,
             "skills": skills,
             "domain_profile": domain_profile,
         }

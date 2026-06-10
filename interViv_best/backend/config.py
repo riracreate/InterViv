@@ -12,12 +12,16 @@ from dotenv import load_dotenv
 class Settings:
     project_root: Path
     modules_dir: Path
+    database_url: str | None
     mongodb_uri: str
     mongodb_db: str
     mongodb_timeout_ms: int
     cors_origins: list[str]
     max_rounds: int
     initial_elo: float
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_access_token_minutes: int
     interview_module_paths: list[Path]
     interview_model_paths: list[Path]
     interview_data_paths: list[Path]
@@ -64,6 +68,7 @@ def get_settings() -> Settings:
     return Settings(
         project_root=project_root,
         modules_dir=modules_dir,
+        database_url=os.getenv("DATABASE_URL") or None,
         mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
         mongodb_db=os.getenv("MONGODB_DB", "adaptive_mock_interview"),
         mongodb_timeout_ms=int(os.getenv("MONGODB_TIMEOUT_MS", "2000")),
@@ -75,6 +80,9 @@ def get_settings() -> Settings:
         ),
         max_rounds=int(os.getenv("MAX_ROUNDS", "5")),
         initial_elo=float(os.getenv("INITIAL_ELO", "1200")),
+        jwt_secret_key=os.getenv("JWT_SECRET_KEY", "dev-only-change-me-with-32-plus-bytes"),
+        jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
+        jwt_access_token_minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "1440")),
         interview_module_paths=_resolve_paths(
             os.getenv("INTERVIEW_MODULE_PATHS"),
             default_module_paths,
