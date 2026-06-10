@@ -13,4 +13,4 @@ venv/
 .DS_Store
 node_modules/
 frontend/dist/
-.DS_Store
+.claude/
