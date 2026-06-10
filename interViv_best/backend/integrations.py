@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import inspect
 import sys
+import threading
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
@@ -15,6 +16,9 @@ from backend.config import get_settings
 
 class IntegrationError(RuntimeError):
     pass
+
+
+_LOAD_MODULE_LOCK = threading.RLock()
 
 
 def _candidate_paths(group: str) -> list[Path]:
@@ -41,28 +45,29 @@ def locate_file(filename: str, group: str = "module") -> Path:
 
 @lru_cache(maxsize=None)
 def load_module(module_name: str, filename: str | None = None) -> ModuleType:
-    try:
-        return importlib.import_module(module_name)
-    except ModuleNotFoundError:
-        if not filename:
-            raise IntegrationError(
-                f"Python module '{module_name}' is unavailable and no fallback filename was provided."
-            ) from None
+    with _LOAD_MODULE_LOCK:
+        try:
+            return importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            if not filename:
+                raise IntegrationError(
+                    f"Python module '{module_name}' is unavailable and no fallback filename was provided."
+                ) from None
 
-    file_path = locate_file(filename, group="module")
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    if not spec or not spec.loader:
-        raise IntegrationError(f"Unable to import integration module from '{file_path}'.")
+        file_path = locate_file(filename, group="module")
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if not spec or not spec.loader:
+            raise IntegrationError(f"Unable to import integration module from '{file_path}'.")
 
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(module_name, None)
-        load_module.cache_clear()
-        raise
-    return module
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            load_module.cache_clear()
+            raise
+        return module
 
 
 def call_with_supported_signature(func: Any, **kwargs: Any) -> Any:
@@ -137,13 +142,14 @@ def normalize_feedback(payload: Any) -> dict[str, Any]:
         return {
             "content": payload.get("content") or payload.get("summary") or [],
             "strengths": payload.get("strengths") or [],
+            "weakness": payload.get("weakness") or payload.get("weaknesses") or [],
             "next_step": payload.get("next_step") or payload.get("recommendation") or "",
         }
 
     if isinstance(payload, (list, tuple)):
-        return {"content": list(payload), "strengths": [], "next_step": ""}
+        return {"content": list(payload), "strengths": [], "weakness": [], "next_step": ""}
 
     if isinstance(payload, str):
-        return {"content": [payload], "strengths": [], "next_step": ""}
+        return {"content": [payload], "strengths": [], "weakness": [], "next_step": ""}
 
-    return {"content": [], "strengths": [], "next_step": ""}
+    return {"content": [], "strengths": [], "weakness": [], "next_step": ""}

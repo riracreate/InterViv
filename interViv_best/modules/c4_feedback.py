@@ -1,9 +1,83 @@
-def generate_feedback(answer=None, answer_text=None, question=None, ideal_answer=None, skill=None, sub_domain=None, nlp_score=None, svm_label=None, kg_score=None, final_score=None, ner_entities=None):
+# Per-guard feedback. Each entry overrides the full feedback payload so the
+# candidate sees a message that names the actual failure mode (not the
+# generic "review core concepts" that SVM-Poor used to produce).
+_GUARD_FEEDBACK = {
+    "empty": {
+        "headline":    "Your answer was empty.",
+        "weakness":    "No content to evaluate. Even a brief attempt scores higher than nothing.",
+        "improvement": "Speak or type at least 2-3 sentences explaining the concept.",
+    },
+    "gibberish": {
+        "headline":    "We couldn't make sense of your answer.",
+        "weakness":    "The text appears to be random characters or typing without real words.",
+        "improvement": "Take a moment to think, then explain the concept in your own words.",
+    },
+    "repetition": {
+        "headline":    "Your answer mostly repeats the same word.",
+        "weakness":    "Repeating a term doesn't show understanding of the concept.",
+        "improvement": "Define the term once, then explain how it works and give an example.",
+    },
+    "too_short": {
+        "headline":    "Your answer is too brief.",
+        "weakness":    "A few words don't demonstrate technical understanding.",
+        "improvement": "Aim for 3-5 sentences. Cover what the concept is, why it matters, and a brief example.",
+    },
+    "keyword_stuffing": {
+        "headline":    "Your answer reads like a list of keywords.",
+        "weakness":    "Listing buzzwords without explanation doesn't show understanding.",
+        "improvement": "Pick 2-3 core concepts and explain how they connect with a real example.",
+    },
+    "question_parroting": {
+        "headline":    "Your answer mostly repeats the question.",
+        "weakness":    "Restating the question doesn't demonstrate that you know the answer.",
+        "improvement": "In your own words, explain the concept the question is asking about. Add a concrete example.",
+    },
+    "low_density": {
+        "headline":    "Your answer is mostly generic words.",
+        "weakness":    "Filler vocabulary like 'important' or 'really good' doesn't carry technical content.",
+        "improvement": "Replace generic adjectives with specific terms, examples, or trade-offs from the topic.",
+    },
+    "off_topic": {
+        "headline":    "Your answer doesn't seem to address the question.",
+        "weakness":    "The content doesn't overlap with what the question is asking about.",
+        "improvement": "Re-read the question and focus your answer on its specific topic.",
+    },
+}
+
+
+def generate_feedback(
+    answer=None,
+    answer_text=None,
+    question=None,
+    ideal_answer=None,
+    skill=None,
+    sub_domain=None,
+    nlp_score=None,
+    svm_label=None,
+    kg_score=None,
+    final_score=None,
+    ner_entities=None,
+    guard_reason=None,
+):
+    # Guard short-circuit — when an anti-gaming rule fired, the round-quality
+    # rules below would only mask the real failure mode. Return a payload
+    # that names the failure and gives an actionable improvement step.
+    if guard_reason and guard_reason in _GUARD_FEEDBACK:
+        msg = _GUARD_FEEDBACK[guard_reason]
+        return {
+            "content":          [msg["headline"]],
+            "strengths":        [],
+            "weakness":         [msg["weakness"]],
+            "next_step":        msg["improvement"],
+            "guard_triggered":  guard_reason,
+        }
+
     text = answer_text or answer or ""
     word_count = len(text.split())
-    
+
     content = []
     strengths = []
+    weakness = []
     next_step = ""
 
     # Rule 1: Length evaluation
@@ -17,7 +91,7 @@ def generate_feedback(answer=None, answer_text=None, question=None, ideal_answer
     else:
         content.append("Good length and pacing.")
         strengths.append("Concise")
-        
+
     # Rule 2: Keyword Evaluation
     if ner_entities and len(ner_entities) > 2:
         content.append(f"You successfully included key technical entities like: {', '.join(ner_entities[:3])}.")
@@ -42,5 +116,6 @@ def generate_feedback(answer=None, answer_text=None, question=None, ideal_answer
     return {
         "content": content,
         "strengths": strengths,
-        "next_step": next_step
+        "weakness": weakness,
+        "next_step": next_step,
     }

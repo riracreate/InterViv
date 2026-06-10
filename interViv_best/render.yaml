@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: interviv-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: interviv-postgres
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: interviv-redis
+          property: connectionString
+      - key: QUESTION_CACHE_TTL_SECONDS
+        value: 86400
+      - key: QUESTION_LLM_MAX_RETRIES
+        value: 3
+      - key: QUESTION_LLM_RATE_LIMIT_PER_MINUTE
+        value: 60
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: QUESTION_LLM_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_MODEL
+        value: anthropic/claude-haiku-4.5
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+  - type: redis
+    name: interviv-redis
+    ipAllowList: []
+
+databases:
+  - name: interviv-postgres
+    databaseName: interviv
+    user: interviv
