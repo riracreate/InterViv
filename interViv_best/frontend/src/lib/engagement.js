@@ -1,5 +1,6 @@
-import * as faceapi from 'face-api.js';
-
+// face-api.js is ~600KB minified; import it lazily so it only downloads
+// when engagement detection actually starts, not on first page load.
+let faceapi = null;
 let modelsLoaded = false;
 let modelLoadFailed = false;
 let modelLoadPromise = null;
@@ -17,6 +18,7 @@ export async function loadModels() {
 
   modelLoadPromise = (async () => {
     try {
+      faceapi = await import('face-api.js');
       await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
       await faceapi.nets.faceExpressionNet.loadFromUri('/models');
       modelsLoaded = true;
