@@ -181,10 +181,29 @@ def _project(doc: dict[str, Any], projection: dict[str, Any] | None) -> dict[str
     return result
 
 
+def _filtered_rows(session, model, field_columns: dict[str, Any], query: dict[str, Any] | None):
+    """Query rows with simple equality filters pushed down to SQL.
+
+    Only query keys present in ``field_columns`` with scalar values become SQL
+    filters; everything else (dotted paths, nested values) is still verified in
+    Python by ``_matches`` on the resulting documents.
+    """
+    q = session.query(model)
+    for key, value in (query or {}).items():
+        column = field_columns.get(key)
+        if column is not None and not isinstance(value, (dict, list)):
+            q = q.filter(column == value)
+    return q.all()
+
+
 class _CandidateCollection:
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {"candidate_id": CandidateRow.candidate_id, "user_id": CandidateRow.user_id}
+
     def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
         with session_scope() as session:
-            rows = session.query(CandidateRow).all()
+            rows = _filtered_rows(session, CandidateRow, self._field_columns(), query)
             for row in rows:
                 doc = self._to_doc(row)
                 if _matches(doc, query):
@@ -193,7 +212,10 @@ class _CandidateCollection:
 
     def find(self, query: dict | None = None) -> Iterator[dict]:
         with session_scope() as session:
-            docs = [self._to_doc(row) for row in session.query(CandidateRow).all()]
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, CandidateRow, self._field_columns(), query)
+            ]
         return iter([doc for doc in docs if not query or _matches(doc, query)])
 
     def insert_one(self, doc: dict) -> _InsertResult:
@@ -214,6 +236,7 @@ class _CandidateCollection:
 
     def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
         doc = self.find_one(query)
+        matched = 1 if doc else 0
         if not doc:
             if not upsert:
                 return _UpdateResult(0, 0)
@@ -221,7 +244,7 @@ class _CandidateCollection:
         modified = _apply_update_dict(doc, update)
         if doc.get("candidate_id"):
             self.insert_one(doc)
-        return _UpdateResult(0 if not modified else 1, 1 if modified else 0)
+        return _UpdateResult(matched, 1 if modified else 0)
 
     def delete_one(self, query: dict) -> None:
         with session_scope() as session:
@@ -246,9 +269,13 @@ class _CandidateCollection:
 
 
 class _UserCollection:
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {"id": UserRow.id, "email": UserRow.email}
+
     def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
         with session_scope() as session:
-            rows = session.query(UserRow).all()
+            rows = _filtered_rows(session, UserRow, self._field_columns(), query)
             for row in rows:
                 doc = self._to_doc(row)
                 if _matches(doc, query):
@@ -257,7 +284,10 @@ class _UserCollection:
 
     def find(self, query: dict | None = None) -> Iterator[dict]:
         with session_scope() as session:
-            docs = [self._to_doc(row) for row in session.query(UserRow).all()]
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, UserRow, self._field_columns(), query)
+            ]
         return iter([doc for doc in docs if not query or _matches(doc, query)])
 
     def insert_one(self, doc: dict) -> _InsertResult:
@@ -278,6 +308,7 @@ class _UserCollection:
 
     def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
         doc = self.find_one(query)
+        matched = 1 if doc else 0
         if not doc:
             if not upsert:
                 return _UpdateResult(0, 0)
@@ -285,7 +316,7 @@ class _UserCollection:
         modified = _apply_update_dict(doc, update)
         if doc.get("id"):
             self.insert_one(doc)
-        return _UpdateResult(1 if modified else 0, 1 if modified else 0)
+        return _UpdateResult(matched, 1 if modified else 0)
 
     def delete_one(self, query: dict) -> None:
         with session_scope() as session:
@@ -311,9 +342,19 @@ class _UserCollection:
 
 
 class _SessionCollection:
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "session_id": SessionRow.id,
+            "id": SessionRow.id,
+            "user_id": SessionRow.user_id,
+            "candidate_id": SessionRow.candidate_id,
+            "status": SessionRow.status,
+        }
+
     def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
         with session_scope() as session:
-            rows = session.query(SessionRow).all()
+            rows = _filtered_rows(session, SessionRow, self._field_columns(), query)
             for row in rows:
                 doc = self._to_doc(row)
                 if _matches(doc, query):
@@ -322,7 +363,10 @@ class _SessionCollection:
 
     def find(self, query: dict | None = None) -> Iterator[dict]:
         with session_scope() as session:
-            docs = [self._to_doc(row) for row in session.query(SessionRow).all()]
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, SessionRow, self._field_columns(), query)
+            ]
         return iter([doc for doc in docs if not query or _matches(doc, query)])
 
     def insert_one(self, doc: dict) -> _InsertResult:
@@ -342,6 +386,7 @@ class _SessionCollection:
 
     def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
         doc = self.find_one(query)
+        matched = 1 if doc else 0
         if not doc:
             if not upsert:
                 return _UpdateResult(0, 0)
@@ -349,7 +394,7 @@ class _SessionCollection:
         modified = _apply_update_dict(doc, update)
         if doc.get("session_id"):
             self.insert_one(doc)
-        return _UpdateResult(1 if modified else 0, 1 if modified else 0)
+        return _UpdateResult(matched, 1 if modified else 0)
 
     def delete_one(self, query: dict) -> None:
         session_id = query.get("session_id") or query.get("id")
@@ -488,7 +533,13 @@ class SQLAlchemyDatabase:
         try:
             return self._collections[name]
         except KeyError as exc:
-            raise KeyError(f"SQLAlchemy collection '{name}' is not implemented yet.") from exc
+            raise KeyError(
+                f"Unknown collection '{name}'. The document-style store exposes "
+                f"{sorted(self._collections)}; the remaining Phase 2 tables "
+                "(companies, roles, skills, student skill graph, concept mastery) "
+                "are accessed through the ORM models in backend.db.sqlalchemy_models "
+                "via session_scope()."
+            ) from exc
 
 
 @lru_cache(maxsize=1)
