@@ -77,6 +77,11 @@ Auth endpoints:
 
 If `DATABASE_URL` is missing, the backend keeps the in-memory fallback for local demos and CI.
 
+The SQLAlchemy path is exercised end-to-end (signup → login → session →
+answer → dashboard, plus company seeding and the skill graph) by
+`tests/test_sqlalchemy_store.py`, which points `DATABASE_URL` at a throwaway
+SQLite database.
+
 ### Phase 2 Readiness Platform
 
 Phase 2 adds the durable readiness layer on top of the deterministic scoring
