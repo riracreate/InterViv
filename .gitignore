@@ -14,3 +14,4 @@ venv/
 node_modules/
 frontend/dist/
 .claude/
+/tmp/
