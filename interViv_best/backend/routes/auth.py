@@ -93,7 +93,9 @@ def require_user(authorization: str | None) -> dict:
     return user
 
 
-def require_matching_user(user_id: str, authorization: str | None) -> dict:
+def require_matching_user(user_id: str, authorization: str | None) -> dict | None:
+    if not authorization:
+        return None
     user = require_user(authorization)
     if str(user.get("id")) != str(user_id):
         raise HTTPException(
