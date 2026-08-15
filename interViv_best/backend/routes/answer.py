@@ -14,12 +14,13 @@ import re
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.integrations import IntegrationError
+from backend.routes.auth import require_matching_user
 from backend.routes.session import (
     _get_next_question,
     _skill_for_round,
@@ -122,7 +123,10 @@ def _update_learning_state(
 
 
 @router.post("/answer")
-def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
+def submit_answer(
+    request: SubmitAnswerRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
     settings = get_settings()
     try:
         db = get_database()
@@ -136,6 +140,8 @@ def submit_answer(request: SubmitAnswerRequest) -> dict[str, object]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
+    if session.get("user_id"):
+        require_matching_user(str(session["user_id"]), authorization)
 
     rounds = session.get("rounds", [])
     active_round = next((item for item in rounds if item.get("round") == request.round), None)

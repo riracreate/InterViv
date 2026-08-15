@@ -14,7 +14,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def model_metadata() -> dict[str, Any]:
     """Read-only model artifact metadata for viva/admin verification."""
     try:
-        return get_model_metadata()
+        metadata = get_model_metadata()
+        # Never expose machine-local filesystem paths through an HTTP response.
+        for key in ("artifact_path", "metadata_path"):
+            metadata.pop(key, None)
+        return metadata
     except IntegrationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
 
-from backend.routes.auth import get_user_from_authorization
+from backend.routes.auth import get_user_from_authorization, require_matching_user
 from modules.roadmap_generator import RoadmapGenerationError, RoadmapGenerator
 
 
@@ -46,7 +46,9 @@ def get_roadmap(
     user_id: str,
     role_id: str,
     days: int = Query(default=30, ge=1, le=120),
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    require_matching_user(user_id, authorization)
     try:
         roadmap = RoadmapGenerator().generate(user_id=user_id, role_id=role_id, days=days)
     except RoadmapGenerationError as exc:

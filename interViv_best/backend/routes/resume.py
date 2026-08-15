@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -18,6 +19,8 @@ from backend.routes.auth import get_user_from_authorization
 from modules.skill_graph import StudentSkillGraph
 
 router = APIRouter(prefix="/resume", tags=["resume"])
+LOGGER = logging.getLogger(__name__)
+MAX_RESUME_BYTES = 5 * 1024 * 1024
 
 
 def _normalize_skills(payload: object) -> list[str]:
@@ -44,14 +47,18 @@ async def parse_resume(
             detail="Resume upload must be a PDF file.",
         )
 
-    settings = get_settings()
     suffix = Path(file.filename).suffix or ".pdf"
+    data = await file.read(MAX_RESUME_BYTES + 1)
+    if len(data) > MAX_RESUME_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Resume file is too large (maximum 5 MB).",
+        )
 
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=suffix, dir=settings.project_root
-    ) as handle:
+    settings = get_settings()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         temp_path = Path(handle.name)
-        handle.write(await file.read())
+        handle.write(data)
 
     try:
         parser_module = load_module("resume_parser", "resume_parser.py")
@@ -63,7 +70,7 @@ async def parse_resume(
         try:
             parsed_skills = parser_module.parse_resume(str(temp_path))
         except Exception as parse_exc:
-            print(f"Warning: Failed to parse PDF ({parse_exc}). Defaulting skills.")
+            LOGGER.warning("Resume parsing failed; using safe fallback skills.")
             parsed_skills = ["Python"]
 
         skills = _normalize_skills(parsed_skills)
