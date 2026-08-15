@@ -1,5 +1,5 @@
 {
-  "bank_path": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/data/fallback_question_bank.csv",
+  "bank_path": "data/fallback_question_bank.csv",
   "total_questions": 53,
   "minimum_expected_questions": 50,
   "schema_ok": true,

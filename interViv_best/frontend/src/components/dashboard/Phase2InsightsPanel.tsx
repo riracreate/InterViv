@@ -304,10 +304,10 @@ export default function Phase2InsightsPanel({ userId, targetRoleId }: Props) {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    fetchSkillGraph(userId)
+    fetchSkillGraph()
       .then((d) => { if (!cancelled) setGraph(d); })
       .catch((e) => { if (!cancelled) setErrors((p) => ({ ...p, graph: e.message })); });
-    fetchMastery(userId)
+    fetchMastery()
       .then((d) => { if (!cancelled) setMastery(d); })
       .catch((e) => { if (!cancelled) setErrors((p) => ({ ...p, mastery: e.message })); });
     return () => { cancelled = true; };
