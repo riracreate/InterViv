@@ -1,0 +1,45 @@
+{
+  "artifact_status": "anonymous_manuscript_candidate_not_submission_ready",
+  "generated_at_utc": "2026-08-15T16:28:56Z",
+  "page_count": 3,
+  "page_size": "A4",
+  "user_supplied_page_cap": 6,
+  "git_commit": "8758ecfed5171176add2d1905173aeac58ee914a",
+  "git_dirty_at_experiment_time": true,
+  "experiment_runs": {
+    "primary": "grader-lab-20260815T160016Z",
+    "ablation": "grader-lab-20260815T161227Z",
+    "contradiction_error_analysis": "grader-lab-20260815T161440Z"
+  },
+  "model_versions": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "classifier": "LogisticRegression 1.1.0",
+    "classifier_artifact_sha256": "2897c8cc6283cbdb4815a78182188ea60c17b39876feefa2d67919f065f16dd7",
+    "structured_llm_rubric_judge": "deferred_zero_api_calls"
+  },
+  "dataset_status": {
+    "scientsbank": "loaded; SemEval-2013 Task 7 Core/test; 5835 examples",
+    "beetle": "loaded; SemEval-2013 Task 7 Core/test; 1258 examples",
+    "internal_perturbation": "loaded; 17 examples; pilot_synthetic=true",
+    "ricechem": "pending_access"
+  },
+  "artifact_sha256": {
+    "scripts/build_cins2026_paper.py": "4c8f47e05a507244f0aa9d5dfac4415a76983e581461694fefee075db3658b91",
+    "docs/research_paper/interViv_cins2026_anonymous.md": "24c88c4af722e593dea7a2c2bd31c648ba43de0bc4d06d8c422f4c597f9492e7",
+    "docs/research_paper/figures/cins_fig01_diagnostic_pipeline.png": "b5e989d921c6c7b04389ca8c2865fd16048bd42533363049e756ed03255f564e",
+    "docs/research_paper/interViv_cins2026_anonymous.docx": "48687fd40234968196a9bf22b634cf8c3a8a676c02dfeb09412031beb0d49b10",
+    "docs/research_paper/interViv_cins2026_anonymous.pdf": "8247399a1839872d9fcb902613cd3336a9b4e1e6f06ca4b15762e463b7c62ccc"
+  },
+  "qa": {
+    "docx_privacy_scrubbed": true,
+    "personal_identifier_scan_passed": true,
+    "custom_docx_properties_absent": true,
+    "rendered_pages_reviewed": [1, 2, 3],
+    "clipping_or_overlap_found": false,
+    "pdf_custom_metadata": false,
+    "pdf_javascript": false
+  },
+  "comparison_status": "incomplete_structured_judge_deferred",
+  "external_claim_gate": "retain grader-lab manifests and experiment freeze with every cited number"
+}

@@ -1,0 +1,24 @@
+{
+  "baseline": "structured_llm_rubric_judge",
+  "status": "deferred",
+  "enabled": false,
+  "provider": null,
+  "model": null,
+  "api_calls_allowed": 0,
+  "output_contract": {
+    "label": "one of the shared five-way labels",
+    "score": "number from 0 to 1",
+    "is_off_topic": "boolean",
+    "is_contradiction": "boolean",
+    "feedback_statements": "array of text plus rubric/concept evidence IDs",
+    "resolved_gap_ids": "array of exact concept IDs"
+  },
+  "policy_scope_required": [
+    "cost budget",
+    "latency budget",
+    "approved API and provider",
+    "model checkpoint/version",
+    "data retention and privacy",
+    "retry and failure policy"
+  ]
+}
