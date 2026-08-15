@@ -1,17 +1,59 @@
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*.json
+service-account*.json
+secrets*.json
+*.mobileprovision
+
+# Private uploads and local state
+uploads/
+private/
+local-data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .Python
 *.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 dist/
 build/
-.env
-.venv
+.venv/
 venv/
-*.log
-.DS_Store
+
+# JavaScript
 node_modules/
 frontend/dist/
+
+# Generated/runtime copies
+.interviv_model_lab_runtime/
+tmp/
+
+# Local assistant/editor state
 .claude/
-/tmp/
+.cursor/
+.codex/
+.agents/
+.vscode/
+.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db

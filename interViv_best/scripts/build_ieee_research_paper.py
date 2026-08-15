@@ -757,7 +757,7 @@ def build_docx(sections: list[dict]) -> None:
     b = DocxBuilder()
     b.paragraph("interViv: A Guarded Deterministic Scoring Framework for LLM-Generated Adaptive Mock Interviews", style="Title")
     b.paragraph("IEEE Access-style extended manuscript draft | Replace author block before submission", style="Subtitle")
-    b.paragraph("Authors: Praneet Sharma et al. | Affiliation placeholders | Corresponding author placeholder", style="Subtitle")
+    b.paragraph("Authors: anonymized for public draft | Replace before submission", style="Subtitle")
     b.paragraph("Manuscript status: pre-submission system paper with preliminary evaluation. This draft must be transferred into the official IEEE template before submission.", style="BodyText", italic=True)
     b.page_break()
 

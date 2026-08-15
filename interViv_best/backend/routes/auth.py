@@ -83,6 +83,26 @@ def get_user_from_authorization(authorization: str | None) -> dict | None:
     return user
 
 
+def require_user(authorization: str | None) -> dict:
+    user = get_user_from_authorization(authorization)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication is required.",
+        )
+    return user
+
+
+def require_matching_user(user_id: str, authorization: str | None) -> dict:
+    user = require_user(authorization)
+    if str(user.get("id")) != str(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot access another user's data.",
+        )
+    return user
+
+
 @router.post("/signup")
 def signup(request: SignupRequest) -> dict[str, object]:
     email = _normalize_email(request.email)

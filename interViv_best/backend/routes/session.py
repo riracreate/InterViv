@@ -237,6 +237,17 @@ def start_session(
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
+    if candidate and candidate.get("user_id"):
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this candidate.",
+            )
+        if str(candidate["user_id"]) != str(user["id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot start a session for another user's candidate.",
+            )
     target_company_id = (
         str(user.get("target_company_id")) if user and user.get("target_company_id") else request.target_company_id
     )

@@ -77,12 +77,12 @@ export function fetchMyRoadmap(roleId, days = 30) {
   return request(`/roadmap/me/${encodeURIComponent(roleId)}?days=${days}`);
 }
 
-export function fetchSkillGraph(userId) {
-  return request(`/skill-graph/${encodeURIComponent(userId)}`);
+export function fetchSkillGraph() {
+  return request("/skill-graph/me");
 }
 
-export function fetchMastery(userId) {
-  return request(`/mastery/${encodeURIComponent(userId)}`);
+export function fetchMastery() {
+  return request("/mastery/me");
 }
 
 export function setTargetCompany(targetCompanyId, targetRoleId) {

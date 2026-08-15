@@ -54,7 +54,11 @@ app.add_middleware(
     # Always accept loopback origins on any port for local dev, so the app works
     # whether it's opened via localhost or 127.0.0.1 (browsers treat those as
     # distinct origins). Configured production origins still come from CORS_ORIGINS.
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex=(
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+        if settings.environment not in {"production", "prod"}
+        else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +74,8 @@ app.include_router(answer_router)
 app.include_router(dashboard_router)
 app.include_router(learning_router)
 app.include_router(transcribe_router)
-app.include_router(admin_router)
+if settings.enable_admin_endpoints:
+    app.include_router(admin_router)
 
 
 

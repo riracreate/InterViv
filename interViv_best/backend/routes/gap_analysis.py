@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
 
-from backend.routes.auth import get_user_from_authorization
+from backend.routes.auth import get_user_from_authorization, require_matching_user
 from modules.gap_analysis import GapAnalysisError, GapAnalyzer
 
 
@@ -49,7 +49,12 @@ def get_my_gap_analysis(
 
 
 @router.get("/{user_id}/{role_id}")
-def get_gap_analysis(user_id: str, role_id: str) -> dict[str, Any]:
+def get_gap_analysis(
+    user_id: str,
+    role_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_matching_user(user_id, authorization)
     try:
         report = GapAnalyzer().compute_gap(user_id=user_id, role_id=role_id)
     except GapAnalysisError as exc:

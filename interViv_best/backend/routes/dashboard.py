@@ -3,9 +3,10 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.routes.auth import require_matching_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -91,7 +92,10 @@ def _compute_topic_scores(session: dict[str, Any]) -> dict[str, float]:
 
 
 @router.get("/{session_id}")
-def get_dashboard(session_id: str) -> dict[str, Any]:
+def get_dashboard(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
     try:
         session = get_database()["sessions"].find_one(
             {"session_id": session_id}, {"_id": 0}
@@ -112,6 +116,8 @@ def get_dashboard(session_id: str) -> dict[str, Any]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found.",
         )
+    if session.get("user_id"):
+        require_matching_user(str(session["user_id"]), authorization)
 
     rounds = _sanitize_rounds(session.get("rounds", []))
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]

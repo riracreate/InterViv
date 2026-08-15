@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 class Settings:
     project_root: Path
     modules_dir: Path
+    environment: str
     database_url: str | None
     mongodb_uri: str
     mongodb_db: str
@@ -22,6 +23,7 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     jwt_access_token_minutes: int
+    enable_admin_endpoints: bool
     interview_module_paths: list[Path]
     interview_model_paths: list[Path]
     interview_data_paths: list[Path]
@@ -29,6 +31,29 @@ class Settings:
 
 def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _validate_security_settings(settings: Settings) -> Settings:
+    if settings.jwt_algorithm != "HS256":
+        raise RuntimeError("JWT_ALGORITHM must be HS256.")
+
+    if settings.environment in {"production", "prod"}:
+        secret = settings.jwt_secret_key.strip()
+        weak_markers = {"change-me", "dev-only", "local-dev", "example", "placeholder"}
+        if len(secret) < 32 or any(marker in secret.lower() for marker in weak_markers):
+            raise RuntimeError(
+                "Production requires a unique JWT_SECRET_KEY of at least 32 characters."
+            )
+        if "*" in settings.cors_origins:
+            raise RuntimeError("Production CORS_ORIGINS must not contain '*'.")
+    return settings
 
 
 def _resolve_paths(raw_value: str | None, defaults: list[Path]) -> list[Path]:
@@ -65,9 +90,10 @@ def get_settings() -> Settings:
         project_root,
     ]
 
-    return Settings(
+    settings = Settings(
         project_root=project_root,
         modules_dir=modules_dir,
+        environment=(os.getenv("ENVIRONMENT") or "development").strip().lower(),
         database_url=os.getenv("DATABASE_URL") or None,
         mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
         mongodb_db=os.getenv("MONGODB_DB", "adaptive_mock_interview"),
@@ -80,9 +106,10 @@ def get_settings() -> Settings:
         ),
         max_rounds=int(os.getenv("MAX_ROUNDS", "5")),
         initial_elo=float(os.getenv("INITIAL_ELO", "1200")),
-        jwt_secret_key=os.getenv("JWT_SECRET_KEY", "dev-only-change-me-with-32-plus-bytes"),
-        jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
+        jwt_secret_key=os.getenv("JWT_SECRET_KEY") or "dev-only-change-me-with-32-plus-bytes",
+        jwt_algorithm=(os.getenv("JWT_ALGORITHM") or "HS256").strip().upper(),
         jwt_access_token_minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "1440")),
+        enable_admin_endpoints=_env_bool("ENABLE_ADMIN_ENDPOINTS", False),
         interview_module_paths=_resolve_paths(
             os.getenv("INTERVIEW_MODULE_PATHS"),
             default_module_paths,
@@ -96,3 +123,4 @@ def get_settings() -> Settings:
             default_data_paths,
         ),
     )
+    return _validate_security_settings(settings)
