@@ -1,0 +1,42 @@
+[
+  {
+    "variant": "a_all_five",
+    "artifact": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/research/keyword_feature_ablation/answer_quality_lr_5feat.joblib",
+    "scientsbank": {
+      "n": 5835,
+      "grading_accuracy": 0.35989717223650386,
+      "macro_f1": 0.2340982881250174,
+      "off_topic_detection_rate": 0.061744112030553785,
+      "off_topic_false_positive_rate": 0.008677298311444653,
+      "off_topic_precision": 0.7238805970149254
+    },
+    "beetle": {
+      "n": 1258,
+      "grading_accuracy": 0.14069952305246422,
+      "macro_f1": 0.1364695173425501,
+      "off_topic_detection_rate": 0.010101010101010102,
+      "off_topic_false_positive_rate": 0.006902502157031924,
+      "off_topic_precision": 0.1111111111111111
+    }
+  },
+  {
+    "variant": "b_no_keyword",
+    "artifact": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/research/keyword_feature_ablation/answer_quality_lr_4feat_no_keyword.joblib",
+    "scientsbank": {
+      "n": 5835,
+      "grading_accuracy": 0.35955441302485003,
+      "macro_f1": 0.23319322357805294,
+      "off_topic_detection_rate": 0.061744112030553785,
+      "off_topic_false_positive_rate": 0.008677298311444653,
+      "off_topic_precision": 0.7238805970149254
+    },
+    "beetle": {
+      "n": 1258,
+      "grading_accuracy": 0.13990461049284578,
+      "macro_f1": 0.13571670202702651,
+      "off_topic_detection_rate": 0.010101010101010102,
+      "off_topic_false_positive_rate": 0.006902502157031924,
+      "off_topic_precision": 0.1111111111111111
+    }
+  }
+]

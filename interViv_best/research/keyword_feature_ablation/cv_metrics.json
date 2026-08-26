@@ -1,0 +1,288 @@
+{
+  "training_date": "2026-08-26",
+  "dataset": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/data/ml_training_data.csv",
+  "dataset_sha256": "sha256:73cd98ef096a3e7a2808da1f66427c79d596531c9084a558e192dc04938fd104",
+  "seed": 42,
+  "model_type": "LogisticRegression",
+  "balanced": true,
+  "feature_build": "retrain_ml_model layout with NaN/empty ideal_keywords cleaned to '' so empty-keyword default score 0.5 matches docs/keyword_coverage_audit.md",
+  "n_pinned_keyword_coverage_0.5": 805,
+  "n_real_keyword_coverage": 86,
+  "n_with_nonempty_keywords": 96,
+  "variants": {
+    "a_all_five": {
+      "description": "all five features on 891 rows",
+      "feature_names": [
+        "cosine_similarity",
+        "clarity_score",
+        "keyword_coverage",
+        "word_count",
+        "concept_coverage"
+      ],
+      "n_rows": 891,
+      "cv": {
+        "n_splits": 5,
+        "n_rows": 891,
+        "accuracy": 0.9394,
+        "macro_f1": 0.9391,
+        "per_class_f1": {
+          "Average": 0.9065743944636678,
+          "Good": 0.9747048903878583,
+          "Poor": 0.9361702127659575
+        },
+        "per_class": {
+          "Average": {
+            "precision": 0.9323843416370107,
+            "recall": 0.8821548821548821,
+            "f1": 0.9065743944636678,
+            "support": 297
+          },
+          "Good": {
+            "precision": 0.9763513513513513,
+            "recall": 0.9730639730639731,
+            "f1": 0.9747048903878583,
+            "support": 297
+          },
+          "Poor": {
+            "precision": 0.910828025477707,
+            "recall": 0.9629629629629629,
+            "f1": 0.9361702127659575,
+            "support": 297
+          }
+        },
+        "label_counts": {
+          "Average": 297,
+          "Good": 297,
+          "Poor": 297
+        }
+      },
+      "held_out_macro_f1": 0.9605,
+      "coefficients": {
+        "classes": [
+          "Average",
+          "Good",
+          "Poor"
+        ],
+        "intercept": {
+          "Average": 2.953250895184419,
+          "Good": -1.585030030321557,
+          "Poor": -1.3682208648628604
+        },
+        "coef_by_class": {
+          "Average": {
+            "cosine_similarity": 0.49912134672153574,
+            "clarity_score": -0.9875642584273465,
+            "keyword_coverage": -0.24891133126846657,
+            "word_count": 0.3307178228021848,
+            "concept_coverage": 0.4697641547859008
+          },
+          "Good": {
+            "cosine_similarity": -0.2652327276440626,
+            "clarity_score": 3.468306177098863,
+            "keyword_coverage": 0.3021618990971427,
+            "word_count": 3.3774013800307907,
+            "concept_coverage": 1.2780043251661606
+          },
+          "Poor": {
+            "cosine_similarity": -0.23388861907747657,
+            "clarity_score": -2.48074191867152,
+            "keyword_coverage": -0.053250567828676446,
+            "word_count": -3.708119202832979,
+            "concept_coverage": -1.7477684799520667
+          }
+        },
+        "mean_abs_coef": {
+          "cosine_similarity": 0.332747564481025,
+          "clarity_score": 2.31220411806591,
+          "keyword_coverage": 0.2014412660647619,
+          "word_count": 2.472079468555318,
+          "concept_coverage": 1.1651789866347093
+        }
+      },
+      "keyword_coverage_mean_abs_coef": 0.2014412660647619,
+      "artifact": "research/keyword_feature_ablation/answer_quality_lr_5feat.joblib",
+      "artifact_sha256": "sha256:8d19a097af5fdf14b7127104e55f8b14a70521612fec43c626108c084bcfb0a9"
+    },
+    "b_no_keyword": {
+      "description": "four features, keyword_coverage removed, 891 rows",
+      "feature_names": [
+        "cosine_similarity",
+        "clarity_score",
+        "word_count",
+        "concept_coverage"
+      ],
+      "n_rows": 891,
+      "cv": {
+        "n_splits": 5,
+        "n_rows": 891,
+        "accuracy": 0.9405,
+        "macro_f1": 0.9402,
+        "per_class_f1": {
+          "Average": 0.9078260869565218,
+          "Good": 0.9765100671140939,
+          "Poor": 0.9361702127659575
+        },
+        "per_class": {
+          "Average": {
+            "precision": 0.9388489208633094,
+            "recall": 0.8787878787878788,
+            "f1": 0.9078260869565218,
+            "support": 297
+          },
+          "Good": {
+            "precision": 0.9732441471571907,
+            "recall": 0.9797979797979798,
+            "f1": 0.9765100671140939,
+            "support": 297
+          },
+          "Poor": {
+            "precision": 0.910828025477707,
+            "recall": 0.9629629629629629,
+            "f1": 0.9361702127659575,
+            "support": 297
+          }
+        },
+        "label_counts": {
+          "Average": 297,
+          "Good": 297,
+          "Poor": 297
+        }
+      },
+      "coefficients": {
+        "classes": [
+          "Average",
+          "Good",
+          "Poor"
+        ],
+        "intercept": {
+          "Average": 3.037066842280069,
+          "Good": -1.7017879360604826,
+          "Poor": -1.335278906219629
+        },
+        "coef_by_class": {
+          "Average": {
+            "cosine_similarity": 0.21041634140978874,
+            "clarity_score": -1.0897988658296385,
+            "word_count": 0.331019587968128,
+            "concept_coverage": 0.6860618535050148
+          },
+          "Good": {
+            "cosine_similarity": 0.16944530405701086,
+            "clarity_score": 3.6163921457777373,
+            "word_count": 3.3934312577217765,
+            "concept_coverage": 0.9912521804194122
+          },
+          "Poor": {
+            "cosine_similarity": -0.37986164546680184,
+            "clarity_score": -2.5265932799480995,
+            "word_count": -3.7244508456899084,
+            "concept_coverage": -1.6773140339244312
+          }
+        },
+        "mean_abs_coef": {
+          "cosine_similarity": 0.2532410969778671,
+          "clarity_score": 2.4109280971851583,
+          "word_count": 2.4829672304599377,
+          "concept_coverage": 1.1182093559496193
+        }
+      },
+      "artifact": "research/keyword_feature_ablation/answer_quality_lr_4feat_no_keyword.joblib",
+      "artifact_sha256": "sha256:e80f29d09d88aa7ed5aa9cbd8ba519f2737eab37d50d14403d21218cf0c8edff"
+    },
+    "c_real_keyword_rows": {
+      "description": "five features trained only on rows with keyword_coverage != 0.5 (n=86; 96 rows have non-empty ideal_keywords)",
+      "feature_names": [
+        "cosine_similarity",
+        "clarity_score",
+        "keyword_coverage",
+        "word_count",
+        "concept_coverage"
+      ],
+      "n_rows": 86,
+      "n_pinned_at_0.5": 805,
+      "n_with_nonempty_keywords": 96,
+      "cv": {
+        "n_splits": 5,
+        "n_rows": 86,
+        "accuracy": 0.8605,
+        "macro_f1": 0.8555,
+        "per_class_f1": {
+          "Average": 0.76,
+          "Good": 1.0,
+          "Poor": 0.8064516129032258
+        },
+        "per_class": {
+          "Average": {
+            "precision": 0.76,
+            "recall": 0.76,
+            "f1": 0.76,
+            "support": 25
+          },
+          "Good": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 30
+          },
+          "Poor": {
+            "precision": 0.8064516129032258,
+            "recall": 0.8064516129032258,
+            "f1": 0.8064516129032258,
+            "support": 31
+          }
+        },
+        "label_counts": {
+          "Average": 25,
+          "Good": 30,
+          "Poor": 31
+        }
+      },
+      "coefficients": {
+        "classes": [
+          "Average",
+          "Good",
+          "Poor"
+        ],
+        "intercept": {
+          "Average": 1.2431995618232075,
+          "Good": 0.057896239894529515,
+          "Poor": -1.3010958017177385
+        },
+        "coef_by_class": {
+          "Average": {
+            "cosine_similarity": -0.1496383023889822,
+            "clarity_score": -0.21288939376854424,
+            "keyword_coverage": 0.11551872538013676,
+            "word_count": 0.17496269253905505,
+            "concept_coverage": -0.09064635022976339
+          },
+          "Good": {
+            "cosine_similarity": 0.154600475671218,
+            "clarity_score": 1.4828694958196793,
+            "keyword_coverage": 0.37688233402224475,
+            "word_count": 1.5071184823423032,
+            "concept_coverage": 0.7333257293731613
+          },
+          "Poor": {
+            "cosine_similarity": -0.00496217328223617,
+            "clarity_score": -1.2699801020511354,
+            "keyword_coverage": -0.4924010594023819,
+            "word_count": -1.6820811748813584,
+            "concept_coverage": -0.6426793791433987
+          }
+        },
+        "mean_abs_coef": {
+          "cosine_similarity": 0.10306698378081214,
+          "clarity_score": 0.9885796638797864,
+          "keyword_coverage": 0.3282673729349211,
+          "word_count": 1.1213874499209056,
+          "concept_coverage": 0.48888381958210775
+        }
+      },
+      "artifact": "research/keyword_feature_ablation/answer_quality_lr_5feat_real_keyword_only.joblib",
+      "artifact_sha256": "sha256:6e37e5ad949f72391ab78dfb6a3206f84722dac20bee4b569c0de894cf7cbea2",
+      "note": "n too small for a strong conclusion"
+    }
+  },
+  "production_artifact_untouched": "modules/answer_quality_lr.joblib"
+}
