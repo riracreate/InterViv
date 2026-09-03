@@ -204,6 +204,7 @@ export default function Upload() {
         sessionId: r.session_id,
         question: r.question,
         difficulty: r.difficulty,
+        round_type: r.round_type || 'technical_short_answer',
         round: r.round || 1,
         elo: r.elo || 1200,
         totalRounds,

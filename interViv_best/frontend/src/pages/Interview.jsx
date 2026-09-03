@@ -50,7 +50,11 @@ export default function Interview() {
   const initState = location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
+  const SUPPORTED_ROUND_TYPES = ['technical_short_answer'];
+  const isSupportedRoundType = (t) => SUPPORTED_ROUND_TYPES.includes(t);
+
   const [question, setQuestion] = useState(initState.question || '');
+  const [roundType, setRoundType] = useState(initState.round_type || 'technical_short_answer');
   const [difficulty, setDifficulty] = useState(initState.difficulty || 'medium');
   const [currentSkill, setCurrentSkill] = useState(initState.skill || '');
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
@@ -400,6 +404,7 @@ export default function Interview() {
       question,
       difficulty,
       round,
+      round_type: roundType,
       elo,
       totalRounds,
       engagementBaseline,
@@ -416,6 +421,7 @@ export default function Interview() {
     engagementBaseline,
     question,
     round,
+    roundType,
     sessionComplete,
     sessionId,
     totalRounds,
@@ -529,6 +535,12 @@ export default function Interview() {
   }, [ensureMicrophone, serverRecording, stopMicrophone, stopServerRecording]);
 
   const submitAnswer = async (options = {}) => {
+    // Fail loudly: an unrenderable round type must never be scored, not even
+    // on the timer force-submit path.
+    if (!isSupportedRoundType(roundType)) {
+      setCurrentFeedback(`Unsupported round type "${roundType}" — answer not submitted.`);
+      return;
+    }
     const force = Boolean(options.force);
     const answerText = (options.answerText ?? transcript).trim();
     if ((!answerText && !force) || isScoring) return;
@@ -577,6 +589,7 @@ export default function Interview() {
         setSessionComplete(true);
       } else if (resp.next_question) {
         setQuestion(resp.next_question);
+        setRoundType(resp.next_round_type || 'technical_short_answer');
         setDifficulty(resp.next_difficulty || resp.difficulty || 'medium');
         setCurrentSkill(resp.next_skill || resp.current_skill || currentSkill);
         setRound(round + 1);
@@ -643,7 +656,7 @@ export default function Interview() {
   const progress = totalRounds ? ((round - 1 + (currentScore !== null ? 1 : 0)) / totalRounds) * 100 : 0;
   const answerWordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
   const serverSttActive = useServerSTT || !hasBrowserSTT;
-  const canSubmit = transcript.trim().length > 0 && !isScoring && currentScore === null && !serverRecording && !serverTranscribing;
+  const canSubmit = transcript.trim().length > 0 && !isScoring && currentScore === null && !serverRecording && !serverTranscribing && isSupportedRoundType(roundType);
   const voiceButtonBusy = serverSttActive ? (serverRecording || serverTranscribing) : isRecording;
   const voiceButtonDisabled = isScoring || currentScore !== null || serverTranscribing;
   const voiceStatus = serverTranscribing
@@ -895,6 +908,19 @@ export default function Interview() {
         </div>
 
         <div className="flex flex-col gap-3 overflow-hidden min-h-0">
+          {!isSupportedRoundType(roundType) ? (
+            <div role="alert" data-testid="unsupported-round-type"
+              className="rounded-2xl border border-red-300 bg-red-50 p-5 flex-1 flex flex-col justify-center">
+              <h3 className="text-sm font-medium text-red-800"
+                style={{ fontFamily: "'Inter', sans-serif" }}>Unsupported round type</h3>
+              <p className="mt-2 text-xs leading-relaxed text-red-700"
+                style={{ fontFamily: "'Inter', sans-serif" }}>
+                This round uses type &ldquo;{roundType}&rdquo;, which this version cannot
+                render. Nothing was submitted and nothing was scored — your progress
+                is saved.
+              </p>
+            </div>
+          ) : (
           <div className="rounded-2xl border border-black/8 p-5 flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
@@ -948,6 +974,7 @@ export default function Interview() {
               </p>
             )}
           </div>
+          )}
 
           {currentScore !== null && (
             <div className="rounded-2xl border border-black/8 p-5">
