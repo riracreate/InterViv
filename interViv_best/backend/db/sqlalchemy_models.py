@@ -138,6 +138,7 @@ class SessionRow(Base):
     skills_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     rounds_per_skill: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     total_rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    template_id: Mapped[str | None] = mapped_column(ForeignKey("interview_templates.id"), nullable=True)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",
@@ -163,6 +164,9 @@ class RoundRow(Base):
     engagement_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     skill_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    round_type: Mapped[str] = mapped_column(String(50), nullable=False, default="technical_short_answer")
+    artifact_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     question: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str | None] = mapped_column(String(50), nullable=True)
     difficulty_change: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -182,6 +186,34 @@ class RoundRow(Base):
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
     __table_args__ = (UniqueConstraint("session_id", "round_number", name="uq_rounds_session_round"),)
+
+
+class InterviewTemplateRow(Base):
+    __tablename__ = "interview_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    rounds: Mapped[list["TemplateRoundRow"]] = relationship(
+        back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="TemplateRoundRow.position",
+    )
+
+
+class TemplateRoundRow(Base):
+    __tablename__ = "template_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    template_id: Mapped[str] = mapped_column(ForeignKey("interview_templates.id"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    round_type: Mapped[str] = mapped_column(String(50), nullable=False, default="technical_short_answer")
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    template: Mapped[InterviewTemplateRow] = relationship(back_populates="rounds")
+
+    __table_args__ = (UniqueConstraint("template_id", "position", name="uq_template_rounds_template_position"),)
 
 
 class QuestionRubricRow(Base):
