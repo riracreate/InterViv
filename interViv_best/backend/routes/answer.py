@@ -335,6 +335,9 @@ def submit_answer(
                 {
                     "round": next_round,
                     "skill": next_skill,
+                    "round_type": "technical_short_answer",
+                    "artifact_json": {},
+                    "config_json": {},
                     "question": question_payload["question"],
                     "answer_text": None,
                     "nlp_score": None,
