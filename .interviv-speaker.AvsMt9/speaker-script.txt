@@ -1,0 +1,63 @@
+SLIDE 1 — TITLE | about 0:25
+Good morning. We are Group C47: Oshan, Parth and Praneet. This is interViv, an adaptive interview-readiness platform. The main design choice is simple: a language model may generate a question, but it does not grade the answer. Scoring, difficulty and recommendations are deterministic and inspectable.
+
+SLIDE 2 — PROBLEM | about 0:45
+We started with four practical gaps. Mock interviews are not equally accessible. Feedback is often too generic to act on. Progress is shown per session instead of per skill. And LLM-based grading can be costly, inconsistent and difficult to explain. interViv is designed around those four problems.
+
+SLIDE 3 — RESEARCH POSITION | about 0:50
+The literature shows that NLP, video and generative models are now common in interview systems. But most systems solve only one stage, and many still depend on an external model for scoring. Research also reports domain-transfer problems, even for strong models such as GPT-4. Our position is a unified adaptive workflow with transparent, in-house scoring. We also measure our own transfer limitations instead of assuming they are solved.
+
+SLIDE 4 — COMPARISON MATRIX | about 0:30
+This matrix is the evidence behind the previous summary. I would not read every cell. The pattern is that prior work usually covers only part of the candidate journey or keeps an LLM in the scoring loop. interViv combines profile context, adaptive questioning, deterministic scoring and cross-session readiness in one pipeline.
+
+SLIDE 5 — SYSTEM WORKFLOW | about 1:05
+This is the complete loop. First, the profile provides resume, skills and target-role context. Second, the adaptive engine selects a concept and difficulty; only the question-generation step may call an LLM. Third, the answer receives a deterministic score. Fourth, the evidence is stored. That evidence updates the skill graph, gap analysis, roadmap and dashboard. The important improvement is the closed loop: what the system learns from one answer now changes the next interview decision.
+
+SLIDE 6 — LAST REVIEW | about 0:40
+Last review, we had a complete single-session flow: resume upload, skill extraction, adaptive questions, three-layer scoring, per-skill Elo and a results dashboard. It worked within one interview. The limitation was memory across sessions. This phase focuses on making progress persistent and useful over time.
+
+SLIDE 7 — WHAT CHANGED | about 0:45
+The upper row is the existing interview flow. The lower row is new: accounts and persistence, a skill and concept graph, company-role profiles, gap analysis and a personalised roadmap. These features extend the existing scoring core. The system has moved from a one-session scorer to a cross-session readiness platform.
+
+SLIDE 8 — PERSISTENCE AND SKILL GRAPH | about 0:50
+Four foundations make the platform remember. JWT handles identity. PostgreSQL stores durable data. StudentSkillGraph keeps score, Elo, attempt count and last-practised time for each skill. ConceptMastery goes one level deeper and marks concepts as mastered, strong, weak or untested. That detail turns a broad message like “improve DBMS” into a specific next action.
+
+SLIDE 9 — COMPANY GRAPH AND GAPS | about 0:55
+We currently profile eight companies, sixteen roles and eighty requirements across nine canonical skills. Per-skill readiness compares the student level with the required level and caps it at 100 percent. Overall readiness is a weighted average. Untested skills are shown separately rather than counted as zero. Also, these company profiles are reference benchmarks built from public job descriptions, not verified internal hiring criteria.
+
+SLIDE 10 — ROADMAP AND ADAPTATION | about 0:55
+The roadmap turns the top weak and untested areas into a 7, 14 or 30-day sequence: foundations, depth, application and mock rounds. The adaptive engine now uses two separate signals. Concept gaps decide what to ask; Elo decides how hard it should be. In the current selector, below 1200 maps to easy, below 1700 to medium, and higher ratings to hard. Topic and difficulty are no longer treated as the same problem.
+
+SLIDE 11 — SCORING PIPELINE | about 1:25
+This is the core scoring slide. Layer 1 blends semantic similarity with lexical TF-IDF, so a correct paraphrase is not punished simply for using different words. The current backend final score is the second formula: 45 percent semantic or lexical evidence, 25 percent classifier, 20 percent keyword coverage and 10 percent TF-IDF, followed by capped KG and NER bonuses, penalties and the guard cap. The old 0.85 NLP plus 0.15 KG formula was legacy documentation; 0.85 and 0.15 actually appear in candidate-baseline calibration, not the KG blend.
+
+For the Layer 1 blend, grid search placed the best observed point at 0.10 semantic weight. Production remains at 0.60 because correlation changes by only 0.006 across the full grid at n equals 19, while 0.60 is more robust to paraphrase. We are not claiming 0.60 is statistically optimal; the current sample is too small to separate the settings reliably.
+
+Q&A — blend weight: The honest answer is “grid optimum 0.10, production 0.60, delta r 0.006.” We kept the production value to avoid over-tuning nineteen samples and to preserve paraphrase robustness.
+Q&A — why not GPT-4 grading: deterministic scoring is reproducible, decomposable, cheaper per answer and easier to audit.
+Q&A — off-topic guard: state the logic, not 0.30. The current repository still checks semantic similarity below 0.20 together with zero keyword overlap. The score cap for off-topic answers is 30.
+
+SLIDE 12 — ENGAGEMENT | about 0:45
+This capability is new, but it is deliberately excluded from the score. Webcam frames are analysed client-side with face-api.js. Frames do not leave the browser; only the engagement label and confidence are stored. Facial expression is a weak and potentially biased proxy, so we surface it as feedback only, not as a measure of ability.
+
+SLIDE 13 — PRODUCTION HARDENING | about 0:55
+This phase also improved reliability: error tracking, Redis caching, rate limiting with retries, deterministic fallback questions, model warm-up, load smoke tests and 118 automated tests across 19 files. One stack correction matters: voice input uses the Web Speech API in the browser, with faster-whisper tiny.en as the server fallback. It does not use Groq Whisper.
+
+SLIDE 14 — CLASSIFIER | about 0:50
+The answer-quality classifier is logistic regression trained on 891 balanced examples: 297 each for Good, Average and Poor. It uses five engineered features. Validation accuracy is 95.53 percent, and five-fold cross-validation averages 95.62 percent with a standard deviation of 1.48. This is classifier-only performance. It is not whole-system accuracy, human agreement or hiring-outcome prediction.
+
+SLIDE 15 — HUMAN BASELINE | about 1:05
+The primary result is the matched set of nineteen answers. System-to-human correlation is 0.821, the 95 percent confidence interval is 0.585 to 0.929, kappa is 0.752 and band agreement is 68.4 percent. The secondary result uses all thirty answers, including nine designed off-topic distractors; correlation falls to 0.739 and band agreement to 43 percent. The difference isolates off-topic handling as a real failure mode. We also have 123 passing tests that enforce the guard caps and protect genuine answers from false flags.
+
+SLIDE 16 — EVALUATION RIGOUR | about 1:05
+We audited our evaluation and kept the less flattering findings. First, the benchmark harness now uses frozen manifests. Second, removing the whole classifier improves out-of-domain F1, which localises a domain-sensitivity problem. Removing only keyword coverage changes out-of-domain F1 by roughly 0.001 downward, so that feature is not the cause. Third, we found nine designed distractors in the human set and now report matched and full-set results separately. Fourth, off-topic recall improved from 0.36 to 0.72 for same-skill answers and from 0.76 to 0.93 across skills, with zero false positives on fifty on-topic answers.
+
+SLIDE 17 — LIMITATIONS | about 0:45
+These limits define what we cannot yet claim. Company profiles are public reference benchmarks. We have not shown that readiness predicts real interview outcomes. Production deployment still needs live verification. The human study is small. Engagement is a heuristic, not a psychological measure. And the classifier does not transfer cleanly to out-of-domain science-education benchmarks. These are measured boundaries, not hidden assumptions.
+
+SLIDE 18 — CONCLUSION | about 0:45
+Next, we need a larger human-rated study, verified deployment, broader company and role coverage, better band calibration, and multilingual and placement-cell modes. To conclude, interViv has grown from a single-session scorer into a persistent readiness platform while keeping deterministic scoring. The three headline numbers are 95.6 percent classifier cross-validation, human correlation of 0.82 at n equals 19, and 118 automated tests.
+
+SLIDE 19 — THANK YOU | about 0:20
+These are the main references behind our semantic layer, Elo adaptation, human-agreement interpretation, domain-transfer discussion and fairness choices. Thank you. We are happy to take questions.
+
