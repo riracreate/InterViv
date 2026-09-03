@@ -26,8 +26,8 @@ from backend.routes.session import (
     _skill_for_round,
     _sub_domain_for_skill,
 )
-from backend.scoring.pipeline import run_scoring_pipeline
 from modules import adaptive_question_selector
+from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
 from modules.skill_graph import StudentSkillGraph
 
@@ -168,7 +168,8 @@ def submit_answer(
         ) / len(rounds_so_far)
 
     try:
-        scoring_result = run_scoring_pipeline(
+        scoring_result = score_round(
+            round_type=active_round.get("round_type"),
             answer_text=request.answer_text,
             word_count=_server_word_count(request.answer_text),
             engagement_label=request.engagement_label,
@@ -178,6 +179,10 @@ def submit_answer(
             difficulty=active_round.get("difficulty", "medium"),
             candidate_baseline=candidate_baseline,
         )
+    except UnsupportedRoundTypeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     except IntegrationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -392,6 +397,7 @@ def submit_answer(
         "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
         "guard_applied": scoring_result.get("guard_applied"),
         "next_question": next_question,
+        "next_round_type": "technical_short_answer" if next_question else None,
         "next_difficulty": response_next_difficulty,
         "next_skill": next_skill,
         "adaptive_target": next_target,

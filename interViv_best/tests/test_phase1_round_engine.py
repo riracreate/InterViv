@@ -81,3 +81,40 @@ def test_legacy_round_document_without_type_keys_defaults(phase1_db) -> None:
     assert stored["rounds"][0]["round_type"] == "technical_short_answer"
     assert stored["rounds"][0]["artifact_json"] == {}
     assert stored["rounds"][0]["config_json"] == {}
+
+
+def test_score_round_rejects_unknown_type() -> None:
+    from modules.scoring import UnsupportedRoundTypeError, score_round
+
+    with pytest.raises(UnsupportedRoundTypeError) as excinfo:
+        score_round(round_type="multiple_choice", answer_text="B")
+    assert "multiple_choice" in str(excinfo.value)
+
+
+def test_score_round_delegates_technical(monkeypatch) -> None:
+    import modules.scoring as scoring
+
+    seen: dict = {}
+
+    def stub(**kwargs):
+        seen.update(kwargs)
+        return {"final_score": 80.0}
+
+    monkeypatch.setattr(scoring, "run_scoring_pipeline", stub)
+    result = scoring.score_round(
+        round_type="technical_short_answer", answer_text="a stack is LIFO"
+    )
+    assert result == {"final_score": 80.0}
+    assert seen["answer_text"] == "a stack is LIFO"
+
+
+def test_score_round_none_type_is_shim_only(monkeypatch) -> None:
+    """None maps to technical for in-memory shim docs, and still delegates."""
+    import modules.scoring as scoring
+
+    monkeypatch.setattr(
+        scoring, "run_scoring_pipeline", lambda **kwargs: {"final_score": 1.0}
+    )
+    assert scoring.score_round(round_type=None, answer_text="x") == {
+        "final_score": 1.0
+    }

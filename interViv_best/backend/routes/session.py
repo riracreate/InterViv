@@ -371,6 +371,7 @@ def start_session(
         "user_id": user["id"] if user else candidate.get("user_id"),
         "question": first_question["question"],
         "difficulty": difficulty,
+        "round_type": "technical_short_answer",
         "round": 1,
         "elo": elo_before,
         "total_rounds": total_rounds,
