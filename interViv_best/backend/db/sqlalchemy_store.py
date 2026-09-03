@@ -424,6 +424,7 @@ class _SessionCollection:
         row.skills_json = data.get("skills") or ([data["skill"]] if data.get("skill") else [])
         row.rounds_per_skill = int(data.get("rounds_per_skill") or 3)
         row.total_rounds = data.get("total_rounds")
+        row.template_id = data.get("template_id")
 
     @staticmethod
     def _replace_rounds(session, row: SessionRow, rounds: list[dict[str, Any]]) -> None:
@@ -446,6 +447,11 @@ class _SessionCollection:
                     engagement_label=round_doc.get("engagement_label"),
                     engagement_delta=round_doc.get("engagement_delta"),
                     skill_text=round_doc.get("skill"),
+                    # or-fallbacks: pre-Phase-1 round documents have no type
+                    # keys, and every one of them is a technical short answer.
+                    round_type=round_doc.get("round_type") or "technical_short_answer",
+                    artifact_json=round_doc.get("artifact_json") or {},
+                    config_json=round_doc.get("config_json") or {},
                     question=round_doc.get("question"),
                     difficulty=round_doc.get("difficulty"),
                     difficulty_change=round_doc.get("difficulty_change"),
@@ -472,6 +478,9 @@ class _SessionCollection:
                 {
                     "round": round_row.round_number,
                     "skill": round_row.skill_text,
+                    "round_type": round_row.round_type or "technical_short_answer",
+                    "artifact_json": round_row.artifact_json or {},
+                    "config_json": round_row.config_json or {},
                     "question": round_row.question,
                     "answer_text": round_row.answer_text,
                     "nlp_score": round_row.nlp_score,
@@ -517,6 +526,7 @@ class _SessionCollection:
             "skills": row.skills_json or [],
             "rounds_per_skill": row.rounds_per_skill,
             "total_rounds": row.total_rounds,
+            "template_id": row.template_id,
             "rounds": rounds,
         }
 
