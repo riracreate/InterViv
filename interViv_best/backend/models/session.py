@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 class RoundDocument(BaseModel):
     round: int
     question: str
+    round_type: str = "technical_short_answer"
+    artifact_json: dict[str, Any] = Field(default_factory=dict)
+    config_json: dict[str, Any] = Field(default_factory=dict)
     answer_text: str | None = None
     nlp_score: float | None = None
     svm_label: str | None = None
