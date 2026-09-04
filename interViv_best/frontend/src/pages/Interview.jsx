@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession } from '../lib/api';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
+import MCQRound from '../components/MCQRound';
+import SQLRound from '../components/SQLRound';
 
 const ROUND_SECONDS = 120;
 
@@ -50,12 +52,16 @@ export default function Interview() {
   const initState = location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
-  const SUPPORTED_ROUND_TYPES = ['technical_short_answer'];
+  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql'];
   const isSupportedRoundType = (t) => SUPPORTED_ROUND_TYPES.includes(t);
 
   const [question, setQuestion] = useState(initState.question || '');
   const [roundType, setRoundType] = useState(initState.round_type || 'technical_short_answer');
   const [difficulty, setDifficulty] = useState(initState.difficulty || 'medium');
+  const [questionContext, setQuestionContext] = useState(initState.question_context || {});
+  const [configJson, setConfigJson] = useState(initState.config_json || {});
+  const [expiresAt, setExpiresAt] = useState(initState.expires_at || null);
+  const [currentArtifact, setCurrentArtifact] = useState(null);
   const [currentSkill, setCurrentSkill] = useState(initState.skill || '');
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
   const [round, setRound] = useState(initState.round || 1);
@@ -405,6 +411,9 @@ export default function Interview() {
       difficulty,
       round,
       round_type: roundType,
+      question_context: questionContext,
+      config_json: configJson,
+      expires_at: expiresAt,
       elo,
       totalRounds,
       engagementBaseline,
@@ -414,18 +423,43 @@ export default function Interview() {
     allSkills,
     calibrationSkipped,
     candidateId,
+    configJson,
     currentScore,
     currentSkill,
     difficulty,
     elo,
     engagementBaseline,
+    expiresAt,
     question,
+    questionContext,
     round,
     roundType,
     sessionComplete,
     sessionId,
     totalRounds,
   ]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (
+      (roundType === 'mcq' || roundType === 'sql') &&
+      (!questionContext || Object.keys(questionContext).length === 0)
+    ) {
+      fetchSession(sessionId)
+        .then((data) => {
+          if (data?.current_round) {
+            const cr = data.current_round;
+            if (cr.round_type) setRoundType(cr.round_type);
+            if (cr.question) setQuestion(cr.question);
+            if (cr.difficulty) setDifficulty(cr.difficulty);
+            if (cr.question_context) setQuestionContext(cr.question_context);
+            if (cr.config_json) setConfigJson(cr.config_json);
+            if (cr.expires_at) setExpiresAt(cr.expires_at);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [sessionId, roundType]);
 
   const toggleRecording = useCallback(async () => {
     if (isRecording) {
@@ -542,26 +576,33 @@ export default function Interview() {
       return;
     }
     const force = Boolean(options.force);
-    const answerText = (options.answerText ?? transcript).trim();
-    if ((!answerText && !force) || isScoring) return;
+    const isMcq = roundType === 'mcq';
+    const answerText = (options.answer_text ?? options.answerText ?? transcript).trim();
+    const answers = options.answers;
+    if (!isMcq && (!answerText && !force) || isScoring) return;
     if (isRecording) stopRecording();
     if (serverRecording) stopServerRecording(false);
     setIsScoring(true);
     try {
-      const metrics = buildAnswerMetrics(answerText);
+      const metrics = !isMcq ? buildAnswerMetrics(answerText) : {};
       const engagement = isVideoOn ? modeOfLabels(engagementSamplesRef.current) : null;
       const engagementDelta = calibrationSkipped
         ? 0
         : computeEngagementDelta(engagement?.label, engagementBaseline?.label);
-      const resp = await apiSubmitAnswer({
+      const payload = {
         session_id: sessionId,
         round,
-        answer_text: answerText,
-        ...metrics,
         engagement_label: engagement?.label ?? null,
         engagement_confidence: engagement?.confidence ?? null,
         engagement_delta: engagementDelta,
-      });
+        ...metrics,
+      };
+      if (isMcq) {
+        payload.answers = answers || {};
+      } else {
+        payload.answer_text = answerText;
+      }
+      const resp = await apiSubmitAnswer(payload);
 
       const score = resp.final_score ?? 50;
       const feedbackRaw = resp.feedback?.next_step || resp.feedback?.content?.[0] || '';
@@ -572,13 +613,14 @@ export default function Interview() {
       setCurrentFeedback(feedback);
       setCurrentRubric(rubric && typeof rubric === 'object' ? rubric : null);
       setCurrentConcepts(concepts && typeof concepts === 'object' ? concepts : null);
+      setCurrentArtifact(resp.artifact_json || resp);
       setElo(resp.elo_after ?? elo);
       setScores(p => [...p, {
         round,
         skill: currentSkill,
         score,
         question,
-        answer: answerText,
+        answer: isMcq ? JSON.stringify(answers) : answerText,
         feedback,
         engagement_label: engagement?.label ?? null,
         engagement_confidence: engagement?.confidence ?? null,
@@ -592,6 +634,9 @@ export default function Interview() {
         setRoundType(resp.next_round_type || 'technical_short_answer');
         setDifficulty(resp.next_difficulty || resp.difficulty || 'medium');
         setCurrentSkill(resp.next_skill || resp.current_skill || currentSkill);
+        setQuestionContext(resp.next_question_context || {});
+        setConfigJson(resp.next_config_json || {});
+        setExpiresAt(resp.next_expires_at || null);
         setRound(round + 1);
         setCalibrationComplete(true);
       }
@@ -607,12 +652,12 @@ export default function Interview() {
   }, [round]);
 
   useEffect(() => {
-    if (sessionComplete || currentScore !== null || isScoring || showCalibrationScreen) return undefined;
+    if (sessionComplete || currentScore !== null || isScoring || showCalibrationScreen || roundType !== 'technical_short_answer') return undefined;
     const id = setInterval(() => {
       setTimeLeft(seconds => Math.max(0, seconds - 1));
     }, 1000);
     return () => clearInterval(id);
-  }, [currentScore, isScoring, sessionComplete, showCalibrationScreen]);
+  }, [currentScore, isScoring, roundType, sessionComplete, showCalibrationScreen]);
 
   useEffect(() => {
     if (
@@ -620,12 +665,13 @@ export default function Interview() {
       currentScore !== null ||
       isScoring ||
       sessionComplete ||
-      showCalibrationScreen
+      showCalibrationScreen ||
+      roundType !== 'technical_short_answer'
     ) {
       return;
     }
     submitAnswer({ force: true });
-  }, [currentScore, isScoring, sessionComplete, showCalibrationScreen, submitAnswer, timeLeft]);
+  }, [currentScore, isScoring, roundType, sessionComplete, showCalibrationScreen, submitAnswer, timeLeft]);
 
   const handleNext = () => {
     if (sessionComplete) {
@@ -636,6 +682,7 @@ export default function Interview() {
     setTranscript(''); setInterimText('');
     setCurrentScore(null); setCurrentFeedback('');
     setCurrentRubric(null); setCurrentConcepts(null);
+    setCurrentArtifact(null);
     stopRecording();
     stopServerRecording(true);
     clearEngagementSamples();
@@ -844,7 +891,43 @@ export default function Interview() {
         </div>
       </header>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
+      {roundType === 'mcq' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <MCQRound
+            sessionId={sessionId}
+            round={round}
+            questionContext={questionContext}
+            configJson={configJson}
+            expiresAt={expiresAt}
+            isScoring={isScoring}
+            currentScore={currentScore}
+            currentArtifact={currentArtifact}
+            currentFeedback={currentFeedback}
+            onSubmit={(payload) => submitAnswer(payload)}
+            onNextRound={handleNext}
+            sessionComplete={sessionComplete}
+          />
+        </div>
+      ) : roundType === 'sql' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <SQLRound
+            sessionId={sessionId}
+            round={round}
+            question={question}
+            questionContext={questionContext}
+            configJson={configJson}
+            expiresAt={expiresAt}
+            isScoring={isScoring}
+            currentScore={currentScore}
+            currentArtifact={currentArtifact}
+            currentFeedback={currentFeedback}
+            onSubmit={(payload) => submitAnswer(payload)}
+            onNextRound={handleNext}
+            sessionComplete={sessionComplete}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
         <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/8 bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
@@ -1081,6 +1164,7 @@ export default function Interview() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

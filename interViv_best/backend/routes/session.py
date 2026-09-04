@@ -692,24 +692,30 @@ def run_sql_preview(
             max_rows=1000,
         )
         return {
+            "success": True,
             "columns": columns,
             "rows": [list(r) for r in rows],
+            "row_count": len(rows),
             "truncated": truncated,
             "execution_time_ms": elapsed_ms,
             "error": None,
         }
     except (SQLSecurityError, SQLTimeoutError, SQLSingleStatementError, sqlite3.DatabaseError) as exc:
         return {
+            "success": False,
             "columns": [],
             "rows": [],
+            "row_count": 0,
             "truncated": False,
             "execution_time_ms": 0.0,
             "error": str(exc),
         }
     except Exception as exc:
         return {
+            "success": False,
             "columns": [],
             "rows": [],
+            "row_count": 0,
             "truncated": False,
             "execution_time_ms": 0.0,
             "error": f"Execution error: {exc}",
