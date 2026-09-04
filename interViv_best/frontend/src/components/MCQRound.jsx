@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, HelpCircle, Clock, ChevronLeft, ChevronRight, Send, AlertCircle } from 'lucide-react';
+import { formatMCQSubmission } from '../lib/roundContractHelpers';
 
 export default function MCQRound({
   sessionId,
@@ -64,7 +65,8 @@ export default function MCQRound({
 
   const handleSubmit = () => {
     if (isScoring || currentScore !== null) return;
-    onSubmit({ answers });
+    const formatted = formatMCQSubmission(questions, answers);
+    onSubmit({ answers: formatted });
   };
 
   const formatTime = (secs) => {

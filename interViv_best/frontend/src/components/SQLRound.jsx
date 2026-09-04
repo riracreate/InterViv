@@ -304,7 +304,35 @@ export default function SQLRound({
             )}
           </div>
 
-          {/* Test Case Breakdown */}
+          {/* Safe Aggregate Evaluation Evidence */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
+              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Cases Passed</span>
+              <span className="text-lg font-bold text-gray-900 mt-0.5">
+                {(currentArtifact?.cases_passed ?? currentArtifact?.passed_cases ?? (currentArtifact?.cases ? currentArtifact.cases.filter(c => c.passed).length : 0))} / {(currentArtifact?.evaluation_cases ?? currentArtifact?.total_cases ?? currentArtifact?.cases?.length ?? 0)}
+              </span>
+            </div>
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
+              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Result Equality</span>
+              <span className="text-lg font-bold text-gray-900 mt-0.5">
+                {(currentArtifact?.result_equality_points ?? 0).toFixed(1)} / 60.0
+              </span>
+            </div>
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
+              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Row Count</span>
+              <span className="text-lg font-bold text-gray-900 mt-0.5">
+                {(currentArtifact?.row_count_points ?? 0).toFixed(1)} / 20.0
+              </span>
+            </div>
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
+              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Constraints</span>
+              <span className="text-lg font-bold text-gray-900 mt-0.5">
+                {(currentArtifact?.constraint_points ?? 20.0).toFixed(1)} / 20.0
+              </span>
+            </div>
+          </div>
+
+          {/* Test Case Breakdown if available for backward compatibility */}
           {currentArtifact?.cases && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
               {currentArtifact.cases.map((c, idx) => (

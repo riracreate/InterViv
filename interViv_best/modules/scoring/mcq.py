@@ -36,9 +36,11 @@ def score_mcq_round(
     seen_ids: set[str] = set()
     answers_map: dict[str, list[str]] = {}
     for ans in answers:
+        if not isinstance(ans, dict) or "question_id" not in ans:
+            raise ValueError("Each answer must be an object with 'question_id' and 'selected_option_ids'.")
         qid = str(ans.get("question_id", "")).strip()
         if not qid:
-            continue
+            raise ValueError("Empty question ID in submission.")
         if qid in seen_ids:
             raise ValueError(f"Duplicate question ID in submission: {qid!r}")
         seen_ids.add(qid)
@@ -47,10 +49,15 @@ def score_mcq_round(
         if qid not in assigned_map:
             raise ValueError(f"Question ID not assigned to this round: {qid!r}")
 
-        selected = ans.get("selected_option_ids", [])
+        selected = ans.get("selected_option_ids")
+        if selected is None:
+            selected = []
         if not isinstance(selected, list):
             raise ValueError(f"selected_option_ids must be a list for question: {qid!r}")
-        answers_map[qid] = [str(x) for x in selected]
+        str_selected = [str(x) for x in selected]
+        if len(str_selected) != len(set(str_selected)):
+            raise ValueError(f"Duplicate options in selection for question: {qid!r}")
+        answers_map[qid] = str_selected
 
     # 3. Score each assigned question
     scored_items: list[dict[str, Any]] = []
