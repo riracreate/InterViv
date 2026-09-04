@@ -263,8 +263,8 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
     except Exception:
         pass
 
-    from backend.db.phase2a_fixtures import PHASE2A_MCQ_FIXTURES
-    items = [dict(q) for q in PHASE2A_MCQ_FIXTURES]
+    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
+    items = [dict(q) for q in PHASE2_MCQ_BANK]
     if skills:
         matched = [q for q in items if q.get("skill") in skills]
         rest = [q for q in items if q.get("skill") not in skills]
@@ -273,11 +273,46 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
 
 
 def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
+    from backend.db.phase2_content_bank import PHASE2_SQL_BANK
     from backend.db.phase2a_fixtures import PHASE2A_SQL_FIXTURES
-    if problem_id:
-        for p in PHASE2A_SQL_FIXTURES:
-            if p["id"] == problem_id:
-                return dict(p)
+    target_id = problem_id or "sql_hr_high_earners"
+    try:
+        from backend.config import get_settings
+        if get_settings().database_url:
+            from backend.db.sqlalchemy_store import session_scope
+            from backend.db.sqlalchemy_models import SQLProblemRow
+            from sqlalchemy import select
+            with session_scope() as session:
+                stmt = select(SQLProblemRow).where(SQLProblemRow.id == target_id)
+                p_row = session.execute(stmt).scalars().first()
+                if p_row:
+                    cases = [
+                        {
+                            "case_type": c.case_type,
+                            "seed_data": c.seed_data,
+                            "description": c.description,
+                            "sort_order": c.sort_order,
+                        }
+                        for c in p_row.cases
+                    ]
+                    return {
+                        "id": p_row.id,
+                        "difficulty": p_row.difficulty,
+                        "prompt": p_row.prompt,
+                        "schema_ddl": p_row.schema_ddl,
+                        "reference_query": p_row.reference_query,
+                        "checks_json": p_row.checks_json,
+                        "cases": cases,
+                    }
+    except Exception:
+        pass
+
+    for p in PHASE2_SQL_BANK:
+        if p["id"] == target_id:
+            return dict(p)
+    for p in PHASE2A_SQL_FIXTURES:
+        if p["id"] == target_id:
+            return dict(p)
     return dict(PHASE2A_SQL_FIXTURES[0])
 
 
