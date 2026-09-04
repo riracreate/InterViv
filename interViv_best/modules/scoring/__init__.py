@@ -1,9 +1,9 @@
-"""Typed round scoring dispatch (Phase 1).
+"""Typed round scoring dispatch (Phase 1 & Phase 2).
 
-Routes an answered round to the scorer for its ``round_type``. Phase 1 ships
-one arm only: ``technical_short_answer`` runs the existing deterministic
-pipeline. Phase 2 adds new arms (e.g. MCQ) here, without reopening the
-answer route.
+Routes an answered round to the scorer for its ``round_type``:
+- ``technical_short_answer``: runs the existing 3-layer deterministic NLP pipeline.
+- ``mcq``: exact-match multi-question deterministic aggregation.
+- ``sql``: sandboxed multi-case SQLite evaluation.
 
 Deterministic like everything it calls: no LLM, no reviewer, no tie-breaker
 (see AGENTS.md section 6). Unknown types raise; they never fall back.
@@ -11,11 +11,14 @@ Deterministic like everything it calls: no LLM, no reviewer, no tie-breaker
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from backend.scoring.pipeline import run_scoring_pipeline
 
 TECHNICAL_SHORT_ANSWER = "technical_short_answer"
+MCQ = "mcq"
+SQL = "sql"
 
 
 class UnsupportedRoundTypeError(ValueError):
@@ -25,7 +28,9 @@ class UnsupportedRoundTypeError(ValueError):
 def score_round(
     *,
     round_type: str | None,
-    answer_text: str,
+    answer_text: str | None = None,
+    answers: list[dict[str, Any]] | None = None,
+    config: dict[str, Any] | None = None,
     word_count: int = 0,
     engagement_label: str | None = None,
     wpm: float | None = None,
@@ -33,25 +38,63 @@ def score_round(
     question_context: dict[str, Any] | None = None,
     difficulty: str = "medium",
     candidate_baseline: float | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Score one answered round with the scorer for its type."""
-    # Only in-memory shim documents predate round_type: after the Phase 1
-    # backfill, round_type is never null in Postgres, so the None arm below
-    # exists solely for those shims. Do not extend it into a general
-    # fallback: unknown non-null types must raise (fail loudly).
     if round_type is None:
         round_type = TECHNICAL_SHORT_ANSWER
+
     if round_type == TECHNICAL_SHORT_ANSWER:
         return run_scoring_pipeline(
-            answer_text=answer_text,
+            answer_text=answer_text or "",
             word_count=word_count,
             engagement_label=engagement_label,
             wpm=wpm,
             pause_count=pause_count,
-            question_context=question_context,
+            question_context=question_context or {},
             difficulty=difficulty,
             candidate_baseline=candidate_baseline,
         )
+
+    if round_type == MCQ:
+        from modules.scoring.mcq import score_mcq_round
+
+        q_ctx = question_context or {}
+        assigned = q_ctx.get("questions")
+        if not assigned and "id" in q_ctx:
+            # Single question context fallback
+            assigned = [q_ctx]
+        assigned = assigned or []
+
+        # If answers is None but answer_text is provided, parse JSON list/dict
+        if answers is None and answer_text:
+            try:
+                parsed = json.loads(answer_text)
+                if isinstance(parsed, list):
+                    answers = parsed
+                elif isinstance(parsed, dict) and "answers" in parsed:
+                    answers = parsed["answers"]
+                elif isinstance(parsed, dict):
+                    answers = [parsed]
+            except Exception:
+                answers = [{"question_id": assigned[0]["id"], "selected_option_ids": [answer_text.strip()]}] if assigned else []
+
+        return score_mcq_round(
+            answers=answers or [],
+            assigned_questions=assigned,
+            config=config or q_ctx.get("config_json") or {},
+        )
+
+    if round_type == SQL:
+        from modules.scoring.sql_round import score_sql_round
+
+        return score_sql_round(
+            candidate_query=answer_text or "",
+            question_context=question_context or {},
+            config=config or {},
+            **kwargs,
+        )
+
     raise UnsupportedRoundTypeError(
         f"Unsupported round type: {round_type!r}. "
         "Add a scoring arm in modules/scoring instead of falling back."

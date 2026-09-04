@@ -13,6 +13,8 @@ Helper export:
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -23,7 +25,8 @@ from backend.db import DatabaseConnectionError, get_database, is_database_except
 from backend.integrations import IntegrationError
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
-from backend.routes.auth import get_user_from_authorization
+from backend.routes.auth import get_user_from_authorization, require_matching_user
+from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
 router = APIRouter(prefix="/session", tags=["session"])
@@ -43,6 +46,8 @@ class StartSessionRequest(BaseModel):
     rounds_per_skill: int = Field(default=3, ge=1, le=10)
     target_company_id: str | None = None
     target_role_id: str | None = None
+    round_type: str = "technical_short_answer"
+    round_config: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -218,6 +223,49 @@ def _get_next_question(
     )
 
 
+def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> list[dict[str, Any]]:
+    try:
+        from backend.config import get_settings
+        if get_settings().database_url:
+            from backend.db.sqlalchemy_store import session_scope
+            from backend.db.sqlalchemy_models import MCQQuestionRow, SkillRow
+            from sqlalchemy import select
+            with session_scope() as session:
+                stmt = select(MCQQuestionRow, SkillRow.canonical_name).join(
+                    SkillRow, MCQQuestionRow.skill_id == SkillRow.id
+                )
+                rows = session.execute(stmt).all()
+                if rows:
+                    items = []
+                    for q_row, skill_name in rows:
+                        items.append({
+                            "id": q_row.id,
+                            "skill": skill_name,
+                            "sub_domain": q_row.sub_domain,
+                            "difficulty": q_row.difficulty,
+                            "stem": q_row.stem,
+                            "options_json": q_row.options_json,
+                            "correct_option_ids": q_row.correct_option_ids,
+                            "explanation": q_row.explanation,
+                            "negative_marking": float(q_row.negative_marking),
+                        })
+                    if skills:
+                        matched = [q for q in items if q["skill"] in skills]
+                        rest = [q for q in items if q["skill"] not in skills]
+                        items = matched + rest
+                    return items[:count]
+    except Exception:
+        pass
+
+    from backend.db.phase2a_fixtures import PHASE2A_MCQ_FIXTURES
+    items = [dict(q) for q in PHASE2A_MCQ_FIXTURES]
+    if skills:
+        matched = [q for q in items if q.get("skill") in skills]
+        rest = [q for q in items if q.get("skill") not in skills]
+        items = matched + rest
+    return items[:count]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /session/start
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,32 +332,67 @@ def start_session(
             raise
 
     # ── first-round skill ───────────────────────────────────────────────────
+    now = datetime.now(timezone.utc)
     first_skill = request.skills[0]
     elo_before = float(candidate.get("elo_ratings", {}).get(first_skill, settings.initial_elo))
     difficulty = _elo_to_difficulty(elo_before)
     sub_domain = _sub_domain_for_skill(candidate, first_skill, request.sub_domain)
 
-    try:
-        first_question = _get_next_question(
-            skill=first_skill, sub_domain=sub_domain,
-            difficulty=difficulty, asked=[],
-            user_id=str(user["id"]) if user else None,
-            target_company_id=target_company_id,
-            target_role_id=target_role_id,
-            resume_skills=candidate.get("resume_skills") or request.skills,
-        )
-    except IntegrationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail=str(exc)) from exc
+    if request.round_type == "mcq":
+        cfg = request.round_config or {}
+        count = int(cfg.get("count", 15))
+        duration_mins = int(cfg.get("duration_minutes", 20))
+        neg_mark = float(cfg.get("negative_marking", 0.25))
+        review_policy = cfg.get("review_policy", "none")
 
-    # ── build session doc ───────────────────────────────────────────────────
-    round_document = RoundDocument(
-        round=1,
-        question=first_question["question"],
-        difficulty=difficulty,
-        elo_before=elo_before,
-        question_context=first_question,
-    )
+        assigned_questions = _select_mcq_questions(skills=request.skills, count=count)
+        expires_at = now + timedelta(minutes=duration_mins)
+
+        round_config = {
+            "count": len(assigned_questions),
+            "duration_minutes": duration_mins,
+            "negative_marking": neg_mark,
+            "attempt_policy": "single_submission_final",
+            "review_policy": review_policy,
+        }
+
+        round_document = RoundDocument(
+            round=1,
+            round_type="mcq",
+            question="Multiple Choice Assessment",
+            difficulty=difficulty,
+            elo_before=elo_before,
+            config_json=round_config,
+            question_context={"questions": assigned_questions},
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+        )
+    else:
+        try:
+            first_question = _get_next_question(
+                skill=first_skill, sub_domain=sub_domain,
+                difficulty=difficulty, asked=[],
+                user_id=str(user["id"]) if user else None,
+                target_company_id=target_company_id,
+                target_role_id=target_role_id,
+                resume_skills=candidate.get("resume_skills") or request.skills,
+            )
+        except IntegrationError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=str(exc)) from exc
+
+        round_document = RoundDocument(
+            round=1,
+            round_type="technical_short_answer",
+            question=first_question["question"],
+            difficulty=difficulty,
+            elo_before=elo_before,
+            question_context=first_question,
+            started_at=now,
+            status="in_progress",
+        )
+
     session_id = str(uuid4())
     total_rounds = request.rounds_per_skill * len(request.skills)
 
@@ -365,17 +448,81 @@ def start_session(
             ) from exc
         raise
 
-    return {
+    response = {
         "session_id": session_id,
         "candidate_id": candidate_id,
         "user_id": user["id"] if user else candidate.get("user_id"),
-        "question": first_question["question"],
+        "question": round_document.question,
         "difficulty": difficulty,
-        "round_type": "technical_short_answer",
+        "round_type": round_document.round_type,
         "round": 1,
         "elo": elo_before,
         "total_rounds": total_rounds,
         "current_skill": first_skill,
         "skills": request.skills,
         "rounds_per_skill": request.rounds_per_skill,
+        "started_at": round_document.started_at.isoformat() if round_document.started_at else None,
+        "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
+        "config_json": round_document.config_json,
+    }
+    if round_document.round_type == "mcq":
+        sanitized = sanitize_round_for_client(round_document.model_dump())
+        response["question_context"] = sanitized["question_context"]
+        response["questions"] = sanitized["question_context"]["questions"]
+    return response
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /session/{session_id} (resume / refresh)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{session_id}")
+def get_session(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        db = get_database()
+    except DatabaseConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    session = db["sessions"].find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+        )
+
+    if session.get("user_id"):
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
+        require_matching_user(str(session["user_id"]), authorization)
+
+    rounds = session.get("rounds", [])
+    active_round = next(
+        (r for r in reversed(rounds) if r.get("status") == "in_progress"),
+        rounds[-1] if rounds else None,
+    )
+    is_completed = session.get("status") == "completed"
+
+    sanitized_active_round = (
+        sanitize_round_for_client(active_round, is_session_completed=is_completed)
+        if active_round
+        else None
+    )
+
+    return {
+        "session_id": session["session_id"],
+        "candidate_id": session.get("candidate_id"),
+        "user_id": session.get("user_id"),
+        "status": session.get("status", "active"),
+        "current_skill": session.get("current_skill", session.get("skill")),
+        "current_difficulty": session.get("current_difficulty"),
+        "last_round": session.get("last_round", 1),
+        "total_rounds": session.get("total_rounds", len(rounds)),
+        "active_round": sanitized_active_round,
     }

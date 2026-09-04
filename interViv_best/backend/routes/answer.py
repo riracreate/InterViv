@@ -14,8 +14,10 @@ import re
 import logging
 from datetime import datetime, timezone
 
+import json
+from typing import Any
 from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -26,6 +28,7 @@ from backend.routes.session import (
     _skill_for_round,
     _sub_domain_for_skill,
 )
+from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
@@ -41,13 +44,35 @@ WORD_RE = re.compile(r"[A-Za-z0-9_+#.]+")
 class SubmitAnswerRequest(BaseModel):
     session_id: str
     round: int
-    answer_text: str
+    answer_text: str | None = None
+    answers: list[dict[str, Any]] | None = None
     word_count: int = 0
     engagement_label: str | None = None
     engagement_confidence: float | None = None
     engagement_delta: int | None = None
     wpm: float | None = None
     pause_count: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_fields(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            allowed = {
+                "session_id",
+                "round",
+                "answer_text",
+                "answers",
+                "word_count",
+                "engagement_label",
+                "engagement_confidence",
+                "engagement_delta",
+                "wpm",
+                "pause_count",
+            }
+            extra = set(values.keys()) - allowed
+            if extra:
+                raise ValueError(f"Unknown extra fields rejected: {sorted(extra)}")
+        return values
 
 
 def _difficulty_from_elo(elo: float) -> str:
@@ -141,6 +166,11 @@ def submit_answer(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
     if session.get("user_id"):
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
         require_matching_user(str(session["user_id"]), authorization)
 
     rounds = session.get("rounds", [])
@@ -150,11 +180,75 @@ def submit_answer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Requested round not found in session.",
         )
-    if active_round.get("answer_text"):
+
+    round_type = active_round.get("round_type", "technical_short_answer")
+
+    # Strict round-type validation
+    if round_type == "mcq":
+        if request.answers is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="MCQ round requires structured 'answers' payload.",
+            )
+        if request.answer_text is not None and request.answer_text != "":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="MCQ round rejects 'answer_text'.",
+            )
+    else:
+        if request.answer_text is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Round type '{round_type}' requires 'answer_text'.",
+            )
+        if request.answers is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Round type '{round_type}' rejects 'answers'.",
+            )
+
+    now = datetime.now(timezone.utc)
+
+    # Deadline enforcement (no hidden grace period)
+    expires_at = active_round.get("expires_at")
+    if expires_at is not None:
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.fromisoformat(expires_at)
+            except Exception:
+                expires_at = None
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at and now > expires_at:
+            active_round["status"] = "expired"
+            active_round["final_score"] = 0.0
+            db["sessions"].update_one(
+                {"session_id": request.session_id},
+                {"$set": {"rounds": rounds}},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Assessment deadline expired at {expires_at.isoformat()}.",
+            )
+
+    # Concurrency guard: atomic finalization check
+    round_status = active_round.get("status")
+    if (
+        round_status in ("submitted", "finalizing", "expired")
+        or active_round.get("answer_text")
+        or active_round.get("final_score") is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This round has already been submitted.",
+            detail="This round has already been submitted or is finalizing.",
         )
+
+    # Claim finalization
+    active_round["status"] = "finalizing"
+    db["sessions"].update_one(
+        {"session_id": request.session_id},
+        {"$set": {"rounds": rounds}},
+    )
 
     # Which skill does THIS round belong to?
     current_skill = _skill_for_round(session, request.round)
@@ -168,25 +262,41 @@ def submit_answer(
         ) / len(rounds_so_far)
 
     try:
-        scoring_result = score_round(
-            round_type=active_round.get("round_type"),
-            answer_text=request.answer_text,
-            word_count=_server_word_count(request.answer_text),
-            engagement_label=request.engagement_label,
-            wpm=request.wpm,
-            pause_count=request.pause_count,
-            question_context=active_round.get("question_context", {}),
-            difficulty=active_round.get("difficulty", "medium"),
-            candidate_baseline=candidate_baseline,
+        if round_type == "mcq":
+            scoring_result = score_round(
+                round_type="mcq",
+                answers=request.answers,
+                question_context=active_round.get("question_context", {}),
+                config=active_round.get("config_json", {}),
+            )
+        else:
+            scoring_result = score_round(
+                round_type=round_type,
+                answer_text=request.answer_text,
+                word_count=_server_word_count(request.answer_text or ""),
+                engagement_label=request.engagement_label,
+                wpm=request.wpm,
+                pause_count=request.pause_count,
+                question_context=active_round.get("question_context", {}),
+                difficulty=active_round.get("difficulty", "medium"),
+                candidate_baseline=candidate_baseline,
+            )
+    except Exception as exc:
+        # Rollback status on failure so round is not stuck in 'finalizing'
+        active_round["status"] = "in_progress"
+        db["sessions"].update_one(
+            {"session_id": request.session_id},
+            {"$set": {"rounds": rounds}},
         )
-    except UnsupportedRoundTypeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        ) from exc
-    except IntegrationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        if isinstance(exc, (ValueError, UnsupportedRoundTypeError)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+        if isinstance(exc, IntegrationError):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
 
     # Elo update against THIS round's skill
     elo_before = float(active_round.get("elo_before") or settings.initial_elo)
@@ -200,6 +310,12 @@ def submit_answer(
         active_round.get("difficulty", "medium"), next_difficulty
     )
 
+    persisted_answer = (
+        request.answer_text
+        if round_type != "mcq"
+        else json.dumps(request.answers)
+    )
+
     # Persist this round
     for index, round_document in enumerate(rounds):
         if round_document.get("round") != request.round:
@@ -208,14 +324,16 @@ def submit_answer(
         rounds[index] = {
             **round_document,
             "skill": current_skill,
-            "answer_text": request.answer_text,
-            "nlp_score": scoring_result["nlp_score"],
-            "svm_label": scoring_result["svm_label"],
-            "kg_score": scoring_result["kg_score"],
+            "answer_text": persisted_answer,
+            "status": "submitted",
+            "submitted_at": now,
+            "nlp_score": scoring_result.get("nlp_score"),
+            "svm_label": scoring_result.get("svm_label"),
+            "kg_score": scoring_result.get("kg_score"),
             "kg_label": _bd.get("kg_label", ""),
             "covered_concepts": _bd.get("covered_concepts", []),
             "missing_concepts": _bd.get("missing_concepts", []),
-            "ner_entities": scoring_result["ner_entities"],
+            "ner_entities": scoring_result.get("ner_entities", []),
             "final_score": scoring_result["final_score"],
             "difficulty_change": difficulty_change,
             "feedback": scoring_result["feedback"],
@@ -226,6 +344,7 @@ def submit_answer(
             "engagement_confidence": request.engagement_confidence,
             "engagement_delta": request.engagement_delta,
             "scoring_breakdown": _bd,
+            "artifact_json": scoring_result.get("artifact_json") or round_document.get("artifact_json", {}),
             "guard_applied": scoring_result.get("guard_applied"),
         }
         break
@@ -383,10 +502,10 @@ def submit_answer(
         raise
 
     return {
-        "svm_label": scoring_result["svm_label"],
-        "nlp_score": scoring_result["nlp_score"],
-        "kg_score": scoring_result["kg_score"],
-        "ner_entities": scoring_result["ner_entities"],
+        "svm_label": scoring_result.get("svm_label"),
+        "nlp_score": scoring_result.get("nlp_score"),
+        "kg_score": scoring_result.get("kg_score"),
+        "ner_entities": scoring_result.get("ner_entities", []),
         "final_score": scoring_result["final_score"],
         "feedback": scoring_result["feedback"],
         "score_explanation": scoring_result.get("score_explanation", {}),
@@ -395,6 +514,7 @@ def submit_answer(
         "concepts": scoring_result.get("concepts", {}),
         "guard": scoring_result.get("guard", {}),
         "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
+        "artifact_json": scoring_result.get("artifact_json"),
         "guard_applied": scoring_result.get("guard_applied"),
         "next_question": next_question,
         "next_round_type": "technical_short_answer" if next_question else None,
