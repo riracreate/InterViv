@@ -27,6 +27,10 @@ class RoundDocument(BaseModel):
     elo_after: float | None = None
     question_context: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime | None = None
+    expires_at: datetime | None = None
+    status: str = "in_progress"
+    submitted_at: datetime | None = None
 
 
 class SessionDocument(BaseModel):
