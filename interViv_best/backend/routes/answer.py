@@ -165,14 +165,6 @@ def submit_answer(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
-    if session.get("user_id"):
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
-            )
-        require_matching_user(str(session["user_id"]), authorization)
-
     rounds = session.get("rounds", [])
     active_round = next((item for item in rounds if item.get("round") == request.round), None)
     if not active_round:
@@ -182,6 +174,14 @@ def submit_answer(
         )
 
     round_type = active_round.get("round_type", "technical_short_answer")
+
+    if session.get("user_id"):
+        if round_type in ("mcq", "sql") and not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
+        require_matching_user(str(session["user_id"]), authorization)
 
     # Strict round-type validation
     if round_type == "mcq":

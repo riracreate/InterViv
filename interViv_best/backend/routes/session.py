@@ -64,6 +64,12 @@ class StartSessionRequest(BaseModel):
         return data
 
 
+class RunSQLPreviewRequest(BaseModel):
+    session_id: str
+    round: int
+    query: str
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -266,6 +272,15 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
     return items[:count]
 
 
+def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
+    from backend.db.phase2a_fixtures import PHASE2A_SQL_FIXTURES
+    if problem_id:
+        for p in PHASE2A_SQL_FIXTURES:
+            if p["id"] == problem_id:
+                return dict(p)
+    return dict(PHASE2A_SQL_FIXTURES[0])
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /session/start
 # ─────────────────────────────────────────────────────────────────────────────
@@ -364,6 +379,33 @@ def start_session(
             elo_before=elo_before,
             config_json=round_config,
             question_context={"questions": assigned_questions},
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+        )
+    elif request.round_type == "sql":
+        cfg = request.round_config or {}
+        duration_mins = int(cfg.get("duration_minutes", 25))
+        problem_id = cfg.get("problem_id")
+        problem = _select_sql_problem(problem_id=problem_id)
+        expires_at = now + timedelta(minutes=duration_mins)
+
+        round_config = {
+            "duration_minutes": duration_mins,
+            "attempt_policy": "single_submission_final",
+            "review_policy": cfg.get("review_policy", "none"),
+            "max_rows": int(cfg.get("max_rows", 1000)),
+            "timeout_seconds": float(cfg.get("timeout_seconds", 2.0)),
+        }
+
+        round_document = RoundDocument(
+            round=1,
+            round_type="sql",
+            question=problem["prompt"],
+            difficulty=problem.get("difficulty", difficulty),
+            elo_before=elo_before,
+            config_json=round_config,
+            question_context=problem,
             started_at=now,
             expires_at=expires_at,
             status="in_progress",
@@ -469,6 +511,11 @@ def start_session(
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
         response["questions"] = sanitized["question_context"]["questions"]
+    elif round_document.round_type == "sql":
+        sanitized = sanitize_round_for_client(round_document.model_dump())
+        response["question_context"] = sanitized["question_context"]
+        response["schema_ddl"] = sanitized["question_context"].get("schema_ddl")
+        response["sample_cases"] = sanitized["question_context"].get("sample_cases", [])
     return response
 
 
@@ -526,3 +573,111 @@ def get_session(
         "total_rounds": session.get("total_rounds", len(rounds)),
         "active_round": sanitized_active_round,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /session/sql/run (interactive preview runner against visible sample)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/sql/run")
+def run_sql_preview(
+    request: RunSQLPreviewRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        db = get_database()
+    except DatabaseConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    session = db["sessions"].find_one({"session_id": request.session_id})
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+        )
+
+    if session.get("user_id"):
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
+        require_matching_user(str(session["user_id"]), authorization)
+
+    rounds = session.get("rounds", [])
+    target_round = next(
+        (r for r in rounds if r.get("round") == request.round), None
+    )
+    if not target_round:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target round not found in session.",
+        )
+
+    if target_round.get("round_type") != "sql":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target round is not an SQL assessment round.",
+        )
+
+    # Non-mutating run against visible sample case ONLY
+    q_ctx = target_round.get("question_context") or {}
+    schema_ddl = q_ctx.get("schema_ddl") or ""
+    cases = q_ctx.get("cases") or []
+    sample_case = next((c for c in cases if c.get("case_type") in ("sample", "visible_sample", "visible")), cases[0] if cases else None)
+
+    if not sample_case:
+        return {
+            "columns": [],
+            "rows": [],
+            "truncated": False,
+            "execution_time_ms": 0.0,
+            "error": "No visible sample case configured for this problem.",
+        }
+
+    import sqlite3
+    from modules.scoring.sql_security import (
+        SQLSecurityError,
+        SQLSingleStatementError,
+        SQLTimeoutError,
+        execute_sandboxed_sql,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(schema_ddl)
+        if sample_case.get("seed_data"):
+            conn.executescript(sample_case["seed_data"])
+
+        columns, rows, truncated, elapsed_ms = execute_sandboxed_sql(
+            conn=conn,
+            query=request.query,
+            timeout_seconds=2.0,
+            max_rows=1000,
+        )
+        return {
+            "columns": columns,
+            "rows": [list(r) for r in rows],
+            "truncated": truncated,
+            "execution_time_ms": elapsed_ms,
+            "error": None,
+        }
+    except (SQLSecurityError, SQLTimeoutError, SQLSingleStatementError, sqlite3.DatabaseError) as exc:
+        return {
+            "columns": [],
+            "rows": [],
+            "truncated": False,
+            "execution_time_ms": 0.0,
+            "error": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "columns": [],
+            "rows": [],
+            "truncated": False,
+            "execution_time_ms": 0.0,
+            "error": f"Execution error: {exc}",
+        }
+    finally:
+        conn.close()
