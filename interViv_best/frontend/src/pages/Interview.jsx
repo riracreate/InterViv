@@ -447,14 +447,25 @@ export default function Interview() {
     ) {
       fetchSession(sessionId)
         .then((data) => {
-          if (data?.current_round) {
-            const cr = data.current_round;
+          const cr = data?.active_round || data?.current_round;
+          if (cr) {
             if (cr.round_type) setRoundType(cr.round_type);
             if (cr.question) setQuestion(cr.question);
             if (cr.difficulty) setDifficulty(cr.difficulty);
             if (cr.question_context) setQuestionContext(cr.question_context);
             if (cr.config_json) setConfigJson(cr.config_json);
             if (cr.expires_at) setExpiresAt(cr.expires_at);
+            if (cr.round) setRound(cr.round);
+            if (cr.final_score !== undefined && cr.final_score !== null) {
+              setCurrentScore(cr.final_score);
+            }
+            if (cr.artifact_json) {
+              setCurrentArtifact(cr.artifact_json);
+            }
+            if (cr.feedback) {
+              const fb = typeof cr.feedback === 'string' ? cr.feedback : cr.feedback?.content?.[0] || '';
+              setCurrentFeedback(fb);
+            }
           }
         })
         .catch(() => {});
@@ -598,7 +609,7 @@ export default function Interview() {
         ...metrics,
       };
       if (isMcq) {
-        payload.answers = answers || {};
+        payload.answers = Array.isArray(answers) ? answers : [];
       } else {
         payload.answer_text = answerText;
       }

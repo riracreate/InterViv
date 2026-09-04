@@ -22,13 +22,13 @@ from pydantic import BaseModel, model_validator
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.integrations import IntegrationError
-from backend.routes.auth import require_matching_user
+from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
 from backend.routes.session import (
     _get_next_question,
     _skill_for_round,
     _sub_domain_for_skill,
 )
-from backend.serializers.round_serializer import sanitize_round_for_client
+from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
 from modules import adaptive_question_selector
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
@@ -41,11 +41,26 @@ DIFFICULTY_RATINGS = {"easy": 1000, "medium": 1500, "hard": 2000}
 WORD_RE = re.compile(r"[A-Za-z0-9_+#.]+")
 
 
+class MCQAnswerItem(BaseModel):
+    question_id: str
+    selected_option_ids: list[str] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_fields(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            allowed = {"question_id", "selected_option_ids"}
+            extra = set(values.keys()) - allowed
+            if extra:
+                raise ValueError(f"Unknown extra fields in MCQ answer item: {sorted(extra)}")
+        return values
+
+
 class SubmitAnswerRequest(BaseModel):
     session_id: str
     round: int
     answer_text: str | None = None
-    answers: list[dict[str, Any]] | dict[str, Any] | None = None
+    answers: list[MCQAnswerItem] | None = None
     word_count: int = 0
     engagement_label: str | None = None
     engagement_confidence: float | None = None
@@ -175,12 +190,26 @@ def submit_answer(
 
     round_type = active_round.get("round_type", "technical_short_answer")
 
-    if session.get("user_id"):
-        if round_type in ("mcq", "sql") and not authorization:
+    # Phase 2 MCQ & SQL sessions must require valid JWT principal; reject anonymous sessions
+    if round_type in ("mcq", "sql"):
+        if not authorization:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication is required for this session.",
             )
+        user = require_user(authorization)
+        if session.get("user_id"):
+            if str(session["user_id"]) != str(user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot access another user's data.",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Anonymous sessions are not permitted for this round type.",
+            )
+    elif session.get("user_id") and authorization:
         require_matching_user(str(session["user_id"]), authorization)
 
     # Strict round-type validation
@@ -196,18 +225,10 @@ def submit_answer(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="MCQ round rejects 'answer_text'.",
             )
-        if isinstance(request.answers, dict):
-            normalized_answers = [
-                {"question_id": k, "selected_option_id": v}
-                for k, v in request.answers.items()
-            ]
-        elif isinstance(request.answers, list):
-            normalized_answers = request.answers
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="MCQ round requires structured 'answers' payload.",
-            )
+        normalized_answers = [
+            item.model_dump() if hasattr(item, "model_dump") else dict(item)
+            for item in request.answers
+        ]
     else:
         if request.answer_text is None:
             raise HTTPException(
@@ -514,6 +535,10 @@ def submit_answer(
             ) from exc
         raise
 
+    resp_artifact = scoring_result.get("artifact_json")
+    if round_type == "sql" and resp_artifact:
+        resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)
+
     return {
         "svm_label": scoring_result.get("svm_label"),
         "nlp_score": scoring_result.get("nlp_score"),
@@ -527,7 +552,7 @@ def submit_answer(
         "concepts": scoring_result.get("concepts", {}),
         "guard": scoring_result.get("guard", {}),
         "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
-        "artifact_json": scoring_result.get("artifact_json"),
+        "artifact_json": resp_artifact,
         "guard_applied": scoring_result.get("guard_applied"),
         "next_question": next_question,
         "next_round_type": "technical_short_answer" if next_question else None,

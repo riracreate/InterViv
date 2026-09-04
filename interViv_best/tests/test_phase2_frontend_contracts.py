@@ -75,12 +75,14 @@ def test_frontend_mcq_round_contract(client: TestClient) -> None:
             assert "id" in opt
             assert "text" in opt
 
-    # 2. Submit answer dictionary from MCQRound
-    q0 = questions[0]
+    # 2. Submit canonical answer list from MCQRound
     ans_payload = {
         "session_id": session_id,
         "round": 1,
-        "answers": {q0["id"]: "b"},
+        "answers": [
+            {"question_id": q["id"], "selected_option_ids": ["b"] if idx == 0 else []}
+            for idx, q in enumerate(questions)
+        ],
     }
     ans_resp = client.post("/session/answer", json=ans_payload, headers=headers)
     assert ans_resp.status_code == 200, ans_resp.text
@@ -163,10 +165,13 @@ def test_frontend_sql_round_contract(client: TestClient) -> None:
     submit_data = submit_resp.json()
     assert submit_data["final_score"] == 100.0
     art = submit_data["artifact_json"]
-    assert art["total_cases"] == 3
-    assert art["passed_cases"] == 3
-    assert len(art["cases"]) == 3
-    for c in art["cases"]:
-        assert "case_type" in c
-        assert "passed" in c
-        assert c["passed"] is True
+    assert art["evaluation_cases"] == 3
+    assert art["cases_passed"] == 3
+    assert art["row_count_cases_passed"] == 3
+    assert art["result_equality_points"] == 60.0
+    assert art["row_count_points"] == 20.0
+    assert art["constraint_points"] == 20.0
+    assert art["final_score"] == 100.0
+    # Zero leakage: client response never contains hidden case descriptions, seed data, or internal case structures
+    assert "cases" not in art
+    assert "hidden_cases" not in art

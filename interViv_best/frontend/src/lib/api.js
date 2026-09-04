@@ -133,7 +133,14 @@ export function runSqlQuery(payload) {
 }
 
 export function fetchSession(sessionId) {
-  return request(`/session/${encodeURIComponent(sessionId)}`);
+  return request(`/session/${encodeURIComponent(sessionId)}`).then((data) => {
+    if (data?.active_round && !data.current_round) {
+      data.current_round = data.active_round;
+    } else if (data?.current_round && !data.active_round) {
+      data.active_round = data.current_round;
+    }
+    return data;
+  });
 }
 
 export function transcribeAudio(blob, filename = "answer.webm") {
