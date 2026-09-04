@@ -157,3 +157,42 @@ def test_seed_phase2_content_bank_idempotent() -> None:
         assert len(session.scalars(select(SQLProblemRow)).all()) == 30
         assert len(session.scalars(select(SQLProblemCaseRow)).all()) == 90
         assert len(session.scalars(select(SkillRow)).all()) == 9
+
+
+def test_mcq_dbms_025_vacuum_wording_is_precise() -> None:
+    """mcq_dbms_025 must not claim plain VACUUM returns space to the OS.
+
+    Standard VACUUM marks dead-tuple space reusable within the relation;
+    only VACUUM FULL rewrites the relation and can return space to the OS.
+    """
+    q = next(q for q in PHASE2_MCQ_BANK if q["id"] == "mcq_dbms_025")
+    assert q["correct_option_ids"] == ["a"]
+    stem = q["stem"].lower()
+    assert "reusable" in stem
+    assert "reclaim" not in stem
+    assert "physical table space" not in q["stem"]
+    explanation = q["explanation"]
+    assert "VACUUM FULL" in explanation
+    assert "operating system" in explanation
+
+
+def test_sql_difficulty_rubric_assignment() -> None:
+    """Pin the rubric decision (docs/phase2_sql_difficulty_rubric.md).
+
+    sql_prob_026 (single CTE + DENSE_RANK + filter) and sql_prob_030
+    (GROUP BY + conditional-aggregation pivot, no window/CTE) are genuinely
+    medium under the rubric: multiple logical steps with window ranking /
+    pivot-style output, without interacting transformations or nested windows.
+    """
+    by_id = {p["id"]: p for p in PHASE2_SQL_BANK}
+    assert by_id["sql_prob_026"]["difficulty"] == "medium"
+    assert by_id["sql_prob_030"]["difficulty"] == "medium"
+    assert "DENSE_RANK" in by_id["sql_prob_026"]["reference_query"].upper()
+    ref030 = by_id["sql_prob_030"]["reference_query"].upper()
+    assert "SUM(CASE" in ref030.replace(" ", "").replace("\n", "") or "SUM (CASE" in ref030 or "CASE WHEN" in ref030
+    assert "OVER" not in ref030 and "WITH" not in ref030
+    hard_ids = {p["id"] for p in PHASE2_SQL_BANK if p["difficulty"] == "hard"}
+    assert hard_ids == {
+        "sql_prob_021", "sql_prob_022", "sql_prob_023", "sql_prob_024",
+        "sql_prob_025", "sql_prob_027", "sql_prob_028", "sql_prob_029",
+    }
