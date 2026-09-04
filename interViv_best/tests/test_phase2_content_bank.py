@@ -20,17 +20,40 @@ NEGATIVE_STEM_PATTERN = re.compile(
 
 
 def test_mcq_bank_size_and_skill_distribution() -> None:
-    """Verify bank contains 150 MCQs, 30 per core skill, 10 easy/medium/hard each."""
+    """Verify bank contains 150 MCQs across 9 skills with approved distribution."""
     assert len(PHASE2_MCQ_BANK) == 150
 
     skills = Counter(q["skill"] for q in PHASE2_MCQ_BANK)
-    expected_skills = {"DBMS", "Python", "OS", "Computer Networks", "DSA"}
-    assert set(skills.keys()) == expected_skills
+    expected_skills = {
+        "DBMS": 30,
+        "System Design": 22,
+        "Machine Learning": 22,
+        "Computer Networks": 18,
+        "DSA": 16,
+        "Python": 14,
+        "OOP": 10,
+        "Operating Systems": 10,
+        "HR/Professional Judgment": 8,
+    }
+    assert dict(skills) == expected_skills
 
-    for skill_name in expected_skills:
-        assert skills[skill_name] == 30
-        diffs = Counter(q["difficulty"] for q in PHASE2_MCQ_BANK if q["skill"] == skill_name)
-        assert diffs == {"easy": 10, "medium": 10, "hard": 10}
+    diffs = Counter(q["difficulty"] for q in PHASE2_MCQ_BANK)
+    assert dict(diffs) == {"easy": 60, "medium": 60, "hard": 30}
+
+    expected_breakdowns = {
+        "DBMS": {"easy": 12, "medium": 12, "hard": 6},
+        "System Design": {"easy": 9, "medium": 9, "hard": 4},
+        "Machine Learning": {"easy": 9, "medium": 9, "hard": 4},
+        "Computer Networks": {"easy": 7, "medium": 7, "hard": 4},
+        "DSA": {"easy": 6, "medium": 7, "hard": 3},
+        "Python": {"easy": 6, "medium": 5, "hard": 3},
+        "OOP": {"easy": 4, "medium": 4, "hard": 2},
+        "Operating Systems": {"easy": 4, "medium": 4, "hard": 2},
+        "HR/Professional Judgment": {"easy": 3, "medium": 3, "hard": 2},
+    }
+    for sk, exp in expected_breakdowns.items():
+        actual = Counter(q["difficulty"] for q in PHASE2_MCQ_BANK if q["skill"] == sk)
+        assert dict(actual) == exp, f"Skill {sk} mismatch: {dict(actual)} vs {exp}"
 
 
 def test_mcq_bank_quality_and_schema_invariants() -> None:
@@ -65,11 +88,11 @@ def test_mcq_bank_quality_and_schema_invariants() -> None:
 
 
 def test_sql_bank_size_and_case_distribution() -> None:
-    """Verify 30 SQL problems (10 easy, 10 medium, 10 hard), each with 3 cases."""
+    """Verify 30 SQL problems (10 easy, 12 medium, 8 hard), each with 3 cases."""
     assert len(PHASE2_SQL_BANK) == 30
 
     diffs = Counter(p["difficulty"] for p in PHASE2_SQL_BANK)
-    assert diffs == {"easy": 10, "medium": 10, "hard": 10}
+    assert diffs == {"easy": 10, "medium": 12, "hard": 8}
 
     prob_ids = [p["id"] for p in PHASE2_SQL_BANK]
     assert len(prob_ids) == len(set(prob_ids)), "Problem IDs must be unique"
@@ -124,7 +147,7 @@ def test_seed_phase2_content_bank_idempotent() -> None:
         assert mcq_count == 150
         assert sql_count == 30
         assert case_count == 90
-        assert skill_count == 5
+        assert skill_count == 9
 
         # Re-seed to verify idempotency
         seed_phase2_content_bank(session)
@@ -133,4 +156,4 @@ def test_seed_phase2_content_bank_idempotent() -> None:
         assert len(session.scalars(select(MCQQuestionRow)).all()) == 150
         assert len(session.scalars(select(SQLProblemRow)).all()) == 30
         assert len(session.scalars(select(SQLProblemCaseRow)).all()) == 90
-        assert len(session.scalars(select(SkillRow)).all()) == 5
+        assert len(session.scalars(select(SkillRow)).all()) == 9
