@@ -52,6 +52,7 @@ def score_sql_round(
     checks_json = question_context.get("checks_json") or {}
 
     order_matters = bool(checks_json.get("order_matters", False))
+    require_column_names = bool(checks_json.get("require_column_names", False))
     forbidden_list = checks_json.get("forbidden_constructs") or checks_json.get("forbidden") or []
 
     # 1. Check forbidden constructs across the candidate query
@@ -114,6 +115,7 @@ def score_sql_round(
             # Establish ground truth using trusted reference query
             ref_cur = conn.cursor()
             ref_cur.execute(reference_query)
+            ref_cols = [d[0].lower() for d in ref_cur.description] if ref_cur.description else []
             ref_rows = ref_cur.fetchall()
             ref_cur.close()
 
@@ -141,7 +143,10 @@ def score_sql_round(
             row_count_match = (not truncated) and (len(cand_rows) == len(ref_rows))
             row_count_points = 20.0 if row_count_match else 0.0
 
-            if truncated:
+            cand_col_names = [c.lower() for c in cand_cols]
+            col_names_match = (not require_column_names) or (cand_col_names == ref_cols)
+
+            if truncated or not col_names_match:
                 result_match = False
                 result_points = 0.0
             elif order_matters:
@@ -186,7 +191,7 @@ def score_sql_round(
         sum(20.0 if c["row_count_match"] else 0.0 for c in case_results) / total_count, 2
     )
 
-    # 4. Objective feedback generation
+    # 4. Objective feedback generation (never leak hidden case details)
     feedback_items = [
         f"Passed {passed_count} of {total_count} test cases.",
     ]
@@ -195,23 +200,35 @@ def score_sql_round(
             f"Forbidden SQL constructs detected: {', '.join(forbidden_found)} (-20% penalty applied)."
         )
     for c in case_results:
-        if c["error"]:
-            feedback_items.append(f"{c['case_type'].capitalize()} case error: {c['error']}")
-        elif not c["passed"]:
-            if not c["row_count_match"]:
-                feedback_items.append(
-                    f"{c['case_type'].capitalize()} case: expected {c['expected_row_count']} rows, got {c['candidate_row_count']} rows."
-                )
-            elif not c["result_match"]:
-                feedback_items.append(f"{c['case_type'].capitalize()} case: query output values did not match expected results.")
+        if c["case_type"] == "sample":
+            if c["error"]:
+                feedback_items.append(f"Sample case error: {c['error']}")
+            elif not c["passed"]:
+                if not c["row_count_match"]:
+                    feedback_items.append(
+                        f"Sample case: expected {c['expected_row_count']} rows, got {c['candidate_row_count']} rows."
+                    )
+                elif not c["result_match"]:
+                    feedback_items.append("Sample case: query output values did not match expected results.")
+    if any(c["case_type"] == "hidden" and not c["passed"] for c in case_results):
+        hidden_failed = sum(1 for c in case_results if c["case_type"] == "hidden" and not c["passed"])
+        hidden_total = sum(1 for c in case_results if c["case_type"] == "hidden")
+        feedback_items.append(f"{hidden_failed} of {hidden_total} hidden evaluation cases failed.")
 
+    row_count_cases_passed = sum(1 for c in case_results if c["row_count_match"])
     artifact_json = {
+        "evaluation_cases": total_count,
+        "cases_passed": passed_count,
+        "row_count_cases_passed": row_count_cases_passed,
+        "result_equality_points": avg_result_score,
+        "row_count_points": avg_row_score,
+        "constraint_points": construct_points,
+        "final_score": final_score,
         "total_cases": total_count,
         "passed_cases": passed_count,
         "cases": case_results,
         "has_forbidden_constructs": has_forbidden,
         "forbidden_constructs_found": forbidden_found,
-        "final_score": final_score,
     }
 
     score_explanation = {

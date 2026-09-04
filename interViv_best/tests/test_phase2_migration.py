@@ -14,9 +14,11 @@ from backend.db.sqlalchemy_models import Base
 
 def _run_alembic(engine_url: str, action: str, revision: str = "head"):
     here = os.path.dirname(__file__)
-    ini_path = os.path.join(here, "..", "alembic.ini")
+    interviv_dir = os.path.abspath(os.path.join(here, ".."))
+    ini_path = os.path.join(interviv_dir, "alembic.ini")
     alembic_cfg = Config(ini_path)
     alembic_cfg.set_main_option("sqlalchemy.url", engine_url)
+    alembic_cfg.set_main_option("script_location", os.path.join(interviv_dir, "alembic"))
     if action == "upgrade":
         command.upgrade(alembic_cfg, revision)
     elif action == "downgrade":
