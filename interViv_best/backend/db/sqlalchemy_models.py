@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -182,6 +183,10 @@ class RoundRow(Base):
     elo_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     question_context: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="in_progress", nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -223,3 +228,61 @@ class QuestionRubricRow(Base):
     question_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     required_concept: Mapped[str] = mapped_column(String(255), nullable=False)
     importance_weight: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class MCQQuestionRow(Base):
+    __tablename__ = "mcq_questions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), nullable=False, index=True)
+    sub_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    difficulty: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    stem: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    options_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    correct_option_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    negative_marking: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("difficulty IN ('easy', 'medium', 'hard')", name="ck_mcq_questions_difficulty"),
+        CheckConstraint("negative_marking >= 0.0 AND negative_marking <= 1.0", name="ck_mcq_questions_negative_marking"),
+    )
+
+
+class SQLProblemRow(Base):
+    __tablename__ = "sql_problems"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    difficulty: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    schema_ddl: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_query: Mapped[str] = mapped_column(Text, nullable=False)
+    checks_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    cases: Mapped[list["SQLProblemCaseRow"]] = relationship(
+        back_populates="problem",
+        cascade="all, delete-orphan",
+        order_by="SQLProblemCaseRow.sort_order",
+    )
+
+    __table_args__ = (
+        CheckConstraint("difficulty IN ('easy', 'medium', 'hard')", name="ck_sql_problems_difficulty"),
+    )
+
+
+class SQLProblemCaseRow(Base):
+    __tablename__ = "sql_problem_cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    problem_id: Mapped[str] = mapped_column(ForeignKey("sql_problems.id", ondelete="CASCADE"), nullable=False, index=True)
+    case_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    seed_data: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    problem: Mapped[SQLProblemRow] = relationship(back_populates="cases")
+
+    __table_args__ = (
+        UniqueConstraint("problem_id", "sort_order", name="uq_sql_problem_cases_order"),
+        CheckConstraint("case_type IN ('visible_sample', 'hidden_case')", name="ck_sql_problem_cases_type"),
+    )
