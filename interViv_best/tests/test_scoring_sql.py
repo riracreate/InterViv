@@ -310,8 +310,13 @@ def test_sql_full_answer_submission_flow(client: TestClient, test_user: dict[str
 
     assert result["final_score"] == 100.0
     artifact = result["artifact_json"]
-    assert artifact["total_cases"] == 3
-    assert artifact["passed_cases"] == 3
+    assert artifact["evaluation_cases"] == 3
+    assert artifact["cases_passed"] == 3
+    assert artifact["row_count_cases_passed"] == 3
+    assert artifact["result_equality_points"] == 60.0
+    assert artifact["row_count_points"] == 20.0
+    assert artifact["constraint_points"] == 20.0
+    assert "cases" not in artifact
 
     # Check database persistence
     db = get_database()

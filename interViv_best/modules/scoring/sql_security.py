@@ -66,7 +66,7 @@ _TOKEN_PATTERN = re.compile(
 
 def extract_sql_tokens(sql: str) -> tuple[str, list[str]]:
     """Extract code without comments/strings and return a list of lowercased tokens.
-    
+
     Returns (cleaned_code, tokens).
     Comments and string literals are ignored, preventing false positives on semicolons
     or forbidden keywords inside string literals.
@@ -92,7 +92,7 @@ def extract_sql_tokens(sql: str) -> tuple[str, list[str]]:
 
 def validate_single_read_only_statement(sql: str) -> None:
     """Validate that sql is exactly one statement starting with SELECT or WITH.
-    
+
     Raises SQLSingleStatementError if empty, multiple statements, or not read-only.
     """
     if not sql or not sql.strip():
@@ -126,7 +126,7 @@ def validate_single_read_only_statement(sql: str) -> None:
 
 def check_forbidden_constructs(sql: str, forbidden_constructs: list[str] | None) -> list[str]:
     """Check if any forbidden keywords are present in the SQL tokens.
-    
+
     Ignores occurrences inside strings and comments.
     Returns list of forbidden constructs found.
     """
@@ -185,17 +185,17 @@ def execute_sandboxed_sql(
     max_rows: int = 1000,
 ) -> tuple[list[str], list[tuple[Any, ...]], bool, float]:
     """Execute a candidate SQL query inside the SQLite sandbox.
-    
+
     Parameters:
       conn: SQLite connection with schema and test case data already loaded.
       query: The candidate's SQL query string.
       timeout_seconds: Hard monotonic deadline in seconds.
       max_opcodes: Maximum SQLite VM steps before abortion.
       max_rows: Maximum rows to fetch before marking truncated.
-      
+
     Returns:
       (columns, rows, truncated, elapsed_ms)
-      
+
     Raises:
       SQLSingleStatementError: if query violates single statement / SELECT rule.
       SQLTimeoutError: if execution exceeds monotonic timeout or opcode budget.

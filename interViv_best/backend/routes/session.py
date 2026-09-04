@@ -25,7 +25,7 @@ from backend.db import DatabaseConnectionError, get_database, is_database_except
 from backend.integrations import IntegrationError
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
-from backend.routes.auth import get_user_from_authorization, require_matching_user
+from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
@@ -335,17 +335,37 @@ def start_session(
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
-    if candidate and candidate.get("user_id"):
-        if not user:
+
+    if request.round_type in ("mcq", "sql"):
+        if not authorization:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this candidate.",
+                detail="Authentication is required for this session.",
             )
-        if str(candidate["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot start a session for another user's candidate.",
-            )
+        user = require_user(authorization)
+        if candidate_id:
+            if not candidate or str(candidate.get("user_id")) != str(user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot start a session for another user's candidate.",
+                )
+        else:
+            existing_candidate = db["candidates"].find_one({"user_id": user["id"]})
+            if existing_candidate:
+                candidate = existing_candidate
+                candidate_id = str(existing_candidate["candidate_id"])
+    else:
+        if candidate and candidate.get("user_id"):
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication is required for this candidate.",
+                )
+            if str(candidate["user_id"]) != str(user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot start a session for another user's candidate.",
+                )
     target_company_id = (
         str(user.get("target_company_id")) if user and user.get("target_company_id") else request.target_company_id
     )
@@ -576,15 +596,27 @@ def get_session(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
-    if session.get("user_id"):
+    rounds = session.get("rounds", [])
+    has_phase2_round = any(r.get("round_type") in ("mcq", "sql") for r in rounds)
+    if has_phase2_round or session.get("user_id"):
         if not authorization:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication is required for this session.",
             )
-        require_matching_user(str(session["user_id"]), authorization)
+        user = require_user(authorization)
+        if session.get("user_id"):
+            if str(session["user_id"]) != str(user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot access another user's session.",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Anonymous sessions are not permitted for this round type.",
+            )
 
-    rounds = session.get("rounds", [])
     active_round = next(
         (r for r in reversed(rounds) if r.get("status") == "in_progress"),
         rounds[-1] if rounds else None,
@@ -632,13 +664,23 @@ def run_sql_preview(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication is required for this session.",
+        )
+    user = require_user(authorization)
     if session.get("user_id"):
-        if not authorization:
+        if str(session["user_id"]) != str(user["id"]):
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot access another user's session.",
             )
-        require_matching_user(str(session["user_id"]), authorization)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Anonymous sessions are not permitted for this round type.",
+        )
 
     rounds = session.get("rounds", [])
     target_round = next(
