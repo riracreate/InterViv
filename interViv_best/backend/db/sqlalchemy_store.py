@@ -467,6 +467,10 @@ class _SessionCollection:
                     elo_after=round_doc.get("elo_after"),
                     question_context=question_context,
                     created_at=_coerce_datetime(round_doc.get("created_at")) or _now(),
+                    started_at=_coerce_datetime(round_doc.get("started_at")),
+                    expires_at=_coerce_datetime(round_doc.get("expires_at")),
+                    status=round_doc.get("status") or ("submitted" if round_doc.get("answer_text") else "in_progress"),
+                    submitted_at=_coerce_datetime(round_doc.get("submitted_at")),
                 )
             )
 
@@ -504,6 +508,10 @@ class _SessionCollection:
                     "guard_applied": round_row.guard_applied,
                     "question_context": round_row.question_context or {},
                     "created_at": round_row.created_at,
+                    "started_at": round_row.started_at,
+                    "expires_at": round_row.expires_at,
+                    "status": round_row.status or "submitted",
+                    "submitted_at": round_row.submitted_at,
                 }
             )
         return {
