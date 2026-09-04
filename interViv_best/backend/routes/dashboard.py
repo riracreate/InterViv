@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.routes.auth import require_matching_user
+from backend.routes.auth import require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -121,8 +121,32 @@ def get_dashboard(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found.",
         )
-    if session.get("user_id"):
-        require_matching_user(str(session["user_id"]), authorization)
+    # Same gate as GET /session/{session_id}: owned sessions and Phase 2
+    # (MCQ/SQL) rounds always require a JWT for the owning user. Anonymous
+    # legacy sessions keep the guest-readable path; anonymous Phase 2 data
+    # is never served (a bare session_id must not become a capability URL
+    # for assessment content).
+    has_phase2_round = any(
+        r.get("round_type") in ("mcq", "sql") for r in session.get("rounds", [])
+    )
+    if has_phase2_round or session.get("user_id"):
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
+        user = require_user(authorization)
+        if session.get("user_id"):
+            if str(session["user_id"]) != str(user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot access another user's session.",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Anonymous sessions are not permitted for this round type.",
+            )
 
     rounds = _sanitize_rounds(session.get("rounds", []))
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]

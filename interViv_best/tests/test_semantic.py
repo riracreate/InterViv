@@ -14,6 +14,15 @@ The KEY proof is Case B: semantic far exceeds TF-IDF on a correct paraphrase,
 demonstrating that the upgrade rescues valid answers with low word overlap.
 
 Run with:  python -m pytest tests/test_semantic.py -v
+
+Requires the sentence-transformer weights
+(sentence-transformers/all-MiniLM-L6-v2) to be available — either cached
+under HF_HOME or fetchable from the Hub. In an offline sandbox without the
+cache, SemanticScorer.score() returns None by design (see
+modules/semantic_scorer.py) and these tests fail with TypeError inside
+round(); that failure is environmental, not a scoring regression.
+Production is unaffected: modules/nlp_scorer.py falls back to pure TF-IDF
+when the model is unavailable.
 """
 
 import sys, os

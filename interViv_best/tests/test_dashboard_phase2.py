@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
+from backend.auth.security import create_access_token  # noqa: E402
 from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.routes.dashboard import compute_confidence_band  # noqa: E402
@@ -113,12 +114,22 @@ def _insert_session_with_rounds(session_id: str, user_id: str) -> None:
     db["sessions"].insert_one(doc)
 
 
+def _make_user() -> dict[str, str]:
+    """Insert a minimal user row and return its id plus a valid JWT."""
+    user_id = f"u-{uuid4().hex[:8]}"
+    get_database()["users"].insert_one(
+        {"id": user_id, "email": f"{user_id}@example.com"}
+    )
+    return {"id": user_id, "token": create_access_token(user_id)}
+
+
 def test_dashboard_attaches_confidence_band_to_every_round(client: TestClient) -> None:
     sid = f"phase2-task6-{uuid4().hex[:8]}"
-    uid = f"u-{uuid4().hex[:8]}"
-    _insert_session_with_rounds(sid, uid)
+    owner = _make_user()
+    _insert_session_with_rounds(sid, owner["id"])
 
-    resp = client.get(f"/dashboard/{sid}")
+    headers = {"Authorization": f"Bearer {owner['token']}"}
+    resp = client.get(f"/dashboard/{sid}", headers=headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
@@ -161,3 +172,112 @@ def test_skill_graph_and_mastery_endpoints_serve_dashboard(client: TestClient) -
     assert "DSA" in mastery_body["mastery"]
     dsa = mastery_body["mastery"]["DSA"]
     assert dsa.get("array") in {"Mastered", "Strong", "Weak", "Untested"}
+
+
+# ---------------------------------------------------------------------------
+# Auth gate: owned + Phase 2 sessions require the owner's JWT.
+# Anonymous legacy sessions keep the guest-readable path.
+# ---------------------------------------------------------------------------
+
+def _insert_owned_mcq_session(session_id: str, user_id: str) -> None:
+    db = get_database()
+    db["sessions"].insert_one(
+        {
+            "session_id": session_id,
+            "id": session_id,
+            "candidate_id": f"c-{session_id}",
+            "user_id": user_id,
+            "skill": "DBMS",
+            "status": "completed",
+            "rounds": [
+                {
+                    "round": 1,
+                    "round_type": "mcq",
+                    "question": "Multiple Choice Assessment",
+                    "final_score": 80.0,
+                    "feedback": {"next_step": "Revise indexing."},
+                    "question_context": {"topic": "DBMS"},
+                    "artifact_json": {"per_question": []},
+                }
+            ],
+        }
+    )
+
+
+def _insert_anonymous_session(
+    session_id: str, round_type: str = "technical_short_answer"
+) -> None:
+    db = get_database()
+    db["sessions"].insert_one(
+        {
+            "session_id": session_id,
+            "id": session_id,
+            "candidate_id": f"c-{session_id}",
+            "skill": "DSA",
+            "status": "completed",
+            "rounds": [
+                {
+                    "round": 1,
+                    "round_type": round_type,
+                    "question": "Q1",
+                    "final_score": 70.0,
+                    "feedback": {},
+                    "question_context": {},
+                }
+            ],
+        }
+    )
+
+
+def test_dashboard_requires_owner_jwt(client: TestClient) -> None:
+    """The dashboard auth gate, asserted explicitly per case.
+
+    Owned sessions: missing JWT -> 401, wrong user -> 403, invalid
+    token -> 401, owner -> 200. Anonymous Phase 2 data is never served
+    (401 with or without a token). Anonymous legacy sessions stay
+    guest-readable (200), matching GET /session/{id}.
+    """
+    owner = _make_user()
+    stranger = _make_user()
+
+    owned_sid = f"dash-owned-{uuid4().hex[:8]}"
+    _insert_owned_mcq_session(owned_sid, owner["id"])
+    owner_headers = {"Authorization": f"Bearer {owner['token']}"}
+    stranger_headers = {"Authorization": f"Bearer {stranger['token']}"}
+
+    # Missing JWT on an owned session must not serve session-scoped data.
+    resp = client.get(f"/dashboard/{owned_sid}")
+    assert resp.status_code == 401, resp.text
+    assert "rounds" not in resp.text
+
+    # Wrong user is forbidden; invalid token is unauthorized.
+    assert client.get(f"/dashboard/{owned_sid}", headers=stranger_headers).status_code == 403
+    assert (
+        client.get(
+            f"/dashboard/{owned_sid}", headers={"Authorization": "Bearer invalid"}
+        ).status_code
+        == 401
+    )
+
+    # Owner sees the full dashboard.
+    ok = client.get(f"/dashboard/{owned_sid}", headers=owner_headers)
+    assert ok.status_code == 200, ok.text
+    assert len(ok.json()["rounds"]) == 1
+
+    # Anonymous Phase 2 data is never served, token or not.
+    anon_phase2 = f"dash-anonp2-{uuid4().hex[:8]}"
+    _insert_anonymous_session(anon_phase2, round_type="mcq")
+    assert client.get(f"/dashboard/{anon_phase2}").status_code == 401
+    assert (
+        client.get(f"/dashboard/{anon_phase2}", headers=owner_headers).status_code
+        == 401
+    )
+
+    # Anonymous legacy sessions keep the guest-readable path.
+    anon_legacy = f"dash-anon-{uuid4().hex[:8]}"
+    _insert_anonymous_session(anon_legacy)
+    legacy = client.get(f"/dashboard/{anon_legacy}")
+    assert legacy.status_code == 200, legacy.text
+
+    # Unknown sessions still 404.
+    assert client.get("/dashboard/does-not-exist").status_code == 404
