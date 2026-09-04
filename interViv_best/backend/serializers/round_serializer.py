@@ -83,8 +83,19 @@ def sanitize_round_for_client(
     elif round_type == "sql":
         # SQL never exposes reference_query or hidden test cases under any policy
         q_ctx.pop("reference_query", None)
-        q_ctx.pop("hidden_cases", None)
+        raw_cases = q_ctx.get("cases") or []
+        sample_cases = [
+            {
+                "case_type": "sample",
+                "description": c.get("description", ""),
+                "seed_data": c.get("seed_data", ""),
+            }
+            for c in raw_cases
+            if c.get("case_type") in ("sample", "visible_sample", "visible")
+        ]
+        q_ctx["sample_cases"] = sample_cases
         q_ctx.pop("cases", None)
+        q_ctx.pop("hidden_cases", None)
         cleaned["question_context"] = q_ctx
 
     return cleaned
