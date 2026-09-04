@@ -124,6 +124,18 @@ export function submitAnswer(payload) {
   });
 }
 
+export function runSqlQuery(payload) {
+  return request("/session/sql/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchSession(sessionId) {
+  return request(`/session/${encodeURIComponent(sessionId)}`);
+}
+
 export function transcribeAudio(blob, filename = "answer.webm") {
   const formData = new FormData();
   formData.append("audio", blob, filename);

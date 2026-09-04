@@ -45,7 +45,7 @@ class SubmitAnswerRequest(BaseModel):
     session_id: str
     round: int
     answer_text: str | None = None
-    answers: list[dict[str, Any]] | None = None
+    answers: list[dict[str, Any]] | dict[str, Any] | None = None
     word_count: int = 0
     engagement_label: str | None = None
     engagement_confidence: float | None = None
@@ -184,6 +184,7 @@ def submit_answer(
         require_matching_user(str(session["user_id"]), authorization)
 
     # Strict round-type validation
+    normalized_answers = None
     if round_type == "mcq":
         if request.answers is None:
             raise HTTPException(
@@ -194,6 +195,18 @@ def submit_answer(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="MCQ round rejects 'answer_text'.",
+            )
+        if isinstance(request.answers, dict):
+            normalized_answers = [
+                {"question_id": k, "selected_option_id": v}
+                for k, v in request.answers.items()
+            ]
+        elif isinstance(request.answers, list):
+            normalized_answers = request.answers
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="MCQ round requires structured 'answers' payload.",
             )
     else:
         if request.answer_text is None:
@@ -265,7 +278,7 @@ def submit_answer(
         if round_type == "mcq":
             scoring_result = score_round(
                 round_type="mcq",
-                answers=request.answers,
+                answers=normalized_answers,
                 question_context=active_round.get("question_context", {}),
                 config=active_round.get("config_json", {}),
             )
@@ -313,7 +326,7 @@ def submit_answer(
     persisted_answer = (
         request.answer_text
         if round_type != "mcq"
-        else json.dumps(request.answers)
+        else json.dumps(normalized_answers)
     )
 
     # Persist this round

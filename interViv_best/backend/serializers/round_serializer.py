@@ -52,6 +52,9 @@ def sanitize_round_for_client(
                 ],
                 "selection_mode": q.get("selection_mode", "single"),
                 "negative_marking": float(q.get("negative_marking", 0.0)),
+                "difficulty": q.get("difficulty"),
+                "skill": q.get("skill"),
+                "sub_domain": q.get("sub_domain"),
             }
             if allow_review:
                 item["correct_option_ids"] = list(q.get("correct_option_ids", []))
