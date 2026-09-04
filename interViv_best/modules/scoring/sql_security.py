@@ -39,7 +39,7 @@ SAFE_SQLITE_FUNCTIONS = frozenset({
     "abs", "round",
     # String manipulation
     "lower", "upper", "length", "substr", "substring", "trim", "ltrim", "rtrim",
-    "replace", "instr", "printf", "format",
+    "replace", "instr", "printf", "format", "like", "glob",
     # Conditional / Null handling
     "coalesce", "nullif", "ifnull", "iif",
     # Date & time functions
