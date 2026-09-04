@@ -133,7 +133,7 @@ def test_full_flow_persists_through_sqlalchemy(sql_client) -> None:
     assert _count(engine, "student_skill_graph") >= 1
 
     # ── read paths ──────────────────────────────────────────────────────
-    dashboard = client.get(f"/dashboard/{session_id}")
+    dashboard = client.get(f"/dashboard/{session_id}", headers=headers)
     assert dashboard.status_code == 200, dashboard.text
     rounds = dashboard.json().get("rounds") or []
     assert rounds and rounds[0].get("final_score") is not None
