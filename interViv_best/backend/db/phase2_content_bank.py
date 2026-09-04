@@ -500,8 +500,9 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'storage'},
     {   'correct_option_ids': ['a'],
         'difficulty': 'hard',
-        'explanation': 'PostgreSQL uses VACUUM (and autovacuum) to scan tables, remove dead row versions whose '
-                       'transaction horizons have passed, and mark space reusable.',
+        'explanation': 'Standard VACUUM (and autovacuum) scans the relation, removes dead row versions whose '
+                       'transaction horizons have passed, and marks that space reusable within the same relation. '
+                       'Only VACUUM FULL rewrites the relation and can return space to the operating system.',
         'id': 'mcq_dbms_025',
         'negative_marking': 0.25,
         'options_json': [   {'id': 'a', 'text': 'VACUUM processing'},
@@ -509,8 +510,8 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
                             {'id': 'c', 'text': 'Buffer pool page eviction'},
                             {'id': 'd', 'text': 'Transaction rollback journal truncation'}],
         'skill': 'DBMS',
-        'stem': 'In Multi-Version Concurrency Control (MVCC) engines like PostgreSQL, what process reclaims physical '
-                'table space occupied by obsolete row versions (dead tuples)?',
+        'stem': 'In PostgreSQL MVCC, which maintenance process marks space occupied by dead tuples as reusable '
+                'within the same relation?',
         'sub_domain': 'concurrency'},
     {   'correct_option_ids': ['b'],
         'difficulty': 'hard',

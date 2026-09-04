@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, HelpCircle, Clock, ChevronLeft, ChevronRight, Send, AlertCircle } from 'lucide-react';
-import { formatMCQSubmission } from '../lib/roundContractHelpers';
+import { formatMCQSubmission, computeSecondsRemaining } from '../lib/roundContractHelpers';
 
 export default function MCQRound({
   sessionId,
@@ -19,15 +19,9 @@ export default function MCQRound({
   const questions = questionContext?.questions || [];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [secondsRemaining, setSecondsRemaining] = useState(() => {
-    if (expiresAt) {
-      const exp = new Date(expiresAt).getTime();
-      const now = Date.now();
-      return Math.max(0, Math.floor((exp - now) / 1000));
-    }
-    const mins = configJson?.duration_minutes || 20;
-    return mins * 60;
-  });
+  const [secondsRemaining, setSecondsRemaining] = useState(() =>
+    computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 20)
+  );
 
   // Countdown timer
   useEffect(() => {

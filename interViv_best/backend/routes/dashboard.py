@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.routes.auth import require_matching_user
+from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -57,6 +58,10 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cleaned["role"] = question_context.get("role")
         cleaned["followups"] = question_context.get("followups") or []
         cleaned.pop("question_context", None)
+        # Persisted SQL artifacts carry per-case grading detail (hidden-case
+        # descriptions, expected row counts). Reduce to safe aggregates.
+        if cleaned.get("round_type") == "sql" and cleaned.get("artifact_json"):
+            cleaned["artifact_json"] = sanitize_sql_artifact_for_client(cleaned["artifact_json"])
         cleaned["performance_band"] = _score_bucket(cleaned.get("final_score"))
 
         breakdown = cleaned.get("scoring_breakdown") or {}
@@ -123,19 +128,21 @@ def get_dashboard(
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
 
     if completed_rounds:
+        # Phase 2 (MCQ/SQL) rounds persist None for NLP/KG layer scores;
+        # coerce missing layer scores to 0.0 so the dashboard never crashes.
         averages = {
             "final_score": round(
-                sum(float(item.get("final_score", 0)) for item in completed_rounds)
+                sum(float(item.get("final_score") or 0) for item in completed_rounds)
                 / len(completed_rounds),
                 2,
             ),
             "nlp_score": round(
-                sum(float(item.get("nlp_score", 0)) for item in completed_rounds)
+                sum(float(item.get("nlp_score") or 0) for item in completed_rounds)
                 / len(completed_rounds),
                 2,
             ),
             "kg_score": round(
-                sum(float(item.get("kg_score", 0)) for item in completed_rounds)
+                sum(float(item.get("kg_score") or 0) for item in completed_rounds)
                 / len(completed_rounds),
                 2,
             ),

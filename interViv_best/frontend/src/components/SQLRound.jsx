@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Send, Database, Table, CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
 import { runSqlQuery } from '../lib/api';
+import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 
 export default function SQLRound({
   sessionId,
@@ -26,15 +27,9 @@ export default function SQLRound({
   const [isRunningQuery, setIsRunningQuery] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
   const [previewError, setPreviewError] = useState(null);
-  const [secondsRemaining, setSecondsRemaining] = useState(() => {
-    if (expiresAt) {
-      const exp = new Date(expiresAt).getTime();
-      const now = Date.now();
-      return Math.max(0, Math.floor((exp - now) / 1000));
-    }
-    const mins = configJson?.duration_minutes || 25;
-    return mins * 60;
-  });
+  const [secondsRemaining, setSecondsRemaining] = useState(() =>
+    computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 25)
+  );
 
   // Countdown timer
   useEffect(() => {
