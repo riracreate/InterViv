@@ -887,26 +887,26 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'consistency'},
     {   'correct_option_ids': ['c'],
         'difficulty': 'hard',
-        'explanation': 'State-based CRDTs define merge operations on a bounded join-semilattice. Because merges are '
-                       'commutative (A+B=B+A), associative ((A+B)+C=A+(B+C)), and idempotent (A+A=A), replicas '
-                       'converge regardless of message ordering.',
+        'explanation': 'A state-based CRDT evolves monotonically in a join-semilattice, and merge computes the least '
+                       'upper bound. That merge is associative, commutative, and idempotent, so duplicated or reordered '
+                       'state deliveries still converge.',
         'id': 'mcq_sd_021',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'CRDTs require distributed Two-Phase Locking coordinators across wide area '
-                                        'networks.'},
+                                'text': 'Replica states form a total order, and merge always selects the state with the '
+                                        'largest physical timestamp.'},
                             {   'id': 'b',
-                                'text': 'All replica state transitions must execute within a single synchronized '
-                                        'hardware clock cycle.'},
+                                'text': 'Merge is associative and commutative but intentionally not idempotent, so '
+                                        'receiving the same state twice records both updates.'},
                             {   'id': 'c',
-                                'text': 'Merge operations form a semi-lattice that is commutative, associative, and '
-                                        'idempotent.'},
+                                'text': 'Replica states form a join-semilattice, updates move monotonically upward, and '
+                                        'merge computes an associative, commutative, idempotent least upper bound.'},
                             {   'id': 'd',
-                                'text': 'Every update operation must be strictly serialized by a single global master '
-                                        'node.'}],
+                                'text': 'Concurrent operations commute when delivered exactly once in causal order, '
+                                        'without requiring a state-merge semilattice.'}],
         'skill': 'System Design',
-        'stem': 'Which mathematical property enables Conflict-free Replicated Data Types (CRDTs) to guarantee eventual '
-                'consistency across replicas?',
+        'stem': 'For a state-based (convergent) CRDT, which algebraic structure and update rule are sufficient for '
+                'replicas to converge despite duplicated or reordered state delivery?',
         'sub_domain': 'consistency'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'hard',
@@ -1245,21 +1245,27 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'supervised_learning'},
     {   'correct_option_ids': ['c'],
         'difficulty': 'hard',
-        'explanation': 'Standard self-attention computes Q * K^T, producing an N x N matrix of attention weights, '
-                       'requiring O(N^2 * d) operations and O(N^2) memory scaling quadratically with sequence length '
-                       'N.',
+        'explanation': 'Dense projections cost O(N*d^2). Computing and applying attention across h heads costs '
+                       'O(N^2*d), because each head has width d/h, while materializing every head\'s attention matrix '
+                       'requires O(h*N^2) score memory. The combined time is O(N*d^2 + N^2*d).',
         'id': 'mcq_ml_019',
         'negative_marking': 0.25,
-        'options_json': [   {'id': 'a', 'text': 'O(log N) through binary tree indexing of key-value pairs.'},
+        'options_json': [   {   'id': 'a',
+                                'text': 'Time O(N*d^2) and attention-score memory O(N*d), because splitting into heads '
+                                        'removes pairwise token interactions.'},
                             {   'id': 'b',
-                                'text': 'O(N) because tokens only attend to their immediate neighboring token.'},
+                                'text': 'Time O(N*d^2 + h*N^2*d) and attention-score memory O(N^2*d), because every head '
+                                        'retains the full model width d.'},
                             {   'id': 'c',
-                                'text': 'O(N^2) because each token computes an attention score with every other token '
-                                        'in the sequence.'},
-                            {'id': 'd', 'text': 'O(N^3) due to cubic matrix inversion on each forward pass.'}],
+                                'text': 'Time O(N*d^2 + N^2*d) and attention-score memory O(h*N^2), because each of h '
+                                        'heads materializes an N by N score matrix with head width d/h.'},
+                            {   'id': 'd',
+                                'text': 'Time O(N^2*d^2) and attention-score memory O(h*N*d), because every token pair '
+                                        'requires a full d by d matrix multiplication.'}],
         'skill': 'Machine Learning',
-        'stem': 'What is the time complexity of the standard full self-attention mechanism in Transformers with '
-                'respect to sequence length N?',
+        'stem': 'For a standard dense multi-head self-attention layer with sequence length N, model width d, and h '
+                'heads, which complexity statement includes both linear projections and materialized attention scores '
+                '(ignoring batch size)?',
         'sub_domain': 'deep_learning'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'hard',
@@ -1450,16 +1456,23 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'tcp'},
     {   'correct_option_ids': ['c'],
         'difficulty': 'medium',
-        'explanation': 'TIME_WAIT lasts 2*MSL to ensure the remote peer received the final ACK and to prevent stale '
-                       'delayed segments from a closed connection corrupting a new connection on the same port.',
+        'explanation': 'TIME_WAIT keeps the active closer\'s state long enough to retransmit the final ACK if the peer '
+                       'retransmits its FIN, and to let delayed duplicate segments expire before the same connection '
+                       'tuple is reused. TCP does not send a separate ACK-of-ACK.',
         'id': 'mcq_cn_012',
         'negative_marking': 0.25,
-        'options_json': [   {'id': 'a', 'text': 'Negotiating higher MTU sizes for future connections.'},
-                            {'id': 'b', 'text': 'Waiting for the application to compile pending database queries.'},
+        'options_json': [   {   'id': 'a',
+                                'text': 'Keeping the connection writable so the active closer can send additional '
+                                        'application data after its FIN.'},
+                            {   'id': 'b',
+                                'text': 'Preserving the old connection\'s congestion window so a future connection can '
+                                        'resume with the same sending rate.'},
                             {   'id': 'c',
-                                'text': 'Ensuring the final ACK is received by the remote peer and allowing lingering '
-                                        'duplicate segments to expire in the network.'},
-                            {'id': 'd', 'text': 'Allowing the operating system to perform memory compaction.'}],
+                                'text': 'Allowing retransmission of the final ACK if the peer repeats its FIN, while '
+                                        'giving delayed duplicate segments time to expire.'},
+                            {   'id': 'd',
+                                'text': 'Waiting for routing and address-resolution caches to expire before acknowledging '
+                                        'the peer\'s FIN.'}],
         'skill': 'Computer Networks',
         'stem': 'What is the primary purpose of the TIME_WAIT state entered by an active TCP endpoint during '
                 'connection termination?',
@@ -2360,19 +2373,26 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'memory'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'easy',
-        'explanation': 'CPUs provide privilege rings (User mode and Kernel mode) so privileged instructions like '
-                       'direct hardware access can execute only in kernel mode.',
+        'explanation': 'Processors provide at least a less-privileged user mode and a privileged supervisor/kernel '
+                       'mode. Hardware gates privileged instructions and protected resources by the current mode; x86 '
+                       'rings and ARM exception levels are architecture-specific implementations of this mechanism.',
         'id': 'mcq_os_004',
         'negative_marking': 0.25,
-        'options_json': [   {'id': 'a', 'text': 'Restricting user applications to interpreted bytecode.'},
+        'options_json': [   {   'id': 'a',
+                                'text': 'Compiler-enforced type safety, which prevents applications from emitting '
+                                        'privileged machine instructions.'},
                             {   'id': 'b',
-                                'text': 'Hardware encryption of all CPU registers during instruction execution.'},
-                            {'id': 'c', 'text': 'Dedicated physical motherboards for user code and kernel code.'},
+                                'text': 'Process scheduling priority, which grants the highest-priority process direct '
+                                        'access to protected devices.'},
+                            {   'id': 'c',
+                                'text': 'Virtual addressing alone, with system calls executing privileged operations '
+                                        'directly in the caller\'s user mode.'},
                             {   'id': 'd',
-                                'text': 'Dual-mode operation separating User Mode (Ring 3) and Kernel/Supervisor Mode '
-                                        '(Ring 0).'}],
+                                'text': 'Hardware privilege modes that separate user execution from supervisor/kernel '
+                                        'execution and gate privileged instructions.'}],
         'skill': 'Operating Systems',
-        'stem': 'What hardware privilege distinction protects operating system integrity from user applications?',
+        'stem': 'Which general hardware mechanism protects operating-system integrity from ordinary user '
+                'applications across processor architectures?',
         'sub_domain': 'architecture'},
     {   'correct_option_ids': ['a'],
         'difficulty': 'medium',
@@ -2478,20 +2498,20 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'id': 'mcq_hr_001',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Silently disable the automated test suite to allow the deployment pipeline to '
-                                        'pass.'},
+                                'text': 'Proceed with a small canary because rollback is available, deferring full '
+                                        'triage until after the scheduled launch.'},
                             {   'id': 'b',
-                                'text': 'Deploy to production as planned and wait for customer complaints to verify '
-                                        'the issue.'},
+                                'text': 'Keep the scheduled deployment but add focused monitoring and ask the on-call '
+                                        'engineer to watch the affected path.'},
                             {   'id': 'c',
                                 'text': 'Halt the deployment, notify stakeholders, and triage the bug in a staging '
                                         'environment before rescheduling.'},
                             {   'id': 'd',
-                                'text': 'Delete the bug ticket from the tracking system to maintain sprint velocity '
-                                        'metrics.'}],
+                                'text': 'Ask the product owner to accept the risk verbally while the team prepares a '
+                                        'post-deployment hotfix.'}],
         'skill': 'HR/Professional Judgment',
-        'stem': 'A high-severity bug is discovered 15 minutes before a scheduled production deployment. What is the '
-                'most responsible engineering action?',
+        'stem': 'A confirmed high-severity bug that can irreversibly corrupt customer data is discovered 15 minutes '
+                'before a scheduled production deployment. What is the most responsible engineering action?',
         'sub_domain': 'release_management'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'easy',
@@ -2500,17 +2520,21 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'id': 'mcq_hr_002',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Ignore the other service and build your own version with an identical name.'},
+                                'text': 'Review the service documentation and begin an independent prototype before '
+                                        'contacting its maintainers.'},
                             {   'id': 'b',
-                                'text': 'Build a competing duplicate service in secret to claim full feature credit.'},
+                                'text': 'Ask your manager to transfer ownership of the existing service before doing a '
+                                        'technical comparison.'},
                             {   'id': 'c',
-                                'text': 'Complain publicly on social media about organizational inefficiencies.'},
+                                'text': 'Adopt the existing API immediately based on its stated purpose, without '
+                                        'checking its support model or service-level objectives.'},
                             {   'id': 'd',
                                 'text': 'Reach out to the other team to evaluate their service capabilities and '
                                         'discuss integrating rather than reinventing.'}],
         'skill': 'HR/Professional Judgment',
-        'stem': 'You realize a feature assigned to you duplicates a service already built and maintained by another '
-                'team. What should you do first?',
+        'stem': 'After reviewing its published documentation, you realize a feature assigned to you substantially '
+                'duplicates another team\'s maintained service, but its support model and operational limits are '
+                'unclear. What should you do before implementation?',
         'sub_domain': 'cross_team_collaboration'},
     {   'correct_option_ids': ['a'],
         'difficulty': 'easy',
@@ -2522,11 +2546,14 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
                                 'text': 'Acknowledge the review request, communicate your current focus on the '
                                         'production fix, and provide a clear time when you can review it.'},
                             {   'id': 'b',
-                                'text': "Approve the teammate's pull request instantly without looking at the code "
-                                        'diff.'},
+                                'text': 'Pause the production investigation immediately and complete the review '
+                                        'yourself before returning to the incident.'},
                             {   'id': 'c',
-                                'text': "Ignore the teammate's messages for the rest of the week without explanation."},
-                            {'id': 'd', 'text': "Close the teammate's pull request to clear your notification inbox."}],
+                                'text': 'Forward the request to an available engineer without explaining its context '
+                                        'or confirming that they can take it.'},
+                            {   'id': 'd',
+                                'text': 'Leave a brief note that you will review it later, without giving a time or '
+                                        'helping the teammate find another reviewer.'}],
         'skill': 'HR/Professional Judgment',
         'stem': 'A teammate asks for a code review while you are focused on an urgent production bug fix. How should '
                 'you handle this request?',
@@ -2538,17 +2565,17 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'id': 'mcq_hr_004',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Let the two engineers debate indefinitely until one surrenders from '
-                                        'exhaustion.'},
+                                'text': 'Choose the option with the lower immediate migration cost, document it as '
+                                        'temporary, and defer evaluation of operational risks.'},
                             {   'id': 'b',
                                 'text': 'Define explicit technical evaluation criteria, build focused '
                                         'proofs-of-concept, and evaluate trade-offs collaboratively with the team.'},
                             {   'id': 'c',
-                                'text': 'Choose the database option based on which engineer has the highest job '
-                                        'title.'},
+                                'text': 'Escalate both written proposals directly to the most senior manager and accept '
+                                        'their preference as the technical decision.'},
                             {   'id': 'd',
-                                'text': 'Implement both databases simultaneously in production and run duplicate '
-                                        'queries forever.'}],
+                                'text': 'Send full production traffic to both databases for a quarter before agreeing '
+                                        'on success criteria or an exit plan.'}],
         'skill': 'HR/Professional Judgment',
         'stem': 'An architectural disagreement between two senior engineers regarding database selection has stalled '
                 'team progress for three days. What is the most constructive resolution approach?',
@@ -2560,16 +2587,17 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'id': 'mcq_hr_005',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Guess an unverified root cause to appease the executive and end the inquiry.'},
+                                'text': 'Share the leading hypothesis as unconfirmed, but have the primary responders '
+                                        'join the executive call to answer follow-up questions.'},
                             {   'id': 'b',
-                                'text': 'Pull all technical responders into an emergency interrogation meeting to '
-                                        'satisfy the executive.'},
+                                'text': 'Pause mitigation briefly so the response team can assemble a detailed causal '
+                                        'timeline for the executive.'},
                             {   'id': 'c',
                                 'text': 'Provide a brief status update with known customer impact, designate a liaison '
                                         'to handle communications, and keep responders focused on mitigation.'},
                             {   'id': 'd',
-                                'text': 'Refuse to communicate anything until a final post-mortem report is published '
-                                        'weeks later.'}],
+                                'text': 'Defer all stakeholder communication until service is restored, then provide a '
+                                        'single consolidated update before the post-mortem.'}],
         'skill': 'HR/Professional Judgment',
         'stem': 'During an ongoing major customer-facing outage, an executive demands an immediate root-cause '
                 'explanation while responders are actively restoring service. How should the incident commander '
@@ -2583,66 +2611,74 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'id': 'mcq_hr_006',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Downgrade the vulnerability severity label to low in the scanner dashboard.'},
+                                'text': 'Ask the dependency team for an accelerated estimate while retaining the launch '
+                                        'date until product leadership requests a formal risk review.'},
                             {   'id': 'b',
-                                'text': 'Suppress the vulnerability report until after the marketing launch event '
-                                        'concludes.'},
+                                'text': 'Record the vulnerability in the backlog and proceed because the service is '
+                                        'currently reachable only from the corporate network.'},
                             {   'id': 'c',
-                                'text': 'Secretly patch production binaries directly without recording the change in '
-                                        'source control.'},
+                                'text': 'Apply the dependency upgrade directly during an emergency production window '
+                                        'before completing staging and rollback validation.'},
                             {   'id': 'd',
                                 'text': 'Document the risk severity, inform security and product stakeholders, and '
                                         'recommend prioritizing the security patch over the release schedule.'}],
         'skill': 'HR/Professional Judgment',
-        'stem': 'You discover a high-risk security vulnerability in an internal microservice, but remediating it '
-                'requires a dependency upgrade that will delay a major feature launch by three days. What is the '
-                'proper escalation path?',
+        'stem': 'You confirm an exploitable high-risk vulnerability in an internal microservice, with no validated '
+                'compensating control. Remediation requires a dependency upgrade that will delay a major feature '
+                'launch by three days. What is the proper escalation path?',
         'sub_domain': 'security_governance'},
     {   'correct_option_ids': ['a'],
         'difficulty': 'hard',
-        'explanation': 'Blameless post-mortems recognize that human error is a symptom of systemic design flaws (e.g. '
-                       'shared credentials, missing dry-run safeguards, weak isolation), focusing on structural '
-                       'prevention.',
+        'explanation': 'A rigorous blameless review still establishes accountability for follow-through: it explains '
+                       'how staging reached production, adds least-privilege and destructive-operation safeguards, and '
+                       'assigns measurable actions to owners without treating one person as the root cause.',
         'id': 'mcq_hr_007',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Focusing on systemic vulnerabilities, missing safeguards, and environment '
-                                        'isolation gaps rather than personal culpability.'},
+                                'text': 'Trace the technical and organizational conditions that let staging credentials '
+                                        'reach production, add scoped credentials, dry-run and approval safeguards, '
+                                        'and assign tested follow-up actions to named owners.'},
                             {   'id': 'b',
-                                'text': 'Publicly reprimanding the junior engineer in an all-hands meeting to deter '
-                                        'future mistakes.'},
+                                'text': 'Require the engineer to repeat cleanup-tool training and temporarily remove '
+                                        'their access, while leaving the shared credentials and deployment path '
+                                        'unchanged.'},
                             {   'id': 'c',
-                                'text': 'Revoking production database access for all engineers and requiring paper '
-                                        'approval forms.'},
+                                'text': 'Centralize every cleanup operation with the operations team and require a '
+                                        'manager approval, without examining why environment isolation failed.'},
                             {   'id': 'd',
-                                'text': 'Closing the incident without documentation to protect company reputation.'}],
+                                'text': 'Add a production confirmation prompt and expand backup-restore drills, but '
+                                        'treat the staging-to-production credential path as outside the incident '
+                                        'scope.'}],
         'skill': 'HR/Professional Judgment',
-        'stem': 'A junior engineer accidentally runs an unverified cleanup script in staging that deletes production '
-                'data due to an environment variable misconfiguration. Following recovery, what characterizes an '
-                'effective blameless post-mortem?',
+        'stem': 'A cleanup command launched from staging deleted production data because a shared credential and an '
+                'environment variable selected the wrong database. Recovery succeeded. Which post-mortem action set '
+                'best combines blameless analysis with accountable prevention?',
         'sub_domain': 'blameless_postmortem'},
     {   'correct_option_ids': ['b'],
         'difficulty': 'hard',
-        'explanation': 'Engineering ethics require professionals to protect system integrity and client security. '
-                       'Proposing scope reduction or phased delivery preserves quality standards while addressing '
-                       'schedule constraints constructively.',
+        'explanation': 'The lead should make non-waivable obligations and residual risk explicit, escalate the decision '
+                       'to accountable risk owners, and offer a narrower delivery that retains essential verification. '
+                       'A formal, time-bounded exception may govern genuinely waivable checks, but not silently erase '
+                       'security or compliance duties.',
         'id': 'mcq_hr_008',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Comply silently and disable all verification pipelines without recording any '
-                                        'objections.'},
+                                'text': 'Keep every existing gate unchanged and allow the deadline to pass before '
+                                        'informing the contract owner or proposing an alternate delivery.'},
                             {   'id': 'b',
-                                'text': 'Advocate for delivery integrity by explaining the concrete business and '
-                                        'compliance risks of disabling tests, proposing a scoped feature delivery '
-                                        'instead.'},
+                                'text': 'Document which security or compliance controls are non-waivable, quantify the '
+                                        'residual risks, escalate to accountable risk owners, and propose a scoped or '
+                                        'phased delivery that retains essential gates.'},
                             {   'id': 'c',
-                                'text': 'Immediately resign without providing documentation or handover to your team.'},
+                                'text': 'Accept a blanket temporary exception for all scans and tests, relying on '
+                                        'enhanced production monitoring and rollback after the full launch.'},
                             {   'id': 'd',
-                                'text': 'Configure tests to always return exit code 0 regardless of real execution '
-                                        'failure.'}],
+                                'text': 'Replace the automated gates with one senior engineer\'s manual review so the '
+                                        'full scope can ship on time without a documented exception.'}],
         'skill': 'HR/Professional Judgment',
-        'stem': 'Management asks your team to disable all automated security scans and integration tests to meet an '
-                'aggressive contractual client delivery deadline. As lead engineer, what is the most ethical response?',
+        'stem': 'Management asks your team to waive automated security scans and integration tests to meet a contractual '
+                'delivery deadline. As lead engineer, which response best balances professional duty, risk governance, '
+                'and the delivery commitment?',
         'sub_domain': 'engineering_ethics'}]
 
 PHASE2_SQL_BANK: list[dict[str, Any]] = [   {   'cases': [   {   'case_type': 'visible_sample',
