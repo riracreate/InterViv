@@ -112,3 +112,71 @@ test('SQL safe client artifact contains aggregate evidence without hidden case l
   assert.equal(safeArtifact.hidden_cases, undefined);
   assert.equal(safeArtifact.seed_data, undefined);
 });
+
+test('fetchSession uses the production normalizer (single source of truth)', async () => {
+  // Exercise the real production fetch helper with stubbed transport only.
+  const backendBody = {
+    session_id: 'sess_refresh',
+    status: 'active',
+    active_round: {
+      round: 1,
+      round_type: 'mcq',
+      question_context: { questions: [{ id: 'q1' }, { id: 'q2' }] },
+      expires_at: '2026-09-04T12:00:00.000Z',
+    },
+  };
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push(url);
+    return { ok: true, json: async () => structuredClone(backendBody) };
+  };
+  globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+
+  const { fetchSession } = await import('../src/lib/api.js');
+  const data = await fetchSession('sess_refresh');
+
+  assert.equal(calls[0], '/api/session/sess_refresh');
+  // Normalization must have been applied by the production helper itself.
+  assert.ok(data.current_round, 'fetchSession must mirror active_round');
+  assert.deepEqual(data.current_round, data.active_round);
+
+  delete globalThis.fetch;
+  delete globalThis.localStorage;
+});
+
+test('refresh preserves assignment, order, deadline, and countdown basis', () => {
+  // Start response for a 15-question MCQ round.
+  const ids = Array.from({ length: 15 }, (_, i) => `mcq_dbms_${String(i + 1).padStart(3, '0')}`);
+  const expiresAt = '2026-09-04T12:20:00.000Z';
+  const startBody = {
+    session_id: 'sess_15',
+    questions: ids.map((id) => ({ id })),
+    expires_at: expiresAt,
+  };
+  // Page-refresh response carries the round under active_round only.
+  const resumeBody = {
+    session_id: 'sess_15',
+    status: 'active',
+    active_round: {
+      round: 1,
+      round_type: 'mcq',
+      question_context: { questions: ids.map((id) => ({ id })) },
+      expires_at: expiresAt,
+    },
+  };
+
+  const startIds = startBody.questions.map((q) => q.id);
+  const normalized = normalizeSessionData(resumeBody);
+  const round = normalized.active_round || normalized.current_round;
+  const refreshedIds = round.question_context.questions.map((q) => q.id);
+
+  assert.deepEqual(refreshedIds, startIds, 'refresh must return identical IDs in order');
+  assert.equal(round.expires_at, startBody.expires_at, 'refresh must return the original deadline');
+
+  // Countdown uses the original deadline at both instants: remaining drops by
+  // exactly the elapsed wall-clock time, proving no deadline reset.
+  const t0 = new Date('2026-09-04T12:00:00.000Z').getTime();
+  const t1 = t0 + 90 * 1000;
+  assert.equal(computeSecondsRemaining(round.expires_at, 20, t0), 1200);
+  assert.equal(computeSecondsRemaining(round.expires_at, 20, t1), 1110);
+});

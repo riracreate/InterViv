@@ -1,4 +1,6 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+import { normalizeSessionData } from './roundContractHelpers.js';
+
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
 const AUTH_TOKEN_KEY = "interviv-auth-token";
 
@@ -133,14 +135,7 @@ export function runSqlQuery(payload) {
 }
 
 export function fetchSession(sessionId) {
-  return request(`/session/${encodeURIComponent(sessionId)}`).then((data) => {
-    if (data?.active_round && !data.current_round) {
-      data.current_round = data.active_round;
-    } else if (data?.current_round && !data.active_round) {
-      data.active_round = data.current_round;
-    }
-    return data;
-  });
+  return request(`/session/${encodeURIComponent(sessionId)}`).then(normalizeSessionData);
 }
 
 export function transcribeAudio(blob, filename = "answer.webm") {
