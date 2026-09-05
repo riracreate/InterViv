@@ -176,6 +176,38 @@ def test_mcq_dbms_025_vacuum_wording_is_precise() -> None:
     assert "operating system" in explanation
 
 
+def test_audited_mcq_content_corrections_are_preserved() -> None:
+    """Pin the six content corrections from the Phase 2 B4 audit."""
+    by_id = {q["id"]: q for q in PHASE2_MCQ_BANK}
+
+    lamport = by_id["mcq_sd_020"]
+    keyed_lamport = next(
+        option["text"]
+        for option in lamport["options_json"]
+        if option["id"] in lamport["correct_option_ids"]
+    )
+    assert "cannot tell those cases apart" in keyed_lamport
+    assert "happened-before" in lamport["explanation"]
+    assert "tie-break rule" in lamport["explanation"]
+
+    assert "Level-0" in by_id["mcq_dbms_024"]["explanation"]
+    double_descent = by_id["mcq_ml_020"]["explanation"]
+    assert "zero training error" in double_descent
+    assert "not generally determined by raw parameter count" in double_descent
+
+    phantom = by_id["mcq_dbms_023"]
+    assert "lock-based DBMS" in phantom["stem"]
+    assert "index-range locking" in phantom["stem"]
+
+    raft = by_id["mcq_sd_019"]
+    assert raft["difficulty"] == "hard"
+    assert "joint consensus" in raft["stem"]
+    assert all("blocking mutex" not in option["text"] for option in raft["options_json"])
+
+    nat = by_id["mcq_cn_014"]
+    assert all("fractional IP" not in option["text"] for option in nat["options_json"])
+
+
 def test_sql_difficulty_rubric_assignment() -> None:
     """Pin the rubric decision (docs/phase2_sql_difficulty_rubric.md).
 

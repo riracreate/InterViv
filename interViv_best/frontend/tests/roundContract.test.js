@@ -1,10 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   formatMCQSubmission,
   normalizeSessionData,
   computeSecondsRemaining,
 } from '../src/lib/roundContractHelpers.js';
+
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(testDir, '..', '..');
+let realRefreshPayloads;
+
+function getRealRefreshPayloads() {
+  if (!realRefreshPayloads) {
+    const localPython = path.join(
+      repoRoot,
+      '.venv',
+      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+    );
+    const python = existsSync(localPython) ? localPython : 'python3';
+    const helper = path.join(testDir, 'helpers', 'emit_real_refresh_payloads.py');
+    const serialized = execFileSync(python, [helper], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        INTERVIV_USE_MEMORY_DB: 'true',
+        JWT_SECRET_KEY: 'test-secret-key-with-at-least-32-bytes!!',
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    });
+    realRefreshPayloads = JSON.parse(serialized);
+  }
+  return realRefreshPayloads;
+}
 
 test('formatMCQSubmission produces canonical structure with explicit empty selections', () => {
   const questions = [
@@ -144,39 +176,48 @@ test('fetchSession uses the production normalizer (single source of truth)', asy
   delete globalThis.localStorage;
 });
 
-test('refresh preserves assignment, order, deadline, and countdown basis', () => {
-  // Start response for a 15-question MCQ round.
-  const ids = Array.from({ length: 15 }, (_, i) => `mcq_dbms_${String(i + 1).padStart(3, '0')}`);
-  const expiresAt = '2026-09-04T12:20:00.000Z';
-  const startBody = {
-    session_id: 'sess_15',
-    questions: ids.map((id) => ({ id })),
-    expires_at: expiresAt,
-  };
-  // Page-refresh response carries the round under active_round only.
-  const resumeBody = {
-    session_id: 'sess_15',
-    status: 'active',
-    active_round: {
-      round: 1,
-      round_type: 'mcq',
-      question_context: { questions: ids.map((id) => ({ id })) },
-      expires_at: expiresAt,
-    },
-  };
-
-  const startIds = startBody.questions.map((q) => q.id);
-  const normalized = normalizeSessionData(resumeBody);
+test('real backend MCQ refresh survives production normalization and original-deadline countdown', () => {
+  const { start: startBody, fetch: fetchBody } = getRealRefreshPayloads().mcq;
+  const startIds = startBody.questions.map((question) => question.id);
+  const normalized = normalizeSessionData(fetchBody);
   const round = normalized.active_round || normalized.current_round;
-  const refreshedIds = round.question_context.questions.map((q) => q.id);
+  const refreshedIds = round.question_context.questions.map((question) => question.id);
 
   assert.deepEqual(refreshedIds, startIds, 'refresh must return identical IDs in order');
   assert.equal(round.expires_at, startBody.expires_at, 'refresh must return the original deadline');
+  assert.deepEqual(normalized.current_round, normalized.active_round);
 
-  // Countdown uses the original deadline at both instants: remaining drops by
-  // exactly the elapsed wall-clock time, proving no deadline reset.
-  const t0 = new Date('2026-09-04T12:00:00.000Z').getTime();
-  const t1 = t0 + 90 * 1000;
-  assert.equal(computeSecondsRemaining(round.expires_at, 20, t0), 1200);
-  assert.equal(computeSecondsRemaining(round.expires_at, 20, t1), 1110);
+  const afterNinetySeconds = new Date(startBody.started_at).getTime() + 90 * 1000;
+  const remaining = computeSecondsRemaining(
+    round.expires_at,
+    startBody.config_json.duration_minutes,
+    afterNinetySeconds,
+  );
+  assert.equal(remaining, 1110);
+
+  console.log(`real backend MCQ IDs: ${startIds.join(',')}`);
+  console.log(`real backend MCQ expires_at: ${startBody.expires_at}; countdown@+90s: ${remaining}`);
+});
+
+test('real backend SQL refresh survives production normalization and original-deadline countdown', () => {
+  const { start: startBody, fetch: fetchBody } = getRealRefreshPayloads().sql;
+  const normalized = normalizeSessionData(fetchBody);
+  const round = normalized.active_round || normalized.current_round;
+  const refreshedContext = round.question_context;
+
+  assert.equal(refreshedContext.id, startBody.question_context.id);
+  assert.deepEqual(refreshedContext.sample_cases, startBody.sample_cases);
+  assert.equal(round.expires_at, startBody.expires_at, 'refresh must return the original deadline');
+  assert.deepEqual(normalized.current_round, normalized.active_round);
+
+  const afterNinetySeconds = new Date(startBody.started_at).getTime() + 90 * 1000;
+  const remaining = computeSecondsRemaining(
+    round.expires_at,
+    startBody.config_json.duration_minutes,
+    afterNinetySeconds,
+  );
+  assert.equal(remaining, 1410);
+
+  console.log(`real backend SQL problem ID: ${startBody.question_context.id}`);
+  console.log(`real backend SQL expires_at: ${startBody.expires_at}; countdown@+90s: ${remaining}`);
 });
