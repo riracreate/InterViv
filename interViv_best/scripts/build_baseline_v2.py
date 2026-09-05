@@ -3,6 +3,8 @@ build_baseline_v2.py — Build the annotation sheet for the expanded human basel
 
 Samples 100 answers from data/interview_dataset_v6.csv, stratified by label
 (34 Good / 33 Average / 33 Poor) so annotators see the full quality range,
+drawn only from (question, answer) pairs that carry a single label in the
+source (label-ambiguous pairs are a known v6 defect and are excluded),
 then writes:
 
   data/baseline_v2_blank.xlsx — goes to annotators. No label, no system
@@ -62,6 +64,22 @@ def load_source() -> pd.DataFrame:
         df[col] = df[col].fillna("").astype(str).str.strip()
     df["label"] = df["label"].str.strip()
     return df
+
+
+def filter_unambiguous(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only (question, answer) pairs with a single label in the source.
+
+    Known v6 defect: identical pairs appear under contradictory labels, so a
+    pair that disagrees with itself cannot serve as validation ground truth.
+    Returns the filtered pool; prints the excluded-set size.
+    """
+    nlabels = df.groupby(["question", "answer"])["label"].nunique()
+    ambiguous = df.set_index(["question", "answer"]).index.map(nlabels.get) > 1
+    ambiguous = pd.Series(ambiguous, index=df.index)
+    n_pairs = int((nlabels > 1).sum())
+    print(f"Excluded {int(ambiguous.sum())} rows in {n_pairs} label-ambiguous "
+          f"(question, answer) groups; unambiguous pool: {int((~ambiguous).sum())} rows.")
+    return df[~ambiguous].reset_index(drop=True)
 
 
 def stratified_sample(df: pd.DataFrame) -> pd.DataFrame:
@@ -160,7 +178,12 @@ def main() -> None:
     source = load_source()
     print(f"Source rows: {len(source)}")
 
-    sample = stratified_sample(source)
+    pool = filter_unambiguous(source)
+    print("Unambiguous pool label distribution:")
+    for label in ("Good", "Average", "Poor"):
+        print(f"  {label:<8} {(pool['label'] == label).sum():>3}")
+
+    sample = stratified_sample(pool)
     print(f"\nSampled rows: {len(sample)} (seed={SEED})")
     print("Label distribution in sample:")
     for label in ("Good", "Average", "Poor"):

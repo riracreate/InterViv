@@ -10,6 +10,9 @@ n=19 matched-pairs baseline (three annotators, Pearson r = 0.821, 95% CI
   Average / Poor, 773 rows each).
 - Method: stratified random sample by label — 34 Good, 33 Average, 33 Poor —
   so annotators see the full quality range rather than 100 similar answers.
+  Drawn only from the unambiguous pool (see "Exclusion of label-ambiguous
+  pairs" below); the pool (Good 260 / Average 260 / Poor 773) supports the
+  full 34/33/33 split with no rebalancing needed.
 - Seed: **24**, fixed in `scripts/build_baseline_v2.py` (`SEED = 24`). The
   sample is shuffled with the same seed so quality bands are not grouped in
   row order (grouping would hint at scores).
@@ -64,12 +67,24 @@ Cohen's kappa** (per annotator pair). Do not modify
 | `data/baseline_v2_blank.xlsx` | `row_id`, `question`, `reference_answer` (header notes it is for reference only and must not be copied), `candidate_answer`, empty `your_score (0-100)`, empty `notes (optional)`. No label, no system score, no skill, no sub_domain. | Goes to annotators |
 | `data/baseline_v2_key.csv` | `row_id`, `question`, `answer`, `label`, `skill`, `sub_domain`. | **Confidential — internal only. Annotators never receive this.** |
 
-## Known caveat: duplicate pairs in the source
+## Exclusion of label-ambiguous pairs
 
-The source CSV contains identical (question, answer) pairs under conflicting
-labels (e.g. rows 708/709: byte-identical answer labelled Good and Average).
-43 of the 100 sampled pairs are affected. The key records the sampled row's
-own label, which is faithful to the sampling procedure but not a unique
-ground truth for those rows. The builder prints this count on every run.
-Flag for the analysis stage: consider a sensitivity analysis excluding
-ambiguous pairs before reporting agreement against gold labels.
+The source CSV contains identical (question, answer) pairs under contradictory
+labels — e.g. rows 708/709: a byte-identical answer labelled Good and
+Average. This is a known v6 defect (flagged during the v6-to-v7 cleaning
+work). Grouping the source by (question, answer) finds **506 ambiguous
+groups covering 1,026 rows**; the unambiguous pool is **1,293 rows**
+(Good 260 / Average 260 / Poor 773).
+
+The builder (`filter_unambiguous`) samples only from the unambiguous pool.
+Exclusion was chosen over a sensitivity analysis because ground truth that
+disagrees with itself on 43% of the study set is not a sound basis for a
+validation study: keeping ambiguous pairs would force every agreement metric
+to be reported twice (with/without them) while the headline numbers still
+rested on self-contradictory labels. The builder prints the excluded-set size
+and the ambiguous-pair count (0/100) on every run as confirmation.
+
+Note: the cleaning work cites 513 duplicated answers; this builder measures
+506 ambiguous (question, answer) groups. The small gap is a counting
+definition difference (this count groups by exact question+answer pair after
+whitespace normalisation); the exclusion itself is unaffected.
