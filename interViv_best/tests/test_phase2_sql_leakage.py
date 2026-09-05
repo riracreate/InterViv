@@ -14,11 +14,13 @@ permanently private; only aggregate scores and the visible sample may ship.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
@@ -73,23 +75,29 @@ def _start_sql_session(client: TestClient, headers: dict[str, str]) -> dict:
     return resp.json()
 
 
-def _inject_sentinels(session_id: str) -> None:
-    """Rewrite the stored SQL round's private fields with sentinel values."""
-    db = get_database()
-    session = db["sessions"].find_one({"session_id": session_id})
-    rounds = session["rounds"]
-    assert rounds[0]["round_type"] == "sql"
-    q_ctx = rounds[0]["question_context"]
+def _inject_sentinels(q_ctx: dict) -> None:
+    """Seed every private SQL field before production creates the response."""
     q_ctx["reference_query"] = f"SELECT '{REF_SENTINEL}' AS sentinel_col"
     for case in q_ctx["cases"]:
         if case.get("case_type") != "visible_sample":
             case["description"] = HIDDEN_SENTINEL
             case["seed_data"] = (
                 (case.get("seed_data") or "")
-                + f"\n-- {HIDDEN_SENTINEL} {ROWS_SENTINEL}\n"
+                + f"\n-- {HIDDEN_SENTINEL}\n"
             )
+            case["expected_rows"] = [[ROWS_SENTINEL]]
+            case["expected_row_count"] = ROWS_SENTINEL
             case["internal_case_id"] = "hidden-internal-999"
-    db["sessions"].update_one({"session_id": session_id}, {"$set": {"rounds": rounds}})
+
+
+def _seed_sentinels_before_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch the production bank so Start persists and sanitizes seeded data."""
+    from backend.db import phase2_content_bank
+
+    seeded_bank = deepcopy(PHASE2_SQL_BANK)
+    problem = next(p for p in seeded_bank if p["id"] == "sql_prob_026")
+    _inject_sentinels(problem)
+    monkeypatch.setattr(phase2_content_bank, "PHASE2_SQL_BANK", seeded_bank)
 
 
 def _assert_no_leak(payload: object, surface: str) -> None:
@@ -101,12 +109,23 @@ def _assert_no_leak(payload: object, surface: str) -> None:
     assert "internal_case_id" not in blob, f"{surface} exposed internal case IDs"
 
 
-def test_sql_start_response_has_zero_private_data() -> None:
+def _assert_stored_sentinels(session_id: str) -> None:
+    """Prove the stored round was seeded before a response is leakage-checked."""
+    db = get_database()
+    round_doc = db["sessions"].find_one({"session_id": session_id})["rounds"][0]
+    blob = json.dumps(round_doc["question_context"], default=str)
+    for sentinel in (REF_SENTINEL, HIDDEN_SENTINEL, ROWS_SENTINEL):
+        assert sentinel in blob, f"stored round missing {sentinel}"
+
+
+def test_sql_start_response_has_zero_private_data(monkeypatch: pytest.MonkeyPatch) -> None:
     client = TestClient(app)
     user = _make_user("leak-start")
     headers = {"Authorization": f"Bearer {user['token']}"}
 
+    _seed_sentinels_before_start(monkeypatch)
     started = _start_sql_session(client, headers)
+    _assert_stored_sentinels(started["session_id"])
     _assert_no_leak(started, "start")
 
     # The raw hidden seeds in the DB must not be echoable from the start payload.
@@ -124,14 +143,23 @@ def test_sql_start_response_has_zero_private_data() -> None:
         assert first_insert not in blob
 
 
-def test_sql_resume_submit_preview_surfaces_have_zero_leakage() -> None:
+def test_sql_start_probe_fails_closed_on_sentinel() -> None:
+    leaked_start = {"question_context": {"reference_query": REF_SENTINEL}}
+    with pytest.raises(AssertionError, match=f"start leaked {REF_SENTINEL}"):
+        _assert_no_leak(leaked_start, "start")
+
+
+def test_sql_resume_submit_preview_surfaces_have_zero_leakage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = TestClient(app)
     user = _make_user("leak-surfaces")
     headers = {"Authorization": f"Bearer {user['token']}"}
 
+    _seed_sentinels_before_start(monkeypatch)
     started = _start_sql_session(client, headers)
     session_id = started["session_id"]
-    _inject_sentinels(session_id)
+    _assert_stored_sentinels(session_id)
 
     # 2. Resume / fetch
     resume = client.get(f"/session/{session_id}", headers=headers)
