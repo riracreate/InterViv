@@ -110,7 +110,8 @@ def test_sql_refresh_returns_identical_problem_and_deadline() -> None:
     started = _start_sql(client, headers)
     session_id = started["session_id"]
     start_ctx = started["question_context"]
-    assert start_ctx.get("id") == "sql_prob_026"
+    start_problem_id = start_ctx.get("id")
+    assert start_problem_id
     start_expires = started["expires_at"]
     assert start_expires
     start_samples = started.get("sample_cases") or []
@@ -124,5 +125,7 @@ def test_sql_refresh_returns_identical_problem_and_deadline() -> None:
         assert active["round_type"] == "sql"
         assert active["status"] == "in_progress"
         assert active["expires_at"] == start_expires
-        refreshed_samples = (active["question_context"] or {}).get("sample_cases") or []
+        refreshed_ctx = active["question_context"] or {}
+        assert refreshed_ctx.get("id") == start_problem_id
+        refreshed_samples = refreshed_ctx.get("sample_cases") or []
         assert refreshed_samples == start_samples

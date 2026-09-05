@@ -461,25 +461,32 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'concurrency'},
     {   'correct_option_ids': ['c'],
         'difficulty': 'hard',
-        'explanation': 'Phantom reads involve newly inserted tuples matching a search predicate; next-key and '
-                       'predicate locking lock both existing keys and gap intervals.',
+        'explanation': 'In an index-range-locking implementation, record locks alone leave insertion gaps '
+                       'unprotected. Next-key or range locks cover both matching records and the adjacent key gaps, '
+                       'so a concurrent insert into the scanned predicate range must wait or conflict.',
         'id': 'mcq_dbms_023',
         'negative_marking': 0.25,
-        'options_json': [   {'id': 'a', 'text': 'Exclusive table locks acquired during all SELECT statements.'},
-                            {'id': 'b', 'text': 'Optimistic row-level checksums verified upon disk read.'},
+        'options_json': [   {   'id': 'a',
+                                'text': 'Record locks only on rows that already matched the predicate when the scan '
+                                        'began.'},
+                            {   'id': 'b',
+                                'text': 'A repeatable snapshot with no range-conflict tracking for concurrent '
+                                        'inserts.'},
                             {   'id': 'c',
-                                'text': 'Predicate locks or next-key index locks that protect the gap between existing '
-                                        'index keys.'},
-                            {'id': 'd', 'text': 'Forcing all transaction execution through a single worker thread.'}],
+                                'text': 'Next-key or range locks covering matching index records and the gaps where '
+                                        'new matching keys could be inserted.'},
+                            {   'id': 'd',
+                                'text': 'A commit-time predicate recheck that never blocks or aborts a concurrent '
+                                        'inserter.'}],
         'skill': 'DBMS',
-        'stem': 'Which mechanism enables standard relational engines to prevent Phantom Reads under the Serializable '
-                'isolation level?',
+        'stem': 'In a lock-based DBMS that implements Serializable isolation with index-range locking, which mechanism '
+                'prevents a concurrent transaction from inserting phantom rows into a scanned predicate range?',
         'sub_domain': 'concurrency'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'hard',
-        'explanation': 'Leveled compaction enforces strictly non-overlapping keys per level, which dramatically '
-                       'reduces point lookup cost and wasted space, but requires rewrites increasing write '
-                       'amplification.',
+        'explanation': 'After the typically overlapping Level-0 files, leveled compaction generally maintains '
+                       'non-overlapping key ranges within each later level. This lowers read and space amplification, '
+                       'but repeated movement and rewriting across levels increases write amplification.',
         'id': 'mcq_dbms_024',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
@@ -846,36 +853,41 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'caching'},
     {   'correct_option_ids': ['a'],
         'difficulty': 'hard',
-        'explanation': 'Raft uses randomized election timeouts (e.g. 150-300ms) for each follower. This ensures that '
-                       'in most cases, a single candidate times out and wins election before others time out.',
+        'explanation': 'Joint consensus requires a quorum under both the old and new configurations while membership '
+                       'is changing. The overlapping quorum requirement prevents disjoint groups from independently '
+                       'committing entries or electing leaders before the transition to the new configuration commits.',
         'id': 'mcq_sd_019',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
-                                'text': 'Each candidate uses randomized election timeouts to reduce the likelihood of '
-                                        'simultaneous candidacies.'},
+                                'text': 'A transition entry is committed only with quorums from both the old and new '
+                                        'configurations, preserving quorum overlap during the change.'},
                             {   'id': 'b',
-                                'text': 'The node with the lowest network MAC address is permanently chosen as '
-                                        'leader.'},
+                                'text': 'The leader activates the new configuration locally before replication, while '
+                                        'followers continue voting under whichever configuration they last observed.'},
                             {   'id': 'c',
-                                'text': 'All candidate nodes broadcast a blocking mutex lock that halts the cluster.'},
+                                'text': 'The old configuration is discarded as soon as every new server has received '
+                                        'the latest snapshot, without committing a configuration entry.'},
                             {   'id': 'd',
-                                'text': 'Raft delegates split vote resolution to an external centralized ZooKeeper '
-                                        'instance.'}],
+                                'text': 'Election timeouts are disabled for the duration of the change so only the '
+                                        'current leader can determine the final membership.'}],
         'skill': 'System Design',
-        'stem': 'In the Raft distributed consensus algorithm, how is the split-vote problem during leader election '
-                'resolved?',
+        'stem': 'Why does Raft use joint consensus rather than switching directly from an old cluster membership to a '
+                'new membership?',
         'sub_domain': 'consensus'},
     {   'correct_option_ids': ['b'],
         'difficulty': 'hard',
-        'explanation': 'Vector clocks track causality vectors across all nodes, enabling systems to distinguish '
-                       'causally dependent events from concurrent conflicting writes that require resolution.',
+        'explanation': 'Lamport clocks preserve happened-before in one direction: if A happened before B, then L(A) is '
+                       'less than L(B), but the reverse implication does not hold. A separate tie-break rule can extend '
+                       'Lamport timestamps to a total order. Vector-clock component comparisons distinguish causal '
+                       'precedence from concurrency because concurrent vectors are incomparable.',
         'id': 'mcq_sd_020',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
                                 'text': 'Vector Clocks require strictly less network bandwidth than scalar integers.'},
                             {   'id': 'b',
-                                'text': 'Vector Clocks detect concurrent conflicting updates across replicas, whereas '
-                                        'Lamport Timestamps only produce an arbitrary total order.'},
+                                'text': 'Vector-clock comparisons distinguish causal precedence from concurrency, '
+                                        'whereas comparing scalar Lamport timestamps alone cannot tell those cases '
+                                        'apart.'},
                             {   'id': 'c',
                                 'text': 'Vector Clocks rely on perfectly synchronized physical atomic clocks like GPS '
                                         'receivers.'},
@@ -1269,9 +1281,10 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'sub_domain': 'deep_learning'},
     {   'correct_option_ids': ['d'],
         'difficulty': 'hard',
-        'explanation': 'In double descent, risk follows classical U-curve up to the interpolation threshold '
-                       '(parameters approx equal samples) where it peaks, and then decreases in the overparameterized '
-                       'regime due to implicit regularization.',
+        'explanation': 'In double descent, test risk can peak near the interpolation threshold, defined by the model '
+                       'first achieving essentially zero training error, and then decrease as effective model capacity '
+                       'grows further. In deep networks that threshold is not generally determined by raw parameter '
+                       'count approximately equalling the number of samples.',
         'id': 'mcq_ml_020',
         'negative_marking': 0.25,
         'options_json': [   {   'id': 'a',
@@ -1500,7 +1513,9 @@ PHASE2_MCQ_BANK: list[dict[str, Any]] = [   {   'correct_option_ids': ['a'],
         'options_json': [   {   'id': 'a',
                                 'text': 'By translating internal private IP and source port combinations into the '
                                         'single public IP with unique external source ports.'},
-                            {'id': 'b', 'text': 'By assigning fractional IP addresses to connected clients.'},
+                            {   'id': 'b',
+                                'text': 'By translating each private source IP to the public IP while preserving every '
+                                        'host\'s original source port unchanged.'},
                             {'id': 'c', 'text': 'By compressing all outgoing packets into a single TCP connection.'},
                             {'id': 'd', 'text': 'By converting IPv4 packets into IPv6 tunnels automatically.'}],
         'skill': 'Computer Networks',
