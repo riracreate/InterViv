@@ -123,6 +123,43 @@ def test_verbal_rejects_multiple_rounds(client: TestClient) -> None:
     assert "rounds_per_skill=1" in resp.text
 
 
+def test_verbal_case_variants_canonicalized(client: TestClient) -> None:
+    user = _make_user("verbal-case")
+    for variant in ("verbal ability", "VERBAL ABILITY", "  Verbal Ability  "):
+        started = _start(client, _headers(user), skills=[variant])
+        assert all(q["skill"] == VERBAL_SKILL for q in started["questions"])
+        stored = get_database()["sessions"].find_one({"session_id": started["session_id"]})
+        assert stored["skills"] == [VERBAL_SKILL]
+
+
+def test_verbal_variants_with_other_round_types_rejected(client: TestClient) -> None:
+    user = _make_user("verbal-case-round")
+    db = get_database()
+    before = len(list(db["sessions"].find({})))
+    for round_type in ("technical_short_answer", "sql"):
+        resp = client.post(
+            "/session/start",
+            json={**VERBAL_START, "skills": ["  VERBAL ability "], "round_type": round_type},
+            headers=_headers(user),
+        )
+        assert resp.status_code == 422, resp.text
+    assert len(list(db["sessions"].find({}))) == before
+
+
+def test_verbal_duplicate_aliases_rejected(client: TestClient) -> None:
+    user = _make_user("verbal-alias")
+    db = get_database()
+    before = len(list(db["sessions"].find({})))
+    resp = client.post(
+        "/session/start",
+        json={**VERBAL_START, "skills": [VERBAL_SKILL, "verbal ability"]},
+        headers=_headers(user),
+    )
+    assert resp.status_code == 422, resp.text
+    assert "cannot be combined" in resp.text
+    assert len(list(db["sessions"].find({}))) == before
+
+
 # ── Category-specific selection (fallback path) ──────────────────────────
 
 def test_verbal_start_assigns_verbal_only(client: TestClient) -> None:
@@ -235,6 +272,52 @@ def test_verbal_served_from_database_when_seeded(
     started = _start(client, _headers(user))
     assert len(started["questions"]) == 15
     assert all(q["skill"] == VERBAL_SKILL for q in started["questions"])
+
+
+def test_verbal_partial_db_seed_rejected_without_session(
+    client: TestClient, sqlite_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.db.sqlalchemy_models import MCQQuestionRow
+    from backend.db.sqlalchemy_store import session_scope
+
+    with session_scope() as session:
+        assert seed_verbal_bank(session) == 30
+        doomed = session.query(MCQQuestionRow).limit(20).all()
+        for row in doomed:
+            session.delete(row)
+        session.commit()
+    db = get_database()
+    before = len(list(db["sessions"].find({})))
+    user = _make_user("verbal-partialdb")
+    resp = client.post("/session/start", json=VERBAL_START, headers=_headers(user))
+    assert resp.status_code == 422, resp.text
+    assert "found 10, need 15" in resp.text
+    assert len(list(db["sessions"].find({}))) == before
+
+
+def test_technical_with_verbal_only_database(
+    client: TestClient, sqlite_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.db.sqlalchemy_store import session_scope
+
+    with session_scope() as session:
+        assert seed_verbal_bank(session) == 30
+    user = _make_user("verbal-onlydb")
+    resp = client.post(
+        "/session/start",
+        json={
+            "candidate_id": "",
+            "skills": ["DBMS"],
+            "rounds_per_skill": 1,
+            "round_type": "mcq",
+            "round_config": {"count": 15, "duration_minutes": 20},
+        },
+        headers=_headers(user),
+    )
+    assert resp.status_code == 200, resp.text
+    questions = resp.json()["questions"]
+    assert len(questions) == 15
+    assert all(q["skill"] != VERBAL_SKILL for q in questions)
 
 
 def test_technical_db_selection_excludes_verbal(

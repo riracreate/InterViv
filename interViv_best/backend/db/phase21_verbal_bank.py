@@ -150,13 +150,13 @@ PHASE21_VERBAL_BANK: list[dict[str, Any]] = [
         "options_json": [
             {"id": "a", "text": "He bought two new book."},
             {"id": "b", "text": "He bought two new bookes."},
-            {"id": "c", "text": "He bought two news books."},
+            {"id": "c", "text": "He bought two new book's."},
             {"id": "d", "text": "He bought two new books."},
         ],
         "correct_option_ids": ["d"],
-        "explanation": "After 'two', the countable noun must be plural: 'books' (d). Option (a) "
-                       "uses the singular, (b) misspells the plural, and (c) wrongly pluralises "
-                       "the uncountable noun 'news' as an adjective phrase.",
+        "explanation": "After 'two', the countable noun must be a plain plural: 'books' (d). "
+                       "Option (a) uses the singular, (b) misspells the plural, and (c) uses a "
+                       "possessive apostrophe, which never forms a plural.",
         "negative_marking": 0.25,
     },
     {
@@ -526,7 +526,7 @@ PHASE21_VERBAL_BANK: list[dict[str, Any]] = [
         "stem": "Arrange the sentences into the most coherent paragraph. S1: Tea was first carried "
                 "to Europe by Dutch traders in the 1600s. S2: At first, it was sold mainly as a "
                 "medicine. S3: Over time, coffee houses began serving it as a fashionable drink. S4: "
-                "By the 1700s, afternoon tea had become an English ritual.",
+                "By the 1700s, tea-drinking had become an English ritual.",
         "options_json": [
             {"id": "a", "text": "S1, S3, S2, S4"},
             {"id": "b", "text": "S2, S1, S4, S3"},

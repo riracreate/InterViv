@@ -47,7 +47,7 @@ flag goes in the Notes column.
 | mcq_verbal_004 | vocabulary | medium | d | accepted | antonym: transparent → opaque |
 | mcq_verbal_005 | vocabulary | hard | a | accepted | synonym: laconic → concise |
 | mcq_verbal_006 | grammar | easy | c | accepted | subject–verb agreement |
-| mcq_verbal_007 | grammar | easy | d | accepted | plural after numeral |
+| mcq_verbal_007 | grammar | easy | d | accepted | plural after numeral; repaired: (c) is now an apostrophe error, not "news books" |
 | mcq_verbal_008 | grammar | medium | a | accepted | past perfect sequence |
 | mcq_verbal_009 | grammar | medium | b | accepted | parallelism of gerunds |
 | mcq_verbal_010 | grammar | hard | d | accepted | dangling modifier |
@@ -64,7 +64,7 @@ flag goes in the Notes column.
 | mcq_verbal_021 | ordering | easy | a | accepted | temporal chain |
 | mcq_verbal_022 | ordering | easy | b | accepted | temporal chain |
 | mcq_verbal_023 | ordering | medium | c | accepted | problem → restriction → contrast chain |
-| mcq_verbal_024 | ordering | medium | d | accepted | explicit time markers |
+| mcq_verbal_024 | ordering | medium | d | accepted | explicit time markers; repaired: S4 now "tea-drinking", no afternoon-tea claim |
 | mcq_verbal_025 | ordering | hard | d | accepted | setup → contrast-dependent results |
 | mcq_verbal_026 | idioms | easy | c | accepted | see eye to eye → agree |
 | mcq_verbal_027 | idioms | easy | a | accepted | arm and a leg → expensive |

@@ -238,20 +238,30 @@ def _module_mcq_pool(*, verbal_only: bool) -> list[dict[str, Any]]:
     return items
 
 
+def _canonicalize_verbal_skills(skills: list[str] | None) -> list[str] | None:
+    """Map whitespace/case variants of Verbal Ability to the exact name.
+
+    Only this category is touched; every other skill string passes through
+    unchanged, preserving unknown-skill behavior elsewhere.
+    """
+    if not skills:
+        return skills
+    wanted = VERBAL_SKILL.lower()
+    return [VERBAL_SKILL if s.strip().lower() == wanted else s for s in skills]
+
+
 def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> list[dict[str, Any]]:
     """Select `count` questions from exactly one category.
 
-    A request naming Verbal Ability draws only from the verbal bank;
-    every other request draws only from the technical bank. Database rows
-    come first with module-bank fill (deduped by id), so selection works
-    with an empty database, a technical-only database, or a partial seed.
-    Raises ValueError when the category pool holds fewer than `count`
-    questions instead of mixing categories or shortening the round.
+    Verbal: zero eligible DB rows use the module fallback; enough DB rows
+    are used as-is; a partial seed raises ValueError instead of mixing
+    categories, supplementing silently, or shortening the round. Technical
+    keeps the base behavior: DB rows when any exist, else module fallback.
     """
+    skills = _canonicalize_verbal_skills(skills)
     verbal_only = bool(skills) and VERBAL_SKILL in skills
-    label = VERBAL_SKILL if verbal_only else "technical"
 
-    pool: list[dict[str, Any]] = []
+    db_pool: list[dict[str, Any]] = []
     try:
         from backend.config import get_settings
         if get_settings().database_url:
@@ -266,7 +276,7 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
                 for q_row, skill_name in rows:
                     if (skill_name == VERBAL_SKILL) != verbal_only:
                         continue
-                    pool.append({
+                    db_pool.append({
                         "id": q_row.id,
                         "skill": skill_name,
                         "sub_domain": q_row.sub_domain,
@@ -278,17 +288,27 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
                         "negative_marking": float(q_row.negative_marking),
                     })
     except Exception:
-        pool = []
+        db_pool = []
 
-    seen_ids = {q["id"] for q in pool}
-    pool.extend(q for q in _module_mcq_pool(verbal_only=verbal_only) if q["id"] not in seen_ids)
+    if verbal_only:
+        if not db_pool:
+            pool = _module_mcq_pool(verbal_only=True)
+        elif len(db_pool) >= count:
+            pool = db_pool
+        else:
+            raise ValueError(
+                f"Not enough {VERBAL_SKILL} MCQ questions available: "
+                f"found {len(db_pool)}, need {count}."
+            )
+        if len(pool) < count:
+            raise ValueError(
+                f"Not enough {VERBAL_SKILL} MCQ questions available: "
+                f"found {len(pool)}, need {count}."
+            )
+        return pool[:count]
 
-    if len(pool) < count:
-        raise ValueError(
-            f"Not enough {label} MCQ questions available: "
-            f"found {len(pool)}, need {count}."
-        )
-    if skills and not verbal_only:
+    pool = db_pool if db_pool else _module_mcq_pool(verbal_only=False)
+    if skills:
         matched = [q for q in pool if q["skill"] in skills]
         rest = [q for q in pool if q["skill"] not in skills]
         pool = matched + rest
@@ -359,10 +379,12 @@ def start_session(
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
 
+    skills = _canonicalize_verbal_skills(request.skills) or []
+
     # Phase 2.1 — Verbal Ability is standalone practice only. Reject anything
     # else before any session document is created.
-    if VERBAL_SKILL in request.skills:
-        if request.skills != [VERBAL_SKILL]:
+    if VERBAL_SKILL in skills:
+        if skills != [VERBAL_SKILL]:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Verbal Ability practice cannot be combined with other skills.",
@@ -420,11 +442,11 @@ def start_session(
         candidate_id = candidate_id or str(uuid4())
         candidate_doc = CandidateDocument(
             candidate_id=candidate_id,
-            resume_skills=request.skills,
+            resume_skills=skills,
             sub_domain_profile={
-                skill: request.sub_domain or "general" for skill in request.skills
+                skill: request.sub_domain or "general" for skill in skills
             },
-            elo_ratings={skill: settings.initial_elo for skill in request.skills},
+            elo_ratings={skill: settings.initial_elo for skill in skills},
             session_history=[],
         )
         candidate = candidate_doc.to_mongo()
@@ -445,7 +467,7 @@ def start_session(
 
     # ── first-round skill ───────────────────────────────────────────────────
     now = datetime.now(timezone.utc)
-    first_skill = request.skills[0]
+    first_skill = skills[0]
     elo_before = float(candidate.get("elo_ratings", {}).get(first_skill, settings.initial_elo))
     difficulty = _elo_to_difficulty(elo_before)
     sub_domain = _sub_domain_for_skill(candidate, first_skill, request.sub_domain)
@@ -458,7 +480,7 @@ def start_session(
         review_policy = cfg.get("review_policy", "none")
 
         try:
-            assigned_questions = _select_mcq_questions(skills=request.skills, count=count)
+            assigned_questions = _select_mcq_questions(skills=skills, count=count)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -520,7 +542,7 @@ def start_session(
                 user_id=str(user["id"]) if user else None,
                 target_company_id=target_company_id,
                 target_role_id=target_role_id,
-                resume_skills=candidate.get("resume_skills") or request.skills,
+                resume_skills=candidate.get("resume_skills") or skills,
             )
         except IntegrationError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -538,7 +560,7 @@ def start_session(
         )
 
     session_id = str(uuid4())
-    total_rounds = request.rounds_per_skill * len(request.skills)
+    total_rounds = request.rounds_per_skill * len(skills)
 
     session = SessionDocument(
         session_id=session_id,
@@ -552,7 +574,7 @@ def start_session(
 
     session_dict = session.to_mongo()
     # attach multi-skill fields that SessionDocument doesn't know about
-    session_dict["skills"] = request.skills
+    session_dict["skills"] = skills
     session_dict["rounds_per_skill"] = request.rounds_per_skill
     session_dict["total_rounds"] = total_rounds
     session_dict["current_skill"] = first_skill
@@ -565,12 +587,12 @@ def start_session(
         candidate_update = {
             "$addToSet": {
                 "session_history": session_id,
-                "resume_skills": {"$each": request.skills},
+                "resume_skills": {"$each": skills},
             },
             "$set": {},
         }
         # seed Elo for any skill the candidate hasn't been rated on
-        for s in request.skills:
+        for s in skills:
             existing_elo = candidate.get("elo_ratings", {}).get(s)
             if existing_elo is None:
                 candidate_update["$set"][f"elo_ratings.{s}"] = settings.initial_elo
@@ -580,7 +602,7 @@ def start_session(
             candidate_update["$set"]["user_id"] = user["id"]
         db["candidates"].update_one({"candidate_id": candidate_id}, candidate_update)
         if user:
-            StudentSkillGraph(user["id"]).initialize_from_resume(request.skills)
+            StudentSkillGraph(user["id"]).initialize_from_resume(skills)
     except DatabaseConnectionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
@@ -603,7 +625,7 @@ def start_session(
         "elo": elo_before,
         "total_rounds": total_rounds,
         "current_skill": first_skill,
-        "skills": request.skills,
+        "skills": skills,
         "rounds_per_skill": request.rounds_per_skill,
         "started_at": round_document.started_at.isoformat() if round_document.started_at else None,
         "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
