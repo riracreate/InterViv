@@ -47,6 +47,38 @@ export function normalizeSessionData(data) {
 }
 
 /**
+ * Standalone Verbal Ability practice configuration (Phase 2.1).
+ * Single MCQ round: 15 questions, 20 minutes, standard negative marking.
+ */
+export const VERBAL_PRACTICE_CONFIG = {
+  skill: 'Verbal Ability',
+  roundType: 'mcq',
+  roundsPerSkill: 1,
+  count: 15,
+  durationMinutes: 20,
+  negativeMarking: 0.25,
+};
+
+/**
+ * Builds the POST /session/start payload for a standalone Verbal Ability
+ * practice round. Matches the server-side standalone validation exactly:
+ * only that skill, round_type "mcq", rounds_per_skill 1.
+ */
+export function buildVerbalPracticePayload(candidateId = '') {
+  return {
+    candidate_id: candidateId || '',
+    skills: [VERBAL_PRACTICE_CONFIG.skill],
+    rounds_per_skill: VERBAL_PRACTICE_CONFIG.roundsPerSkill,
+    round_type: VERBAL_PRACTICE_CONFIG.roundType,
+    round_config: {
+      count: VERBAL_PRACTICE_CONFIG.count,
+      duration_minutes: VERBAL_PRACTICE_CONFIG.durationMinutes,
+      negative_marking: VERBAL_PRACTICE_CONFIG.negativeMarking,
+    },
+  };
+}
+
+/**
  * Computes remaining seconds from expires_at timestamp or fallback duration.
  *
  * @param {string|number|Date|null} expiresAt - ISO string or timestamp of round deadline.

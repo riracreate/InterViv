@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.phase21_verbal_bank import VERBAL_SKILL
 from backend.integrations import IntegrationError
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
@@ -229,7 +230,28 @@ def _get_next_question(
     )
 
 
+def _module_mcq_pool(*, verbal_only: bool) -> list[dict[str, Any]]:
+    """In-memory fallback pool for one category, filtered before use."""
+    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
+    from backend.db.phase21_verbal_bank import PHASE21_VERBAL_BANK
+    items = [dict(q) for q in (PHASE21_VERBAL_BANK if verbal_only else PHASE2_MCQ_BANK)]
+    return items
+
+
 def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> list[dict[str, Any]]:
+    """Select `count` questions from exactly one category.
+
+    A request naming Verbal Ability draws only from the verbal bank;
+    every other request draws only from the technical bank. Database rows
+    come first with module-bank fill (deduped by id), so selection works
+    with an empty database, a technical-only database, or a partial seed.
+    Raises ValueError when the category pool holds fewer than `count`
+    questions instead of mixing categories or shortening the round.
+    """
+    verbal_only = bool(skills) and VERBAL_SKILL in skills
+    label = VERBAL_SKILL if verbal_only else "technical"
+
+    pool: list[dict[str, Any]] = []
     try:
         from backend.config import get_settings
         if get_settings().database_url:
@@ -241,35 +263,36 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
                     SkillRow, MCQQuestionRow.skill_id == SkillRow.id
                 )
                 rows = session.execute(stmt).all()
-                if rows:
-                    items = []
-                    for q_row, skill_name in rows:
-                        items.append({
-                            "id": q_row.id,
-                            "skill": skill_name,
-                            "sub_domain": q_row.sub_domain,
-                            "difficulty": q_row.difficulty,
-                            "stem": q_row.stem,
-                            "options_json": q_row.options_json,
-                            "correct_option_ids": q_row.correct_option_ids,
-                            "explanation": q_row.explanation,
-                            "negative_marking": float(q_row.negative_marking),
-                        })
-                    if skills:
-                        matched = [q for q in items if q["skill"] in skills]
-                        rest = [q for q in items if q["skill"] not in skills]
-                        items = matched + rest
-                    return items[:count]
+                for q_row, skill_name in rows:
+                    if (skill_name == VERBAL_SKILL) != verbal_only:
+                        continue
+                    pool.append({
+                        "id": q_row.id,
+                        "skill": skill_name,
+                        "sub_domain": q_row.sub_domain,
+                        "difficulty": q_row.difficulty,
+                        "stem": q_row.stem,
+                        "options_json": q_row.options_json,
+                        "correct_option_ids": q_row.correct_option_ids,
+                        "explanation": q_row.explanation,
+                        "negative_marking": float(q_row.negative_marking),
+                    })
     except Exception:
-        pass
+        pool = []
 
-    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
-    items = [dict(q) for q in PHASE2_MCQ_BANK]
-    if skills:
-        matched = [q for q in items if q.get("skill") in skills]
-        rest = [q for q in items if q.get("skill") not in skills]
-        items = matched + rest
-    return items[:count]
+    seen_ids = {q["id"] for q in pool}
+    pool.extend(q for q in _module_mcq_pool(verbal_only=verbal_only) if q["id"] not in seen_ids)
+
+    if len(pool) < count:
+        raise ValueError(
+            f"Not enough {label} MCQ questions available: "
+            f"found {len(pool)}, need {count}."
+        )
+    if skills and not verbal_only:
+        matched = [q for q in pool if q["skill"] in skills]
+        rest = [q for q in pool if q["skill"] not in skills]
+        pool = matched + rest
+    return pool[:count]
 
 
 def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
@@ -335,6 +358,25 @@ def start_session(
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
+
+    # Phase 2.1 — Verbal Ability is standalone practice only. Reject anything
+    # else before any session document is created.
+    if VERBAL_SKILL in request.skills:
+        if request.skills != [VERBAL_SKILL]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Verbal Ability practice cannot be combined with other skills.",
+            )
+        if request.round_type != "mcq":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail='Verbal Ability practice requires round_type="mcq".',
+            )
+        if request.rounds_per_skill != 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Verbal Ability practice requires rounds_per_skill=1.",
+            )
 
     if request.round_type in ("mcq", "sql"):
         if not authorization:
@@ -415,7 +457,12 @@ def start_session(
         neg_mark = float(cfg.get("negative_marking", 0.25))
         review_policy = cfg.get("review_policy", "none")
 
-        assigned_questions = _select_mcq_questions(skills=request.skills, count=count)
+        try:
+            assigned_questions = _select_mcq_questions(skills=request.skills, count=count)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
         expires_at = now + timedelta(minutes=duration_mins)
 
         round_config = {

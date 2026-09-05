@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadResume, startSession, saveInterviewState, fetchMe } from '../lib/api';
+import { buildVerbalPracticePayload, VERBAL_PRACTICE_CONFIG } from '../lib/roundContractHelpers';
 import CompanySelector from '../components/CompanySelector';
 
 const ROUNDS_PER_SKILL = 3;
@@ -222,6 +223,41 @@ export default function Upload() {
     }
   };
 
+  const startVerbalPractice = async () => {
+    if (!isAuthenticated) {
+      setError('Sign in to practice Verbal Ability.');
+      return;
+    }
+    setIsStarting(true);
+    setError('');
+    try {
+      const r = await startSession(buildVerbalPracticePayload(candidateId));
+      const state = {
+        candidateId: r.candidate_id || candidateId,
+        skill: VERBAL_PRACTICE_CONFIG.skill,
+        allSkills: [VERBAL_PRACTICE_CONFIG.skill],
+        subDomain: 'general',
+        sessionId: r.session_id,
+        question: r.question,
+        difficulty: r.difficulty,
+        round_type: r.round_type || 'mcq',
+        question_context: r.question_context || {},
+        config_json: r.config_json || {},
+        expires_at: r.expires_at || null,
+        round: r.round || 1,
+        elo: r.elo || 1200,
+        totalRounds: 1,
+        roundsPerSkill: VERBAL_PRACTICE_CONFIG.roundsPerSkill,
+      };
+      saveInterviewState(state);
+      navigate(`/interview/${r.session_id}`, { state });
+    } catch (err) {
+      setError(err.message || 'Failed to start Verbal Ability practice.');
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
   const chooseDomainPreset = (domain) => {
     const skills = domain.skills || [domain.short];
     setCandidateId('');
@@ -352,6 +388,23 @@ export default function Upload() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Standalone Verbal Ability practice (separate from technical setup) */}
+            <div className="mt-8">
+              <p className="text-sm text-[#6F6F6F] mb-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+                Or practice English comprehension on its own:
+              </p>
+              <button onClick={startVerbalPractice} disabled={isStarting}
+                data-testid="verbal-practice-entry"
+                className="w-full rounded-2xl border border-black/8 p-4 text-left hover:border-black/20 transition-all cursor-pointer disabled:opacity-50">
+                <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  {isStarting ? 'Starting…' : 'Verbal Ability practice'}
+                </p>
+                <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  15 questions · 20 minutes · vocabulary, grammar, comprehension
+                </p>
+              </button>
             </div>
 
             {file && (
