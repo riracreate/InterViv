@@ -24,6 +24,11 @@ class Settings:
     jwt_algorithm: str
     jwt_access_token_minutes: int
     enable_admin_endpoints: bool
+    length_ratio_multiplier_enabled: bool
+    adzuna_app_id: str | None
+    adzuna_app_key: str | None
+    jobs_cache_ttl_seconds: int
+    jobs_rate_limit_per_minute: int
     interview_module_paths: list[Path]
     interview_model_paths: list[Path]
     interview_data_paths: list[Path]
@@ -110,6 +115,11 @@ def get_settings() -> Settings:
         jwt_algorithm=(os.getenv("JWT_ALGORITHM") or "HS256").strip().upper(),
         jwt_access_token_minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "1440")),
         enable_admin_endpoints=_env_bool("ENABLE_ADMIN_ENDPOINTS", False),
+        length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
+        adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
+        adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
+        jobs_cache_ttl_seconds=int(os.getenv("JOBS_CACHE_TTL_SECONDS", str(6 * 3600))),
+        jobs_rate_limit_per_minute=int(os.getenv("JOBS_RATE_LIMIT_PER_MINUTE", "30")),
         interview_module_paths=_resolve_paths(
             os.getenv("INTERVIEW_MODULE_PATHS"),
             default_module_paths,

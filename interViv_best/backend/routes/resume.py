@@ -67,13 +67,19 @@ async def parse_resume(
                 "resume_parser.py does not expose parse_resume(pdf_path)."
             )
 
+        analysis: dict | None = None
         try:
-            parsed_skills = parser_module.parse_resume(str(temp_path))
-        except Exception as parse_exc:
+            if hasattr(parser_module, "analyze_resume"):
+                analysis = parser_module.analyze_resume(str(temp_path))
+                parsed_skills = (analysis or {}).get("skills") or []
+            else:
+                parsed_skills = parser_module.parse_resume(str(temp_path))
+        except Exception:
             LOGGER.warning("Resume parsing failed; using safe fallback skills.")
             parsed_skills = ["Python"]
+            analysis = None
 
-        skills = _normalize_skills(parsed_skills)
+        skills = _normalize_skills(parsed_skills) or ["Python"]
         domain_profile = map_skills_to_domains(skills)
         candidate_id = str(uuid4())
         user = get_user_from_authorization(authorization) if authorization else None
@@ -88,6 +94,27 @@ async def parse_resume(
         candidate_doc = candidate.to_mongo()
         if user:
             candidate_doc["user_id"] = user["id"]
+        if analysis:
+            candidate_doc["ats_snapshot"] = {
+                "skills": analysis.get("skills") or skills,
+                "sections": analysis.get("sections") or {},
+                "section_order_ok": analysis.get("section_order_ok"),
+                "experience_bullets": analysis.get("experience_bullets") or [],
+                "extract_ok": analysis.get("extract_ok"),
+                "likely_garbage": analysis.get("likely_garbage"),
+                "layout_checked": analysis.get("layout_checked", False),
+                "text_hash": analysis.get("text_hash"),
+                "char_count": analysis.get("char_count"),
+            }
+        else:
+            candidate_doc["ats_snapshot"] = {
+                "skills": skills,
+                "sections": {},
+                "extract_ok": True,
+                "layout_checked": False,
+                "experience_bullets": [],
+                "text_hash": None,
+            }
         try:
             get_database()["candidates"].insert_one(candidate_doc)
             if user:
