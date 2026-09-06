@@ -6,14 +6,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme tokens */
-:root {
-  --font-display: "Instrument Serif", serif;
-  --font-body: "Barlow", sans-serif;
-  --color-background: #FFFFFF;
-  --color-foreground: #000000;
-  --color-muted: #6F6F6F;
-}
+/* Theme tokens live in ./styles/theme.css (imported above).
+   Keep only base/reset here so light home and dark session share one token source. */
 
 /* ─── Base ─── */
 @layer base {

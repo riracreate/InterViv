@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 
@@ -26,6 +27,7 @@ TECH_SKILLS = [
     ("redis", "Redis"), ("elasticsearch", "Elasticsearch"),
     ("cassandra", "Cassandra"), ("dynamodb", "DynamoDB"), ("oracle", "Oracle"),
     ("firebase", "Firebase"),
+    ("dbms", "DBMS"), ("database", "DBMS"),
 
     # Cloud and DevOps
     ("aws", "AWS"), ("azure", "Azure"), ("gcp", "GCP"),
@@ -43,13 +45,37 @@ TECH_SKILLS = [
     ("hadoop", "Hadoop"), ("nlp", "NLP"), ("computer vision", "Computer Vision"),
     ("opencv", "OpenCV"),
 
+    # CS fundamentals (Phase 2 / role graph)
+    ("dsa", "DSA"), ("data structures", "DSA"), ("algorithms", "DSA"),
+    ("oop", "OOP"), ("object oriented", "OOP"), ("object-oriented", "OOP"),
+    ("operating systems", "Operating Systems"), ("operating system", "Operating Systems"),
+    ("computer networks", "Computer Networks"), ("computer network", "Computer Networks"),
+    ("system design", "System Design"),
+    ("hr", "HR/Professional Judgment"), ("behavioral", "HR/Professional Judgment"),
+
     # Other
     ("git", "Git"), ("linux", "Linux"), ("windows", "Windows"),
     ("macos", "macOS"), ("rest api", "REST"), ("rest", "REST"),
     ("graphql", "GraphQL"), ("soap", "SOAP"), ("microservices", "Microservices"),
-    ("system design", "System Design"), ("agile", "Agile"), ("scrum", "Scrum"),
+    ("agile", "Agile"), ("scrum", "Scrum"),
     ("jira", "Jira"),
 ]
+
+SECTION_PATTERNS = {
+    "contact": re.compile(
+        r"(?im)^(?:contact|email|phone|linkedin|github)\b|(?:[\w.+-]+@[\w.-]+\.\w{2,})"
+    ),
+    "experience": re.compile(
+        r"(?im)^(?:experience|work experience|employment|professional experience)\b"
+    ),
+    "education": re.compile(r"(?im)^(?:education|academics|academic background)\b"),
+    "skills": re.compile(
+        r"(?im)^(?:skills|technical skills|technologies|tech stack)\b"
+    ),
+}
+
+SECTION_HEADER_ORDER = ("contact", "experience", "education", "skills")
+BULLET_RE = re.compile(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
 
 
 def _extract_with_pymupdf(pdf_path):
@@ -113,6 +139,83 @@ def _find_skills(text):
     return sorted(set(skills))
 
 
+def extract_skills_from_text(text: str) -> list[str]:
+    """Public deterministic skill extract (resume + JD). Same lexicon as parse_resume."""
+    return _find_skills(text or "")
+
+
+def _detect_sections(text: str) -> dict[str, bool]:
+    return {name: bool(pat.search(text or "")) for name, pat in SECTION_PATTERNS.items()}
+
+
+def _section_order_ok(text: str) -> bool | None:
+    """Return False if headers appear in a clearly inverted order; None if too few headers."""
+    positions = []
+    for name in SECTION_HEADER_ORDER:
+        match = SECTION_PATTERNS[name].search(text or "")
+        if match:
+            positions.append((match.start(), name))
+    if len(positions) < 2:
+        return None
+    names = [n for _, n in sorted(positions)]
+    expected = [n for n in SECTION_HEADER_ORDER if n in names]
+    return names == expected
+
+
+def _experience_bullets(text: str) -> list[str]:
+    lines = (text or "").splitlines()
+    # Prefer bullets after an experience header when present
+    start = 0
+    for i, line in enumerate(lines):
+        if SECTION_PATTERNS["experience"].search(line):
+            start = i + 1
+            break
+    chunk = "\n".join(lines[start : start + 80] if start else lines[:120])
+    bullets = [m.group(1).strip() for m in BULLET_RE.finditer(chunk)]
+    return [b for b in bullets if len(b) >= 8][:40]
+
+
+def _likely_garbage(text: str) -> bool:
+    if not text or not text.strip():
+        return True
+    sample = text[:4000]
+    printable = sum(1 for ch in sample if ch.isprintable() or ch in "\n\t")
+    return (printable / max(len(sample), 1)) < 0.7
+
+
+def analyze_resume_text(text: str) -> dict:
+    """Rich ATS-oriented analysis from plain text (no layout/CV model)."""
+    text = text or ""
+    extract_ok = bool(text.strip()) and not _likely_garbage(text)
+    skills = _find_skills(text) if extract_ok else []
+    sections = _detect_sections(text) if extract_ok else {
+        "contact": False,
+        "experience": False,
+        "education": False,
+        "skills": False,
+    }
+    order = _section_order_ok(text) if extract_ok else None
+    bullets = _experience_bullets(text) if extract_ok else []
+    text_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+    return {
+        "skills": skills,
+        "sections": sections,
+        "section_order_ok": order,
+        "experience_bullets": bullets,
+        "extract_ok": extract_ok,
+        "likely_garbage": _likely_garbage(text),
+        # Honest: resume_parser does not classify multi-column / table layouts.
+        "layout_checked": False,
+        "text_hash": text_hash,
+        "char_count": len(text),
+    }
+
+
+def analyze_resume(pdf_path) -> dict:
+    text = _extract_text(pdf_path)
+    return analyze_resume_text(text)
+
+
 def parse_resume(pdf_path):
     """
     Parse a PDF resume and extract skills.
@@ -124,7 +227,8 @@ def parse_resume(pdf_path):
         List of skills extracted from the resume
     """
     try:
-        skills = _find_skills(_extract_text(pdf_path))
+        analysis = analyze_resume(pdf_path)
+        skills = analysis.get("skills") or []
         return skills or ["Python"]
     except Exception as exc:
         print(f"Error parsing PDF: {exc}")

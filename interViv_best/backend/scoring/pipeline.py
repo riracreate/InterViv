@@ -640,6 +640,26 @@ def run_scoring_pipeline(
     if effective_guard.get("cap_required"):
         final_score = min(final_score, float(effective_guard["score_cap"]))
 
+    # ── Optional completeness multiplier (default OFF; n=50-contaminated) ─────
+    # Formula: clip(word_len_ratio / 0.45, 0.3, 1.0). See docs/track2_heldout_protocol.md.
+    length_ratio_multiplier_applied = False
+    completeness_length_ratio = None
+    completeness_multiplier = None
+    from modules.length_ratio_completeness import (
+        apply_completeness_multiplier,
+        length_ratio_multiplier_enabled,
+    )
+
+    if length_ratio_multiplier_enabled():
+        final_score, completeness_length_ratio, completeness_multiplier = (
+            apply_completeness_multiplier(
+                final_score,
+                answer_text,
+                ideal_answer,
+            )
+        )
+        length_ratio_multiplier_applied = True
+
     # ── Feedback ──────────────────────────────────────────────────────────────
     _gr = effective_guard.get("reason") if effective_guard.get("cap_required") else None
     feedback = _run_feedback(
@@ -773,6 +793,17 @@ def run_scoring_pipeline(
         "clarity_score":    _coerce_float(_p.get("clarity_score", 0.0)),
         "advanced_bonus":   _coerce_float(_p.get("advanced_bonus", 0.0)),
         "difficulty_bonus": _coerce_float(_p.get("difficulty_bonus", 0.0)),
+        "length_ratio_multiplier_enabled": length_ratio_multiplier_applied,
+        "completeness_length_ratio": (
+            round(completeness_length_ratio, 4)
+            if completeness_length_ratio is not None
+            else None
+        ),
+        "completeness_multiplier": (
+            round(completeness_multiplier, 4)
+            if completeness_multiplier is not None
+            else None
+        ),
     }
 
     _debug_scoring_log(

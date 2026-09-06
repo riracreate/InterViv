@@ -1,23 +1,54 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.config import get_settings
 from backend.observability import init_sentry
 from backend.routes.admin import router as admin_router
 from backend.routes.answer import router as answer_router
+from backend.routes.ats import router as ats_router
 from backend.routes.auth import router as auth_router
 from backend.routes.companies import router as companies_router
 from backend.routes.dashboard import router as dashboard_router
 from backend.routes.gap_analysis import router as gap_analysis_router
+from backend.routes.coach import router as coach_router
+from backend.routes.jobs import router as jobs_router
 from backend.routes.roadmap import router as roadmap_router
 from backend.routes.learning import router as learning_router
 from backend.routes.resume import router as resume_router
+from backend.routes.resources import router as resources_router
 from backend.routes.session import router as session_router
 from backend.routes.transcribe import router as transcribe_router
 from backend.startup_warmup import warm_runtime_dependencies
+
+
+logger = logging.getLogger(__name__)
+
+
+class DashboardLatencyMiddleware(BaseHTTPMiddleware):
+    """Log latency for /dashboard* routes (no new APM vendor)."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/dashboard"):
+            return await call_next(request)
+        started = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        logger.info(
+            "dashboard_api_latency path=%s method=%s status=%s duration_ms=%.1f",
+            path,
+            request.method,
+            getattr(response, "status_code", "?"),
+            elapsed_ms,
+        )
+        return response
 
 
 @asynccontextmanager
@@ -26,11 +57,9 @@ async def lifespan(app: FastAPI):
     WARMUP_STATUS = warm_runtime_dependencies()
 
     # Load company hiring graph and seed DB tables idempotently.
-    import logging
     from modules.company_graph import get_company_graph
     from backend.db.company_seed import seed_company_graph
 
-    logger = logging.getLogger(__name__)
     try:
         graph = get_company_graph()
         logger.info("Loaded company hiring graph: %d companies", len(graph.list_companies()))
@@ -39,6 +68,13 @@ async def lifespan(app: FastAPI):
             logger.info("Seeded company graph rows: %s", counts)
     except Exception as exc:  # pragma: no cover - startup logs only
         logger.exception("Company hiring graph startup failed: %s", exc)
+
+    try:
+        from modules.learning_resources import ensure_seeded
+
+        ensure_seeded()
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Learning resources seed failed: %s", exc)
 
     yield
 
@@ -63,6 +99,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(DashboardLatencyMiddleware)
 
 app.include_router(resume_router)
 app.include_router(auth_router)
@@ -73,10 +110,13 @@ app.include_router(session_router)
 app.include_router(answer_router)
 app.include_router(dashboard_router)
 app.include_router(learning_router)
+app.include_router(resources_router)
+app.include_router(ats_router)
+app.include_router(jobs_router)
+app.include_router(coach_router)
 app.include_router(transcribe_router)
 if settings.enable_admin_endpoints:
     app.include_router(admin_router)
-
 
 
 

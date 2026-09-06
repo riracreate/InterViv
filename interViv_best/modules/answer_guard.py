@@ -77,6 +77,14 @@ _COMMON_BIGRAMS = frozenset({
     "ta", "te", "th", "ti", "to", "uc", "ul", "ur", "ve", "vi", "wo",
 })
 
+# Function words that signal a cut-off mid-clause when they end the answer.
+_DANGLING_ENDINGS = frozenset({
+    "a", "an", "the", "to", "of", "and", "or", "but", "with", "for",
+    "from", "by", "as", "that", "which", "who", "whom", "whose",
+    "into", "onto", "upon", "over", "under", "about", "like", "than",
+    "then", "when", "while", "where", "because", "if", "whether",
+})
+
 
 def _cap(reason: str, score_cap: int) -> dict:
     return {
@@ -207,8 +215,9 @@ def _check_basic_rules(
     answer_text: str,
     ideal_keywords: str,
     question_text: str = "",
+    ideal_answer: str = "",
 ) -> dict | None:
-    """Run the v1 rules 1–5 (+ parroting at 3.5); return cap dict or None."""
+    """Run the v1 rules 1–5 (+ parroting / truncated); return cap dict or None."""
     text = (answer_text or "").strip()
 
     if len(text) == 0:
@@ -253,6 +262,16 @@ def _check_basic_rules(
             jaccard = len(ans_content & q_content) / len(ans_content | q_content)
             if jaccard > 0.55 and len(extra) < 8:
                 return _cap("question_parroting", 25)
+
+    # Truncated on-topic fragment before stuffing — incomplete sentences often
+    # look like keyword lists to the stuffing ratio check.
+    truncated = _check_truncated_fragment(
+        text,
+        ideal_keywords=ideal_keywords,
+        ideal_answer=ideal_answer,
+    )
+    if truncated is not None:
+        return truncated
 
     # Keyword stuffing intentionally before too-short so short keyword spam
     # ("stateless caching URI HTTP JSON") gets the harder gaming cap.
@@ -310,6 +329,65 @@ def check_answer_quality(
 
 # ── v2: fluff, off-topic ────────────────────────────────────────────────────
 # (Question parroting now lives in _check_basic_rules so v1 catches it too.)
+
+
+def _ends_as_truncated_fragment(text: str) -> bool:
+    """True when the answer appears cut off mid-thought (dangling close)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t[-1] in ",;:—":
+        return True
+    body = t.rstrip(".!?…")
+    words = _word_tokens(body)
+    if not words:
+        return False
+    if words[-1] in _DANGLING_ENDINGS:
+        return True
+    # Short cutoffs like "… from common." / "… for machine."
+    if 2 <= len(words) <= 12 and words[-2] in _DANGLING_ENDINGS:
+        return True
+    return False
+
+
+def _is_on_topic_fragment(
+    answer_text: str,
+    ideal_keywords: str,
+    ideal_answer: str,
+) -> bool:
+    """Require topical overlap so off-topic short text is not called truncated."""
+    ans = _content_tokens(answer_text)
+    if not ans:
+        return False
+    kw = _keyword_token_set(ideal_keywords)
+    if kw and (ans & kw):
+        return True
+    ideal = _content_tokens(ideal_answer)
+    if not ideal:
+        return False
+    overlap = len(ans & ideal)
+    if overlap >= 2:
+        return True
+    return overlap / len(ans | ideal) >= 0.15
+
+
+def _check_truncated_fragment(
+    answer_text: str,
+    ideal_keywords: str = "",
+    ideal_answer: str = "",
+) -> dict | None:
+    """
+    Truncated on-topic fragment: topical start, cut off mid-clause.
+
+    Fires only when basic length rules did not already cap the answer.
+    Cap only — does not replace scoring.
+    """
+    text = (answer_text or "").strip()
+    if not _ends_as_truncated_fragment(text):
+        return None
+    if not _is_on_topic_fragment(text, ideal_keywords, ideal_answer):
+        return None
+    return _cap("truncated_fragment", 25)
 
 
 def _check_low_density(answer_tokens: list[str]) -> dict | None:
@@ -374,10 +452,16 @@ def check_answer_quality_v2(
     """
     Extended guard. Order:
       1 empty, 2 gibberish, 3 repetition, 3.5 question_parroting,
-      4 keyword_stuffing, 5 too_short, 6 low_density, 7 off_topic
+      4 truncated_fragment, 5 keyword_stuffing, 6 too_short,
+      7 low_density, 8 off_topic
     First match wins.
     """
-    cap = _check_basic_rules(answer_text, ideal_keywords, question_text)
+    cap = _check_basic_rules(
+        answer_text,
+        ideal_keywords,
+        question_text,
+        ideal_answer=ideal_answer,
+    )
     if cap is not None:
         return cap
 

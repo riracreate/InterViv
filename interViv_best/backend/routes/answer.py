@@ -27,6 +27,7 @@ from backend.routes.session import (
     _get_next_question,
     _skill_for_round,
     _sub_domain_for_skill,
+    build_round_document,
 )
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
 from modules import adaptive_question_selector
@@ -134,6 +135,9 @@ def _update_learning_state(
     final_score: float,
     difficulty: str,
     scoring_breakdown: dict,
+    elo_before: float | None = None,
+    elo_after: float | None = None,
+    session_id: str | None = None,
 ) -> None:
     user_id = session.get("user_id")
     if not user_id:
@@ -158,6 +162,16 @@ def _update_learning_state(
                 or []
             ),
         )
+        if elo_before is not None and elo_after is not None:
+            from modules.learning_signals import record_elo_delta
+
+            record_elo_delta(
+                user_id=str(user_id),
+                session_id=str(session_id or session.get("session_id") or ""),
+                skill=skill,
+                elo_before=float(elo_before),
+                elo_after=float(elo_after),
+            )
     except Exception:
         logger.warning("Failed to update Phase 2 learning state.", exc_info=True)
 
@@ -389,6 +403,10 @@ def submit_answer(
     next_skill: str | None = None
     next_target: dict[str, object] | None = None
     response_next_difficulty = next_difficulty
+    next_round_type: str | None = None
+    next_question_context: dict[str, object] | None = None
+    next_config_json: dict[str, object] | None = None
+    next_expires_at: str | None = None
 
     session_status = "completed" if request.round >= total_rounds else "active"
     completed_scores = [
@@ -430,13 +448,21 @@ def submit_answer(
             final_score=float(scoring_result["final_score"]),
             difficulty=active_round.get("difficulty", "medium"),
             scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
+            elo_before=elo_before,
+            elo_after=elo_after,
+            session_id=request.session_id,
         )
 
         # Queue the next round after recomputing the user's weakest skill
         # and concept from fresh learning state. Anonymous sessions keep the
-        # existing rotation behavior.
+        # existing rotation behavior. Mixed Practice Hub sessions honor round_plan.
         if request.round < total_rounds:
             next_round = request.round + 1
+            plan = session.get("round_plan") or []
+            planned_type = None
+            if plan and next_round - 1 < len(plan):
+                planned_type = str(plan[next_round - 1])
+
             rotation_skill = _skill_for_round(session, next_round)
             candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
             candidate_elos = (candidate_doc or {}).get("elo_ratings", {}) or {}
@@ -446,83 +472,135 @@ def submit_answer(
             session_target_company = session.get("target_company_id")
             session_target_role = session.get("target_role_id")
             resume_skills = list((candidate_doc or {}).get("resume_skills") or session.get("skills") or [])
+            session_skills = list(session.get("skills") or [session.get("skill") or "DBMS"])
 
-            target = adaptive_question_selector.choose_adaptive_target(
-                user_id=str(session_user_id) if session_user_id else None,
-                fallback_skill=rotation_skill,
-                fallback_difficulty=rotation_difficulty,
-                session_skills=session.get("skills") or [session.get("skill")],
-                target_role_id=str(session_target_role) if session_target_role else None,
-                candidate_elo_by_skill=candidate_elos,
-            )
-            next_skill = target.skill
-            next_skill_elo = float(
-                target.current_elo
-                if target.current_elo is not None
-                else candidate_elos.get(next_skill, elo_after)
-            )
-            next_round_difficulty = target.difficulty
-            response_next_difficulty = next_round_difficulty
-            sub = _sub_domain_for_skill(candidate_doc, next_skill)
-            asked = [item.get("question", "") for item in rounds]
-            weak_context = list(target.target_concepts or [])
-            if target.source != "rotation" and target.skill:
-                weak_context.insert(0, target.skill)
-
-            try:
-                question_payload = _get_next_question(
-                    skill=next_skill,
-                    sub_domain=sub,
-                    difficulty=next_round_difficulty,
-                    asked=asked,
-                    user_id=str(session_user_id) if session_user_id else None,
-                    target_company_id=str(session_target_company) if session_target_company else None,
-                    target_role_id=str(session_target_role) if session_target_role else None,
-                    target_concepts=target.target_concepts,
-                    resume_skills=resume_skills,
-                    weak_skills=weak_context,
+            if planned_type in ("mcq", "sql"):
+                sql_index = sum(
+                    1 for i, t in enumerate(plan[: next_round - 1]) if t == "sql"
                 )
-            except IntegrationError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-                ) from exc
-            question_payload["adaptive_target"] = target.to_dict()
-            next_target = target.to_dict()
+                try:
+                    next_doc = build_round_document(
+                        round_number=next_round,
+                        round_type=planned_type,
+                        skills=session_skills,
+                        elo_before=rotation_elo,
+                        difficulty=rotation_difficulty,
+                        sub_domain=_sub_domain_for_skill(candidate_doc, rotation_skill),
+                        round_config=session.get("round_config") or {},
+                        user_id=str(session_user_id) if session_user_id else None,
+                        target_company_id=str(session_target_company) if session_target_company else None,
+                        target_role_id=str(session_target_role) if session_target_role else None,
+                        resume_skills=resume_skills,
+                        asked=[item.get("question", "") for item in rounds],
+                        sql_problem_index=sql_index,
+                    )
+                except IntegrationError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+                    ) from exc
+                next_payload = next_doc.model_dump()
+                rounds.append(next_payload)
+                next_question = next_doc.question
+                next_skill = rotation_skill
+                next_round_type = planned_type
+                response_next_difficulty = next_doc.difficulty
+                sanitized = sanitize_round_for_client(next_payload)
+                next_question_context = sanitized.get("question_context") or {}
+                next_config_json = next_doc.config_json or {}
+                next_expires_at = (
+                    next_doc.expires_at.isoformat() if next_doc.expires_at else None
+                )
+                db["sessions"].update_one(
+                    {"session_id": request.session_id},
+                    {
+                        "$set": {
+                            "rounds": rounds,
+                            "current_difficulty": response_next_difficulty,
+                            "current_skill": next_skill,
+                            "status": session_status,
+                        }
+                    },
+                )
+            else:
+                target = adaptive_question_selector.choose_adaptive_target(
+                    user_id=str(session_user_id) if session_user_id else None,
+                    fallback_skill=rotation_skill,
+                    fallback_difficulty=rotation_difficulty,
+                    session_skills=session.get("skills") or [session.get("skill")],
+                    target_role_id=str(session_target_role) if session_target_role else None,
+                    candidate_elo_by_skill=candidate_elos,
+                )
+                next_skill = target.skill
+                next_skill_elo = float(
+                    target.current_elo
+                    if target.current_elo is not None
+                    else candidate_elos.get(next_skill, elo_after)
+                )
+                next_round_difficulty = target.difficulty
+                response_next_difficulty = next_round_difficulty
+                sub = _sub_domain_for_skill(candidate_doc, next_skill)
+                asked = [item.get("question", "") for item in rounds]
+                weak_context = list(target.target_concepts or [])
+                if target.source != "rotation" and target.skill:
+                    weak_context.insert(0, target.skill)
 
-            rounds.append(
-                {
-                    "round": next_round,
-                    "skill": next_skill,
-                    "round_type": "technical_short_answer",
-                    "artifact_json": {},
-                    "config_json": {},
-                    "question": question_payload["question"],
-                    "answer_text": None,
-                    "nlp_score": None,
-                    "svm_label": None,
-                    "kg_score": None,
-                    "ner_entities": [],
-                    "final_score": None,
-                    "difficulty": next_round_difficulty,
-                    "difficulty_change": None,
-                    "feedback": {"content": [], "strengths": [], "next_step": ""},
-                    "elo_before": next_skill_elo,
-                    "elo_after": None,
-                    "question_context": question_payload,
-                }
-            )
-            next_question = question_payload["question"]
-            db["sessions"].update_one(
-                {"session_id": request.session_id},
-                {
-                    "$set": {
-                        "rounds": rounds,
-                        "current_difficulty": next_round_difficulty,
-                        "current_skill": next_skill,
-                        "status": session_status,
+                try:
+                    question_payload = _get_next_question(
+                        skill=next_skill,
+                        sub_domain=sub,
+                        difficulty=next_round_difficulty,
+                        asked=asked,
+                        user_id=str(session_user_id) if session_user_id else None,
+                        target_company_id=str(session_target_company) if session_target_company else None,
+                        target_role_id=str(session_target_role) if session_target_role else None,
+                        target_concepts=target.target_concepts,
+                        resume_skills=resume_skills,
+                        weak_skills=weak_context,
+                    )
+                except IntegrationError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+                    ) from exc
+                question_payload["adaptive_target"] = target.to_dict()
+                next_target = target.to_dict()
+                next_round_type = "technical_short_answer"
+
+                rounds.append(
+                    {
+                        "round": next_round,
+                        "skill": next_skill,
+                        "round_type": "technical_short_answer",
+                        "artifact_json": {},
+                        "config_json": {},
+                        "question": question_payload["question"],
+                        "answer_text": None,
+                        "nlp_score": None,
+                        "svm_label": None,
+                        "kg_score": None,
+                        "ner_entities": [],
+                        "final_score": None,
+                        "difficulty": next_round_difficulty,
+                        "difficulty_change": None,
+                        "feedback": {"content": [], "strengths": [], "next_step": ""},
+                        "elo_before": next_skill_elo,
+                        "elo_after": None,
+                        "question_context": question_payload,
                     }
-                },
-            )
+                )
+                next_question = question_payload["question"]
+                next_question_context = question_payload
+                next_config_json = {}
+                db["sessions"].update_one(
+                    {"session_id": request.session_id},
+                    {
+                        "$set": {
+                            "rounds": rounds,
+                            "current_difficulty": next_round_difficulty,
+                            "current_skill": next_skill,
+                            "status": session_status,
+                        }
+                    },
+                )
     except DatabaseConnectionError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -555,7 +633,10 @@ def submit_answer(
         "artifact_json": resp_artifact,
         "guard_applied": scoring_result.get("guard_applied"),
         "next_question": next_question,
-        "next_round_type": "technical_short_answer" if next_question else None,
+        "next_round_type": next_round_type or ("technical_short_answer" if next_question else None),
+        "next_question_context": next_question_context,
+        "next_config_json": next_config_json,
+        "next_expires_at": next_expires_at,
         "next_difficulty": response_next_difficulty,
         "next_skill": next_skill,
         "adaptive_target": next_target,

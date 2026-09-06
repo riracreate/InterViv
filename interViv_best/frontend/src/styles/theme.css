@@ -1,4 +1,66 @@
-/* ─── Animations ─── */
+/* Shared design tokens — light home and dark session dashboards both consume these.
+   Surfaces may differ (light vs dark) but type scale, spacing, status, and radius stay shared. */
+
+:root {
+  /* Type */
+  --font-display: "Instrument Serif", serif;
+  --font-body: "Barlow", sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-5xl: 3rem;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Radius */
+  --radius-card: 0.5rem;
+  --radius-panel: 1.5rem;
+  --radius-pill: 9999px;
+
+  /* Status (shared hue language) */
+  --color-success: #0f766e;
+  --color-success-soft: #ecfdf5;
+  --color-warn: #b45309;
+  --color-warn-soft: #fffbeb;
+  --color-danger: #be123c;
+  --color-danger-soft: #fff1f2;
+  --color-accent: #0e7490;
+
+  /* Light home defaults */
+  --color-surface: #f6f8fb;
+  --color-card: #ffffff;
+  --color-ink: #020617;
+  --color-ink-muted: #475569;
+  --color-border: #e2e8f0;
+  --color-background: #ffffff;
+  --color-foreground: #000000;
+  --color-muted: #6f6f6f;
+
+  /* Dark session surface (same token names, session scope overrides) */
+  --color-session-bg: #0a0a0a;
+  --color-session-card: rgba(255, 255, 255, 0.04);
+  --color-session-border: rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-session {
+  --color-success: #6ee7b7;
+  --color-warn: #fcd34d;
+  --color-danger: #fda4af;
+  --color-accent: #67e8f9;
+}
+
+/* Legacy animation helpers kept in theme for Landing / Interview reuse */
 @keyframes fade-rise {
   from {
     opacity: 0;
