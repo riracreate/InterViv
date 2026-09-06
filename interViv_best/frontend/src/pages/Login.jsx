@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, LogIn } from 'lucide-react';
 import { login } from '../lib/api';
 
@@ -12,6 +12,7 @@ function validate(email, password) {
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,7 +29,8 @@ export default function Login() {
     setLoading(true);
     try {
       await login({ email, password });
-      navigate('/upload');
+      const next = location.state?.next || '/upload';
+      navigate(next);
     } catch (err) {
       setError(err.message || 'Login failed.');
     } finally {

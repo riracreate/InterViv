@@ -1,5 +1,6 @@
 // face-api.js is ~600KB minified; import it lazily so it only downloads
-// when engagement detection actually starts, not on first page load.
+// when engagement detection actually starts (Interview route), not on
+// first page load or dashboard chunks.
 let faceapi = null;
 let modelsLoaded = false;
 let modelLoadFailed = false;

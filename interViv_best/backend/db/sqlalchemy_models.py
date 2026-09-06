@@ -286,3 +286,115 @@ class SQLProblemCaseRow(Base):
         UniqueConstraint("problem_id", "sort_order", name="uq_sql_problem_cases_order"),
         CheckConstraint("case_type IN ('visible_sample', 'hidden_case')", name="ck_sql_problem_cases_type"),
     )
+
+
+class LearningEventRow(Base):
+    """Persisted effectiveness signals (Elo deltas, skill attempts)."""
+
+    __tablename__ = "learning_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    skill: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class RoadmapProgressRow(Base):
+    """Per-user roadmap block completion for 7/14/30 day plans."""
+
+    __tablename__ = "roadmap_progress"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    plan_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_blocks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    blocks_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_id", "plan_days", name="uq_roadmap_progress_user_role_days"),
+        CheckConstraint("plan_days IN (7, 14, 30)", name="ck_roadmap_progress_plan_days"),
+    )
+
+
+class LearningResourceRow(Base):
+    """Curated lecture/solution links for Phase 2 skills (no scrape / no API)."""
+
+    __tablename__ = "learning_resources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Soft reference to MCQ/SQL bank item id (no single questions table).
+    question_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("skill_id", "url", name="uq_learning_resources_skill_url"),
+        CheckConstraint(
+            "level IN ('beginner', 'intermediate', 'advanced')",
+            name="ck_learning_resources_level",
+        ),
+        CheckConstraint(
+            "source IN ('youtube', 'docs', 'other')",
+            name="ck_learning_resources_source",
+        ),
+    )
+
+
+class AtsRunRow(Base):
+    """Persisted ATS checker runs (deterministic scores + flags)."""
+
+    __tablename__ = "ats_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resume_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    jd_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    parse_score: Mapped[float] = mapped_column(Float, nullable=False)
+    section_score: Mapped[float] = mapped_column(Float, nullable=False)
+    keyword_score: Mapped[float] = mapped_column(Float, nullable=False)
+    heuristic_score: Mapped[float] = mapped_column(Float, nullable=False)
+    total: Mapped[float] = mapped_column(Float, nullable=False)
+    flags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    missing_skills: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    present_skills: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class JobsCacheRow(Base):
+    """Cached Adzuna (or fixture) job cards — snippet + metadata only."""
+
+    __tablename__ = "jobs_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snippet: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    redirect_url: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_jobs_cache_provider_external"),
+    )
+
+
+class JobsSearchCacheRow(Base):
+    """Query-level cache so identical searches skip Adzuna within TTL."""
+
+    __tablename__ = "jobs_search_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    page: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    results_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

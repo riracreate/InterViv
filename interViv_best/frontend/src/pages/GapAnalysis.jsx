@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchGapAnalysis, fetchMyGapAnalysis } from '../lib/api';
+import ResourceLinks from '../components/ResourceLinks';
 
 const SEVERITY_COLORS = {
   Untested: { bar: '#9CA3AF', tag: '#374151', bg: '#F3F4F6' },
@@ -232,6 +233,12 @@ export default function GapAnalysis() {
                         ? `gap ${Math.round((w.required_level - (w.student_level || 0)))} pts`
                         : 'never tested'}
                     </p>
+                    <ResourceLinks
+                      skillId={w.skill || w.display_name}
+                      heading="Lecture / docs"
+                      variant="light"
+                      maxPerLevel={3}
+                    />
                   </div>
                 </li>
               ))}

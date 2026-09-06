@@ -87,6 +87,80 @@ export function fetchMastery() {
   return request("/mastery/me");
 }
 
+export function fetchLearningSignals() {
+  return request("/learning/signals/me");
+}
+
+export function fetchPracticeBank() {
+  return request("/session/practice-bank");
+}
+
+export function fetchResources({ skillId, questionId } = {}) {
+  const params = new URLSearchParams();
+  if (skillId != null && String(skillId).trim() !== "") {
+    params.set("skill_id", String(skillId));
+  }
+  if (questionId != null && String(questionId).trim() !== "") {
+    params.set("question_id", String(questionId));
+  }
+  const qs = params.toString();
+  return request(`/resources${qs ? `?${qs}` : ""}`);
+}
+
+export function scoreAts(payload) {
+  return request("/ats/score", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchAtsRuns(limit = 20) {
+  return request(`/ats/runs?limit=${encodeURIComponent(limit)}`);
+}
+
+export function fetchJobs({ q = "", where = "", page = 1 } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (where) params.set("where", where);
+  params.set("page", String(page));
+  return request(`/jobs?${params.toString()}`);
+}
+
+export function fetchJob(jobId) {
+  return request(`/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export function fetchJobPractice(jobId) {
+  return request(`/jobs/${encodeURIComponent(jobId)}/practice`, {
+    method: "POST",
+  });
+}
+
+export function fetchCoachPlan(payload) {
+  return request("/coach/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchCoachStartPractice(payload) {
+  return request("/coach/start-practice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function markRoadmapProgress(payload) {
+  return request("/learning/roadmap-progress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function setTargetCompany(targetCompanyId, targetRoleId) {
   return request("/auth/me/target", {
     method: "PATCH",

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "fixture-adzuna-1",
+    "title": "Software Development Intern — Backend",
+    "company": "Example Tech Pvt Ltd",
+    "location": "Pune",
+    "created": "2026-09-01T10:00:00Z",
+    "salary_min": 15000,
+    "salary_max": 25000,
+    "description": "Internship working with Python, Django, SQL, DBMS concepts, and basic DSA for backend services.",
+    "redirect_url": "https://www.adzuna.co.in/details/fixture-1"
+  },
+  {
+    "id": "fixture-adzuna-2",
+    "title": "Data Analyst Intern",
+    "company": "Analytics India",
+    "location": "Bengaluru",
+    "created": "2026-09-02T08:00:00Z",
+    "salary_min": null,
+    "salary_max": null,
+    "description": "SQL, Python, pandas, and machine learning fundamentals for reporting and dashboards.",
+    "redirect_url": "https://www.adzuna.co.in/details/fixture-2"
+  },
+  {
+    "id": "fixture-adzuna-3",
+    "title": "SDE Intern — Full Stack",
+    "company": "CloudWorks",
+    "location": "Remote",
+    "created": "2026-09-03T12:00:00Z",
+    "salary_min": 20000,
+    "salary_max": 30000,
+    "description": "JavaScript, React, Node.js, OOP, and system design basics for product features.",
+    "redirect_url": "https://www.adzuna.co.in/details/fixture-3"
+  }
+]

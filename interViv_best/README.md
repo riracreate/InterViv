@@ -250,3 +250,31 @@ Calibration: after round 2 → 85% raw + 15% session average
 - ✅ Deployment hardening hooks for Sentry, Redis cache/rate limits, and warm-up
 - ✅ Dark glass premium UI (Velorah aesthetic)
 - ✅ Landing page with video background
+
+---
+
+## Demo path
+
+Logged-in student happy path (Tickets A–E):
+
+1. `/coach` — paste a goal or JD → plan with skill chips + links (maps to lexicon; **does not score interviews**)
+2. **Start practice** → `/interview/:sessionId`
+3. `/ats` — score resume vs role → Practice / Resources for a missing skill
+4. `/jobs` — Apply opens Adzuna `redirect_url` in a new tab; **Practice for this role** starts a session
+5. `/practice` — custom builder and **OA + SQL** (MCQ then SQL — **not** a general coding judge)
+6. `/dashboard` — last ATS total (if scored) + learning signals + entry cards
+
+### Env (optional pieces)
+
+| Var | Notes |
+|-----|--------|
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Question gen + coach phrase extract; coach falls back to lexicon if unset |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Live India jobs; without keys the explorer uses fixture / documented empty state |
+| `SENTRY_TRACES_SAMPLE_RATE=0.1` | Optional tracing sample rate |
+
+Honest labels:
+
+- OA+SQL ≠ “coding interview”
+- ATS layout: `extract_layout_unchecked` (no invented multi-column penalties)
+- Jobs need Adzuna keys for live listings; else fixture
+- Paper notes: report **Krippendorff α**, not Cronbach; `LENGTH_RATIO_MULTIPLIER_ENABLED` stays **off**; **506** ambiguous annotation groups remain human-only / quarantined

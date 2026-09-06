@@ -36,8 +36,11 @@ router = APIRouter(prefix="/session", tags=["session"])
 # Request / response models
 # ─────────────────────────────────────────────────────────────────────────────
 
+ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql")
+
+
 class StartSessionRequest(BaseModel):
-    candidate_id: str
+    candidate_id: str = ""
     # Legacy single-skill field — still accepted
     skill: str | None = None
     # New: list of skills. 1 = single-skill session, N = rotate across N skills.
@@ -48,6 +51,9 @@ class StartSessionRequest(BaseModel):
     target_role_id: str | None = None
     round_type: str = "technical_short_answer"
     round_config: dict[str, Any] | None = None
+    # Ticket A: ordered mix of real round types (e.g. ["mcq", "sql"]).
+    # When set, total_rounds = len(round_plan) and answer.py queues by plan.
+    round_plan: list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -61,6 +67,22 @@ class StartSessionRequest(BaseModel):
                 data["skills"] = [str(skill).strip()]
             else:
                 raise ValueError("At least one skill is required (skills=[...] or skill='...')")
+            plan = data.get("round_plan")
+            if plan is not None:
+                cleaned = [str(t).strip() for t in plan if str(t).strip()]
+                if not cleaned:
+                    raise ValueError("round_plan must contain at least one round type")
+                bad = [t for t in cleaned if t not in ALLOWED_ROUND_TYPES]
+                if bad:
+                    raise ValueError(
+                        f"Unsupported round_plan types: {bad}. "
+                        f"Allowed: {list(ALLOWED_ROUND_TYPES)}"
+                    )
+                data["round_plan"] = cleaned
+                # First plan entry drives the opening round when round_type omitted/default.
+                if not data.get("round_type") or data.get("round_type") == "technical_short_answer":
+                    if cleaned[0] != "technical_short_answer":
+                        data["round_type"] = cleaned[0]
         return data
 
 
@@ -229,7 +251,36 @@ def _get_next_question(
     )
 
 
-def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> list[dict[str, Any]]:
+def _filter_mcq_items(
+    items: list[dict[str, Any]],
+    *,
+    skills: list[str] | None = None,
+    count: int = 15,
+    question_ids: list[str] | None = None,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    if question_ids:
+        wanted = {str(qid) for qid in question_ids}
+        ordered = [q for q in items if str(q.get("id")) in wanted]
+        # Preserve request order when possible
+        by_id = {str(q.get("id")): q for q in ordered}
+        items = [by_id[qid] for qid in question_ids if qid in by_id]
+    else:
+        if difficulty:
+            items = [q for q in items if str(q.get("difficulty", "")).lower() == difficulty.lower()]
+        if skills:
+            matched = [q for q in items if q.get("skill") in skills]
+            rest = [q for q in items if q.get("skill") not in skills]
+            items = matched + rest
+    return items[:count]
+
+
+def _select_mcq_questions(
+    skills: list[str] | None = None,
+    count: int = 15,
+    question_ids: list[str] | None = None,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
     try:
         from backend.config import get_settings
         if get_settings().database_url:
@@ -255,21 +306,163 @@ def _select_mcq_questions(skills: list[str] | None = None, count: int = 15) -> l
                             "explanation": q_row.explanation,
                             "negative_marking": float(q_row.negative_marking),
                         })
-                    if skills:
-                        matched = [q for q in items if q["skill"] in skills]
-                        rest = [q for q in items if q["skill"] not in skills]
-                        items = matched + rest
-                    return items[:count]
+                    return _filter_mcq_items(
+                        items,
+                        skills=skills,
+                        count=count,
+                        question_ids=question_ids,
+                        difficulty=difficulty,
+                    )
     except Exception:
         pass
 
     from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
     items = [dict(q) for q in PHASE2_MCQ_BANK]
-    if skills:
-        matched = [q for q in items if q.get("skill") in skills]
-        rest = [q for q in items if q.get("skill") not in skills]
-        items = matched + rest
-    return items[:count]
+    return _filter_mcq_items(
+        items,
+        skills=skills,
+        count=count,
+        question_ids=question_ids,
+        difficulty=difficulty,
+    )
+
+
+def build_round_document(
+    *,
+    round_number: int,
+    round_type: str,
+    skills: list[str],
+    elo_before: float,
+    difficulty: str,
+    sub_domain: str | None,
+    round_config: dict[str, Any] | None,
+    user_id: str | None = None,
+    target_company_id: str | None = None,
+    target_role_id: str | None = None,
+    resume_skills: list[str] | None = None,
+    asked: list[str] | None = None,
+    sql_problem_index: int = 0,
+) -> RoundDocument:
+    """Build a RoundDocument for technical / MCQ / SQL (shared by start + answer)."""
+    now = datetime.now(timezone.utc)
+    cfg = dict(round_config or {})
+    skill = skills[0] if skills else "DBMS"
+
+    if round_type == "mcq":
+        count = int(cfg.get("count", 15))
+        duration_mins = int(cfg.get("duration_minutes", 20))
+        neg_mark = float(cfg.get("negative_marking", 0.25))
+        question_ids = cfg.get("question_ids")
+        if question_ids is not None:
+            question_ids = [str(x) for x in question_ids]
+        assigned = _select_mcq_questions(
+            skills=skills,
+            count=count,
+            question_ids=question_ids,
+            difficulty=cfg.get("difficulty"),
+        )
+        if not assigned:
+            raise IntegrationError("No MCQ questions available for the requested filters.")
+        expires_at = now + timedelta(minutes=duration_mins)
+        return RoundDocument(
+            round=round_number,
+            round_type="mcq",
+            question="Multiple Choice Assessment",
+            difficulty=difficulty,
+            elo_before=elo_before,
+            config_json={
+                "count": len(assigned),
+                "duration_minutes": duration_mins,
+                "negative_marking": neg_mark,
+                "attempt_policy": "single_submission_final",
+                "review_policy": cfg.get("review_policy", "none"),
+            },
+            question_context={"questions": assigned},
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+        )
+
+    if round_type == "sql":
+        duration_mins = int(cfg.get("duration_minutes", 25))
+        problem_ids = cfg.get("problem_ids") or []
+        problem_id = cfg.get("problem_id")
+        if problem_ids and sql_problem_index < len(problem_ids):
+            problem_id = problem_ids[sql_problem_index]
+        problem = _select_sql_problem(problem_id=problem_id)
+        expires_at = now + timedelta(minutes=duration_mins)
+        return RoundDocument(
+            round=round_number,
+            round_type="sql",
+            question=problem["prompt"],
+            difficulty=problem.get("difficulty", difficulty),
+            elo_before=elo_before,
+            config_json={
+                "duration_minutes": duration_mins,
+                "attempt_policy": "single_submission_final",
+                "review_policy": cfg.get("review_policy", "none"),
+                "max_rows": int(cfg.get("max_rows", 1000)),
+                "timeout_seconds": float(cfg.get("timeout_seconds", 2.0)),
+                "problem_id": problem.get("id"),
+            },
+            question_context=problem,
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+        )
+
+    # technical_short_answer
+    first_question = _get_next_question(
+        skill=skill,
+        sub_domain=sub_domain,
+        difficulty=difficulty,
+        asked=list(asked or []),
+        user_id=user_id,
+        target_company_id=target_company_id,
+        target_role_id=target_role_id,
+        resume_skills=resume_skills or skills,
+    )
+    return RoundDocument(
+        round=round_number,
+        round_type="technical_short_answer",
+        question=first_question["question"],
+        difficulty=difficulty,
+        elo_before=elo_before,
+        question_context=first_question,
+        started_at=now,
+        status="in_progress",
+    )
+
+
+def list_practice_bank_items() -> dict[str, Any]:
+    """Public catalog of existing MCQ + SQL banks (no answers / reference SQL)."""
+    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK, PHASE2_SQL_BANK
+
+    mcq = [
+        {
+            "id": q["id"],
+            "type": "mcq",
+            "skill": q.get("skill"),
+            "sub_domain": q.get("sub_domain"),
+            "difficulty": q.get("difficulty"),
+            "stem": q.get("stem"),
+        }
+        for q in PHASE2_MCQ_BANK
+    ]
+    sql = []
+    for p in PHASE2_SQL_BANK:
+        prompt = str(p.get("prompt") or "")
+        title = prompt.split("\n", 1)[0].lstrip("# ").strip() or p["id"]
+        sql.append(
+            {
+                "id": p["id"],
+                "type": "sql",
+                "skill": "SQL",
+                "difficulty": p.get("difficulty"),
+                "title": title,
+            }
+        )
+    return {"mcq": mcq, "sql": sql, "counts": {"mcq": len(mcq), "sql": len(sql)}}
 
 
 def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
@@ -336,7 +529,13 @@ def start_session(
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
 
-    if request.round_type in ("mcq", "sql"):
+    plan = list(request.round_plan) if request.round_plan else None
+    opening_type = (plan[0] if plan else request.round_type) or "technical_short_answer"
+    needs_phase2_auth = opening_type in ("mcq", "sql") or any(
+        t in ("mcq", "sql") for t in (plan or [])
+    )
+
+    if needs_phase2_auth:
         if not authorization:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -402,96 +601,39 @@ def start_session(
             raise
 
     # ── first-round skill ───────────────────────────────────────────────────
-    now = datetime.now(timezone.utc)
     first_skill = request.skills[0]
     elo_before = float(candidate.get("elo_ratings", {}).get(first_skill, settings.initial_elo))
     difficulty = _elo_to_difficulty(elo_before)
     sub_domain = _sub_domain_for_skill(candidate, first_skill, request.sub_domain)
 
-    if request.round_type == "mcq":
-        cfg = request.round_config or {}
-        count = int(cfg.get("count", 15))
-        duration_mins = int(cfg.get("duration_minutes", 20))
-        neg_mark = float(cfg.get("negative_marking", 0.25))
-        review_policy = cfg.get("review_policy", "none")
-
-        assigned_questions = _select_mcq_questions(skills=request.skills, count=count)
-        expires_at = now + timedelta(minutes=duration_mins)
-
-        round_config = {
-            "count": len(assigned_questions),
-            "duration_minutes": duration_mins,
-            "negative_marking": neg_mark,
-            "attempt_policy": "single_submission_final",
-            "review_policy": review_policy,
-        }
-
-        round_document = RoundDocument(
-            round=1,
-            round_type="mcq",
-            question="Multiple Choice Assessment",
+    try:
+        round_document = build_round_document(
+            round_number=1,
+            round_type=opening_type,
+            skills=request.skills,
+            elo_before=elo_before,
             difficulty=difficulty,
-            elo_before=elo_before,
-            config_json=round_config,
-            question_context={"questions": assigned_questions},
-            started_at=now,
-            expires_at=expires_at,
-            status="in_progress",
+            sub_domain=sub_domain,
+            round_config=request.round_config,
+            user_id=str(user["id"]) if user else None,
+            target_company_id=target_company_id,
+            target_role_id=target_role_id,
+            resume_skills=candidate.get("resume_skills") or request.skills,
+            asked=[],
+            sql_problem_index=0,
         )
-    elif request.round_type == "sql":
-        cfg = request.round_config or {}
-        duration_mins = int(cfg.get("duration_minutes", 25))
-        problem_id = cfg.get("problem_id")
-        problem = _select_sql_problem(problem_id=problem_id)
-        expires_at = now + timedelta(minutes=duration_mins)
-
-        round_config = {
-            "duration_minutes": duration_mins,
-            "attempt_policy": "single_submission_final",
-            "review_policy": cfg.get("review_policy", "none"),
-            "max_rows": int(cfg.get("max_rows", 1000)),
-            "timeout_seconds": float(cfg.get("timeout_seconds", 2.0)),
-        }
-
-        round_document = RoundDocument(
-            round=1,
-            round_type="sql",
-            question=problem["prompt"],
-            difficulty=problem.get("difficulty", difficulty),
-            elo_before=elo_before,
-            config_json=round_config,
-            question_context=problem,
-            started_at=now,
-            expires_at=expires_at,
-            status="in_progress",
-        )
-    else:
-        try:
-            first_question = _get_next_question(
-                skill=first_skill, sub_domain=sub_domain,
-                difficulty=difficulty, asked=[],
-                user_id=str(user["id"]) if user else None,
-                target_company_id=target_company_id,
-                target_role_id=target_role_id,
-                resume_skills=candidate.get("resume_skills") or request.skills,
-            )
-        except IntegrationError as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                detail=str(exc)) from exc
-
-        round_document = RoundDocument(
-            round=1,
-            round_type="technical_short_answer",
-            question=first_question["question"],
-            difficulty=difficulty,
-            elo_before=elo_before,
-            question_context=first_question,
-            started_at=now,
-            status="in_progress",
-        )
+    except IntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail=str(exc)) from exc
 
     session_id = str(uuid4())
-    total_rounds = request.rounds_per_skill * len(request.skills)
+    if plan:
+        total_rounds = len(plan)
+    else:
+        total_rounds = request.rounds_per_skill * len(request.skills)
+        # Single MCQ/SQL assessments are one round unless a plan was provided.
+        if opening_type in ("mcq", "sql") and request.round_type in ("mcq", "sql"):
+            total_rounds = 1
 
     session = SessionDocument(
         session_id=session_id,
@@ -512,6 +654,9 @@ def start_session(
     session_dict["user_id"] = user["id"] if user else candidate.get("user_id")
     session_dict["target_company_id"] = target_company_id
     session_dict["target_role_id"] = target_role_id
+    session_dict["round_config"] = request.round_config or {}
+    if plan:
+        session_dict["round_plan"] = plan
 
     try:
         db["sessions"].insert_one(session_dict)
@@ -558,6 +703,7 @@ def start_session(
         "current_skill": first_skill,
         "skills": request.skills,
         "rounds_per_skill": request.rounds_per_skill,
+        "round_plan": plan,
         "started_at": round_document.started_at.isoformat() if round_document.started_at else None,
         "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
         "config_json": round_document.config_json,
@@ -572,6 +718,18 @@ def start_session(
         response["schema_ddl"] = sanitized["question_context"].get("schema_ddl")
         response["sample_cases"] = sanitized["question_context"].get("sample_cases", [])
     return response
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /session/practice-bank (MCQ + SQL catalog for Problem practice)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/practice-bank")
+def get_practice_bank(
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    require_user(authorization)
+    return list_practice_bank_items()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
