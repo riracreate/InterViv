@@ -196,6 +196,16 @@ This is **the owner’s decision**. The rescued work is **theirs** (phase21 WIP,
 
 ---
 
+## Phase L follow-up — gate closed (2026-09-07)
+
+**Defect was live.** Browser Step 0 on disposable DB (`/tmp/interviv_phasel_disposable.db`, `:18000`): Verbal and OA opened MCQ without a Calibration chrome (auto-skip on `NotAllowedError`), but **`getUserMedia` was still invoked** (video constraints, spy count 2). Technical Interview likewise requested media and showed E.1 `AvUnavailablePanel`. So the Phase K counter-argument (gate redundant) was wrong for media setup; the calibration *screen* was environment-masked, the permission request was not.
+
+**Implemented (port, not blob):** `blockUsesInterviewMedia(block_category, round_type)` in current `Interview.jsx` — Verbal/OA skip camera, SpeechRecognition wiring, face-api load, and calibration; other categories keep today’s media path including E.1 AV. Mixed Verbal→Interview resets calibration when entering an interview category. Plumbed `block_category` through Practice/Learn/Problems/Jobs/Coach/Upload navigate state. SSR suite `frontend/tests/interviewMediaGate.test.js` pins Verbal/OA skip, technical keep, and mixed round>1 calibration. Upload Verbal entry and rescued file replace were **not** done.
+
+**Not done:** C.2, E.2, Upload Verbal entry, touching `refs/rescue/*` or the phase21 worktree.
+
+---
+
 ## Phase K process attestation
 
 | Check | Result |

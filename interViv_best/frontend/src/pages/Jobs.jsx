@@ -75,6 +75,7 @@ export default function Jobs() {
         question: data.question,
         difficulty: data.difficulty,
         round_type: data.round_type || 'technical_short_answer',
+        block_category: data.block_category || null,
         question_context: data.question_context || {},
         config_json: data.config_json || {},
         expires_at: data.expires_at || null,

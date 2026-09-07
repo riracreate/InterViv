@@ -11,6 +11,17 @@ import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../li
 
 const ROUND_SECONDS = 120;
 
+/** Phase L: Verbal/OA blocks never use interview camera/mic/calibration.
+ *  When category is not yet known, only treat non-mcq round types as media rounds
+ *  so a late-arriving verbal/oa category cannot race a getUserMedia call. */
+function blockUsesInterviewMedia(category, roundType) {
+  const c = String(category || '').toLowerCase();
+  if (c === 'verbal' || c === 'oa') return false;
+  if (c) return true;
+  const t = String(roundType || '');
+  return t === 'technical_short_answer' || t === 'sql' || t === 'coding' || t === 'system_design';
+}
+
 function stopMediaStream(stream) {
   stream?.getTracks?.().forEach(track => track.stop());
 }
@@ -61,6 +72,10 @@ export default function Interview({ sessionState = null }) {
 
   const [question, setQuestion] = useState(initState.question || '');
   const [roundType, setRoundType] = useState(initState.round_type || 'technical_short_answer');
+  const [blockCategory, setBlockCategory] = useState(
+    initState.block_category || initState.blockCategory || null
+  );
+  const usesInterviewMedia = blockUsesInterviewMedia(blockCategory, roundType);
   const [difficulty, setDifficulty] = useState(initState.difficulty || 'medium');
   const [questionContext, setQuestionContext] = useState(initState.question_context || {});
   const [configJson, setConfigJson] = useState(initState.config_json || {});
@@ -106,10 +121,10 @@ export default function Interview({ sessionState = null }) {
   const [baselineSamples, setBaselineSamples] = useState([]);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [engagementBaseline, setEngagementBaseline] = useState(
-    initState.engagementBaseline || (round > 1 ? { label: 'Neutral', confidence: null, sample_count: 0 } : null)
+    initState.engagementBaseline || null
   );
   const [calibrationComplete, setCalibrationComplete] = useState(
-    Boolean(initState.engagementBaseline || round > 1)
+    Boolean(initState.engagementBaseline || initState.engagementCalibrationSkipped)
   );
   const [calibrationSkipped, setCalibrationSkipped] = useState(
     Boolean(initState.engagementCalibrationSkipped)
@@ -231,6 +246,12 @@ export default function Interview({ sessionState = null }) {
   }, []);
 
   useEffect(() => {
+    if (!usesInterviewMedia) {
+      engagementReadyRef.current = false;
+      setEngagementReady(false);
+      setEngagementLoadFailed(false);
+      return undefined;
+    }
     let cancelled = false;
 
     loadModels().then((ok) => {
@@ -243,15 +264,19 @@ export default function Interview({ sessionState = null }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [usesInterviewMedia]);
 
   useEffect(() => {
+    if (!usesInterviewMedia) {
+      recognitionRef.current = null;
+      return undefined;
+    }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       recognitionRef.current = null;
       setUseServerSTT(true);
       setMicError('');
-      return;
+      return undefined;
     }
     const rec = new SR();
     rec.continuous = true;
@@ -287,14 +312,15 @@ export default function Interview({ sessionState = null }) {
       try { rec.abort(); }
       catch { /* recognition was never started */ }
     };
-  }, [stopMicrophone]);
+  }, [stopMicrophone, usesInterviewMedia]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function startCamera() {
-      if (!isVideoOn) {
+      if (!usesInterviewMedia || !isVideoOn) {
         stopCamera();
+        setCameraReady(false);
         return;
       }
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -342,7 +368,7 @@ export default function Interview({ sessionState = null }) {
 
     startCamera();
     return () => { cancelled = true; };
-  }, [isVideoOn, stopCamera]);
+  }, [isVideoOn, stopCamera, usesInterviewMedia]);
 
   useEffect(() => {
     if (!isVideoOn) {
@@ -391,14 +417,14 @@ export default function Interview({ sessionState = null }) {
   }, [transcript, sessionId, round, roundType, currentScore]);
 
   useEffect(() => {
-    if (round !== 1 || calibrationComplete) return;
+    if (!usesInterviewMedia || calibrationComplete) return;
     if (!isVideoOn || cameraError || engagementLoadFailed) {
       finishCalibration([], true);
     }
-  }, [calibrationComplete, cameraError, engagementLoadFailed, finishCalibration, isVideoOn, round]);
+  }, [calibrationComplete, cameraError, engagementLoadFailed, finishCalibration, isVideoOn, usesInterviewMedia]);
 
   const showCalibrationScreen =
-    round === 1 &&
+    usesInterviewMedia &&
     !calibrationComplete &&
     isVideoOn &&
     !engagementLoadFailed &&
@@ -442,6 +468,7 @@ export default function Interview({ sessionState = null }) {
 
   useEffect(() => {
     const shouldClassify =
+      usesInterviewMedia &&
       isVideoOn &&
       engagementReady &&
       calibrationComplete &&
@@ -478,7 +505,7 @@ export default function Interview({ sessionState = null }) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [calibrationComplete, currentScore, engagementReady, isRecording, isVideoOn, serverRecording, sessionComplete, transcript]);
+  }, [calibrationComplete, currentScore, engagementReady, isRecording, isVideoOn, serverRecording, sessionComplete, transcript, usesInterviewMedia]);
 
   useEffect(() => {
     return () => {
@@ -499,6 +526,7 @@ export default function Interview({ sessionState = null }) {
       difficulty,
       round,
       round_type: roundType,
+      block_category: blockCategory,
       question_context: questionContext,
       config_json: configJson,
       expires_at: expiresAt,
@@ -509,6 +537,7 @@ export default function Interview({ sessionState = null }) {
     });
   }, [
     allSkills,
+    blockCategory,
     calibrationSkipped,
     candidateId,
     configJson,
@@ -528,6 +557,19 @@ export default function Interview({ sessionState = null }) {
   ]);
 
   useEffect(() => {
+    if (!sessionId || blockCategory) return undefined;
+    let cancelled = false;
+    fetchSession(sessionId)
+      .then((data) => {
+        if (cancelled) return;
+        const cr = data?.active_round || data?.current_round;
+        if (cr?.block_category) setBlockCategory(cr.block_category);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [sessionId, blockCategory]);
+
+  useEffect(() => {
     if (!sessionId) return;
     if (
       (roundType === 'mcq' || roundType === 'sql' || roundType === 'coding') &&
@@ -538,6 +580,7 @@ export default function Interview({ sessionState = null }) {
           const cr = data?.active_round || data?.current_round;
           if (cr) {
             if (cr.round_type) setRoundType(cr.round_type);
+            if (cr.block_category !== undefined) setBlockCategory(cr.block_category || null);
             if (cr.question) setQuestion(cr.question);
             if (cr.difficulty) setDifficulty(cr.difficulty);
             if (cr.question_context) setQuestionContext(cr.question_context);
@@ -768,15 +811,31 @@ export default function Interview({ sessionState = null }) {
         setSessionComplete(true);
       } else if (resp.next_question || resp.next_round_type) {
         // Prefetch next round fields; UI keeps currentScore until Next.
+        const nextCategory = resp.next_block_category ?? null;
+        const enteringMedia =
+          blockUsesInterviewMedia(nextCategory, resp.next_round_type) &&
+          !blockUsesInterviewMedia(blockCategory, roundType);
         setQuestion(resp.next_question || '');
         setRoundType(resp.next_round_type || 'technical_short_answer');
+        setBlockCategory(nextCategory);
         setDifficulty(resp.next_difficulty || resp.difficulty || 'medium');
         setCurrentSkill(resp.next_skill || resp.current_skill || currentSkill);
         setQuestionContext(resp.next_question_context || {});
         setConfigJson(resp.next_config_json || {});
         setExpiresAt(resp.next_expires_at || null);
         setRound(round + 1);
-        setCalibrationComplete(true);
+        if (enteringMedia) {
+          // Mixed Verbal/OA → Interview: present calibration for the media block.
+          setCalibrationComplete(false);
+          setEngagementBaseline(null);
+          setCalibrationSkipped(false);
+          setCalibrationProgress(0);
+          setBaselineSamples([]);
+          setCameraError('');
+          setIsVideoOn(true);
+        } else {
+          setCalibrationComplete(true);
+        }
       }
     } catch (err) {
       setCurrentFeedback('Scoring failed — ' + err.message);
@@ -1006,12 +1065,14 @@ export default function Interview({ sessionState = null }) {
             </div>
             <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>{round}/{totalRounds}</span>
           </div>
-          <span
-            className={`text-sm font-mono ${timeLeft <= 15 ? 'text-red-500' : 'text-[#6F6F6F]'}`}
-            title="Time left in this round"
-          >
-            {fmt(timeLeft)}
-          </span>
+          {usesInterviewMedia && (
+            <span
+              className={`text-sm font-mono ${timeLeft <= 15 ? 'text-red-500' : 'text-[#6F6F6F]'}`}
+              title="Time left in this round"
+            >
+              {fmt(timeLeft)}
+            </span>
+          )}
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-black/[0.03] text-[#6F6F6F]"
             style={{ fontFamily: "'Inter', sans-serif" }}>Elo {elo}</span>
           <div className="hidden md:flex gap-1">
