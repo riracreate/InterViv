@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   fetchMe,
@@ -6,16 +6,35 @@ import {
   fetchPracticeBank,
   startSession,
   saveInterviewState,
+  fetchPresets,
+  createPreset,
+  deletePreset,
+  fetchBuilderDraft,
+  saveBuilderDraft,
 } from '../lib/api';
 import CompanySelector from '../components/CompanySelector';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 import {
   PRACTICE_MODES,
-  mapCustomBuilderToStartPayload,
+  STANDALONE_MODES,
+  BLOCK_CATEGORIES,
+  PRESET_VERSION,
+  BUILDER_DRAFT_VERSION,
+  createBlockId,
+  addBlock,
+  removeBlock,
+  moveBlock,
+  duplicateBlock,
+  formatBlockLabel,
+  totalTimeSummary,
+  validateBuilderBlocks,
+  validateDraftPayload,
   mapFullInterviewToStartPayload,
   mapOaSqlToStartPayload,
   mapProblemItemToStartPayload,
+  mapBlocksToStartPayload,
+  mapStandaloneToStartPayload,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
@@ -69,15 +88,23 @@ export default function Practice() {
   const [mcqCount, setMcqCount] = useState(10);
   const [sqlCases, setSqlCases] = useState(1);
 
-  // Custom builder
-  const [totalMinutes, setTotalMinutes] = useState(40);
-  const [questionCount, setQuestionCount] = useState(5);
-  const [includeTechnical, setIncludeTechnical] = useState(true);
-  const [includeMcq, setIncludeMcq] = useState(false);
-  const [includeSql, setIncludeSql] = useState(false);
+  // Phase B standalone forms
+  const [standaloneCount, setStandaloneCount] = useState(10);
+  const [standaloneDuration, setStandaloneDuration] = useState(20);
+  const [standaloneDifficulty, setStandaloneDifficulty] = useState('');
+  const [standaloneTopics, setStandaloneTopics] = useState('DBMS');
+
+  // Phase B block builder
+  const [blocks, setBlocks] = useState([]);
+  const [builderLoaded, setBuilderLoaded] = useState(false);
+  const [draftStatus, setDraftStatus] = useState('');
+  const [presets, setPresets] = useState([]);
+  const [presetName, setPresetName] = useState('');
+  const draftTimer = useRef(null);
+  const BUILDER_LOCAL_KEY = 'interviv-builder-draft-v1';
 
   // Problem bank
-  const [bank, setBank] = useState({ mcq: [], sql: [] });
+  const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [] });
   const [bankType, setBankType] = useState('all');
   const [bankDifficulty, setBankDifficulty] = useState('all');
   const [bankSkill, setBankSkill] = useState('all');
@@ -110,7 +137,7 @@ export default function Practice() {
     let cancelled = false;
     fetchPracticeBank()
       .then((data) => {
-        if (!cancelled) setBank({ mcq: data.mcq || [], sql: data.sql || [] });
+        if (!cancelled) setBank({ mcq: data.mcq || [], verbal: data.verbal || [], sql: data.sql || [] });
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Could not load practice bank.');
@@ -119,6 +146,76 @@ export default function Practice() {
       cancelled = true;
     };
   }, [authReady, mode]);
+
+  // Phase B: load builder draft (server first, local fallback) + presets.
+  useEffect(() => {
+    if (!authReady || mode !== 'custom') return undefined;
+    let cancelled = false;
+    fetchBuilderDraft()
+      .then((data) => {
+        if (cancelled) return;
+        const draftError = validateDraftPayload(data);
+        if (!draftError && data.blocks?.length) {
+          setBlocks(data.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
+          setBuilderLoaded(true);
+          return;
+        }
+        const raw = localStorage.getItem(BUILDER_LOCAL_KEY);
+        if (raw) {
+          try {
+            const local = JSON.parse(raw);
+            if (!validateDraftPayload(local) && local.blocks?.length) {
+              setBlocks(local.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
+              setBuilderLoaded(true);
+              return;
+            }
+          } catch { /* fall through to empty builder */ }
+        }
+        setBuilderLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        try {
+          const raw = localStorage.getItem(BUILDER_LOCAL_KEY);
+          if (raw) {
+            const local = JSON.parse(raw);
+            if (!validateDraftPayload(local) && local.blocks?.length) {
+              setBlocks(local.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
+            }
+          }
+        } catch { /* empty builder */ }
+        setBuilderLoaded(true);
+      });
+    fetchPresets()
+      .then((data) => {
+        if (!cancelled) setPresets(data.presets || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, mode, BUILDER_LOCAL_KEY]);
+
+  // Phase B: autosave builder drafts (debounced server + immediate local).
+  useEffect(() => {
+    if (!authReady || mode !== 'custom' || !builderLoaded) return undefined;
+    try {
+      localStorage.setItem(
+        BUILDER_LOCAL_KEY,
+        JSON.stringify({ version: BUILDER_DRAFT_VERSION, blocks })
+      );
+    } catch { /* storage full or unavailable */ }
+    setDraftStatus(blocks.length ? 'Saving…' : '');
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      saveBuilderDraft({ version: BUILDER_DRAFT_VERSION, blocks })
+        .then(() => setDraftStatus(blocks.length ? 'Draft saved' : ''))
+        .catch(() => setDraftStatus('Local only (server unavailable)'));
+    }, 800);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [blocks, authReady, mode, builderLoaded, BUILDER_LOCAL_KEY]);
 
   // Soft-load role skills when company graph is available
   useEffect(() => {
@@ -145,6 +242,9 @@ export default function Practice() {
     if (bankType === 'all' || bankType === 'mcq') {
       items = items.concat((bank.mcq || []).map((q) => ({ ...q, type: 'mcq' })));
     }
+    if (bankType === 'all' || bankType === 'verbal') {
+      items = items.concat((bank.verbal || []).map((q) => ({ ...q, type: 'mcq', category: 'verbal' })));
+    }
     if (bankType === 'all' || bankType === 'sql') {
       items = items.concat((bank.sql || []).map((q) => ({ ...q, type: 'sql' })));
     }
@@ -160,6 +260,7 @@ export default function Practice() {
   const skillFilterOptions = useMemo(() => {
     const set = new Set();
     (bank.mcq || []).forEach((q) => q.skill && set.add(q.skill));
+    (bank.verbal || []).forEach((q) => q.skill && set.add(q.skill));
     (bank.sql || []).forEach(() => set.add('SQL'));
     return Array.from(set).sort();
   }, [bank]);
@@ -219,8 +320,8 @@ export default function Practice() {
             Choose how you want to practice
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-ink-muted)]">
-            Four modes deep-link into the existing interview, MCQ, and SQL flows. There is no general coding judge —
-            SQL practice uses the sandboxed SQL runner only.
+            Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, and interview practice.
+            There is no general coding judge — SQL practice uses the sandboxed SQL runner only.
           </p>
         </header>
 
@@ -231,20 +332,41 @@ export default function Practice() {
         )}
 
         {!mode && (
-          <section className="mt-6 grid gap-4 sm:grid-cols-2" data-testid="practice-modes">
-            {PRACTICE_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                data-mode={m.id}
-                onClick={() => setMode(m.id)}
-                className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
-              >
-                <h2 className="text-lg font-semibold text-[var(--color-ink)]">{m.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
-              </button>
-            ))}
-          </section>
+          <>
+            <section className="mt-6" data-testid="standalone-modes" aria-label="Standalone practice">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
+                Standalone practice
+              </h2>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                {STANDALONE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    data-mode={m.id}
+                    onClick={() => setMode(m.id)}
+                    className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
+                  >
+                    <h3 className="text-lg font-semibold text-[var(--color-ink)]">{m.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="mt-8 grid gap-4 sm:grid-cols-2" data-testid="practice-modes" aria-label="Guided modes">
+              {PRACTICE_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  data-mode={m.id}
+                  onClick={() => setMode(m.id)}
+                  className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
+                >
+                  <h2 className="text-lg font-semibold text-[var(--color-ink)]">{m.title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
+                </button>
+              ))}
+            </section>
+          </>
         )}
 
         {mode && (
@@ -287,6 +409,25 @@ export default function Practice() {
                 }
               />
             </label>
+          </section>
+        )}
+
+        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'interview') && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
+              Target (optional)
+            </h3>
+            <div className="mt-3">
+              <CompanySelector
+                isAuthenticated={Boolean(user)}
+                initialCompanyId={target.companyId}
+                initialRoleId={target.roleId}
+                onSelectionChange={setTarget}
+              />
+            </div>
+            <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
+              Targets may prefill settings but never override an explicitly chosen topic.
+            </p>
           </section>
         )}
 
@@ -391,81 +532,482 @@ export default function Practice() {
           </section>
         )}
 
+        {mode === 'verbal' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">Verbal Ability</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              English MCQs only — grammar, vocabulary, comprehension, ordering, idioms. Not a speaking assessment.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                Questions (1–30)
+                <input
+                  type="number" min={1} max={30}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneCount}
+                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Time budget (minutes)
+                <input
+                  type="number" min={1} max={180}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDuration}
+                  onChange={(e) => setStandaloneDuration(Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              onClick={() => runStart(mapStandaloneToStartPayload('verbal', {
+                count: standaloneCount, durationMinutes: standaloneDuration,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start Verbal practice'}
+            </button>
+          </section>
+        )}
+
+        {mode === 'oa' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">OA practice</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              Technical MCQs restricted to your selected topics. Other subjects are never mixed in to fill the count.
+            </p>
+            <label className="mt-4 block text-sm">
+              Topics (comma-separated, e.g. DBMS)
+              <input
+                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                value={standaloneTopics}
+                onChange={(e) => setStandaloneTopics(e.target.value)}
+              />
+            </label>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <label className="text-sm">
+                Questions (1–30)
+                <input
+                  type="number" min={1} max={30}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneCount}
+                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Time budget (minutes)
+                <input
+                  type="number" min={1} max={180}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDuration}
+                  onChange={(e) => setStandaloneDuration(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Difficulty
+                <select
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDifficulty}
+                  onChange={(e) => setStandaloneDifficulty(e.target.value)}
+                >
+                  <option value="">Mixed</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              onClick={() => runStart(mapStandaloneToStartPayload('oa', {
+                skills: standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
+                count: standaloneCount, durationMinutes: standaloneDuration,
+                difficulty: standaloneDifficulty || undefined,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start OA practice'}
+            </button>
+          </section>
+        )}
+
+        {mode === 'sql' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">SQL practice</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              SQL problems with schemas and execution-based evaluation.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                Time budget (minutes)
+                <input
+                  type="number" min={1} max={180}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDuration}
+                  onChange={(e) => setStandaloneDuration(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Difficulty
+                <select
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDifficulty}
+                  onChange={(e) => setStandaloneDifficulty(e.target.value)}
+                >
+                  <option value="">Mixed</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              onClick={() => runStart(mapStandaloneToStartPayload('sql', {
+                durationMinutes: standaloneDuration,
+                difficulty: standaloneDifficulty || undefined,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start SQL practice'}
+            </button>
+          </section>
+        )}
+
+        {mode === 'interview' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">Interview practice</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              Technical/HR questions with text and voice input on the interview page.
+            </p>
+            <label className="mt-4 block text-sm">
+              Skills (comma-separated)
+              <input
+                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                value={standaloneTopics}
+                onChange={(e) => setStandaloneTopics(e.target.value)}
+              />
+            </label>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                Questions (1–10)
+                <input
+                  type="number" min={1} max={10}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneCount}
+                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Difficulty
+                <select
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDifficulty}
+                  onChange={(e) => setStandaloneDifficulty(e.target.value)}
+                >
+                  <option value="">Adaptive (Elo)</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              onClick={() => runStart(mapStandaloneToStartPayload('interview', {
+                skills: standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
+                count: standaloneCount,
+                difficulty: standaloneDifficulty || undefined,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start interview practice'}
+            </button>
+          </section>
+        )}
+
         {mode === 'custom' && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Custom interview builder</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Choose interview, MCQ and SQL rounds. If your settings cannot be combined, you will see an explanation before starting.
+              Add, reorder, and repeat Verbal, OA, SQL, and interview blocks with independent settings.
+              If your settings cannot be combined, you will see an explanation before starting.
             </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">
-                Total time (minutes)
-                <input
-                  type="number"
-                  min={5}
-                  max={180}
-                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                  value={totalMinutes}
-                  onChange={(e) => setTotalMinutes(Number(e.target.value))}
-                />
-              </label>
-              <label className="text-sm">
-                Number of questions / blocks
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                  value={questionCount}
-                  onChange={(e) => setQuestionCount(Number(e.target.value))}
-                />
-              </label>
-            </div>
-            <fieldset className="mt-4 space-y-2 text-sm">
-              <legend className="font-semibold text-[var(--color-ink)]">Round mix</legend>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={includeTechnical}
-                  onChange={(e) => setIncludeTechnical(e.target.checked)}
-                />
-                Interview (technical / HR)
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={includeMcq} onChange={(e) => setIncludeMcq(e.target.checked)} />
-                MCQ
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={includeSql} onChange={(e) => setIncludeSql(e.target.checked)} />
-                SQL
-              </label>
-            </fieldset>
-            <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-              Mode: text (default). Voice input remains available inside the interview UI — the session API does not
-              distinguish text/voice/mixed starts.
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-              onClick={() =>
-                runStart(
-                  mapCustomBuilderToStartPayload({
-                    skills,
-                    totalMinutes,
-                    questionCount,
-                    includeTechnical,
-                    includeMcq,
-                    includeSql,
-                    targetCompanyId: target.companyId,
-                    targetRoleId: target.roleId,
-                    mode: 'text',
-                  })
-                )
-              }
-            >
-              {busy ? 'Starting…' : 'Start custom session'}
-            </button>
+            {!builderLoaded && (
+              <p className="mt-4 text-sm text-[var(--color-ink-muted)]">Loading saved draft…</p>
+            )}
+            {builderLoaded && (
+              <>
+                <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Add block">
+                  {BLOCK_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => setBlocks((prev) => addBlock(prev, category))}
+                      className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:border-slate-400"
+                    >
+                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : 'Interview'}
+                    </button>
+                  ))}
+                </div>
+
+                {blocks.length === 0 && (
+                  <p className="mt-4 text-sm text-[var(--color-ink-muted)]">
+                    No blocks yet. Add Verbal, OA, SQL, or interview blocks above. Adding Verbal never erases your sequence.
+                  </p>
+                )}
+
+                <ol className="mt-4 space-y-3">
+                  {blocks.map((block, index) => (
+                    <li
+                      key={block.id}
+                      className="rounded-[var(--radius-card)] border border-[var(--color-border)] p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-[var(--color-ink)]">
+                          {index + 1}. {formatBlockLabel(block)}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Reorder block ${index + 1}`}>
+                          <button
+                            type="button"
+                            aria-label={`Move block ${index + 1} up`}
+                            disabled={index === 0}
+                            onClick={() => setBlocks((prev) => moveBlock(prev, block.id, 'up'))}
+                            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs disabled:opacity-40"
+                          >
+                            ↑ Up
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Move block ${index + 1} down`}
+                            disabled={index === blocks.length - 1}
+                            onClick={() => setBlocks((prev) => moveBlock(prev, block.id, 'down'))}
+                            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs disabled:opacity-40"
+                          >
+                            ↓ Down
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBlocks((prev) => duplicateBlock(prev, block.id))}
+                            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+                          >
+                            Repeat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBlocks((prev) => removeBlock(prev, block.id))}
+                            className="rounded border border-[var(--color-danger)]/40 px-2 py-1 text-xs text-[var(--color-danger)]"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {block.category !== 'verbal' && block.category !== 'sql' && (
+                          <label className="text-xs text-[var(--color-ink-muted)]">
+                            {block.category === 'oa' ? 'Topics' : 'Skills'} (comma-separated)
+                            <input
+                              className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                              value={(block.skills || []).join(', ')}
+                              onChange={(e) =>
+                                setBlocks((prev) =>
+                                  prev.map((b) =>
+                                    b.id === block.id
+                                      ? { ...b, skills: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }
+                                      : b
+                                  )
+                                )
+                              }
+                            />
+                          </label>
+                        )}
+                        {block.category === 'verbal' && (
+                          <p className="text-xs text-[var(--color-ink-muted)]">
+                            Topics: Verbal Ability (fixed English MCQs)
+                          </p>
+                        )}
+                        <label className="text-xs text-[var(--color-ink-muted)]">
+                          {block.category === 'sql' ? 'Problems' : 'Questions'}
+                          <input
+                            type="number"
+                            min={1}
+                            max={block.category === 'sql' ? 5 : block.category === 'interview' ? 10 : 30}
+                            className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)]"
+                            value={block.count}
+                            onChange={(e) =>
+                              setBlocks((prev) =>
+                                prev.map((b) => (b.id === block.id ? { ...b, count: Number(e.target.value) } : b))
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="text-xs text-[var(--color-ink-muted)]">
+                          Time budget (minutes){block.category === 'interview' ? ' — optional' : ''}
+                          <input
+                            type="number"
+                            min={1}
+                            max={180}
+                            placeholder={block.category === 'interview' ? 'Untimed' : ''}
+                            className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)]"
+                            value={block.duration_minutes ?? ''}
+                            onChange={(e) =>
+                              setBlocks((prev) =>
+                                prev.map((b) =>
+                                  b.id === block.id
+                                    ? { ...b, duration_minutes: e.target.value === '' ? undefined : Number(e.target.value) }
+                                    : b
+                                )
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="text-xs text-[var(--color-ink-muted)]">
+                          Difficulty
+                          <select
+                            className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)]"
+                            value={block.difficulty || ''}
+                            onChange={(e) =>
+                              setBlocks((prev) =>
+                                prev.map((b) =>
+                                  b.id === block.id ? { ...b, difficulty: e.target.value || undefined } : b
+                                )
+                              )
+                            }
+                          >
+                            <option value="">{block.category === 'interview' ? 'Adaptive (Elo)' : 'Mixed'}</option>
+                            <option value="easy">Easy</option>
+                            <option value="medium">Medium</option>
+                            <option value="hard">Hard</option>
+                          </select>
+                        </label>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+
+                {blocks.length > 0 && (() => {
+                  const summary = totalTimeSummary(blocks);
+                  return (
+                    <p className="mt-4 text-sm text-[var(--color-ink-muted)]" data-testid="builder-summary">
+                      {summary.blockCount} {summary.blockCount === 1 ? 'block' : 'blocks'}
+                      {' · '}
+                      {summary.timedMinutes} timed minutes
+                      {summary.untimedBlocks > 0 && ` · ${summary.untimedBlocks} untimed interview block${summary.untimedBlocks === 1 ? '' : 's'}`}
+                      {' — '}
+                      {blocks.map(formatBlockLabel).join(' → ')}
+                    </p>
+                  );
+                })()}
+                {draftStatus && (
+                  <p className="mt-2 text-xs text-[var(--color-ink-muted)]" role="status">{draftStatus}</p>
+                )}
+
+                <div className="mt-6 border-t border-[var(--color-border)] pt-4">
+                  <h3 className="text-sm font-semibold text-[var(--color-ink)]">Saved presets</h3>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input
+                      aria-label="Preset name"
+                      placeholder="Preset name"
+                      className="min-w-0 flex-1 rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm"
+                      value={presetName}
+                      onChange={(e) => setPresetName(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy || blocks.length === 0 || !presetName.trim()}
+                      onClick={async () => {
+                        setBusy(true);
+                        setError('');
+                        try {
+                          const saved = await createPreset({
+                            name: presetName.trim(),
+                            version: PRESET_VERSION,
+                            blocks,
+                          });
+                          setPresets((prev) => [...prev, saved]);
+                          setPresetName('');
+                        } catch (err) {
+                          setError(err.message || 'Could not save preset.');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-4 py-2 text-sm font-semibold disabled:opacity-40"
+                    >
+                      Save preset
+                    </button>
+                  </div>
+                  {presets.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {presets.map((preset) => (
+                        <li
+                          key={preset.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                        >
+                          <span className="text-sm font-medium">{preset.name}</span>
+                          <span className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const loaded = (preset.blocks || []).map((b) => ({ ...b, id: b.id || createBlockId() }));
+                                const validation = validateBuilderBlocks(loaded);
+                                if (validation) {
+                                  setError(`Preset "${preset.name}" is invalid: ${validation}`);
+                                  return;
+                                }
+                                setBlocks(loaded);
+                                setError('');
+                              }}
+                              className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+                            >
+                              Load
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await deletePreset(preset.id);
+                                  setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+                                } catch (err) {
+                                  setError(err.message || 'Could not delete preset.');
+                                }
+                              }}
+                              className="rounded border border-[var(--color-danger)]/40 px-2 py-1 text-xs text-[var(--color-danger)]"
+                            >
+                              Delete
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <p className="mt-4 text-xs text-[var(--color-ink-muted)]">
+                  Mode: text (default). Voice input remains available inside the interview UI — the session API does not
+                  distinguish text/voice/mixed starts.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || blocks.length === 0}
+                  className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                  onClick={() =>
+                    runStart(
+                      mapBlocksToStartPayload(blocks, {
+                        targetCompanyId: target.companyId,
+                        targetRoleId: target.roleId,
+                      })
+                    )
+                  }
+                >
+                  {busy ? 'Starting…' : 'Start custom session'}
+                </button>
+              </>
+            )}
           </section>
         )}
 
@@ -473,7 +1015,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Problem practice</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Existing MCQ and SQL banks only. No Monaco editor, no hidden-test coding judge.
+              OA, Verbal Ability, and SQL banks only. No Monaco editor, no hidden-test coding judge.
             </p>
             <div className="mt-4 flex flex-wrap gap-3 text-sm">
               <label>
@@ -485,6 +1027,7 @@ export default function Practice() {
                 >
                   <option value="all">all</option>
                   <option value="mcq">mcq</option>
+                  <option value="verbal">verbal</option>
                   <option value="sql">sql</option>
                 </select>
               </label>

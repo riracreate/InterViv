@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Play, Send, Database, Table, CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
-import { runSqlQuery } from '../lib/api';
+import { runSqlQuery, saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 
 export default function SQLRound({
@@ -27,9 +27,43 @@ export default function SQLRound({
   const [isRunningQuery, setIsRunningQuery] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
   const [previewError, setPreviewError] = useState(null);
+  const [draftNotice, setDraftNotice] = useState('');
+  const draftTimer = useRef(null);
+  const draftLoadedFor = useRef('');
   const [secondsRemaining, setSecondsRemaining] = useState(() =>
     computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 25)
   );
+
+  useEffect(() => {
+    const key = `${sessionId}:${round}`;
+    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
+    draftLoadedFor.current = key;
+    let cancelled = false;
+    fetchAnswerDraft(sessionId, round)
+      .then((data) => {
+        if (cancelled) return;
+        const saved = String(data?.draft?.answer_text || '').trim();
+        if (saved) {
+          setQuery(saved);
+          setDraftNotice('Restored your saved query.');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, round, currentScore]);
+
+  useEffect(() => {
+    if (!sessionId || currentScore !== null || !query.trim()) return undefined;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      saveAnswerDraft(sessionId, { round, answer_text: query }).catch(() => {});
+    }, 1500);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [query, sessionId, round, currentScore]);
 
   // Countdown timer
   useEffect(() => {
@@ -198,7 +232,10 @@ export default function SQLRound({
           {/* Query Editor Box */}
           <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">SQL Query Editor</span>
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">
+                SQL Query Editor
+                {draftNotice && <span className="ml-2 normal-case text-blue-600" role="status">{draftNotice}</span>}
+              </span>
               <button
                 onClick={handleRunQuery}
                 disabled={isRunningQuery || isScoring || !query.trim()}
