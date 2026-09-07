@@ -264,3 +264,16 @@ Reasoning: the chain’s Jobs path already treats Adzuna as optional and fixture
 | Migration | Not required |
 
 Notable contrast for the open fail-fast debate: Phase M Step 0 found transcription **fails loudly** (503) when the whisper cache is cold under `HF_HUB_OFFLINE=1`, whereas SemanticScorer **sticky-degrades**. Jobs’ fixture-on-missing-credentials is a third pattern (demo substitute). A live Jobs client should follow transcription/coding — **unavailable labeled** — not silent fixture substitution presented as market truth.
+
+---
+
+## Phase O — honesty defects closed (2026-09-07)
+
+Assessment-only Phase N; fixes landed in Phase O (`docs/phase_o_delivery.md`). Sourcing decision (Step 4) remains **owner-open**; no JobSourceClient, no real listings, fixture bytes unchanged.
+
+| Defect | How closed |
+|--------|------------|
+| **1. Ungated Adzuna outbound** when credentials present | `JOBS_LIVE_FETCH` defaults to `0` via `backend/runtime_env.py` (Phase J pattern). `fetch_adzuna` retains the `httpx` path but does not enter it unless the gate is on. Test: `test_default_jobs_live_fetch_skips_httpx`. Documented in `.env.example` / `docker-compose.yml` / Phase J delivery cross-note. |
+| **2. Cache hit clears sample banner** (`source: cache` wiped `empty_reason`) | Provenance stamped onto cached records; `source` / `provenance` stay `fixture` (etc.) on warm path; `cache_hit` is a separate axis; `fetched_at` survives round-trip; sample banner keys off provenance. Test: `test_cache_hit_preserves_fixture_provenance_and_label`. |
+
+**Still open (not Phase O):** `match_pct` framing beside real company names; live JobSourceClient / Step 4 sourcing choice.

@@ -46,7 +46,10 @@ services:
       # Phase J: use cached MiniLM; do not Hub-fetch during scorer warm-up.
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
       TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
-      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}    ports:
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
+      # Phase O: Adzuna outbound stays off unless deliberately enabled.
+      JOBS_LIVE_FETCH: ${JOBS_LIVE_FETCH:-0}
+    ports:
       - "8000:8000"
     depends_on:
       postgres:
