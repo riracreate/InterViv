@@ -4,6 +4,7 @@ import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
+import CodingRound from '../components/CodingRound';
 
 const ROUND_SECONDS = 120;
 
@@ -52,7 +53,7 @@ export default function Interview({ sessionState = null }) {
   const initState = sessionState || location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
-  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql'];
+  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding'];
   const isSupportedRoundType = (t) => SUPPORTED_ROUND_TYPES.includes(t);
 
   const [question, setQuestion] = useState(initState.question || '');
@@ -481,7 +482,7 @@ export default function Interview({ sessionState = null }) {
   useEffect(() => {
     if (!sessionId) return;
     if (
-      (roundType === 'mcq' || roundType === 'sql') &&
+      (roundType === 'mcq' || roundType === 'sql' || roundType === 'coding') &&
       (!questionContext || Object.keys(questionContext).length === 0)
     ) {
       fetchSession(sessionId)
@@ -962,6 +963,24 @@ export default function Interview({ sessionState = null }) {
       ) : roundType === 'sql' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
           <SQLRound
+            sessionId={sessionId}
+            round={round}
+            question={question}
+            questionContext={questionContext}
+            configJson={configJson}
+            expiresAt={expiresAt}
+            isScoring={isScoring}
+            currentScore={currentScore}
+            currentArtifact={currentArtifact}
+            currentFeedback={currentFeedback}
+            onSubmit={(payload) => submitAnswer(payload)}
+            onNextRound={handleNext}
+            sessionComplete={sessionComplete}
+          />
+        </div>
+      ) : roundType === 'coding' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <CodingRound
             sessionId={sessionId}
             round={round}
             question={question}

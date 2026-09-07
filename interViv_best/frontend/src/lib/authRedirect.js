@@ -1,4 +1,4 @@
-const STATIC_PATHS = new Set(['/', '/home', '/dashboard', '/practice', '/upload', '/ats', '/jobs', '/coach', '/resources']);
+const STATIC_PATHS = new Set(['/', '/home', '/dashboard', '/practice', '/problems', '/upload', '/ats', '/jobs', '/coach', '/resources']);
 const DYNAMIC_PATH = /^\/(?:interview|dashboard)\/[A-Za-z0-9_-]+$|^\/(?:gap-analysis|roadmap)\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/;
 
 // Only application routes can be return destinations. Decode before validating:

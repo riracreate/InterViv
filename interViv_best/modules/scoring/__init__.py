@@ -1,9 +1,10 @@
-"""Typed round scoring dispatch (Phase 1 & Phase 2).
+"""Typed round scoring dispatch (Phase 1, Phase 2 & Phase C).
 
 Routes an answered round to the scorer for its ``round_type``:
 - ``technical_short_answer``: runs the existing 3-layer deterministic NLP pipeline.
 - ``mcq``: exact-match multi-question deterministic aggregation.
 - ``sql``: sandboxed multi-case SQLite evaluation.
+- ``coding``: execution-outcome aggregation over visible/hidden pass rates.
 
 Deterministic like everything it calls: no LLM, no reviewer, no tie-breaker
 (see AGENTS.md section 6). Unknown types raise; they never fall back.
@@ -19,6 +20,7 @@ from backend.scoring.pipeline import run_scoring_pipeline
 TECHNICAL_SHORT_ANSWER = "technical_short_answer"
 MCQ = "mcq"
 SQL = "sql"
+CODING = "coding"
 
 
 class UnsupportedRoundTypeError(ValueError):
@@ -90,6 +92,16 @@ def score_round(
 
         return score_sql_round(
             candidate_query=answer_text or "",
+            question_context=question_context or {},
+            config=config or {},
+            **kwargs,
+        )
+
+    if round_type == CODING:
+        from modules.scoring.coding import score_coding_round
+
+        return score_coding_round(
+            candidate_source=answer_text or "",
             question_context=question_context or {},
             config=config or {},
             **kwargs,

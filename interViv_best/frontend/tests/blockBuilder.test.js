@@ -16,9 +16,9 @@ import {
   validateDraftPayload,
 } from '../src/lib/practiceBuilder.js';
 
-test('standalone entries cover Verbal, OA, SQL, and interview', () => {
+test('standalone entries cover Verbal, OA, SQL, coding, and interview', () => {
   const ids = STANDALONE_MODES.map((m) => m.id).sort();
-  assert.deepEqual(ids, ['interview', 'oa', 'sql', 'verbal']);
+  assert.deepEqual(ids, ['coding', 'interview', 'oa', 'sql', 'verbal']);
   const verbal = STANDALONE_MODES.find((m) => m.id === 'verbal');
   assert.match(verbal.blurb, /English MCQ/i);
   assert.doesNotMatch(verbal.blurb, /speak|voice|HR question/i);
@@ -79,6 +79,28 @@ test('standalone OA rejects Verbal topics; standalone Verbal is fixed', () => {
   assert.equal(good.error, undefined);
   assert.equal(good.payload.blocks[0].category, 'verbal');
   assert.deepEqual(good.payload.blocks[0].skills, ['Verbal Ability']);
+});
+
+test('coding blocks validate count, round type, and topics', () => {
+  const base = { round_type: 'coding', category: 'coding', skills: ['DSA'], count: 2, duration_minutes: 30 };
+  assert.equal(validateBuilderBlocks([base]), null);
+  assert.match(validateBuilderBlocks([{ ...base, count: 6 }]), /Coding count must be 1–5/);
+  assert.match(validateBuilderBlocks([{ ...base, round_type: 'sql' }]), /Coding blocks are coding rounds/);
+  assert.match(
+    validateBuilderBlocks([{ ...base, skills: ['Verbal Ability'] }]),
+    /must not include Verbal Ability/
+  );
+  assert.equal(formatBlockLabel({ category: 'coding', count: 1 }), 'Coding · 1 problem');
+});
+
+test('standalone coding maps to a one-problem block with optional pin', () => {
+  const auto = mapStandaloneToStartPayload('coding', { durationMinutes: 30 });
+  assert.equal(auto.error, undefined);
+  assert.equal(auto.payload.blocks[0].round_type, 'coding');
+  assert.equal(auto.payload.blocks[0].count, 1);
+  const pinned = mapStandaloneToStartPayload('coding', { problemId: 'coding_two_sum' });
+  assert.equal(pinned.error, undefined);
+  assert.deepEqual(pinned.payload.blocks[0].problem_ids, ['coding_two_sum']);
 });
 
 test('blocks map to a server-validated plan with requested order', () => {

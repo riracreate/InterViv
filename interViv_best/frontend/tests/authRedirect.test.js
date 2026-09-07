@@ -5,12 +5,12 @@ import { displayScore, interviewStateFromSession } from '../src/lib/accountOverv
 
 const origin = 'http://127.0.0.1:5173';
 test('auth returns to supported static and dynamic destinations after normalization', () => {
-  for (const path of ['/home', '/practice?mode=custom', '/jobs?q=SQL&where=Pune', '/resources?skill_id=DBMS', '/interview/abc-123', '/dashboard/abc-123', '/gap-analysis/me/tcs_swe', '/roadmap/u-123/tcs_swe?days=14']) assert.equal(safeNext(path, origin), path);
+  for (const path of ['/home', '/practice?mode=custom', '/problems', '/jobs?q=SQL&where=Pune', '/resources?skill_id=DBMS', '/interview/abc-123', '/dashboard/abc-123', '/gap-analysis/me/tcs_swe', '/roadmap/u-123/tcs_swe?days=14']) assert.equal(safeNext(path, origin), path);
   assert.equal(safeNext('/practice/../home', origin), '/home');
   assert.equal(safeNext('/%70ractice?mode=full', origin), '/practice?mode=full');
 });
 test('auth rejects external destinations, escaped separators, loops and unsupported paths', () => {
-  for (const path of [null, {}, '', 'https://evil.test', '//evil.test', '/\\evil.test', '/%5cevil.test', '/%2f%2fevil.test', '/%255cevil.test', '/interview/a%2Fb', '/interview/%252e%252e', '/login', '/signup', '/register', '/practice/../login', '/%6cogin?next=/login', '/unknown', '/problems', '/home\n', ' /home', 'javascript:alert(1)']) assert.equal(safeNext(path, origin), '/home', String(path));
+  for (const path of [null, {}, '', 'https://evil.test', '//evil.test', '/\\evil.test', '/%5cevil.test', '/%2f%2fevil.test', '/%255cevil.test', '/interview/a%2Fb', '/interview/%252e%252e', '/login', '/signup', '/register', '/practice/../login', '/%6cogin?next=/login', '/unknown', '/home\n', ' /home', 'javascript:alert(1)']) assert.equal(safeNext(path, origin), '/home', String(path));
 });
 test('query destinations and login/signup state use the same safe rules', () => {
   assert.equal(authDestination({ search: '?next=%2Fjobs%3Fq%3DPython' }, origin), '/jobs?q=Python');

@@ -214,6 +214,26 @@ export function runSqlQuery(payload) {
   });
 }
 
+export function runCodingPreview(payload) {
+  return request("/session/coding/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchProblems({ difficulty = "", topic = "" } = {}) {
+  const params = new URLSearchParams();
+  if (difficulty) params.set("difficulty", difficulty);
+  if (topic) params.set("topic", topic);
+  const query = params.toString();
+  return request(query ? `/problems?${query}` : "/problems");
+}
+
+export function fetchProblem(problemId) {
+  return request(`/problems/${encodeURIComponent(problemId)}`);
+}
+
 export function fetchSession(sessionId) {
   return request(`/session/${encodeURIComponent(sessionId)}`).then(normalizeSessionData);
 }

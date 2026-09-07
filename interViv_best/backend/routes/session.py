@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.execution import ExecutionUnavailableError, execute_python_tests
 from backend.integrations import IntegrationError
 from backend.models.blocks import (
     VERBAL_SKILL,
@@ -43,7 +44,7 @@ router = APIRouter(prefix="/session", tags=["session"])
 # Request / response models
 # ─────────────────────────────────────────────────────────────────────────────
 
-ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql")
+ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql", "coding")
 
 
 class StartSessionRequest(BaseModel):
@@ -116,6 +117,12 @@ class RunSQLPreviewRequest(BaseModel):
     session_id: str
     round: int
     query: str
+
+
+class RunCodingPreviewRequest(BaseModel):
+    session_id: str
+    round: int
+    source: str
 
 
 class SaveAnswerDraftRequest(BaseModel):
@@ -561,6 +568,38 @@ def build_round_document(
             block_total=block_total,
         )
 
+    if round_type == "coding":
+        duration_mins = int(cfg.get("duration_minutes", 30))
+        problem_ids = cfg.get("problem_ids") or []
+        problem_id = cfg.get("problem_id")
+        if problem_ids and sql_problem_index < len(problem_ids):
+            problem_id = problem_ids[sql_problem_index]
+        problem = _select_coding_problem(problem_id=problem_id)
+        expires_at = now + timedelta(minutes=duration_mins)
+        return RoundDocument(
+            round=round_number,
+            round_type="coding",
+            question=str(problem.get("title") or problem.get("id")),
+            difficulty=str(problem.get("difficulty") or difficulty),
+            elo_before=elo_before,
+            config_json={
+                "duration_minutes": duration_mins,
+                "attempt_policy": "single_submission_final",
+                "review_policy": cfg.get("review_policy", "none"),
+                "problem_id": problem.get("id"),
+                "language": "python",
+            },
+            question_context=coding_problem_public_context(problem),
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+            block_id=block_id,
+            block_position=block_position,
+            block_category=block_category,
+            block_index=block_index,
+            block_total=block_total,
+        )
+
     # technical_short_answer
     first_question = _get_next_question(
         skill=skill,
@@ -600,14 +639,18 @@ def build_round_document(
 
 
 def list_practice_bank_items() -> dict[str, Any]:
-    """Candidate-safe catalog: OA MCQs, Verbal MCQs and SQL problems.
+    """Candidate-safe catalog: OA MCQs, Verbal MCQs, SQL and coding problems.
 
-    Exposes stems, SQL prompts/schemas and safe metadata only. Never
-    exposes correct option IDs, explanations, reference queries, checks
-    or hidden cases.
+    Exposes stems, SQL prompts/schemas, coding statements/starters and
+    safe metadata only. Never exposes correct option IDs, explanations,
+    reference queries/solutions, checks or hidden cases.
     """
     from backend.db.phase2_content_bank import PHASE2_MCQ_BANK, PHASE2_SQL_BANK
     from backend.db.phase21_verbal_bank import PHASE21_VERBAL_BANK
+    from backend.db.phase_c_coding_bank import (
+        CODING_PROBLEMS,
+        public_coding_problem,
+    )
 
     mcq = [
         {
@@ -649,11 +692,18 @@ def list_practice_bank_items() -> dict[str, Any]:
                 "schema_ddl": p.get("schema_ddl") or "",
             }
         )
+    coding = [public_coding_problem(p) for p in CODING_PROBLEMS]
     return {
         "mcq": mcq,
         "verbal": verbal,
         "sql": sql,
-        "counts": {"mcq": len(mcq), "verbal": len(verbal), "sql": len(sql)},
+        "coding": coding,
+        "counts": {
+            "mcq": len(mcq),
+            "verbal": len(verbal),
+            "sql": len(sql),
+            "coding": len(coding),
+        },
     }
 
 
@@ -759,6 +809,104 @@ def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
     return dict(PHASE2A_SQL_FIXTURES[0])
 
 
+def _list_coding_problems(
+    *,
+    topics: list[str] | None = None,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    """Coding bank in stable order, filtered by exact topics/difficulty."""
+    from backend.db.phase_c_coding_bank import CODING_PROBLEMS
+    items = [dict(p) for p in CODING_PROBLEMS]
+    if difficulty:
+        wanted_diff = str(difficulty).strip().lower()
+        items = [p for p in items
+                 if str(p.get("difficulty", "")).lower() == wanted_diff]
+    if topics:
+        wanted = {str(t).strip().lower() for t in topics if str(t).strip()}
+        items = [p for p in items
+                 if wanted & {str(t).lower()
+                              for t in (p.get("topics") or [])}]
+    return items
+
+
+def _select_coding_problem(problem_id: str | None = None) -> dict[str, Any]:
+    """One coding problem by id (strict) or the deterministic default."""
+    from backend.db.phase_c_coding_bank import (
+        CODING_PROBLEMS,
+        get_coding_problem,
+    )
+    target = (problem_id or "").strip()
+    if target:
+        problem = get_coding_problem(target)
+        if problem is None:
+            raise ValueError(f"Unknown coding problem ID: '{target}'.")
+        return dict(problem)
+    return dict(CODING_PROBLEMS[0])
+
+
+def _select_coding_problems(
+    *,
+    problem_ids: list[str] | None = None,
+    count: int = 1,
+    topics: list[str] | None = None,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    """Validate explicit coding IDs or auto-select `count` deterministically."""
+    topics = [str(t).strip() for t in (topics or []) if str(t).strip()]
+    if problem_ids:
+        wanted = [str(p).strip() for p in problem_ids if str(p).strip()]
+        selected = [_select_coding_problem(problem_id=pid) for pid in wanted]
+        if topics:
+            wanted_topics = {t.lower() for t in topics}
+            mismatched = [p["id"] for p in selected
+                          if not (wanted_topics & {str(t).lower()
+                                                   for t in (p.get("topics") or [])})]
+            if mismatched:
+                raise ValueError(
+                    f"Coding problems {mismatched} do not match topics "
+                    f"{topics}."
+                )
+        if difficulty:
+            mismatched_diff = [p["id"] for p in selected
+                               if str(p.get("difficulty", "")).lower()
+                               != str(difficulty).strip().lower()]
+            if mismatched_diff:
+                raise ValueError(
+                    f"Coding problems {mismatched_diff} do not match "
+                    f"difficulty '{difficulty}'."
+                )
+        return selected
+    pool = _list_coding_problems(topics=topics or None, difficulty=difficulty)
+    if len(pool) < count:
+        label = ", ".join(topics) if topics else "coding"
+        diff_note = f" ({difficulty})" if difficulty else ""
+        raise ValueError(
+            f"Not enough {label} coding problems available{diff_note}: "
+            f"found {len(pool)}, need {count}. Adjust count or topics."
+        )
+    return pool[:count]
+
+
+def coding_problem_public_context(problem: dict[str, Any]) -> dict[str, Any]:
+    """Candidate-safe coding context: never hidden tests or solutions."""
+    return {
+        "problem_id": problem.get("id"),
+        "title": problem.get("title"),
+        "difficulty": problem.get("difficulty"),
+        "topics": list(problem.get("topics") or []),
+        "statement": problem.get("statement") or "",
+        "constraints": list(problem.get("constraints") or []),
+        "function": problem.get("function") or "",
+        "starter_code": problem.get("starter_code") or "",
+        "visible_tests": [
+            {"input": dict(t.get("input") or {}),
+             "expected": t.get("expected")}
+            for t in (problem.get("visible_tests") or [])
+        ],
+        "language": "python",
+    }
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
@@ -794,6 +942,26 @@ def _validate_block_content(
                 count = int(block.get("count") or 1)
                 selected = _select_sql_problems(
                     count=count,
+                    difficulty=block.get("difficulty"),
+                )
+                specs = by_block.get(str(block.get("id")), [])
+                for spec, problem in zip(specs, selected):
+                    spec["problem_ids"] = [problem["id"]]
+                block["problem_ids"] = [p["id"] for p in selected]
+        elif category == "coding":
+            problem_ids = list(block.get("problem_ids") or [])
+            topics = list(block.get("skills") or [])
+            if problem_ids:
+                _select_coding_problems(
+                    problem_ids=problem_ids,
+                    topics=topics or None,
+                    difficulty=block.get("difficulty"),
+                )
+            else:
+                count = int(block.get("count") or 1)
+                selected = _select_coding_problems(
+                    count=count,
+                    topics=topics or None,
                     difficulty=block.get("difficulty"),
                 )
                 specs = by_block.get(str(block.get("id")), [])
@@ -889,7 +1057,7 @@ def start_session(
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
 
-    needs_phase2_auth = any(t in ("mcq", "sql") for t in plan)
+    needs_phase2_auth = any(t in ("mcq", "sql", "coding") for t in plan)
     if needs_phase2_auth:
         if not authorization:
             raise HTTPException(
@@ -1101,6 +1269,10 @@ def start_session(
         response["question_context"] = sanitized["question_context"]
         response["schema_ddl"] = sanitized["question_context"].get("schema_ddl")
         response["sample_cases"] = sanitized["question_context"].get("sample_cases", [])
+    elif round_document.round_type == "coding":
+        sanitized = sanitize_round_for_client(round_document.model_dump())
+        response["question_context"] = sanitized["question_context"]
+        response["starter_code"] = sanitized["question_context"].get("starter_code")
     return response
 
 
@@ -1139,7 +1311,7 @@ def get_session(
         )
 
     rounds = session.get("rounds", [])
-    has_phase2_round = any(r.get("round_type") in ("mcq", "sql") for r in rounds)
+    has_phase2_round = any(r.get("round_type") in ("mcq", "sql", "coding") for r in rounds)
     if has_phase2_round or session.get("user_id"):
         if not authorization:
             raise HTTPException(
@@ -1309,6 +1481,117 @@ def run_sql_preview(
         }
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /session/coding/run (visible-examples check; never final scoring)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/coding/run")
+def run_coding_preview(
+    request: RunCodingPreviewRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        db = get_database()
+    except DatabaseConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    session = db["sessions"].find_one({"session_id": request.session_id})
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+        )
+
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication is required for this session.",
+        )
+    user = require_user(authorization)
+    if session.get("user_id"):
+        if str(session["user_id"]) != str(user["id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot access another user's session.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Anonymous sessions are not permitted for this round type.",
+        )
+
+    rounds = session.get("rounds", [])
+    target_round = next(
+        (r for r in rounds if r.get("round") == request.round), None
+    )
+    if not target_round:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target round not found in session.",
+        )
+    if target_round.get("round_type") != "coding":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target round is not a coding round.",
+        )
+    if target_round.get("status") != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This round is no longer active.",
+        )
+    expires_at = target_round.get("expires_at")
+    if expires_at is not None:
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.fromisoformat(expires_at)
+            except Exception:
+                expires_at = None
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at and datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Answer deadline has expired.",
+            )
+
+    # Non-mutating run against visible examples ONLY. Hidden tests are
+    # never loaded here and no score is recorded.
+    q_ctx = target_round.get("question_context") or {}
+    problem_id = str(q_ctx.get("problem_id") or "")
+    from backend.db.phase_c_coding_bank import get_coding_problem
+    problem = get_coding_problem(problem_id) if problem_id else None
+    if problem is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown coding problem: {problem_id!r}.",
+        )
+    try:
+        result = execute_python_tests(
+            source=request.source or "",
+            function=str(problem.get("function") or ""),
+            visible_tests=list(problem.get("visible_tests") or []),
+            hidden_tests=[],
+        )
+    except ExecutionUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    visible = [
+        {"passed": bool(o.get("passed")), "error": o.get("error"),
+         "stdout": (o.get("stdout") or "")[:4000]}
+        for o in ((result or {}).get("visible") or [])
+    ]
+    return {
+        "success": True,
+        "scored": False,
+        "visible": visible,
+        "visible_passed": sum(1 for v in visible if v["passed"]),
+        "visible_total": len(visible),
+    }
 
 
 def _draft_round_or_error(

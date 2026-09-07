@@ -16,8 +16,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql")
-ALLOWED_CATEGORIES = ("verbal", "oa", "sql", "interview")
+ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql", "coding")
+ALLOWED_CATEGORIES = ("verbal", "oa", "sql", "interview", "coding")
 ALLOWED_DIFFICULTIES = ("easy", "medium", "hard")
 ALLOWED_REVIEW_POLICIES = ("none", "after_session")
 
@@ -31,7 +31,9 @@ MAX_BLOCKS = 10
 MAX_TOTAL_ROUNDS = 50
 MAX_MCQ_COUNT = 30
 MAX_SQL_PER_BLOCK = 5
+MAX_CODING_PER_BLOCK = 5
 MAX_INTERVIEW_PER_BLOCK = 10
+CODING_LANGUAGE = "python"
 
 
 class BlockSpec(BaseModel):
@@ -94,6 +96,8 @@ def derive_category(round_type: str, skills: list[str]) -> str:
         return "verbal" if skills == [VERBAL_SKILL] else "oa"
     if round_type == "sql":
         return "sql"
+    if round_type == "coding":
+        return "coding"
     return "interview"
 
 
@@ -155,6 +159,11 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
         if category == "sql":
             skills = skills or ["SQL"]
+        if category == "coding" and VERBAL_SKILL in skills:
+            raise ValueError(
+                f"Block {index + 1}: coding topics must not include "
+                f"'{VERBAL_SKILL}'."
+            )
 
         difficulty = (spec.difficulty or "").strip().lower() or None
         if difficulty is not None and difficulty not in ALLOWED_DIFFICULTIES:
@@ -168,18 +177,24 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"'{spec.review_policy}'."
             )
         language = (spec.language or "").strip().lower() or None
-        if language is not None:
-            if category == "sql" and language != "sql":
+        if category == "sql":
+            if language is not None and language != "sql":
                 raise ValueError(
                     f"Block {index + 1}: SQL blocks use language 'sql'."
                 )
-            if category != "sql":
-                raise ValueError(
-                    f"Block {index + 1}: language is only supported for "
-                    f"SQL blocks in Phase B."
-                )
-        if language is None and category == "sql":
             language = "sql"
+        elif category == "coding":
+            if language is not None and language != CODING_LANGUAGE:
+                raise ValueError(
+                    f"Block {index + 1}: coding blocks use language "
+                    f"'{CODING_LANGUAGE}'."
+                )
+            language = CODING_LANGUAGE
+        elif language is not None:
+            raise ValueError(
+                f"Block {index + 1}: language is only supported for "
+                f"SQL and coding blocks."
+            )
 
         question_ids = [str(q).strip() for q in (spec.question_ids or [])
                         if str(q).strip()]
@@ -193,14 +208,20 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             raise ValueError(
                 f"Block {index + 1}: question_ids apply to MCQ blocks only."
             )
-        if problem_ids and category != "sql":
+        if problem_ids and category not in ("sql", "coding"):
             raise ValueError(
-                f"Block {index + 1}: problem_ids apply to SQL blocks only."
+                f"Block {index + 1}: problem_ids apply to SQL and coding "
+                f"blocks only."
             )
 
         duration = spec.duration_minutes
         if duration is None:
-            duration = 20 if category in ("oa", "verbal") else 25
+            if category in ("oa", "verbal"):
+                duration = 20
+            elif category == "coding":
+                duration = 30
+            else:
+                duration = 25
         try:
             duration = int(duration)
         except (TypeError, ValueError) as exc:
@@ -233,7 +254,9 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raise ValueError(
                     f"Block {index + 1}: count must be 1-{MAX_MCQ_COUNT}."
                 )
-        elif category == "sql":
+        elif category in ("sql", "coding"):
+            limit = (MAX_CODING_PER_BLOCK if category == "coding"
+                     else MAX_SQL_PER_BLOCK)
             if problem_ids:
                 if count is not None and int(count) != len(problem_ids):
                     raise ValueError(
@@ -243,9 +266,9 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 count_value = len(problem_ids)
             else:
                 count_value = int(count) if count is not None else 1
-            if count_value < 1 or count_value > MAX_SQL_PER_BLOCK:
+            if count_value < 1 or count_value > limit:
                 raise ValueError(
-                    f"Block {index + 1}: count must be 1-{MAX_SQL_PER_BLOCK}."
+                    f"Block {index + 1}: count must be 1-{limit}."
                 )
         else:
             count_value = int(count) if count is not None else 3
@@ -292,7 +315,7 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "review_policy": review_policy,
         })
 
-    total = sum(b["count"] if b["category"] in ("sql", "interview")
+    total = sum(b["count"] if b["category"] in ("sql", "coding", "interview")
                 else 1 for b in normalized)
     if total > MAX_TOTAL_ROUNDS:
         raise ValueError(
@@ -325,6 +348,10 @@ def legacy_to_blocks(
             single = str(cfg["problem_id"]).strip()
             if single not in problem_ids:
                 problem_ids.append(single)
+        coding_seen = 0
+        coding_ids = [str(p).strip()
+                      for p in (cfg.get("coding_problem_ids") or [])
+                      if str(p).strip()]
         for entry in plan:
             if entry == "mcq":
                 blocks.append({
@@ -352,6 +379,24 @@ def legacy_to_blocks(
                 if selected:
                     item["problem_ids"] = selected
                 blocks.append(item)
+            elif entry == "coding":
+                selected_coding: list[str] = []
+                if coding_seen < len(coding_ids):
+                    selected_coding = [coding_ids[coding_seen]]
+                coding_seen += 1
+                coding_item: dict[str, Any] = {
+                    "round_type": "coding",
+                    # Legacy launches carry interview skills, not coding
+                    # topics; like SQL, legacy coding auto-select ignores
+                    # them. Blocks-API topics filter strictly.
+                    "skills": [],
+                    "duration_minutes": int(cfg.get("duration_minutes", 30)),
+                    "difficulty": cfg.get("difficulty"),
+                    "review_policy": cfg.get("review_policy", "none"),
+                }
+                if selected_coding:
+                    coding_item["problem_ids"] = selected_coding
+                blocks.append(coding_item)
             else:
                 blocks.append({
                     "round_type": "technical_short_answer",
@@ -362,13 +407,14 @@ def legacy_to_blocks(
                 })
         return normalize_blocks(blocks)
 
-    if round_type in ("mcq", "sql"):
+    if round_type in ("mcq", "sql", "coding"):
+        defaults = {"mcq": 20, "sql": 25, "coding": 30}
         item = {
             "round_type": round_type,
-            "skills": skills,
+            "skills": [] if round_type == "coding" else skills,
             "count": int(cfg.get("count", 15)) if round_type == "mcq" else 1,
             "duration_minutes": int(cfg.get("duration_minutes",
-                                            20 if round_type == "mcq" else 25)),
+                                            defaults[round_type])),
             "difficulty": cfg.get("difficulty"),
             "question_ids": cfg.get("question_ids"),
             "problem_ids": cfg.get("problem_ids"),
@@ -392,8 +438,9 @@ def legacy_to_blocks(
 def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Expand blocks into per-round specs in requested order.
 
-    MCQ blocks stay one round with N questions. SQL and Interview blocks
-    expand into N rounds (one problem/question each) sharing the block id.
+    MCQ blocks stay one round with N questions. SQL, coding, and
+    Interview blocks expand into N rounds (one problem/question each)
+    sharing the block id.
     """
     expanded: list[dict[str, Any]] = []
     round_number = 0
@@ -419,9 +466,11 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "negative_marking": float(block.get("negative_marking", 0.25)),
                 "review_policy": block.get("review_policy", "none"),
             })
-        elif category == "sql":
+        elif category in ("sql", "coding"):
             problem_ids = list(block.get("problem_ids") or [])
             total = len(problem_ids) if problem_ids else int(block.get("count") or 1)
+            default_skills = ["SQL"] if category == "sql" else []
+            default_language = "sql" if category == "sql" else CODING_LANGUAGE
             for item_index in range(total):
                 round_number += 1
                 selected = ([problem_ids[item_index]]
@@ -432,15 +481,15 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_position": block["position"],
                     "block_index": item_index + 1,
                     "block_total": total,
-                    "round_type": "sql",
+                    "round_type": block["round_type"],
                     "category": category,
-                    "skills": list(block.get("skills") or ["SQL"]),
+                    "skills": list(block.get("skills") or default_skills),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),
                     "difficulty": block.get("difficulty"),
                     "question_ids": [],
                     "problem_ids": selected,
-                    "language": block.get("language") or "sql",
+                    "language": block.get("language") or default_language,
                     "negative_marking": 0.0,
                     "review_policy": block.get("review_policy", "none"),
                 })
@@ -482,6 +531,9 @@ def block_label(block: dict[str, Any]) -> str:
     if category == "sql":
         noun = "problem" if count == 1 else "problems"
         return f"SQL · {count} {noun}"
+    if category == "coding":
+        noun = "problem" if count == 1 else "problems"
+        return f"Coding · {count} {noun}"
     noun = "question" if count == 1 else "questions"
     return f"Interview · {count} {noun}"
 
