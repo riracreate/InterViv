@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+# Phase J: Hub offline defaults must land before huggingface_hub is imported
+# (constants read HF_HUB_OFFLINE at import time).
+from backend.runtime_env import apply_runtime_env
+
+apply_runtime_env()
+
 from contextlib import asynccontextmanager
 import logging
 import time

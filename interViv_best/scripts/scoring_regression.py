@@ -28,6 +28,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.runtime_env import apply_runtime_env  # noqa: E402
+
+apply_runtime_env()
+
 from backend.scoring.pipeline import run_scoring_pipeline  # noqa: E402
 
 
