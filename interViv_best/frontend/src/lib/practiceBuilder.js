@@ -12,6 +12,228 @@ export const PRACTICE_MODES = [
 
 export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql'];
 
+export const PRESET_VERSION = 1;
+export const BUILDER_DRAFT_VERSION = 1;
+export const VERBAL_SKILL = 'Verbal Ability';
+
+// Phase B standalone entries: one clear start per available block.
+// Coding arrives in Phase C and stays unsupported here.
+export const STANDALONE_MODES = [
+  { id: 'verbal', title: 'Verbal Ability', blurb: 'English MCQs: grammar, vocabulary, comprehension, ordering, idioms.' },
+  { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
+  { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
+  { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
+];
+
+export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'interview'];
+
+export function createBlockId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `block-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+export function blockTemplate(category) {
+  if (category === 'verbal') {
+    return { round_type: 'mcq', category: 'verbal', skills: [VERBAL_SKILL], count: 15, duration_minutes: 20 };
+  }
+  if (category === 'oa') {
+    return { round_type: 'mcq', category: 'oa', skills: ['DBMS'], count: 10, duration_minutes: 20 };
+  }
+  if (category === 'sql') {
+    return { round_type: 'sql', category: 'sql', skills: ['SQL'], count: 1, duration_minutes: 25 };
+  }
+  return { round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 3 };
+}
+
+// Adding a block appends; it never erases the existing sequence.
+export function addBlock(blocks, category) {
+  const next = Array.isArray(blocks) ? [...blocks] : [];
+  next.push({ id: createBlockId(), ...blockTemplate(category) });
+  return next;
+}
+
+export function removeBlock(blocks, id) {
+  return (blocks || []).filter((b) => b.id !== id);
+}
+
+export function moveBlock(blocks, id, direction) {
+  const list = [...(blocks || [])];
+  const index = list.findIndex((b) => b.id === id);
+  if (index < 0) return list;
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= list.length) return list;
+  const [item] = list.splice(index, 1);
+  list.splice(target, 0, item);
+  return list;
+}
+
+export function duplicateBlock(blocks, id) {
+  const list = [...(blocks || [])];
+  const index = list.findIndex((b) => b.id === id);
+  if (index < 0) return list;
+  const copy = { ...list[index], id: createBlockId() };
+  list.splice(index + 1, 0, copy);
+  return list;
+}
+
+export function formatBlockLabel(block) {
+  const category = String(block?.category || '').toLowerCase();
+  const count = Number(block?.count) || 1;
+  const noun = count === 1 ? 'question' : 'questions';
+  if (category === 'verbal') return `Verbal · ${count} ${noun}`;
+  if (category === 'oa') return `OA · ${count} ${noun}`;
+  if (category === 'sql') return `SQL · ${count} ${count === 1 ? 'problem' : 'problems'}`;
+  return `Interview · ${count} ${noun}`;
+}
+
+export function totalTimeSummary(blocks) {
+  let timed = 0;
+  let untimed = 0;
+  for (const b of blocks || []) {
+    if (Number(b?.duration_minutes) > 0) timed += Number(b.duration_minutes);
+    else untimed += 1;
+  }
+  return { timedMinutes: timed, untimedBlocks: untimed, blockCount: (blocks || []).length };
+}
+
+export function validateBuilderBlocks(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return 'Add at least one block.';
+  if (blocks.length > 10) return 'At most 10 blocks are allowed.';
+  for (let i = 0; i < blocks.length; i += 1) {
+    const b = blocks[i] || {};
+    const label = `Block ${i + 1}`;
+    if (!['mcq', 'sql', 'technical_short_answer'].includes(b.round_type)) {
+      return `${label}: choose a supported round type.`;
+    }
+    if (b.category === 'verbal') {
+      const skills = (b.skills || []).map((s) => String(s).trim());
+      if (skills.length !== 1 || skills[0] !== VERBAL_SKILL) {
+        return `${label}: Verbal blocks use Verbal Ability only.`;
+      }
+      if (b.round_type !== 'mcq') return `${label}: Verbal blocks are MCQ assessments.`;
+    }
+    if (b.category === 'oa') {
+      if ((b.skills || []).length === 0) return `${label}: select at least one topic.`;
+      if ((b.skills || []).includes(VERBAL_SKILL)) {
+        return `${label}: OA blocks must not include Verbal Ability; add a Verbal block.`;
+      }
+    }
+    if (b.category === 'interview' && (b.skills || []).length === 0) {
+      return `${label}: select at least one skill.`;
+    }
+    const count = Number(b.count);
+    if (!Number.isFinite(count) || count < 1) return `${label}: count must be at least 1.`;
+    if ((b.category === 'oa' || b.category === 'verbal') && count > 30) {
+      return `${label}: MCQ count must be 1–30.`;
+    }
+    if (b.category === 'sql' && count > 5) return `${label}: SQL count must be 1–5.`;
+    if (b.category === 'interview' && count > 10) return `${label}: interview count must be 1–10.`;
+    if (b.duration_minutes != null) {
+      const minutes = Number(b.duration_minutes);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 180) {
+        return `${label}: time budget must be 1–180 minutes.`;
+      }
+    }
+    if (b.difficulty != null && b.difficulty !== '' && !['easy', 'medium', 'hard'].includes(String(b.difficulty).toLowerCase())) {
+      return `${label}: difficulty must be easy, medium, or hard.`;
+    }
+  }
+  return null;
+}
+
+export function mapBlocksToStartPayload(blocks, form = {}) {
+  const error = validateBuilderBlocks(blocks);
+  if (error) return { error };
+  const payload = {
+    blocks: (blocks || []).map((b) => {
+      const item = {
+        round_type: b.round_type,
+        category: b.category,
+        skills: (b.skills || []).map((s) => String(s).trim()).filter(Boolean),
+        count: Number(b.count),
+      };
+      if (b.id) item.id = b.id;
+      if (b.duration_minutes != null) item.duration_minutes = Number(b.duration_minutes);
+      if (b.difficulty) item.difficulty = String(b.difficulty).toLowerCase();
+      if (b.question_ids?.length) item.question_ids = [...b.question_ids];
+      if (b.problem_ids?.length) item.problem_ids = [...b.problem_ids];
+      if (b.language) item.language = b.language;
+      return item;
+    }),
+    target_company_id: form.targetCompanyId || null,
+    target_role_id: form.targetRoleId || null,
+  };
+  if (form.candidateId) payload.candidate_id = form.candidateId;
+  return { payload };
+}
+
+export function mapStandaloneToStartPayload(kind, form = {}) {
+  const template = blockTemplate(kind);
+  if (kind === 'verbal') {
+    const count = Number(form.count) || 15;
+    if (count < 1 || count > 30) return { error: 'Verbal count must be 1–30.' };
+    const duration = Number(form.durationMinutes) || 20;
+    if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
+    return mapBlocksToStartPayload(
+      [{ ...template, count, duration_minutes: duration }],
+      form,
+    );
+  }
+  if (kind === 'oa') {
+    const skills = (form.skills || []).map((s) => String(s).trim()).filter(Boolean);
+    if (skills.length === 0) return { error: 'Select at least one topic.' };
+    if (skills.includes(VERBAL_SKILL)) {
+      return { error: 'OA topics must not include Verbal Ability; use Verbal practice.' };
+    }
+    const count = Number(form.count) || 10;
+    if (count < 1 || count > 30) return { error: 'OA count must be 1–30.' };
+    const duration = Number(form.durationMinutes) || 20;
+    if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
+    return mapBlocksToStartPayload(
+      [{ ...template, skills, count, duration_minutes: duration, difficulty: form.difficulty || undefined }],
+      form,
+    );
+  }
+  if (kind === 'sql') {
+    const duration = Number(form.durationMinutes) || 25;
+    if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
+    const block = { ...template, duration_minutes: duration };
+    if (form.problemId) block.problem_ids = [form.problemId];
+    else block.count = 1;
+    if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
+    return mapBlocksToStartPayload([block], form);
+  }
+  if (kind === 'interview') {
+    const skills = (form.skills || []).map((s) => String(s).trim()).filter(Boolean);
+    if (skills.length === 0) return { error: 'Select at least one skill.' };
+    const count = Number(form.count) || 3;
+    if (count < 1 || count > 10) return { error: 'Interview count must be 1–10.' };
+    const block = { ...template, skills, count };
+    if (form.durationMinutes) block.duration_minutes = Number(form.durationMinutes);
+    if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
+    return mapBlocksToStartPayload([block], form);
+  }
+  return { error: `Unsupported standalone practice "${kind}".` };
+}
+
+export function validatePresetPayload(preset) {
+  if (!preset || typeof preset !== 'object') return 'Preset must be an object.';
+  if (Number(preset.version) !== PRESET_VERSION) {
+    return `Unsupported preset version ${preset.version}; expected ${PRESET_VERSION}.`;
+  }
+  if (!preset.name || !String(preset.name).trim()) return 'Preset name is required.';
+  return validateBuilderBlocks(preset.blocks);
+}
+
+export function validateDraftPayload(draft) {
+  if (!draft || typeof draft !== 'object') return 'Draft must be an object.';
+  if (Number(draft.version) !== BUILDER_DRAFT_VERSION) {
+    return `Unsupported draft version ${draft.version}; expected ${BUILDER_DRAFT_VERSION}.`;
+  }
+  if (!draft.blocks || draft.blocks.length === 0) return null;
+  return validateBuilderBlocks(draft.blocks);
+}
+
 /**
  * @param {object} form
  * @returns {{ error?: string, payload?: object }}

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, XCircle, HelpCircle, Clock, ChevronLeft, ChevronRight, Send, AlertCircle } from 'lucide-react';
 import { formatMCQSubmission, computeSecondsRemaining } from '../lib/roundContractHelpers';
+import { saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
 
 export default function MCQRound({
   sessionId,
@@ -19,9 +20,54 @@ export default function MCQRound({
   const questions = questionContext?.questions || [];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [draftNotice, setDraftNotice] = useState('');
+  const draftTimer = useRef(null);
+  const draftLoadedFor = useRef('');
   const [secondsRemaining, setSecondsRemaining] = useState(() =>
     computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 20)
   );
+
+  // Safe recovery: restore owned draft once per session/round.
+  useEffect(() => {
+    const key = `${sessionId}:${round}`;
+    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
+    draftLoadedFor.current = key;
+    let cancelled = false;
+    fetchAnswerDraft(sessionId, round)
+      .then((data) => {
+        if (cancelled) return;
+        const saved = (data?.draft?.answers || []);
+        if (!saved.length) return;
+        const assigned = new Set(questions.map((q) => q.id));
+        const restored = {};
+        for (const item of saved) {
+          if (assigned.has(item.question_id) && (item.selected_option_ids || []).length) {
+            restored[item.question_id] = item.selected_option_ids[0];
+          }
+        }
+        if (Object.keys(restored).length) {
+          setAnswers(restored);
+          setDraftNotice('Restored your saved selections.');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, round, currentScore, questions]);
+
+  // Autosave selections (debounced); expired/submitted rounds reject safely.
+  useEffect(() => {
+    if (!sessionId || currentScore !== null || Object.keys(answers).length === 0) return undefined;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      const formatted = formatMCQSubmission(questions, answers);
+      saveAnswerDraft(sessionId, { round, answers: formatted }).catch(() => {});
+    }, 1200);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [answers, sessionId, round, questions, currentScore]);
 
   // Countdown timer
   useEffect(() => {
@@ -196,6 +242,9 @@ export default function MCQRound({
           <span className="text-xs text-gray-400">
             ({answeredCount} answered)
           </span>
+          {draftNotice && (
+            <span className="text-xs text-blue-600" role="status">{draftNotice}</span>
+          )}
         </div>
 
         <div className="flex items-center gap-4">

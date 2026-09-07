@@ -231,6 +231,62 @@ export function fetchDashboard(sessionId) {
   return request(`/dashboard/${sessionId}`);
 }
 
+export function fetchPresets() {
+  return request("/practice/presets");
+}
+
+export function createPreset(payload) {
+  return request("/practice/presets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchPreset(presetId) {
+  return request(`/practice/presets/${encodeURIComponent(presetId)}`);
+}
+
+export function updatePreset(presetId, payload) {
+  return request(`/practice/presets/${encodeURIComponent(presetId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deletePreset(presetId) {
+  return request(`/practice/presets/${encodeURIComponent(presetId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchBuilderDraft() {
+  return request("/practice/builder-draft");
+}
+
+export function saveBuilderDraft(payload) {
+  return request("/practice/builder-draft", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function saveAnswerDraft(sessionId, payload) {
+  return request(`/session/${encodeURIComponent(sessionId)}/draft`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchAnswerDraft(sessionId, round) {
+  return request(
+    `/session/${encodeURIComponent(sessionId)}/draft?round=${encodeURIComponent(round)}`
+  );
+}
+
 export function buildAnswerMetrics(answer) {
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length;
   return { word_count: wordCount };
