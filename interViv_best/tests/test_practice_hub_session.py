@@ -95,7 +95,9 @@ def test_round_plan_rejects_unknown_type() -> None:
         headers=headers,
         json={
             "skills": ["DBMS"],
-            "round_plan": ["mcq", "coding"],
+            # Phase C made "coding" a supported round type; probe with a
+            # still-unknown token instead.
+            "round_plan": ["mcq", "whiteboard"],
         },
     )
     assert resp.status_code == 422

@@ -72,7 +72,9 @@ def test_resume_requires_owned_unsubmitted_supported_round_inside_stored_window(
     add_session(other)
     add_session(uid, deadline=-1)
     add_session(uid, deadline=None)
-    add_session(uid, kind="coding")
+    # Phase C made "coding" a supported resumable kind; probe with a
+    # still-unsupported token instead.
+    add_session(uid, kind="whiteboard")
     add_session(uid, status="completed")
     add_session(uid, round_status="finalizing")
     add_session(uid, score=0)

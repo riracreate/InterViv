@@ -448,3 +448,31 @@ class AnswerDraftRow(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     draft_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class CodingSubmissionRow(Base):
+    """Phase C coding submit attempts: candidate source plus outcome counts.
+
+    One row per submit attempt (retries after an unavailable outcome
+    each record their own row). Hidden inputs, expected outputs,
+    reference solutions, and hidden stdout/stderr are never stored.
+    """
+
+    __tablename__ = "coding_submissions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    problem_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    language: Mapped[str] = mapped_column(String(16), nullable=False, default="python")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    visible_passed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    visible_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hidden_passed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hidden_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

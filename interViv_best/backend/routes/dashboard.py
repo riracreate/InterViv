@@ -151,12 +151,12 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
         if active.get("status") != "in_progress" or active.get("final_score") is not None:
             continue
         kind = active.get("round_type", "technical_short_answer")
-        if kind not in {"technical_short_answer", "mcq", "sql"}:
+        if kind not in {"technical_short_answer", "mcq", "sql", "coding"}:
             continue
         deadline = _utc_date(active.get("expires_at"))
         if active.get("expires_at") and deadline is None:
             continue
-        if kind in {"mcq", "sql"} and deadline is None:
+        if kind in {"mcq", "sql", "coding"} and deadline is None:
             continue
         if deadline is not None and deadline <= now:
             continue
@@ -213,7 +213,8 @@ def get_dashboard(
     # is never served (a bare session_id must not become a capability URL
     # for assessment content).
     has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql") for r in session.get("rounds", [])
+        r.get("round_type") in ("mcq", "sql", "coding")
+        for r in session.get("rounds", [])
     )
     if has_phase2_round or session.get("user_id"):
         if not authorization:
