@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.evidence_kind import is_self_reported_round, measured_scores
 from backend.routes.auth import require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
 from modules.gap_analysis import GapAnalyzer, GapAnalysisError
@@ -120,15 +121,25 @@ def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for key in order:
         group = groups[key]
         scored = [r for r in group if r.get("final_score") is not None]
+        measured = [r for r in scored if not is_self_reported_round(r)]
+        self_reported = [r for r in scored if is_self_reported_round(r)]
         skills = sorted({str(r.get("skill") or "General") for r in group})
         avg = (
-            round(sum(float(r["final_score"]) for r in scored) / len(scored), 2)
-            if scored
+            round(sum(float(r["final_score"]) for r in measured) / len(measured), 2)
+            if measured
+            else None
+        )
+        self_avg = (
+            round(
+                sum(float(r["final_score"]) for r in self_reported) / len(self_reported),
+                2,
+            )
+            if self_reported
             else None
         )
         suggestion = None
-        if scored:
-            weakest = min(scored, key=lambda r: float(r["final_score"]))
+        if measured:
+            weakest = min(measured, key=lambda r: float(r["final_score"]))
             if float(weakest["final_score"]) < 61.0:
                 skill = str(weakest.get("skill") or "General")
                 suggestion = {
@@ -148,8 +159,12 @@ def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "skills": skills,
             "rounds": len(group),
             "scored_rounds": len(scored),
+            "measured_rounds": len(measured),
+            "self_reported_rounds": len(self_reported),
             "average_score": avg,
-            "assisted_rounds": sum(1 for r in scored if r.get("assisted")),
+            "average_score_population": "measured",
+            "self_reported_average": self_avg,
+            "assisted_rounds": sum(1 for r in measured if r.get("assisted")),
             "suggestion": suggestion,
         })
     return results
@@ -160,6 +175,8 @@ def _compute_topic_scores(session: dict[str, Any]) -> dict[str, float]:
     for round_document in session.get("rounds", []):
         score = round_document.get("final_score")
         if score is None:
+            continue
+        if is_self_reported_round(round_document):
             continue
         context = round_document.get("question_context", {}) or {}
         label = (
@@ -209,6 +226,7 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
     for session in owned:
         rounds = session.get("rounds") or []
         scored = [r for r in rounds if r.get("final_score") is not None]
+        measured = measured_scores(rounds)
         summary = {
             "session_id": session["session_id"],
             "created_at": _utc_date(session.get("created_at")),
@@ -217,7 +235,13 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             "round_types": list(dict.fromkeys(r.get("round_type", "technical_short_answer") for r in rounds)),
             "completed_rounds": len(scored),
             "total_rounds": session.get("total_rounds") or len(rounds),
-            "average_score": round(statistics.mean(float(r["final_score"]) for r in scored), 2) if scored else None,
+            "average_score": (
+                round(statistics.mean(measured), 2) if measured else None
+            ),
+            "average_score_population": "measured",
+            "self_reported_rounds": sum(
+                1 for r in scored if is_self_reported_round(r)
+            ),
             # What the average covers and what it excludes: unscored
             # coding rounds are execution-unavailable, not zeros.
             "unscored_rounds": _unscored_rounds(rounds),
@@ -323,7 +347,7 @@ def get_dashboard(
     # is never served (a bare session_id must not become a capability URL
     # for assessment content).
     has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql", "coding")
+        r.get("round_type") in ("mcq", "sql", "coding", "system_design")
         for r in session.get("rounds", [])
     )
     if has_phase2_round or session.get("user_id"):
@@ -347,32 +371,51 @@ def get_dashboard(
 
     rounds = _sanitize_rounds(session.get("rounds", []))
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
+    measured_rounds = [item for item in completed_rounds if not is_self_reported_round(item)]
+    self_reported_rounds = [
+        item for item in completed_rounds if is_self_reported_round(item)
+    ]
 
-    if completed_rounds:
+    if measured_rounds:
         # Phase 2 (MCQ/SQL) rounds persist None for NLP/KG layer scores;
         # coerce missing layer scores to 0.0 so the dashboard never crashes.
         averages = {
             "final_score": round(
-                sum(float(item.get("final_score") or 0) for item in completed_rounds)
-                / len(completed_rounds),
+                sum(float(item.get("final_score") or 0) for item in measured_rounds)
+                / len(measured_rounds),
                 2,
             ),
             "nlp_score": round(
-                sum(float(item.get("nlp_score") or 0) for item in completed_rounds)
-                / len(completed_rounds),
+                sum(float(item.get("nlp_score") or 0) for item in measured_rounds)
+                / len(measured_rounds),
                 2,
             ),
             "kg_score": round(
-                sum(float(item.get("kg_score") or 0) for item in completed_rounds)
-                / len(completed_rounds),
+                sum(float(item.get("kg_score") or 0) for item in measured_rounds)
+                / len(measured_rounds),
                 2,
             ),
+            "population": "measured",
+        }
+    elif completed_rounds:
+        # Session only has self-reported scores: absence of measured average,
+        # not a fabricated zero.
+        averages = {
+            "final_score": None,
+            "nlp_score": None,
+            "kg_score": None,
+            "population": "measured",
         }
     else:
-        averages = {"final_score": 0.0, "nlp_score": 0.0, "kg_score": 0.0}
+        averages = {
+            "final_score": None,
+            "nlp_score": None,
+            "kg_score": None,
+            "population": "measured",
+        }
 
     breakdown = {"Good": 0, "Average": 0, "Poor": 0}
-    for item in completed_rounds:
+    for item in measured_rounds:
         band = item.get("performance_band")
         if band in breakdown:
             breakdown[band] += 1
@@ -381,6 +424,15 @@ def get_dashboard(
 
     session["rounds"] = rounds
     session["averages"] = averages
+    session["self_reported_average"] = (
+        round(
+            sum(float(item.get("final_score") or 0) for item in self_reported_rounds)
+            / len(self_reported_rounds),
+            2,
+        )
+        if self_reported_rounds
+        else None
+    )
     session["breakdown"] = breakdown
     session["elo_progression"] = [
         item.get("elo_after") for item in completed_rounds if item.get("elo_after") is not None

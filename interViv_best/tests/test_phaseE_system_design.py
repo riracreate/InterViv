@@ -401,3 +401,58 @@ def test_practice_bank_includes_system_design_public_only(sa_url) -> None:
         assert "rubric" in item
         assert "evaluation_boundary" in item
     _assert_no_leakage(body)
+
+
+def test_self_assessment_does_not_raise_measured_mastery(sa_url) -> None:
+    """Self-reported system-design scores stay out of skill-graph mastery."""
+    from modules.skill_graph import StudentSkillGraph
+
+    client = TestClient(app)
+    user = _make_user("selfrep")
+    headers = _headers(user)
+    StudentSkillGraph(user["id"]).initialize_from_resume(["System Design", "DBMS"])
+    before = {
+        node["name"]: (node.get("attempts") or 0, node.get("score"))
+        for node in client.get("/skill-graph/me", headers=headers).json()["skills"]
+    }
+    started = client.post(
+        "/session/start",
+        headers=headers,
+        json={
+            "blocks": [{
+                "round_type": "system_design",
+                "category": "system_design",
+                "count": 1,
+                "problem_ids": ["sd_url_shortener"],
+            }]
+        },
+    )
+    assert started.status_code == 200, started.text
+    submit = client.post(
+        "/session/answer",
+        headers=headers,
+        json={
+            "session_id": started.json()["session_id"],
+            "round": 1,
+            "answer_text": "Self-rated perfect design.",
+            "rubric_ratings": _full_ratings(),
+        },
+    )
+    assert submit.status_code == 200, submit.text
+    assert submit.json()["evidence_kind"] == "self_reported"
+    assert submit.json()["final_score"] == 75.0  # all ratings=4 → (4-1)/4*100
+    after = {
+        node["name"]: (node.get("attempts") or 0, node.get("score"))
+        for node in client.get("/skill-graph/me", headers=headers).json()["skills"]
+    }
+    assert after == before
+    notebook = client.get("/learning/notebook/me", headers=headers).json()
+    assert all(
+        e.get("round_type") != "system_design"
+        for e in notebook.get("entries") or []
+    )
+    progress = client.get("/dashboard/progress", headers=headers).json()
+    for row in progress.get("history") or []:
+        if row.get("session_id") == started.json()["session_id"]:
+            assert row.get("average_score") is None
+            assert row.get("self_reported_rounds", 0) >= 1

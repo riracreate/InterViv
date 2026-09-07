@@ -133,8 +133,27 @@ if settings.enable_admin_endpoints:
 
 @app.get("/health")
 def healthcheck() -> dict[str, object]:
+    st = WARMUP_STATUS.get("sentence_transformer") or {}
+    semantic_loaded = bool(st.get("loaded"))
+    fallback_reason = st.get("fallback_reason") or st.get("error")
     return {
         "status": "ok",
         "sentry_enabled": SENTRY_ENABLED,
         "warmup": WARMUP_STATUS,
+        # Explicit scoring-mode disclosure (Phase F): lexical fallback is not
+        # equivalent to a full SemanticScorer result.
+        "scoring": {
+            "semantic_scoring_available": semantic_loaded,
+            "semantic_fallback_reason": None if semantic_loaded else fallback_reason,
+            "mode": "full" if semantic_loaded else "lexical_fallback_degraded",
+            "operator_note": (
+                None
+                if semantic_loaded
+                else (
+                    "SemanticScorer unavailable; interview NLP scores and the "
+                    "off_topic guard use the lexical fallback. Results are not "
+                    "equivalent to full-scorer runs."
+                )
+            ),
+        },
     }

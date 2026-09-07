@@ -28,7 +28,6 @@ from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
 from backend.db.phase_c_coding_bank import get_coding_problem
 from backend.main import app
-from backend.serializers.round_serializer import sanitize_round_for_client
 
 PROBLEM_ID = "coding_two_sum"
 
@@ -186,26 +185,34 @@ def test_get_session_is_leak_free_and_owned(
     assert resp.status_code == 403
 
 
-def test_sanitizer_strips_injected_coding_secrets_under_any_policy() -> None:
-    problem = get_coding_problem(PROBLEM_ID)
-    assert problem is not None
-    round_doc = {
-        "round": 1,
-        "round_type": "coding",
+def test_sanitizer_strips_injected_coding_secrets_under_any_policy(
+    client: TestClient, test_user: dict[str, str]
+) -> None:
+    """Assert against a real GET /session payload after secrets are injected.
+
+    Previously called sanitize_round_for_client on a hand-built dict that
+    could not regress when the route shape changed.
+    """
+    started = _start_coding_session(client, test_user)
+    session_id = started["session_id"]
+    db = get_database()
+    session = db["sessions"].find_one({"session_id": session_id})
+    assert session is not None
+    rounds = list(session.get("rounds") or [])
+    assert rounds
+    q_ctx = dict(rounds[0].get("question_context") or {})
+    q_ctx.update({
+        "hidden_tests": [{"input": {}, "expected": "SECRET"}],
+        "reference_solution": "SECRET-REF",
+        "mutant_solution": "SECRET-MUTANT",
+        "hidden_stdout": "SECRET-OUT",
+        "hidden_stderr": "SECRET-ERR",
+    })
+    rounds[0] = {
+        **rounds[0],
         "status": "submitted",
-        "config_json": {"problem_id": PROBLEM_ID},
-        "question_context": {
-            "problem_id": PROBLEM_ID,
-            "statement": "x",
-            "visible_tests": [{"input": {"args": [1]}, "expected": 1}],
-            # Injected secrets must never survive, even post-completion
-            # with the most permissive review policy.
-            "hidden_tests": [{"input": {}, "expected": "SECRET"}],
-            "reference_solution": "SECRET-REF",
-            "mutant_solution": "SECRET-MUTANT",
-            "hidden_stdout": "SECRET-OUT",
-            "hidden_stderr": "SECRET-ERR",
-        },
+        "final_score": 100.0,
+        "question_context": q_ctx,
         "artifact_json": {
             "evaluation": "coding",
             "problem_id": PROBLEM_ID,
@@ -215,15 +222,25 @@ def test_sanitizer_strips_injected_coding_secrets_under_any_policy() -> None:
             "capped": False,
             "final_score": 100.0,
         },
+        "config_json": {
+            **(rounds[0].get("config_json") or {}),
+            "review_policy": "after_session",
+        },
     }
-    cleaned = sanitize_round_for_client(
-        round_doc, is_session_completed=True, review_policy="after_session"
+    db["sessions"].update_one(
+        {"session_id": session_id},
+        {"$set": {"rounds": rounds, "status": "completed"}},
     )
-    blob = json.dumps(cleaned)
+    resp = client.get(f"/session/{session_id}", headers=_auth(test_user))
+    assert resp.status_code == 200, resp.text
+    blob = resp.text
     _assert_no_private_material(blob)
     assert "SECRET" not in blob
-    assert cleaned["question_context"]["visible_tests"]
-    assert cleaned["artifact_json"]["hidden"] == {"passed": 5, "total": 5}
+    body = resp.json()
+    active = body.get("active_round") or body
+    q = (active.get("question_context") or body.get("question_context") or {})
+    assert "hidden_tests" not in q
+    assert "reference_solution" not in q
 
 
 # Run preview surface ------------------------------------------------------
