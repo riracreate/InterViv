@@ -1047,7 +1047,16 @@ def _validate_block_content(
                 block["problem_ids"] = [p["id"] for p in selected]
         elif category == "coding":
             problem_ids = list(block.get("problem_ids") or [])
-            topics = list(block.get("skills") or [])
+            # "DSA" / "coding" are skill-category labels on coding blocks, not
+            # bank topic tags (arrays, strings, …). Filtering by them yields
+            # found 0 and silently breaks Standalone Coding / builder starts.
+            _coding_skill_labels = {"dsa", "coding"}
+            topics = [
+                str(t).strip()
+                for t in (block.get("skills") or [])
+                if str(t).strip()
+                and str(t).strip().lower() not in _coding_skill_labels
+            ]
             if problem_ids:
                 _select_coding_problems(
                     problem_ids=problem_ids,
