@@ -14,6 +14,7 @@ from backend.routes.admin import router as admin_router
 from backend.routes.answer import router as answer_router
 from backend.routes.ats import router as ats_router
 from backend.routes.auth import router as auth_router
+from backend.routes.av import router as av_router
 from backend.routes.companies import router as companies_router
 from backend.routes.dashboard import router as dashboard_router
 from backend.routes.gap_analysis import router as gap_analysis_router
@@ -123,6 +124,7 @@ app.include_router(ats_router)
 app.include_router(jobs_router)
 app.include_router(coach_router)
 app.include_router(transcribe_router)
+app.include_router(av_router)
 if settings.enable_admin_endpoints:
     app.include_router(admin_router)
 

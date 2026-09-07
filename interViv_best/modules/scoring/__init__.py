@@ -1,10 +1,11 @@
-"""Typed round scoring dispatch (Phase 1, Phase 2 & Phase C).
+"""Typed round scoring dispatch (Phase 1, Phase 2 & Phase C/E).
 
 Routes an answered round to the scorer for its ``round_type``:
 - ``technical_short_answer``: runs the existing 3-layer deterministic NLP pipeline.
 - ``mcq``: exact-match multi-question deterministic aggregation.
 - ``sql``: sandboxed multi-case SQLite evaluation.
 - ``coding``: execution-outcome aggregation over visible/hidden pass rates.
+- ``system_design``: structured self-assessment aggregation (no diagram judge).
 
 Deterministic like everything it calls: no LLM, no reviewer, no tie-breaker
 (see AGENTS.md section 6). Unknown types raise; they never fall back.
@@ -21,6 +22,7 @@ TECHNICAL_SHORT_ANSWER = "technical_short_answer"
 MCQ = "mcq"
 SQL = "sql"
 CODING = "coding"
+SYSTEM_DESIGN = "system_design"
 
 
 class UnsupportedRoundTypeError(ValueError):
@@ -40,6 +42,7 @@ def score_round(
     question_context: dict[str, Any] | None = None,
     difficulty: str = "medium",
     candidate_baseline: float | None = None,
+    rubric_ratings: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Score one answered round with the scorer for its type."""
@@ -79,7 +82,11 @@ def score_round(
                 elif isinstance(parsed, dict):
                     answers = [parsed]
             except Exception:
-                answers = [{"question_id": assigned[0]["id"], "selected_option_ids": [answer_text.strip()]}] if assigned else []
+                answers = (
+                    [{"question_id": assigned[0]["id"],
+                      "selected_option_ids": [answer_text.strip()]}]
+                    if assigned else []
+                )
 
         return score_mcq_round(
             answers=answers or [],
@@ -102,6 +109,17 @@ def score_round(
 
         return score_coding_round(
             candidate_source=answer_text or "",
+            question_context=question_context or {},
+            config=config or {},
+            **kwargs,
+        )
+
+    if round_type == SYSTEM_DESIGN:
+        from modules.scoring.system_design import score_system_design_round
+
+        return score_system_design_round(
+            answer=answer_text or "",
+            rubric_ratings=rubric_ratings,
             question_context=question_context or {},
             config=config or {},
             **kwargs,

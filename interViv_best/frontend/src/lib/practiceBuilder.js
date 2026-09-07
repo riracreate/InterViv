@@ -10,11 +10,12 @@ export const PRACTICE_MODES = [
   { id: 'custom', title: 'Custom interview builder', blurb: 'Choose time, count, and a real round mix.' },
 ];
 
-export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding'];
+export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design'];
 
 export const PRESET_VERSION = 1;
 export const BUILDER_DRAFT_VERSION = 1;
 export const VERBAL_SKILL = 'Verbal Ability';
+export const SYSTEM_DESIGN_SKILL = 'System Design';
 
 // Phase B standalone entries: one clear start per available block.
 // Phase C adds coding practice backed by the execution service.
@@ -23,10 +24,11 @@ export const STANDALONE_MODES = [
   { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
   { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
+  { id: 'system_design', title: 'System design', blurb: 'Design prompts with an explicit self-assessment rubric (no auto diagram scoring).' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
 ];
 
-export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'interview'];
+export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'system_design', 'interview'];
 
 export function createBlockId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -45,6 +47,15 @@ export function blockTemplate(category) {
   }
   if (category === 'coding') {
     return { round_type: 'coding', category: 'coding', skills: ['DSA'], count: 1, duration_minutes: 30 };
+  }
+  if (category === 'system_design') {
+    return {
+      round_type: 'system_design',
+      category: 'system_design',
+      skills: [SYSTEM_DESIGN_SKILL],
+      count: 1,
+      duration_minutes: 25,
+    };
   }
   return { round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 3 };
 }
@@ -88,6 +99,7 @@ export function formatBlockLabel(block) {
   if (category === 'oa') return `OA · ${count} ${noun}`;
   if (category === 'sql') return `SQL · ${count} ${count === 1 ? 'problem' : 'problems'}`;
   if (category === 'coding') return `Coding · ${count} ${count === 1 ? 'problem' : 'problems'}`;
+  if (category === 'system_design') return `System design · ${count} ${count === 1 ? 'prompt' : 'prompts'}`;
   return `Interview · ${count} ${noun}`;
 }
 
@@ -107,7 +119,7 @@ export function validateBuilderBlocks(blocks) {
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i] || {};
     const label = `Block ${i + 1}`;
-    if (!['mcq', 'sql', 'coding', 'technical_short_answer'].includes(b.round_type)) {
+    if (!['mcq', 'sql', 'coding', 'system_design', 'technical_short_answer'].includes(b.round_type)) {
       return `${label}: choose a supported round type.`;
     }
     if (b.category === 'verbal') {
@@ -129,6 +141,11 @@ export function validateBuilderBlocks(blocks) {
         return `${label}: Coding blocks must not include Verbal Ability.`;
       }
     }
+    if (b.category === 'system_design') {
+      if (b.round_type !== 'system_design') {
+        return `${label}: System-design blocks use system_design rounds.`;
+      }
+    }
     if (b.category === 'interview' && (b.skills || []).length === 0) {
       return `${label}: select at least one skill.`;
     }
@@ -139,6 +156,9 @@ export function validateBuilderBlocks(blocks) {
     }
     if (b.category === 'sql' && count > 5) return `${label}: SQL count must be 1–5.`;
     if (b.category === 'coding' && count > 5) return `${label}: Coding count must be 1–5.`;
+    if (b.category === 'system_design' && count > 5) {
+      return `${label}: System-design count must be 1–5.`;
+    }
     if (b.category === 'interview' && count > 10) return `${label}: interview count must be 1–10.`;
     if (b.duration_minutes != null) {
       const minutes = Number(b.duration_minutes);
@@ -221,6 +241,16 @@ export function mapStandaloneToStartPayload(kind, form = {}) {
     const block = { ...template, duration_minutes: duration };
     if (form.problemId) block.problem_ids = [form.problemId];
     else block.count = 1;
+    if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
+    return mapBlocksToStartPayload([block], form);
+  }
+  if (kind === 'system_design') {
+    const duration = Number(form.durationMinutes) || 25;
+    if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
+    const count = Number(form.count) || 1;
+    if (count < 1 || count > 5) return { error: 'System-design count must be 1–5.' };
+    const block = { ...template, count, duration_minutes: duration };
+    if (form.problemId) block.problem_ids = [form.problemId];
     if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
     return mapBlocksToStartPayload([block], form);
   }

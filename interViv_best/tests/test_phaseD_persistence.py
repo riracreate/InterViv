@@ -210,7 +210,10 @@ def test_alembic_upgrade_downgrade_reupgrade_phase_d(tmp_path, monkeypatch) -> N
             pass
         _clear_db_caches()
 
-    _run_alembic(url, "downgrade", "-1")
+    # Pin: downgrade to the pre-Phase-D revision. Head is now 20260907_0007
+    # (Phase E); ``-1`` would only drop system_design_attempts and leave
+    # Phase D tables in place, which is the wrong assertion for this test.
+    _run_alembic(url, "downgrade", "20260907_0005")
     engine = create_engine(url)
     inspector = sa_inspect(engine)
     tables = inspector.get_table_names()
@@ -226,6 +229,7 @@ def test_alembic_upgrade_downgrade_reupgrade_phase_d(tmp_path, monkeypatch) -> N
     engine = create_engine(url)
     tables = sa_inspect(engine).get_table_names()
     assert "target_contexts" in tables
+    assert "system_design_attempts" in tables
     engine.dispose()
     # Alembic's env.py caches get_settings() while DATABASE_URL is still
     # monkeypatched. Clear so later in-memory tests do not inherit SQL.
