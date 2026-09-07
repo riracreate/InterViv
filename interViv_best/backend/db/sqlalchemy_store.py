@@ -9,8 +9,11 @@ from typing import Any, Iterator
 from backend.config import get_settings
 
 from .sqlalchemy_models import (
+    AnswerDraftRow,
     Base,
+    BuilderDraftRow,
     CandidateRow,
+    PracticePresetRow,
     RoundRow,
     SessionRow,
     UserRow,
@@ -425,6 +428,11 @@ class _SessionCollection:
         row.rounds_per_skill = int(data.get("rounds_per_skill") or 3)
         row.total_rounds = data.get("total_rounds")
         row.template_id = data.get("template_id")
+        row.round_plan_json = data.get("round_plan")
+        row.round_config_json = data.get("round_config")
+        row.block_plan_json = data.get("block_plan")
+        row.expanded_plan_json = data.get("expanded_plan")
+        row.allow_unknown_topic_fallback = data.get("allow_unknown_topic_fallback")
 
     @staticmethod
     def _replace_rounds(session, row: SessionRow, rounds: list[dict[str, Any]]) -> None:
@@ -471,6 +479,11 @@ class _SessionCollection:
                     expires_at=_coerce_datetime(round_doc.get("expires_at")),
                     status=round_doc.get("status") or ("submitted" if round_doc.get("answer_text") else "in_progress"),
                     submitted_at=_coerce_datetime(round_doc.get("submitted_at")),
+                    block_id=round_doc.get("block_id"),
+                    block_position=round_doc.get("block_position"),
+                    block_category=round_doc.get("block_category"),
+                    block_index=round_doc.get("block_index"),
+                    block_total=round_doc.get("block_total"),
                 )
             )
 
@@ -512,6 +525,11 @@ class _SessionCollection:
                     "expires_at": round_row.expires_at,
                     "status": round_row.status or "submitted",
                     "submitted_at": round_row.submitted_at,
+                    "block_id": round_row.block_id,
+                    "block_position": round_row.block_position,
+                    "block_category": round_row.block_category,
+                    "block_index": round_row.block_index,
+                    "block_total": round_row.block_total,
                 }
             )
         return {
@@ -535,7 +553,238 @@ class _SessionCollection:
             "rounds_per_skill": row.rounds_per_skill,
             "total_rounds": row.total_rounds,
             "template_id": row.template_id,
+            "round_plan": row.round_plan_json,
+            "round_config": row.round_config_json,
+            "block_plan": row.block_plan_json,
+            "expanded_plan": row.expanded_plan_json,
+            # Legacy rows predate the flag; they were created under the old
+            # always-fill selection, so missing means fallback allowed.
+            "allow_unknown_topic_fallback": (
+                row.allow_unknown_topic_fallback
+                if row.allow_unknown_topic_fallback is not None
+                else True
+            ),
             "rounds": rounds,
+        }
+
+
+class _PresetCollection:
+    """Document view over practice_presets (Phase B saved presets)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {"id": PracticePresetRow.id, "user_id": PracticePresetRow.user_id}
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, PracticePresetRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, PracticePresetRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = PracticePresetRow(
+                id=data["id"],
+                user_id=data["user_id"],
+                name=data["name"],
+                version=int(data.get("version") or 1),
+                blocks_json=data.get("blocks") or [],
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data["id"])
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("id"):
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, PracticePresetRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: PracticePresetRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "name": row.name,
+            "version": row.version,
+            "blocks": row.blocks_json or [],
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+
+class _BuilderDraftCollection:
+    """Document view over builder_drafts (one autosaved draft per user)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {"user_id": BuilderDraftRow.user_id}
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, BuilderDraftRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, BuilderDraftRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = BuilderDraftRow(
+                user_id=data["user_id"],
+                version=int(data.get("version") or 1),
+                blocks_json=data.get("blocks") or [],
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data["user_id"])
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("user_id"):
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, BuilderDraftRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: BuilderDraftRow) -> dict[str, Any]:
+        return {
+            "user_id": row.user_id,
+            "version": row.version,
+            "blocks": row.blocks_json or [],
+            "updated_at": row.updated_at,
+        }
+
+
+class _AnswerDraftCollection:
+    """Document view over answer_drafts (keyed by session + round)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "session_id": AnswerDraftRow.session_id,
+            "round": AnswerDraftRow.round_number,
+            "round_number": AnswerDraftRow.round_number,
+            "user_id": AnswerDraftRow.user_id,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, AnswerDraftRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, AnswerDraftRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = AnswerDraftRow(
+                session_id=data["session_id"],
+                round_number=int(data.get("round", data.get("round_number"))),
+                user_id=data["user_id"],
+                draft_json=data.get("draft") or {},
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult((data["session_id"], data.get("round")))
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("session_id") and doc.get("round") is not None:
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, AnswerDraftRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: AnswerDraftRow) -> dict[str, Any]:
+        return {
+            "session_id": row.session_id,
+            "round": row.round_number,
+            "user_id": row.user_id,
+            "draft": row.draft_json or {},
+            "updated_at": row.updated_at,
         }
 
 
@@ -545,6 +794,9 @@ class SQLAlchemyDatabase:
             "candidates": _CandidateCollection(),
             "users": _UserCollection(),
             "sessions": _SessionCollection(),
+            "practice_presets": _PresetCollection(),
+            "builder_drafts": _BuilderDraftCollection(),
+            "answer_drafts": _AnswerDraftCollection(),
         }
 
     def __getitem__(self, name: str):
