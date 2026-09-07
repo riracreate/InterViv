@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -140,6 +141,12 @@ class SessionRow(Base):
     rounds_per_skill: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     total_rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     template_id: Mapped[str | None] = mapped_column(ForeignKey("interview_templates.id"), nullable=True)
+    # Phase B block contract (nullable so legacy rows stay valid).
+    round_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    round_config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    block_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expanded_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    allow_unknown_topic_fallback: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",
@@ -187,6 +194,12 @@ class RoundRow(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="in_progress", nullable=False)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase B block identity (nullable so legacy rounds stay valid).
+    block_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    block_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    block_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    block_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -398,3 +411,40 @@ class JobsSearchCacheRow(Base):
     page: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     results_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class PracticePresetRow(Base):
+    """User-scoped, versioned Phase B practice presets."""
+
+    __tablename__ = "practice_presets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocks_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class BuilderDraftRow(Base):
+    """One autosaved Phase B builder draft per user."""
+
+    __tablename__ = "builder_drafts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocks_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AnswerDraftRow(Base):
+    """In-progress answers keyed by session and round (owned drafts only)."""
+
+    __tablename__ = "answer_drafts"
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    round_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    draft_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

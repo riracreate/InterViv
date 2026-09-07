@@ -93,14 +93,57 @@ learning connections, and Phase E audio/video remain later work.
 | `frontend/tests/blockBuilder.test.js` (new) | 9 builder-helper checks. |
 | `docs/phase_b_delivery.md` | This delivery evidence and manual checklist. |
 
+## Phase B.1 addendum: persistence repair (2026-09-07)
+
+The Phase B evidence above overstated persistence. In-memory API tests
+cannot establish durable recovery, and two defects were confirmed on the
+real SQLAlchemy adapter:
+
+1. `practice_presets`, `builder_drafts`, and `answer_drafts` raised
+   `KeyError` because `SQLAlchemyDatabase` exposed only candidates,
+   users, and sessions.
+2. Session writes dropped `round_plan`, `round_config`, `block_plan`,
+   `expanded_plan`, and `allow_unknown_topic_fallback`; round writes
+   dropped all five block-identity fields. Recovery and block
+   progression were therefore wrong on any SQLAlchemy-backed database.
+
+The statement "No Alembic revision was needed" is corrected: revision
+`20260907_0004_phaseb_persistence` (revising `20260907_0003`) adds the
+five session columns, five round columns, and the `practice_presets`,
+`builder_drafts`, and `answer_drafts` tables. Historical migrations are
+untouched. New columns are nullable so legacy rows stay valid; sessions
+predating the fallback flag read it as allowed, preserving the old
+selection behavior for legacy rows.
+
+The repair also closed a demonstrated submission race: two concurrent
+submits for one round both returned 200 and both scored
+(check-then-claim across separate transactions on every backend).
+Submits are now serialized per session (single-process scope; a
+multi-worker deployment would need a store-level conditional claim).
+
+Corrected verification (disposable SQLite only; the user database was
+never migrated, reset, or touched):
+
+- New `tests/test_phaseB1_persistence.py` (11 tests): plan/round
+  write-read fidelity, close/reopen recovery, a 5-block mixed/repeated
+  flow through progression, preset/builder/answer recovery with
+  ownership and immutability, sequential-retry single scoring, response
+  leakage scan, threaded double-submit (one 200, one 409, one scoring),
+  Alembic upgrade/downgrade/re-upgrade with store checks against the
+  migrated schema, and legacy-session progression.
+- Full backend suite: `388 passed, 1 skipped` (the skip is inherited).
+- Frontend suite: 42/42. Production build passes. Scoring regression
+  still shows only the 2 inherited guard-label failures.
+
 ## Preservation and policy notes
 
 - The Phase B diff is empty for `backend/scoring/pipeline.py`, `modules/`,
   `data/`, `research/`, `frontend/src/pages/Dashboard.tsx`,
   `frontend/src/components/dashboard/`, `frontend/src/styles/theme.css`,
-  and `frontend/src/index.css`. No Alembic revision was needed: presets
-  and drafts use the existing document store (`get_database`), not new
-  SQL tables.
+  and `frontend/src/index.css`. The Phase B text originally claimed no
+  Alembic revision was needed; that claim was wrong for the SQLAlchemy
+  backend and is corrected by the Phase B.1 addendum above (new revision
+  `20260907_0004`; historical migrations untouched).
 - Activation/deadline policy: a round activates when built (block 1 at
   session start; later blocks when the prior round is submitted). Timed
   MCQ/SQL/Verbal rounds get `expires_at = started_at + duration`.
