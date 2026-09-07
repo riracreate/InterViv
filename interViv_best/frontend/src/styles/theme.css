@@ -2,9 +2,9 @@
    Surfaces may differ (light vs dark) but type scale, spacing, status, and radius stay shared. */
 
 :root {
-  /* Type */
-  --font-display: "Instrument Serif", serif;
-  --font-body: "Barlow", sans-serif;
+  /* Type — names prefer branded faces when installed; no CDN (Phase P). */
+  --font-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-body: "Barlow", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
