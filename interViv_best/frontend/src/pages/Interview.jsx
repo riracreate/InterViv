@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
@@ -71,6 +71,9 @@ export default function Interview({ sessionState = null }) {
   const [timeLeft, setTimeLeft] = useState(ROUND_SECONDS);
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [draftNotice, setDraftNotice] = useState('');
+  const draftTimerRef = useRef(null);
+  const draftLoadedForRef = useRef('');
   const [interimText, setInterimText] = useState('');
   const [isScoring, setIsScoring] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
@@ -301,6 +304,42 @@ export default function Interview({ sessionState = null }) {
   useEffect(() => {
     clearEngagementSamples();
   }, [clearEngagementSamples, round]);
+
+  // Phase B: recover owned free-text drafts once per session/round.
+  useEffect(() => {
+    if (roundType !== 'technical_short_answer') return undefined;
+    const key = `${sessionId}:${round}`;
+    if (!sessionId || currentScore !== null || draftLoadedForRef.current === key) return undefined;
+    draftLoadedForRef.current = key;
+    setDraftNotice('');
+    let cancelled = false;
+    fetchAnswerDraft(sessionId, round)
+      .then((data) => {
+        if (cancelled) return;
+        const saved = String(data?.draft?.answer_text || '').trim();
+        if (saved) {
+          setTranscript(saved);
+          setDraftNotice('Restored your saved draft.');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, round, roundType, currentScore]);
+
+  // Phase B: autosave free-text drafts (debounced).
+  useEffect(() => {
+    if (roundType !== 'technical_short_answer') return undefined;
+    if (!sessionId || currentScore !== null || !transcript.trim()) return undefined;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      saveAnswerDraft(sessionId, { round, answer_text: transcript }).catch(() => {});
+    }, 1500);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [transcript, sessionId, round, roundType, currentScore]);
 
   useEffect(() => {
     if (round !== 1 || calibrationComplete) return;
@@ -703,6 +742,7 @@ export default function Interview({ sessionState = null }) {
     if (isRecording) stopRecording();
     if (serverRecording) stopServerRecording(true);
     setTranscript(''); setInterimText('');
+    setDraftNotice('');
     setCurrentScore(null); setCurrentFeedback('');
     setCurrentRubric(null); setCurrentConcepts(null);
     setIsRecording(false);
@@ -1018,7 +1058,12 @@ export default function Interview({ sessionState = null }) {
           <div className="rounded-2xl border border-black/8 p-5 flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>Answer Draft</h3>
+                style={{ fontFamily: "'Inter', sans-serif" }}>
+                Answer Draft
+                {draftNotice && (
+                  <span className="ml-2 normal-case text-blue-600" role="status"> — {draftNotice}</span>
+                )}
+              </h3>
               <div className="flex items-center gap-3">
                 {answerWordCount > 0 && (
                   <span className="text-[10px] text-[#6F6F6F]/60" style={{ fontFamily: "'Inter', sans-serif" }}>

@@ -23,6 +23,13 @@ from pydantic import BaseModel, Field, model_validator
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.integrations import IntegrationError
+from backend.models.blocks import (
+    VERBAL_SKILL,
+    canonicalize_verbal_skills,
+    expand_blocks,
+    legacy_to_blocks,
+    normalize_blocks,
+)
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
 from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
@@ -54,11 +61,30 @@ class StartSessionRequest(BaseModel):
     # Ticket A: ordered mix of real round types (e.g. ["mcq", "sql"]).
     # When set, total_rounds = len(round_plan) and answer.py queues by plan.
     round_plan: list[str] | None = None
+    # Phase B: per-block plan with independent settings. When set, blocks
+    # drive the session; legacy skills/round_plan are derived for storage.
+    blocks: list[dict[str, Any]] | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _ensure_at_least_one(cls, data):  # noqa: N805
         if isinstance(data, dict):
+            if data.get("blocks") is not None:
+                raw_blocks = data.get("blocks")
+                if not isinstance(raw_blocks, list) or not raw_blocks:
+                    raise ValueError("blocks must be a non-empty array.")
+                # Detailed block validation happens in start_session so
+                # errors return 422 with per-block messages. Top-level
+                # skills are optional when blocks carry their own topics.
+                skills = data.get("skills")
+                skill = data.get("skill")
+                if skills:
+                    data["skills"] = [s.strip() for s in skills if s and str(s).strip()]
+                elif skill and str(skill).strip():
+                    data["skills"] = [str(skill).strip()]
+                else:
+                    data["skills"] = []
+                return data
             skills = data.get("skills")
             skill = data.get("skill")
             if skills:
@@ -92,6 +118,12 @@ class RunSQLPreviewRequest(BaseModel):
     query: str
 
 
+class SaveAnswerDraftRequest(BaseModel):
+    round: int
+    answer_text: str | None = None
+    answers: list[dict[str, Any]] | None = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,14 +136,28 @@ def _elo_to_difficulty(elo: float) -> str:
     return "hard"
 
 
+def _expanded_spec_for_round(session: dict, round_number: int) -> dict[str, Any] | None:
+    """Return the expanded block spec for a 1-based round, if present."""
+    expanded = session.get("expanded_plan") or []
+    for spec in expanded:
+        if int(spec.get("round") or 0) == int(round_number):
+            return spec
+    return None
+
+
 def _skill_for_round(session: dict, round_number: int) -> str:
     """Return the skill to ask in the given (1-based) round.
 
-    Rotation strategy:
+    Block sessions use the expanded plan's per-round skills (requested
+    order). Legacy sessions rotate:
+
         skills = [A, B, C], rounds_per_skill = 3 → A A A B B B C C C
-    This is predictable for the UI (progress pills) and gives each skill a
-    fair chance to adapt difficulty before switching.
     """
+    spec = _expanded_spec_for_round(session, round_number)
+    if spec:
+        skills = [s for s in (spec.get("skills") or []) if s]
+        if skills:
+            return skills[0]
     skills = session.get("skills") or [session.get("skill")]
     skills = [s for s in skills if s]
     if not skills:
@@ -251,6 +297,15 @@ def _get_next_question(
     )
 
 
+def _module_mcq_pool(*, verbal_only: bool) -> list[dict[str, Any]]:
+    """In-memory fallback pool for one category, filtered before use."""
+    if verbal_only:
+        from backend.db.phase21_verbal_bank import PHASE21_VERBAL_BANK
+        return [dict(q) for q in PHASE21_VERBAL_BANK]
+    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
+    return [dict(q) for q in PHASE2_MCQ_BANK]
+
+
 def _filter_mcq_items(
     items: list[dict[str, Any]],
     *,
@@ -258,21 +313,57 @@ def _filter_mcq_items(
     count: int = 15,
     question_ids: list[str] | None = None,
     difficulty: str | None = None,
+    allow_unknown_fallback: bool = False,
 ) -> list[dict[str, Any]]:
+    """Strict topic filtering: never fill from other subjects.
+
+    Raises ValueError with the available count when the request cannot be
+    satisfied. Callers convert this to HTTP 422. Legacy launches without
+    blocks keep the historical fallback for fully unknown topics (zero
+    strict matches): the general pool is used, preserving demo behavior.
+    New block requests are always strict.
+    """
+    skills = canonicalize_verbal_skills(
+        [str(s).strip() for s in (skills or []) if str(s).strip()]
+    ) or []
+    pool = list(items)
+    if difficulty:
+        wanted_diff = str(difficulty).strip().lower()
+        pool = [q for q in pool
+                if str(q.get("difficulty", "")).lower() == wanted_diff]
     if question_ids:
-        wanted = {str(qid) for qid in question_ids}
-        ordered = [q for q in items if str(q.get("id")) in wanted]
-        # Preserve request order when possible
-        by_id = {str(q.get("id")): q for q in ordered}
-        items = [by_id[qid] for qid in question_ids if qid in by_id]
-    else:
-        if difficulty:
-            items = [q for q in items if str(q.get("difficulty", "")).lower() == difficulty.lower()]
+        wanted = [str(qid).strip() for qid in question_ids if str(qid).strip()]
+        by_id = {str(q.get("id")): q for q in pool}
+        missing = [qid for qid in wanted if qid not in by_id]
+        if missing:
+            raise ValueError(
+                f"Unknown question IDs for this category: {missing}."
+            )
+        selected = [by_id[qid] for qid in wanted]
         if skills:
-            matched = [q for q in items if q.get("skill") in skills]
-            rest = [q for q in items if q.get("skill") not in skills]
-            items = matched + rest
-    return items[:count]
+            mismatched = [q["id"] for q in selected
+                          if q.get("skill") not in skills]
+            if mismatched:
+                raise ValueError(
+                    f"Question IDs {mismatched} do not match requested "
+                    f"topics {skills}."
+                )
+        return selected
+    if skills:
+        strict_pool = [q for q in pool if q.get("skill") in skills]
+        if not strict_pool and allow_unknown_fallback:
+            # Historical legacy behavior for unknown topics only.
+            return pool[:count]
+        pool = strict_pool
+    if len(pool) < count:
+        label = ", ".join(skills) if skills else "MCQ"
+        diff_note = f" ({difficulty})" if difficulty else ""
+        raise ValueError(
+            f"Not enough {label} MCQ questions available{diff_note}: "
+            f"found {len(pool)}, need {count}. "
+            f"Adjust count or topics."
+        )
+    return pool[:count]
 
 
 def _select_mcq_questions(
@@ -280,7 +371,22 @@ def _select_mcq_questions(
     count: int = 15,
     question_ids: list[str] | None = None,
     difficulty: str | None = None,
+    allow_unknown_fallback: bool = False,
 ) -> list[dict[str, Any]]:
+    """Select `count` questions from exactly one category (strict).
+
+    Verbal: zero eligible DB rows use the module fallback; enough DB rows
+    are used as-is; a partial seed raises ValueError instead of mixing
+    categories, supplementing silently, or shortening the round. Technical
+    keeps the base behavior (DB rows when any exist, else module fallback)
+    but now enforces exact-topic filtering and available-count errors.
+    """
+    skills = canonicalize_verbal_skills(
+        [str(s).strip() for s in (skills or []) if str(s).strip()]
+    ) or []
+    verbal_only = bool(skills) and skills == [VERBAL_SKILL]
+
+    db_pool: list[dict[str, Any]] = []
     try:
         from backend.config import get_settings
         if get_settings().database_url:
@@ -292,38 +398,61 @@ def _select_mcq_questions(
                     SkillRow, MCQQuestionRow.skill_id == SkillRow.id
                 )
                 rows = session.execute(stmt).all()
-                if rows:
-                    items = []
-                    for q_row, skill_name in rows:
-                        items.append({
-                            "id": q_row.id,
-                            "skill": skill_name,
-                            "sub_domain": q_row.sub_domain,
-                            "difficulty": q_row.difficulty,
-                            "stem": q_row.stem,
-                            "options_json": q_row.options_json,
-                            "correct_option_ids": q_row.correct_option_ids,
-                            "explanation": q_row.explanation,
-                            "negative_marking": float(q_row.negative_marking),
-                        })
-                    return _filter_mcq_items(
-                        items,
-                        skills=skills,
-                        count=count,
-                        question_ids=question_ids,
-                        difficulty=difficulty,
-                    )
+                for q_row, skill_name in rows:
+                    if (skill_name == VERBAL_SKILL) != verbal_only:
+                        continue
+                    db_pool.append({
+                        "id": q_row.id,
+                        "skill": skill_name,
+                        "sub_domain": q_row.sub_domain,
+                        "difficulty": q_row.difficulty,
+                        "stem": q_row.stem,
+                        "options_json": q_row.options_json,
+                        "correct_option_ids": q_row.correct_option_ids,
+                        "explanation": q_row.explanation,
+                        "negative_marking": float(q_row.negative_marking),
+                    })
+    except ValueError:
+        raise
     except Exception:
-        pass
+        db_pool = []
 
-    from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
-    items = [dict(q) for q in PHASE2_MCQ_BANK]
+    if verbal_only:
+        if question_ids:
+            # Explicit IDs: check DB first, then module fallback for missing.
+            module_pool = _module_mcq_pool(verbal_only=True)
+            combined = {q["id"]: q for q in module_pool}
+            for q in db_pool:
+                combined[q["id"]] = q
+            return _filter_mcq_items(
+                list(combined.values()),
+                skills=skills,
+                count=count,
+                question_ids=question_ids,
+                difficulty=difficulty,
+            )
+        if not db_pool:
+            pool = _module_mcq_pool(verbal_only=True)
+        elif len(db_pool) >= count:
+            pool = db_pool
+        else:
+            # Partial seed: do not supplement or shorten.
+            raise ValueError(
+                f"Not enough {VERBAL_SKILL} MCQ questions available: "
+                f"found {len(db_pool)}, need {count}."
+            )
+        return _filter_mcq_items(
+            pool, skills=skills, count=count, difficulty=difficulty,
+        )
+
+    pool = db_pool if db_pool else _module_mcq_pool(verbal_only=False)
     return _filter_mcq_items(
-        items,
+        pool,
         skills=skills,
         count=count,
         question_ids=question_ids,
         difficulty=difficulty,
+        allow_unknown_fallback=allow_unknown_fallback,
     )
 
 
@@ -342,8 +471,20 @@ def build_round_document(
     resume_skills: list[str] | None = None,
     asked: list[str] | None = None,
     sql_problem_index: int = 0,
+    block_id: str | None = None,
+    block_position: int | None = None,
+    block_category: str | None = None,
+    block_index: int | None = None,
+    block_total: int | None = None,
+    allow_unknown_fallback: bool = False,
 ) -> RoundDocument:
-    """Build a RoundDocument for technical / MCQ / SQL (shared by start + answer)."""
+    """Build a RoundDocument for technical / MCQ / SQL (shared by start + answer).
+
+    Activation policy: a round activates when built (first round at session
+    start, later rounds when the prior round is submitted). Timed rounds get
+    ``expires_at = started_at + duration``; refresh never extends it.
+    Raises ValueError (→ HTTP 422) for unsatisfiable content filters.
+    """
     now = datetime.now(timezone.utc)
     cfg = dict(round_config or {})
     skill = skills[0] if skills else "DBMS"
@@ -360,9 +501,8 @@ def build_round_document(
             count=count,
             question_ids=question_ids,
             difficulty=cfg.get("difficulty"),
+            allow_unknown_fallback=allow_unknown_fallback,
         )
-        if not assigned:
-            raise IntegrationError("No MCQ questions available for the requested filters.")
         expires_at = now + timedelta(minutes=duration_mins)
         return RoundDocument(
             round=round_number,
@@ -381,6 +521,11 @@ def build_round_document(
             started_at=now,
             expires_at=expires_at,
             status="in_progress",
+            block_id=block_id,
+            block_position=block_position,
+            block_category=block_category,
+            block_index=block_index,
+            block_total=block_total,
         )
 
     if round_type == "sql":
@@ -409,6 +554,11 @@ def build_round_document(
             started_at=now,
             expires_at=expires_at,
             status="in_progress",
+            block_id=block_id,
+            block_position=block_position,
+            block_category=block_category,
+            block_index=block_index,
+            block_total=block_total,
         )
 
     # technical_short_answer
@@ -422,6 +572,15 @@ def build_round_document(
         target_role_id=target_role_id,
         resume_skills=resume_skills or skills,
     )
+    duration_value = cfg.get("duration_minutes")
+    expires_at = None
+    if duration_value is not None:
+        try:
+            duration_mins = int(duration_value)
+        except (TypeError, ValueError):
+            duration_mins = 0
+        if duration_mins > 0:
+            expires_at = now + timedelta(minutes=duration_mins)
     return RoundDocument(
         round=round_number,
         round_type="technical_short_answer",
@@ -430,24 +589,49 @@ def build_round_document(
         elo_before=elo_before,
         question_context=first_question,
         started_at=now,
+        expires_at=expires_at,
         status="in_progress",
+        block_id=block_id,
+        block_position=block_position,
+        block_category=block_category,
+        block_index=block_index,
+        block_total=block_total,
     )
 
 
 def list_practice_bank_items() -> dict[str, Any]:
-    """Public catalog of existing MCQ + SQL banks (no answers / reference SQL)."""
+    """Candidate-safe catalog: OA MCQs, Verbal MCQs and SQL problems.
+
+    Exposes stems, SQL prompts/schemas and safe metadata only. Never
+    exposes correct option IDs, explanations, reference queries, checks
+    or hidden cases.
+    """
     from backend.db.phase2_content_bank import PHASE2_MCQ_BANK, PHASE2_SQL_BANK
+    from backend.db.phase21_verbal_bank import PHASE21_VERBAL_BANK
 
     mcq = [
         {
             "id": q["id"],
             "type": "mcq",
+            "category": "oa",
             "skill": q.get("skill"),
             "sub_domain": q.get("sub_domain"),
             "difficulty": q.get("difficulty"),
             "stem": q.get("stem"),
         }
         for q in PHASE2_MCQ_BANK
+    ]
+    verbal = [
+        {
+            "id": q["id"],
+            "type": "mcq",
+            "category": "verbal",
+            "skill": q.get("skill"),
+            "sub_domain": q.get("sub_domain"),
+            "difficulty": q.get("difficulty"),
+            "stem": q.get("stem"),
+        }
+        for q in PHASE21_VERBAL_BANK
     ]
     sql = []
     for p in PHASE2_SQL_BANK:
@@ -457,18 +641,82 @@ def list_practice_bank_items() -> dict[str, Any]:
             {
                 "id": p["id"],
                 "type": "sql",
+                "category": "sql",
                 "skill": "SQL",
                 "difficulty": p.get("difficulty"),
                 "title": title,
+                "prompt": prompt,
+                "schema_ddl": p.get("schema_ddl") or "",
             }
         )
-    return {"mcq": mcq, "sql": sql, "counts": {"mcq": len(mcq), "sql": len(sql)}}
+    return {
+        "mcq": mcq,
+        "verbal": verbal,
+        "sql": sql,
+        "counts": {"mcq": len(mcq), "verbal": len(verbal), "sql": len(sql)},
+    }
+
+
+def _list_sql_problems(*, difficulty: str | None = None) -> list[dict[str, Any]]:
+    """All SQL problems in deterministic order (for auto-select).
+
+    The legacy default problem comes first, preserving single-problem
+    auto-select behavior; the verified bank fills the remainder.
+    """
+    from backend.db.phase2_content_bank import PHASE2_SQL_BANK
+    from backend.db.phase2a_fixtures import PHASE2A_SQL_FIXTURES
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    default_first = [p for p in PHASE2A_SQL_FIXTURES
+                     if p.get("id") == "sql_hr_high_earners"]
+    for source in (default_first, PHASE2_SQL_BANK):
+        for problem in source:
+            pid = str(problem.get("id"))
+            if pid and pid not in seen:
+                seen.add(pid)
+                items.append(dict(problem))
+    if difficulty:
+        wanted = str(difficulty).strip().lower()
+        items = [p for p in items
+                 if str(p.get("difficulty", "")).lower() == wanted]
+    return items
+
+
+def _select_sql_problems(
+    *,
+    problem_ids: list[str] | None = None,
+    count: int = 1,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    """Validate explicit SQL IDs or auto-select `count` deterministically."""
+    if problem_ids:
+        wanted = [str(p).strip() for p in problem_ids if str(p).strip()]
+        selected = [_select_sql_problem(problem_id=pid) for pid in wanted]
+        if difficulty:
+            mismatched = [p["id"] for p in selected
+                          if str(p.get("difficulty", "")).lower()
+                          != str(difficulty).strip().lower()]
+            if mismatched:
+                raise ValueError(
+                    f"SQL problems {mismatched} do not match difficulty "
+                    f"'{difficulty}'."
+                )
+        return selected
+    pool = _list_sql_problems(difficulty=difficulty)
+    if len(pool) < count:
+        diff_note = f" ({difficulty})" if difficulty else ""
+        raise ValueError(
+            f"Not enough SQL problems available{diff_note}: "
+            f"found {len(pool)}, need {count}. Adjust count or difficulty."
+        )
+    return pool[:count]
 
 
 def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
     from backend.db.phase2_content_bank import PHASE2_SQL_BANK
     from backend.db.phase2a_fixtures import PHASE2A_SQL_FIXTURES
-    target_id = problem_id or "sql_hr_high_earners"
+    target_id = (problem_id or "").strip() or "sql_hr_high_earners"
+    explicit = bool((problem_id or "").strip())
     try:
         from backend.config import get_settings
         if get_settings().database_url:
@@ -506,7 +754,52 @@ def _select_sql_problem(problem_id: str | None = None) -> dict[str, Any]:
     for p in PHASE2A_SQL_FIXTURES:
         if p["id"] == target_id:
             return dict(p)
+    if explicit:
+        raise ValueError(f"Unknown SQL problem ID: '{target_id}'.")
     return dict(PHASE2A_SQL_FIXTURES[0])
+
+
+def _validate_block_content(
+    block_plan: list[dict[str, Any]],
+    expanded: list[dict[str, Any]],
+    allow_unknown_fallback: bool = False,
+) -> None:
+    """Check every block's content limits upfront (no writes).
+
+    Fills auto-selected SQL problem IDs into the expanded plan so later
+    rounds use the same stable assignment. Raises ValueError with the
+    available count when a block cannot be satisfied.
+    """
+    by_block: dict[str, list[dict[str, Any]]] = {}
+    for spec in expanded:
+        by_block.setdefault(str(spec.get("block_id")), []).append(spec)
+    for block in block_plan:
+        category = block.get("category")
+        if category in ("oa", "verbal"):
+            _select_mcq_questions(
+                skills=list(block.get("skills") or []),
+                count=int(block.get("count") or 15),
+                question_ids=list(block.get("question_ids") or []) or None,
+                difficulty=block.get("difficulty"),
+                allow_unknown_fallback=allow_unknown_fallback,
+            )
+        elif category == "sql":
+            problem_ids = list(block.get("problem_ids") or [])
+            if problem_ids:
+                _select_sql_problems(
+                    problem_ids=problem_ids,
+                    difficulty=block.get("difficulty"),
+                )
+            else:
+                count = int(block.get("count") or 1)
+                selected = _select_sql_problems(
+                    count=count,
+                    difficulty=block.get("difficulty"),
+                )
+                specs = by_block.get(str(block.get("id")), [])
+                for spec, problem in zip(specs, selected):
+                    spec["problem_ids"] = [problem["id"]]
+                block["problem_ids"] = [p["id"] for p in selected]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,16 +818,78 @@ def start_session(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
 
+    # ── Normalize legacy and builder payloads into one block plan ──────────
+    if request.blocks is not None:
+        try:
+            block_plan = normalize_blocks(request.blocks)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+    else:
+        legacy_skills = canonicalize_verbal_skills(list(request.skills)) or []
+        # Preserve valid legacy standalone Verbal requests; composition
+        # with other skills requires the new blocks flow.
+        if VERBAL_SKILL in legacy_skills:
+            legacy_plan = list(request.round_plan) if request.round_plan else None
+            is_standalone = (
+                legacy_skills == [VERBAL_SKILL]
+                and request.round_type == "mcq"
+                and request.rounds_per_skill == 1
+                and (legacy_plan is None or legacy_plan == ["mcq"])
+            )
+            if not is_standalone:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Verbal Ability practice cannot be combined with other "
+                        "skills via legacy fields; use blocks for composition."
+                    ),
+                )
+        try:
+            block_plan = legacy_to_blocks(
+                skills=list(request.skills),
+                rounds_per_skill=request.rounds_per_skill,
+                round_type=request.round_type,
+                round_config=request.round_config,
+                round_plan=list(request.round_plan) if request.round_plan else None,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+    expanded = expand_blocks(block_plan)
+    plan = [spec["round_type"] for spec in expanded]
+    opening_type = plan[0] if plan else "technical_short_answer"
+    opening_spec = expanded[0]
+    # Legacy launches keep the unknown-topic fallback; blocks are strict.
+    allow_unknown_fallback = request.blocks is None
+
+    # Validate all blocks' content before any writes: no session, no silent
+    # reductions, no mid-run failures after retries.
+    try:
+        _validate_block_content(block_plan, expanded,
+                                allow_unknown_fallback=allow_unknown_fallback)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    # Union of block skills in first-seen order (for Elo seeding/history).
+    session_skills: list[str] = []
+    for block in block_plan:
+        for skill in block.get("skills") or []:
+            if skill not in session_skills:
+                session_skills.append(skill)
+
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
 
-    plan = list(request.round_plan) if request.round_plan else None
-    opening_type = (plan[0] if plan else request.round_type) or "technical_short_answer"
-    needs_phase2_auth = opening_type in ("mcq", "sql") or any(
-        t in ("mcq", "sql") for t in (plan or [])
-    )
-
+    needs_phase2_auth = any(t in ("mcq", "sql") for t in plan)
     if needs_phase2_auth:
         if not authorization:
             raise HTTPException(
@@ -577,11 +932,11 @@ def start_session(
         candidate_id = candidate_id or str(uuid4())
         candidate_doc = CandidateDocument(
             candidate_id=candidate_id,
-            resume_skills=request.skills,
+            resume_skills=session_skills,
             sub_domain_profile={
-                skill: request.sub_domain or "general" for skill in request.skills
+                skill: request.sub_domain or "general" for skill in session_skills
             },
-            elo_ratings={skill: settings.initial_elo for skill in request.skills},
+            elo_ratings={skill: settings.initial_elo for skill in session_skills},
             session_history=[],
         )
         candidate = candidate_doc.to_mongo()
@@ -601,39 +956,62 @@ def start_session(
             raise
 
     # ── first-round skill ───────────────────────────────────────────────────
-    first_skill = request.skills[0]
+    first_skill = (opening_spec.get("skills") or session_skills or ["System Design"])[0]
     elo_before = float(candidate.get("elo_ratings", {}).get(first_skill, settings.initial_elo))
-    difficulty = _elo_to_difficulty(elo_before)
+    difficulty = (opening_spec.get("difficulty")
+                  or _elo_to_difficulty(elo_before))
     sub_domain = _sub_domain_for_skill(candidate, first_skill, request.sub_domain)
+    opening_config: dict[str, Any] = {
+        "count": opening_spec.get("count", 15),
+        "duration_minutes": opening_spec.get("duration_minutes"),
+        "negative_marking": opening_spec.get("negative_marking", 0.25),
+        "review_policy": opening_spec.get("review_policy", "none"),
+        "difficulty": opening_spec.get("difficulty"),
+        "question_ids": opening_spec.get("question_ids") or None,
+        "problem_ids": opening_spec.get("problem_ids") or None,
+        "problem_id": (opening_spec.get("problem_ids") or [None])[0],
+    }
+    # Preserve legacy timeout/row knobs when the legacy payload set them.
+    legacy_cfg = dict(request.round_config or {})
+    for key in ("max_rows", "timeout_seconds"):
+        if key in legacy_cfg:
+            opening_config[key] = legacy_cfg[key]
+    if opening_config.get("duration_minutes") is None:
+        opening_config.pop("duration_minutes", None)
 
     try:
         round_document = build_round_document(
             round_number=1,
             round_type=opening_type,
-            skills=request.skills,
+            skills=list(opening_spec.get("skills") or session_skills),
             elo_before=elo_before,
             difficulty=difficulty,
             sub_domain=sub_domain,
-            round_config=request.round_config,
+            round_config=opening_config,
             user_id=str(user["id"]) if user else None,
             target_company_id=target_company_id,
             target_role_id=target_role_id,
-            resume_skills=candidate.get("resume_skills") or request.skills,
+            resume_skills=candidate.get("resume_skills") or session_skills,
             asked=[],
             sql_problem_index=0,
+            block_id=opening_spec.get("block_id"),
+            block_position=opening_spec.get("block_position"),
+            block_category=opening_spec.get("category"),
+            block_index=opening_spec.get("block_index"),
+            block_total=opening_spec.get("block_total"),
+            allow_unknown_fallback=allow_unknown_fallback,
         )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except IntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
 
     session_id = str(uuid4())
-    if plan:
-        total_rounds = len(plan)
-    else:
-        total_rounds = request.rounds_per_skill * len(request.skills)
-        # Single MCQ/SQL assessments are one round unless a plan was provided.
-        if opening_type in ("mcq", "sql") and request.round_type in ("mcq", "sql"):
-            total_rounds = 1
+    total_rounds = len(expanded)
 
     session = SessionDocument(
         session_id=session_id,
@@ -647,7 +1025,7 @@ def start_session(
 
     session_dict = session.to_mongo()
     # attach multi-skill fields that SessionDocument doesn't know about
-    session_dict["skills"] = request.skills
+    session_dict["skills"] = session_skills
     session_dict["rounds_per_skill"] = request.rounds_per_skill
     session_dict["total_rounds"] = total_rounds
     session_dict["current_skill"] = first_skill
@@ -655,20 +1033,22 @@ def start_session(
     session_dict["target_company_id"] = target_company_id
     session_dict["target_role_id"] = target_role_id
     session_dict["round_config"] = request.round_config or {}
-    if plan:
-        session_dict["round_plan"] = plan
+    session_dict["round_plan"] = plan
+    session_dict["block_plan"] = block_plan
+    session_dict["expanded_plan"] = expanded
+    session_dict["allow_unknown_topic_fallback"] = allow_unknown_fallback
 
     try:
         db["sessions"].insert_one(session_dict)
         candidate_update = {
             "$addToSet": {
                 "session_history": session_id,
-                "resume_skills": {"$each": request.skills},
+                "resume_skills": {"$each": session_skills},
             },
             "$set": {},
         }
         # seed Elo for any skill the candidate hasn't been rated on
-        for s in request.skills:
+        for s in session_skills:
             existing_elo = candidate.get("elo_ratings", {}).get(s)
             if existing_elo is None:
                 candidate_update["$set"][f"elo_ratings.{s}"] = settings.initial_elo
@@ -678,7 +1058,7 @@ def start_session(
             candidate_update["$set"]["user_id"] = user["id"]
         db["candidates"].update_one({"candidate_id": candidate_id}, candidate_update)
         if user:
-            StudentSkillGraph(user["id"]).initialize_from_resume(request.skills)
+            StudentSkillGraph(user["id"]).initialize_from_resume(session_skills)
     except DatabaseConnectionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
@@ -701,9 +1081,13 @@ def start_session(
         "elo": elo_before,
         "total_rounds": total_rounds,
         "current_skill": first_skill,
-        "skills": request.skills,
+        "skills": session_skills,
         "rounds_per_skill": request.rounds_per_skill,
         "round_plan": plan,
+        "block_plan": block_plan,
+        "block_id": round_document.block_id,
+        "block_position": round_document.block_position,
+        "block_category": round_document.block_category,
         "started_at": round_document.started_at.isoformat() if round_document.started_at else None,
         "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
         "config_json": round_document.config_json,
@@ -796,6 +1180,9 @@ def get_session(
         "current_difficulty": session.get("current_difficulty"),
         "last_round": session.get("last_round", 1),
         "total_rounds": session.get("total_rounds", len(rounds)),
+        "skills": session.get("skills") or [session.get("skill") or "General"],
+        "round_plan": session.get("round_plan"),
+        "block_plan": session.get("block_plan"),
         "active_round": sanitized_active_round,
     }
 
@@ -922,3 +1309,152 @@ def run_sql_preview(
         }
     finally:
         conn.close()
+
+
+def _draft_round_or_error(
+    session: dict[str, Any], round_number: int
+) -> dict[str, Any]:
+    rounds = session.get("rounds", [])
+    target = next((r for r in rounds if r.get("round") == int(round_number)), None)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target round not found in session.",
+        )
+    if session.get("status") == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session is completed; drafts are no longer accepted.",
+        )
+    if (
+        target.get("status") in ("submitted", "finalizing", "expired")
+        or target.get("answer_text")
+        or target.get("final_score") is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This round has already been submitted; drafts are immutable.",
+        )
+    expires_at = target.get("expires_at")
+    if expires_at is not None:
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.fromisoformat(expires_at)
+            except Exception:
+                expires_at = None
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at and datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Answer deadline has expired; draft was not saved.",
+            )
+    return target
+
+
+@router.put("/{session_id}/draft")
+def save_answer_draft(
+    session_id: str,
+    request: SaveAnswerDraftRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Autosave an in-progress answer. Respects ownership and deadlines."""
+    try:
+        db = get_database()
+    except DatabaseConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    session = db["sessions"].find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+        )
+    user = require_user(authorization)
+    if session.get("user_id") and str(session["user_id"]) != str(user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot access another user's session.",
+        )
+    if not session.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Answer drafts require an owned session.",
+        )
+    target = _draft_round_or_error(session, request.round)
+    round_type = target.get("round_type", "technical_short_answer")
+    draft: dict[str, Any] = {"round": int(request.round)}
+    if round_type == "mcq":
+        if request.answers is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="MCQ draft requires 'answers'.",
+            )
+        assigned = {str(q.get("id")) for q in
+                    (target.get("question_context") or {}).get("questions", [])}
+        cleaned_answers = []
+        for item in request.answers:
+            qid = str(item.get("question_id") or "").strip()
+            if not qid or qid not in assigned:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Draft question ID not assigned: '{qid}'.",
+                )
+            selected = [str(o) for o in (item.get("selected_option_ids") or [])]
+            cleaned_answers.append({"question_id": qid,
+                                    "selected_option_ids": selected})
+        draft["answers"] = cleaned_answers
+    else:
+        if request.answer_text is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Round type '{round_type}' draft requires 'answer_text'.",
+            )
+        draft["answer_text"] = str(request.answer_text or "")[:20000]
+    now = datetime.now(timezone.utc)
+    db["answer_drafts"].update_one(
+        {"session_id": session_id, "round": int(request.round)},
+        {"$set": {"session_id": session_id, "round": int(request.round),
+                  "user_id": str(user["id"]), "draft": draft,
+                  "updated_at": now}},
+        upsert=True,
+    )
+    return {"session_id": session_id, "round": int(request.round),
+            "updated_at": now.isoformat(), "draft": draft}
+
+
+@router.get("/{session_id}/draft")
+def get_answer_draft(
+    session_id: str,
+    round: int,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Fetch a saved answer draft for safe recovery."""
+    try:
+        db = get_database()
+    except DatabaseConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    session = db["sessions"].find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+        )
+    user = require_user(authorization)
+    if session.get("user_id") and str(session["user_id"]) != str(user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot access another user's session.",
+        )
+    _draft_round_or_error(session, round)
+    stored = db["answer_drafts"].find_one(
+        {"session_id": session_id, "round": int(round)}
+    )
+    if not stored or str(stored.get("user_id")) != str(user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No draft found."
+        )
+    return {"session_id": session_id, "round": int(round),
+            "updated_at": stored.get("updated_at"),
+            "draft": stored.get("draft") or {}}
