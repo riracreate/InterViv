@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities } from '../lib/api';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
 import CodingRound from '../components/CodingRound';
+import SystemDesignRound from '../components/SystemDesignRound';
+import AvUnavailablePanel from '../components/AvUnavailablePanel';
+import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
 
 const ROUND_SECONDS = 120;
 
@@ -53,7 +56,7 @@ export default function Interview({ sessionState = null }) {
   const initState = sessionState || location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
-  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding'];
+  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design'];
   const isSupportedRoundType = (t) => SUPPORTED_ROUND_TYPES.includes(t);
 
   const [question, setQuestion] = useState(initState.question || '');
@@ -63,6 +66,11 @@ export default function Interview({ sessionState = null }) {
   const [configJson, setConfigJson] = useState(initState.config_json || {});
   const [expiresAt, setExpiresAt] = useState(initState.expires_at || null);
   const [currentArtifact, setCurrentArtifact] = useState(null);
+  const [evaluationMode, setEvaluationMode] = useState(null);
+  const [evaluationBoundary, setEvaluationBoundary] = useState(null);
+  const [avState, setAvState] = useState(AV_STATES.PERMISSION_NOT_REQUESTED);
+  const [avDetail, setAvDetail] = useState('');
+  const [transcriptionAvailable, setTranscriptionAvailable] = useState(null);
   const [currentSkill, setCurrentSkill] = useState(initState.skill || '');
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
   const [round, setRound] = useState(initState.round || 1);
@@ -160,26 +168,66 @@ export default function Interview({ sessionState = null }) {
 
   const ensureMicrophone = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('media-devices-unavailable');
-    }
-    if (micStreamRef.current?.active) return micStreamRef.current;
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
-    micStreamRef.current = stream;
-    stream.getAudioTracks().forEach(track => {
-      track.addEventListener('ended', () => {
-        setMicError('Microphone disconnected.');
-        setIsRecording(false);
+      setAvState(AV_STATES.UNSUPPORTED_BROWSER);
+      setAvDetail('getUserMedia is not available in this browser.');
+      throw Object.assign(new Error('media-devices-unavailable'), {
+        name: 'NotSupportedError',
       });
-    });
-    return stream;
+    }
+    if (micStreamRef.current?.active) {
+      setAvState(AV_STATES.READY);
+      return micStreamRef.current;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+      micStreamRef.current = stream;
+      stream.getAudioTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          setMicError('Microphone disconnected.');
+          setAvState(AV_STATES.INTERRUPTED_RECOVERABLE);
+          setAvDetail('Microphone track ended mid-session. Retry capture when ready.');
+          setIsRecording(false);
+        });
+      });
+      setAvState(AV_STATES.READY);
+      setAvDetail('');
+      setMicError('');
+      return stream;
+    } catch (err) {
+      const state = classifyMediaError(err, {
+        secureContext: Boolean(window.isSecureContext
+          || ['localhost', '127.0.0.1'].includes(window.location.hostname)),
+      });
+      setAvState(state);
+      setAvDetail(mediaErrorMessage(err, 'Microphone'));
+      setMicError(mediaErrorMessage(err, 'Microphone'));
+      throw err;
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAvCapabilities()
+      .then((report) => {
+        if (cancelled) return;
+        const available = Boolean(report?.transcription?.available);
+        setTranscriptionAvailable(available);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTranscriptionAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -546,6 +594,14 @@ export default function Interview({ sessionState = null }) {
     }
 
     if (!window.MediaRecorder) {
+      setAvState(AV_STATES.UNSUPPORTED_BROWSER);
+      setAvDetail('MediaRecorder is not supported.');
+      setMicError('Transcription unavailable, please type your answer');
+      return;
+    }
+    if (transcriptionAvailable === false) {
+      setAvState(AV_STATES.SERVICE_UNAVAILABLE);
+      setAvDetail('Server transcription is unavailable. Type your answer.');
       setMicError('Transcription unavailable, please type your answer');
       return;
     }
@@ -598,10 +654,17 @@ export default function Interview({ sessionState = null }) {
           const text = (resp.text || '').trim();
           if (text) {
             setTranscript(prev => prev ? `${prev.trimEnd()} ${text}` : text);
+            setAvState(AV_STATES.READY);
           } else {
+            // Empty result is not a fabricated transcript; candidate types.
             setMicError('No speech detected. You can type your answer.');
+            setAvState(AV_STATES.CAPTURE_FAILED);
+            setAvDetail('No speech detected in the recording.');
           }
-        } catch {
+        } catch (err) {
+          const failure = transcriptionFailureResult(err?.status || 503);
+          setAvState(failure.state);
+          setAvDetail('Transcription unavailable. No transcript or speech score recorded.');
           setMicError('Transcription unavailable, please type your answer');
         } finally {
           setServerTranscribing(false);
@@ -628,14 +691,16 @@ export default function Interview({ sessionState = null }) {
     }
     const force = Boolean(options.force);
     const isMcq = roundType === 'mcq';
+    const isSystemDesign = roundType === 'system_design';
     const answerText = (options.answer_text ?? options.answerText ?? transcript).trim();
     const answers = options.answers;
+    const rubricRatings = options.rubric_ratings;
     if (!isMcq && (!answerText && !force) || isScoring) return;
     if (isRecording) stopRecording();
     if (serverRecording) stopServerRecording(false);
     setIsScoring(true);
     try {
-      const metrics = !isMcq ? buildAnswerMetrics(answerText) : {};
+      const metrics = (!isMcq && !isSystemDesign) ? buildAnswerMetrics(answerText) : {};
       const engagement = isVideoOn ? modeOfLabels(engagementSamplesRef.current) : null;
       const engagementDelta = calibrationSkipped
         ? 0
@@ -653,10 +718,14 @@ export default function Interview({ sessionState = null }) {
       } else {
         payload.answer_text = answerText;
       }
+      if (isSystemDesign) {
+        payload.rubric_ratings = rubricRatings || {};
+      }
       const resp = await apiSubmitAnswer(payload);
 
-      const score = resp.final_score ?? 50;
-      const feedbackRaw = resp.feedback?.next_step || resp.feedback?.content?.[0] || '';
+      // Never invent a score when the API omits one.
+      const score = typeof resp.final_score === 'number' ? resp.final_score : null;
+      const feedbackRaw = resp.feedback?.next_step || resp.feedback?.content?.[0] || resp.feedback || '';
       const feedback = typeof feedbackRaw === 'string' ? feedbackRaw : '';
       const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
       const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
@@ -665,23 +734,28 @@ export default function Interview({ sessionState = null }) {
       setCurrentRubric(rubric && typeof rubric === 'object' ? rubric : null);
       setCurrentConcepts(concepts && typeof concepts === 'object' ? concepts : null);
       setCurrentArtifact(resp.artifact_json || resp);
+      setEvaluationMode(resp.evaluation_mode || null);
+      setEvaluationBoundary(resp.evaluation_boundary || null);
       setElo(resp.elo_after ?? elo);
-      setScores(p => [...p, {
-        round,
-        skill: currentSkill,
-        score,
-        question,
-        answer: isMcq ? JSON.stringify(answers) : answerText,
-        feedback,
-        engagement_label: engagement?.label ?? null,
-        engagement_confidence: engagement?.confidence ?? null,
-        engagement_delta: engagementDelta,
-      }]);
+      if (score !== null) {
+        setScores(p => [...p, {
+          round,
+          skill: currentSkill,
+          score,
+          question,
+          answer: isMcq ? JSON.stringify(answers) : answerText,
+          feedback,
+          engagement_label: engagement?.label ?? null,
+          engagement_confidence: engagement?.confidence ?? null,
+          engagement_delta: engagementDelta,
+        }]);
+      }
 
       if (resp.session_complete) {
         setSessionComplete(true);
-      } else if (resp.next_question) {
-        setQuestion(resp.next_question);
+      } else if (resp.next_question || resp.next_round_type) {
+        // Prefetch next round fields; UI keeps currentScore until Next.
+        setQuestion(resp.next_question || '');
         setRoundType(resp.next_round_type || 'technical_short_answer');
         setDifficulty(resp.next_difficulty || resp.difficulty || 'medium');
         setCurrentSkill(resp.next_skill || resp.current_skill || currentSkill);
@@ -996,11 +1070,52 @@ export default function Interview({ sessionState = null }) {
             sessionComplete={sessionComplete}
           />
         </div>
+      ) : roundType === 'system_design' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <SystemDesignRound
+            sessionId={sessionId}
+            round={round}
+            question={question}
+            questionContext={questionContext}
+            configJson={configJson}
+            expiresAt={expiresAt}
+            isScoring={isScoring}
+            currentScore={currentScore}
+            currentArtifact={currentArtifact}
+            currentFeedback={currentFeedback}
+            evaluationMode={evaluationMode}
+            evaluationBoundary={evaluationBoundary}
+            onSubmit={(payload) => submitAnswer(payload)}
+            onNextRound={handleNext}
+            sessionComplete={sessionComplete}
+          />
+        </div>
       ) : (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
         <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/8 bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
+            {avState && avState !== AV_STATES.READY ? (
+              <div className="w-full">
+                <AvUnavailablePanel
+                  state={avState}
+                  detail={avDetail}
+                  onRetry={
+                    avState === AV_STATES.INTERRUPTED_RECOVERABLE
+                      || avState === AV_STATES.CAPTURE_FAILED
+                      || avState === AV_STATES.PERMISSION_DENIED
+                      || avState === AV_STATES.PERMISSION_NOT_REQUESTED
+                      ? () => {
+                        setMicError('');
+                        setAvDetail('');
+                        setAvState(AV_STATES.PERMISSION_NOT_REQUESTED);
+                        ensureMicrophone().catch(() => {});
+                      }
+                      : null
+                  }
+                />
+              </div>
+            ) : null}
             <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
               <div className={`w-2 h-2 rounded-full ${isRecording || serverRecording ? 'bg-red-500 animate-pulse' : serverTranscribing ? 'bg-blue-500 animate-pulse' : micError ? 'bg-amber-500' : 'bg-[#6F6F6F]/30'}`} />
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"

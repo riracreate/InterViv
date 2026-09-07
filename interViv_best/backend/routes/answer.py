@@ -99,6 +99,7 @@ class SubmitAnswerRequest(BaseModel):
     engagement_delta: int | None = None
     wpm: float | None = None
     pause_count: int | None = None
+    rubric_ratings: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -115,6 +116,7 @@ class SubmitAnswerRequest(BaseModel):
                 "engagement_delta",
                 "wpm",
                 "pause_count",
+                "rubric_ratings",
             }
             extra = set(values.keys()) - allowed
             if extra:
@@ -229,10 +231,13 @@ def _assistance_for_round(
         if round_type == "mcq":
             questions = (round_document.get("question_context") or {}).get("questions") or []
             wanted = {("mcq", str(q.get("id"))) for q in questions if q.get("id")}
-        elif round_type in ("sql", "coding"):
+        elif round_type in ("sql", "coding", "system_design"):
             config = round_document.get("config_json") or {}
             problem_id = config.get("problem_id")
-            wanted = {(round_type, str(problem_id))} if problem_id else set()
+            item_type = (
+                "system_design" if round_type == "system_design" else round_type
+            )
+            wanted = {(item_type, str(problem_id))} if problem_id else set()
         else:
             return False, []
         if not wanted:
@@ -348,6 +353,42 @@ def _record_coding_attempt(
         logger.warning("Failed to record coding attempt.", exc_info=True)
 
 
+def _record_system_design_attempt(
+    db: Any,
+    *,
+    user_id: str | None,
+    session_id: str,
+    round_number: int,
+    prompt_id: str,
+    answer_text: str,
+    rubric_json: dict[str, Any] | None,
+    evaluation_mode: str,
+    status: str,
+    score: float | None = None,
+    incomplete: bool = False,
+) -> None:
+    """Persist one system-design attempt (self-assessment aggregates only)."""
+    if not user_id:
+        return
+    try:
+        db["system_design_attempts"].insert_one({
+            "id": str(uuid4()),
+            "user_id": str(user_id),
+            "session_id": session_id,
+            "round": int(round_number),
+            "prompt_id": prompt_id,
+            "answer_text": answer_text or "",
+            "rubric_json": rubric_json or {},
+            "evaluation_mode": evaluation_mode or "structured_self_assessment",
+            "status": status,
+            "score": score,
+            "incomplete": bool(incomplete),
+            "created_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        logger.warning("Failed to record system-design attempt.", exc_info=True)
+
+
 @router.post("/answer")
 def submit_answer(
     request: SubmitAnswerRequest,
@@ -377,8 +418,8 @@ def submit_answer(
 
         round_type = active_round.get("round_type", "technical_short_answer")
 
-        # Phase 2 MCQ, SQL & coding rounds require a valid JWT principal; reject anonymous sessions
-        if round_type in ("mcq", "sql", "coding"):
+        # Phase 2 MCQ, SQL, coding & system-design require a valid JWT
+        if round_type in ("mcq", "sql", "coding", "system_design"):
             if not authorization:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -490,6 +531,14 @@ def submit_answer(
                     question_context=active_round.get("question_context", {}),
                     config=active_round.get("config_json", {}),
                 )
+            elif round_type == "system_design":
+                scoring_result = score_round(
+                    round_type="system_design",
+                    answer_text=request.answer_text,
+                    rubric_ratings=request.rubric_ratings,
+                    question_context=active_round.get("question_context", {}),
+                    config=active_round.get("config_json", {}),
+                )
             else:
                 scoring_result = score_round(
                     round_type=round_type,
@@ -558,6 +607,47 @@ def submit_answer(
                 hidden_total=explanation.get("hidden_total"),
                 error=None,
             )
+
+        if round_type == "system_design":
+            incomplete = bool(scoring_result.get("incomplete"))
+            prompt_id = str(
+                (active_round.get("config_json") or {}).get("problem_id") or ""
+            )
+            _record_system_design_attempt(
+                db,
+                user_id=session.get("user_id"),
+                session_id=request.session_id,
+                round_number=request.round,
+                prompt_id=prompt_id,
+                answer_text=request.answer_text or "",
+                rubric_json={
+                    "ratings": request.rubric_ratings or {},
+                    "rubric": scoring_result.get("rubric") or [],
+                    "boundary": scoring_result.get("boundary"),
+                },
+                evaluation_mode=str(
+                    scoring_result.get("evaluation_mode")
+                    or "structured_self_assessment"
+                ),
+                status="incomplete" if incomplete else "scored",
+                score=scoring_result.get("final_score"),
+                incomplete=incomplete,
+            )
+            if incomplete or scoring_result.get("final_score") is None:
+                # Incomplete self-assessment: no score, round stays open.
+                active_round["status"] = "in_progress"
+                db["sessions"].update_one(
+                    {"session_id": request.session_id},
+                    {"$set": {"rounds": rounds}},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        scoring_result.get("feedback")
+                        or "Complete every rubric rating (1–5). "
+                        "Incomplete self-assessment produces no score."
+                    ),
+                )
 
         # Elo update against THIS round's skill
         elo_before = float(active_round.get("elo_before") or settings.initial_elo)
@@ -756,7 +846,7 @@ def submit_answer(
                                 else _difficulty_from_elo(rotation_elo)
                             )
 
-                    if planned_type in ("mcq", "sql", "coding"):
+                    if planned_type in ("mcq", "sql", "coding", "system_design"):
                         if expanded_spec:
                             spec_config: dict[str, Any] = {
                                 "count": expanded_spec.get("count", 15),
@@ -779,6 +869,11 @@ def submit_answer(
                             if planned_type == "coding":
                                 sql_index = sum(
                                     1 for i, t in enumerate(plan[: next_round - 1]) if t == "coding"
+                                )
+                            elif planned_type == "system_design":
+                                sql_index = sum(
+                                    1 for i, t in enumerate(plan[: next_round - 1])
+                                    if t == "system_design"
                                 )
                             else:
                                 sql_index = sum(
@@ -984,6 +1079,8 @@ def submit_answer(
             "score_explanation": scoring_result.get("score_explanation", {}),
             "scoring_schema_version": scoring_result.get("scoring_schema_version"),
             "rubric": scoring_result.get("rubric", {}),
+            "evaluation_mode": scoring_result.get("evaluation_mode"),
+            "evaluation_boundary": scoring_result.get("boundary"),
             "concepts": scoring_result.get("concepts", {}),
             "guard": scoring_result.get("guard", {}),
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),

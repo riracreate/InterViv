@@ -44,7 +44,13 @@ router = APIRouter(prefix="/session", tags=["session"])
 # Request / response models
 # ─────────────────────────────────────────────────────────────────────────────
 
-ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql", "coding")
+ALLOWED_ROUND_TYPES = (
+    "technical_short_answer",
+    "mcq",
+    "sql",
+    "coding",
+    "system_design",
+)
 
 
 class StartSessionRequest(BaseModel):
@@ -129,6 +135,7 @@ class SaveAnswerDraftRequest(BaseModel):
     round: int
     answer_text: str | None = None
     answers: list[dict[str, Any]] | None = None
+    rubric_ratings: dict[str, Any] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -600,6 +607,39 @@ def build_round_document(
             block_total=block_total,
         )
 
+    if round_type == "system_design":
+        duration_mins = int(cfg.get("duration_minutes", 25))
+        prompt_ids = cfg.get("problem_ids") or []
+        prompt_id = cfg.get("problem_id")
+        if prompt_ids and sql_problem_index < len(prompt_ids):
+            prompt_id = prompt_ids[sql_problem_index]
+        prompt = _select_system_design_prompt(prompt_id=prompt_id)
+        expires_at = now + timedelta(minutes=duration_mins)
+        public = public_system_design_prompt_context(prompt)
+        return RoundDocument(
+            round=round_number,
+            round_type="system_design",
+            question=str(prompt.get("title") or prompt.get("id")),
+            difficulty=str(prompt.get("difficulty") or difficulty),
+            elo_before=elo_before,
+            config_json={
+                "duration_minutes": duration_mins,
+                "attempt_policy": "single_submission_final",
+                "review_policy": cfg.get("review_policy", "none"),
+                "problem_id": prompt.get("id"),
+                "evaluation_mode": "structured_self_assessment",
+            },
+            question_context=public,
+            started_at=now,
+            expires_at=expires_at,
+            status="in_progress",
+            block_id=block_id,
+            block_position=block_position,
+            block_category=block_category or "system_design",
+            block_index=block_index,
+            block_total=block_total,
+        )
+
     # technical_short_answer
     first_question = _get_next_question(
         skill=skill,
@@ -693,16 +733,24 @@ def list_practice_bank_items() -> dict[str, Any]:
             }
         )
     coding = [public_coding_problem(p) for p in CODING_PROBLEMS]
+    from backend.db.phase_e_system_design_bank import (
+        SYSTEM_DESIGN_PROMPTS,
+        public_system_design_prompt,
+    )
+
+    system_design = [public_system_design_prompt(p) for p in SYSTEM_DESIGN_PROMPTS]
     return {
         "mcq": mcq,
         "verbal": verbal,
         "sql": sql,
         "coding": coding,
+        "system_design": system_design,
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),
             "sql": len(sql),
             "coding": len(coding),
+            "system_design": len(system_design),
         },
     }
 
@@ -907,6 +955,55 @@ def coding_problem_public_context(problem: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _list_system_design_prompts(
+    *,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    from backend.db.phase_e_system_design_bank import list_system_design_prompts
+
+    return list_system_design_prompts(difficulty=difficulty)
+
+
+def _select_system_design_prompt(prompt_id: str | None = None) -> dict[str, Any]:
+    from backend.db.phase_e_system_design_bank import (
+        SYSTEM_DESIGN_PROMPTS,
+        get_system_design_prompt,
+    )
+
+    target = (prompt_id or "").strip()
+    if target:
+        prompt = get_system_design_prompt(target)
+        if not prompt:
+            raise ValueError(f"Unknown system-design prompt ID: '{target}'.")
+        return prompt
+    return SYSTEM_DESIGN_PROMPTS[0]
+
+
+def _select_system_design_prompts(
+    *,
+    count: int | None = None,
+    prompt_ids: list[str] | None = None,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
+    if prompt_ids:
+        return [_select_system_design_prompt(prompt_id=pid) for pid in prompt_ids]
+    wanted = int(count or 1)
+    pool = _list_system_design_prompts(difficulty=difficulty)
+    if len(pool) < wanted:
+        diff_note = f" at difficulty '{difficulty}'" if difficulty else ""
+        raise ValueError(
+            f"Not enough system-design prompts available{diff_note}: "
+            f"need {wanted}, have {len(pool)}."
+        )
+    return pool[:wanted]
+
+
+def public_system_design_prompt_context(prompt: dict[str, Any]) -> dict[str, Any]:
+    from backend.db.phase_e_system_design_bank import public_system_design_prompt
+
+    return public_system_design_prompt(prompt)
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
@@ -967,6 +1064,20 @@ def _validate_block_content(
                 specs = by_block.get(str(block.get("id")), [])
                 for spec, problem in zip(specs, selected):
                     spec["problem_ids"] = [problem["id"]]
+                block["problem_ids"] = [p["id"] for p in selected]
+        elif category == "system_design":
+            prompt_ids = list(block.get("problem_ids") or [])
+            if prompt_ids:
+                _select_system_design_prompts(prompt_ids=prompt_ids)
+            else:
+                count = int(block.get("count") or 1)
+                selected = _select_system_design_prompts(
+                    count=count,
+                    difficulty=block.get("difficulty"),
+                )
+                specs = by_block.get(str(block.get("id")), [])
+                for spec, prompt in zip(specs, selected):
+                    spec["problem_ids"] = [prompt["id"]]
                 block["problem_ids"] = [p["id"] for p in selected]
 
 
@@ -1057,7 +1168,9 @@ def start_session(
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
     user = get_user_from_authorization(authorization) if authorization else None
 
-    needs_phase2_auth = any(t in ("mcq", "sql", "coding") for t in plan)
+    needs_phase2_auth = any(
+        t in ("mcq", "sql", "coding", "system_design") for t in plan
+    )
     if needs_phase2_auth:
         if not authorization:
             raise HTTPException(
@@ -1273,6 +1386,9 @@ def start_session(
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
         response["starter_code"] = sanitized["question_context"].get("starter_code")
+    elif round_document.round_type == "system_design":
+        sanitized = sanitize_round_for_client(round_document.model_dump())
+        response["question_context"] = sanitized["question_context"]
     return response
 
 
@@ -1311,7 +1427,10 @@ def get_session(
         )
 
     rounds = session.get("rounds", [])
-    has_phase2_round = any(r.get("round_type") in ("mcq", "sql", "coding") for r in rounds)
+    has_phase2_round = any(
+        r.get("round_type") in ("mcq", "sql", "coding", "system_design")
+        for r in rounds
+    )
     if has_phase2_round or session.get("user_id"):
         if not authorization:
             raise HTTPException(
@@ -1694,6 +1813,8 @@ def save_answer_draft(
                 detail=f"Round type '{round_type}' draft requires 'answer_text'.",
             )
         draft["answer_text"] = str(request.answer_text or "")[:20000]
+        if round_type == "system_design" and request.rubric_ratings is not None:
+            draft["rubric_ratings"] = dict(request.rubric_ratings)
     now = datetime.now(timezone.utc)
     db["answer_drafts"].update_one(
         {"session_id": session_id, "round": int(request.round)},
