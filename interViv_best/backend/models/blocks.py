@@ -16,12 +16,26 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-ALLOWED_ROUND_TYPES = ("technical_short_answer", "mcq", "sql", "coding")
-ALLOWED_CATEGORIES = ("verbal", "oa", "sql", "interview", "coding")
+ALLOWED_ROUND_TYPES = (
+    "technical_short_answer",
+    "mcq",
+    "sql",
+    "coding",
+    "system_design",
+)
+ALLOWED_CATEGORIES = (
+    "verbal",
+    "oa",
+    "sql",
+    "interview",
+    "coding",
+    "system_design",
+)
 ALLOWED_DIFFICULTIES = ("easy", "medium", "hard")
 ALLOWED_REVIEW_POLICIES = ("none", "after_session")
 
 VERBAL_SKILL = "Verbal Ability"
+SYSTEM_DESIGN_SKILL = "System Design"
 
 BLOCKS_VERSION = 1
 PRESET_VERSION = 1
@@ -33,6 +47,7 @@ MAX_MCQ_COUNT = 30
 MAX_SQL_PER_BLOCK = 5
 MAX_CODING_PER_BLOCK = 5
 MAX_INTERVIEW_PER_BLOCK = 10
+MAX_SYSTEM_DESIGN_PER_BLOCK = 5
 CODING_LANGUAGE = "python"
 
 
@@ -98,6 +113,8 @@ def derive_category(round_type: str, skills: list[str]) -> str:
         return "sql"
     if round_type == "coding":
         return "coding"
+    if round_type == "system_design":
+        return "system_design"
     return "interview"
 
 
@@ -159,6 +176,8 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
         if category == "sql":
             skills = skills or ["SQL"]
+        if category == "system_design":
+            skills = skills or [SYSTEM_DESIGN_SKILL]
         if category == "coding" and VERBAL_SKILL in skills:
             raise ValueError(
                 f"Block {index + 1}: coding topics must not include "
@@ -208,10 +227,10 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             raise ValueError(
                 f"Block {index + 1}: question_ids apply to MCQ blocks only."
             )
-        if problem_ids and category not in ("sql", "coding"):
+        if problem_ids and category not in ("sql", "coding", "system_design"):
             raise ValueError(
-                f"Block {index + 1}: problem_ids apply to SQL and coding "
-                f"blocks only."
+                f"Block {index + 1}: problem_ids apply to SQL, coding, and "
+                f"system-design blocks only."
             )
 
         duration = spec.duration_minutes
@@ -270,6 +289,21 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raise ValueError(
                     f"Block {index + 1}: count must be 1-{limit}."
                 )
+        elif category == "system_design":
+            if problem_ids:
+                if count is not None and int(count) != len(problem_ids):
+                    raise ValueError(
+                        f"Block {index + 1}: count must match problem_ids "
+                        f"length ({len(problem_ids)})."
+                    )
+                count_value = len(problem_ids)
+            else:
+                count_value = int(count) if count is not None else 1
+            if count_value < 1 or count_value > MAX_SYSTEM_DESIGN_PER_BLOCK:
+                raise ValueError(
+                    f"Block {index + 1}: count must be "
+                    f"1-{MAX_SYSTEM_DESIGN_PER_BLOCK}."
+                )
         else:
             count_value = int(count) if count is not None else 3
             if count_value < 1 or count_value > MAX_INTERVIEW_PER_BLOCK:
@@ -315,7 +349,8 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "review_policy": review_policy,
         })
 
-    total = sum(b["count"] if b["category"] in ("sql", "coding", "interview")
+    total = sum(b["count"] if b["category"] in (
+                    "sql", "coding", "interview", "system_design")
                 else 1 for b in normalized)
     if total > MAX_TOTAL_ROUNDS:
         raise ValueError(
@@ -493,6 +528,31 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "negative_marking": 0.0,
                     "review_policy": block.get("review_policy", "none"),
                 })
+        elif category == "system_design":
+            prompt_ids = list(block.get("problem_ids") or [])
+            total = len(prompt_ids) if prompt_ids else int(block.get("count") or 1)
+            for item_index in range(total):
+                round_number += 1
+                selected = ([prompt_ids[item_index]]
+                            if item_index < len(prompt_ids) else [])
+                expanded.append({
+                    "round": round_number,
+                    "block_id": block["id"],
+                    "block_position": block["position"],
+                    "block_index": item_index + 1,
+                    "block_total": total,
+                    "round_type": "system_design",
+                    "category": "system_design",
+                    "skills": list(block.get("skills") or [SYSTEM_DESIGN_SKILL]),
+                    "count": 1,
+                    "duration_minutes": block.get("duration_minutes"),
+                    "difficulty": block.get("difficulty"),
+                    "question_ids": [],
+                    "problem_ids": selected,
+                    "language": None,
+                    "negative_marking": 0.0,
+                    "review_policy": block.get("review_policy", "none"),
+                })
         else:
             total = int(block.get("count") or 3)
             for item_index in range(total):
@@ -534,6 +594,9 @@ def block_label(block: dict[str, Any]) -> str:
     if category == "coding":
         noun = "problem" if count == 1 else "problems"
         return f"Coding · {count} {noun}"
+    if category == "system_design":
+        noun = "prompt" if count == 1 else "prompts"
+        return f"System design · {count} {noun}"
     noun = "question" if count == 1 else "questions"
     return f"Interview · {count} {noun}"
 

@@ -545,3 +545,31 @@ class AssistanceEventRow(Base):
     session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class SystemDesignAttemptRow(Base):
+    """Phase E system-design attempt: design text plus self-assessment rubric.
+
+    Evaluation mode is always structured_self_assessment. Incomplete
+    ratings store score=NULL (never a fabricated zero). No diagram
+    correctness claim is stored.
+    """
+
+    __tablename__ = "system_design_attempts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    answer_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rubric_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evaluation_mode: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="structured_self_assessment"
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    incomplete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )

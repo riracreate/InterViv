@@ -329,6 +329,20 @@ export function transcribeAudio(blob, filename = "answer.webm") {
   });
 }
 
+export function fetchAvCapabilities() {
+  return request("/av/capabilities");
+}
+
+export function fetchSystemDesignAttempts() {
+  return request("/av/system-design-attempts");
+}
+
+export function deleteSystemDesignAttempt(attemptId) {
+  return request(`/av/system-design-attempts/${encodeURIComponent(attemptId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchDashboard(sessionId) {
   return request(`/dashboard/${sessionId}`);
 }

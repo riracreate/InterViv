@@ -17,12 +17,14 @@ import {
   applyTargetPrefill,
 } from '../src/lib/practiceBuilder.js';
 
-test('standalone entries cover Verbal, OA, SQL, coding, and interview', () => {
+test('standalone entries cover Verbal, OA, SQL, coding, system design, and interview', () => {
   const ids = STANDALONE_MODES.map((m) => m.id).sort();
-  assert.deepEqual(ids, ['coding', 'interview', 'oa', 'sql', 'verbal']);
+  assert.deepEqual(ids, ['coding', 'interview', 'oa', 'sql', 'system_design', 'verbal']);
   const verbal = STANDALONE_MODES.find((m) => m.id === 'verbal');
   assert.match(verbal.blurb, /English MCQ/i);
   assert.doesNotMatch(verbal.blurb, /speak|voice|HR question/i);
+  const sd = STANDALONE_MODES.find((m) => m.id === 'system_design');
+  assert.match(sd.blurb, /self-assessment/i);
 });
 
 test('adding Verbal never erases the existing sequence', () => {

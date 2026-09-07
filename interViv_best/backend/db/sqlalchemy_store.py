@@ -20,6 +20,7 @@ from .sqlalchemy_models import (
     RetrySetRow,
     RoundRow,
     SessionRow,
+    SystemDesignAttemptRow,
     TargetContextRow,
     UserRow,
 )
@@ -1152,6 +1153,98 @@ class _AssistanceEventCollection:
         }
 
 
+class _SystemDesignAttemptCollection:
+    """Append-only view over system_design_attempts."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": SystemDesignAttemptRow.id,
+            "user_id": SystemDesignAttemptRow.user_id,
+            "session_id": SystemDesignAttemptRow.session_id,
+            "round": SystemDesignAttemptRow.round_number,
+            "round_number": SystemDesignAttemptRow.round_number,
+            "prompt_id": SystemDesignAttemptRow.prompt_id,
+            "status": SystemDesignAttemptRow.status,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(
+                session, SystemDesignAttemptRow, self._field_columns(), query
+            )
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(
+                    session, SystemDesignAttemptRow, self._field_columns(), query
+                )
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = SystemDesignAttemptRow(
+                id=str(data.get("id") or ""),
+                user_id=data["user_id"],
+                session_id=data["session_id"],
+                round_number=int(data.get("round", data.get("round_number"))),
+                prompt_id=str(data.get("prompt_id") or ""),
+                answer_text=str(data.get("answer_text") or ""),
+                rubric_json=data.get("rubric_json") or {},
+                evaluation_mode=str(
+                    data.get("evaluation_mode") or "structured_self_assessment"
+                ),
+                status=str(data.get("status") or ""),
+                score=data.get("score"),
+                incomplete=bool(data.get("incomplete")),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data.get("id"))
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = list(
+                _filtered_rows(
+                    session, SystemDesignAttemptRow, self._field_columns(), query
+                )
+            )
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: SystemDesignAttemptRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "session_id": row.session_id,
+            "round": row.round_number,
+            "prompt_id": row.prompt_id,
+            "answer_text": row.answer_text,
+            "rubric_json": row.rubric_json or {},
+            "evaluation_mode": row.evaluation_mode,
+            "status": row.status,
+            "score": row.score,
+            "incomplete": row.incomplete,
+            "created_at": row.created_at,
+        }
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -1162,6 +1255,7 @@ class SQLAlchemyDatabase:
             "builder_drafts": _BuilderDraftCollection(),
             "answer_drafts": _AnswerDraftCollection(),
             "coding_submissions": _CodingSubmissionCollection(),
+            "system_design_attempts": _SystemDesignAttemptCollection(),
             "target_contexts": _TargetContextCollection(),
             "retry_sets": _RetrySetCollection(),
             "bookmarks": _BookmarkCollection(),
