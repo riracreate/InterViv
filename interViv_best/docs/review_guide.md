@@ -245,7 +245,7 @@ Do not treat this section as a resolution. It is the decision surface.
 | Item | Status | Notes |
 |------|--------|-------|
 | Fail-fast vs labeled-degrade | **Open** | Applies to SemanticScorer, Jobs live-fail, and LLM soft-fallback (§e2) |
-| C.2 Docker / live coding runner | **Not started** | Keep 503 seam or authorize Docker |
+| C.2 Docker / live coding runner | **Not started** | Keep 503 seam or authorize Docker. Phase U spike (`phase_u_execution_spike.md`): daemon unreachable (Desktop VM stopped + sandboxed session), nothing demonstrated, C.2 stays blocked; re-spike + owner rulings pending |
 | phase21 Verbal Upload entry snapshot | **Not integrated** | Media gate done in L; Upload entry still skipped |
 | Job data sourcing | **Open** | Engineering: `phase_n_jobs_data_assessment.md`; recommend labeled sample / offline import; live adapter later |
 | ADJACENT question-generation intent | **Open** | Letter vs intent (§a); default dials off in Q |
@@ -336,4 +336,4 @@ git show-ref | grep refs/rescue/
 
 ## Related delivery docs
 
-`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes), `phase_u_execution_spike.md` (execution-service spike; negative result — daemon unreachable, C.2 stays blocked). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
