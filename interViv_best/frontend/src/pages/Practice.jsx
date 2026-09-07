@@ -463,7 +463,7 @@ export default function Practice() {
           </section>
         )}
 
-        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'interview') && (
+        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)
@@ -772,6 +772,46 @@ export default function Practice() {
           </section>
         )}
 
+        {mode === 'system_design' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">System design</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              Design prompts with an explicit self-assessment rubric. Scores are self-reported — diagrams are not auto-scored.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                Prompts (1–5)
+                <input
+                  type="number" min={1} max={5}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneCount}
+                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Time budget (minutes)
+                <input
+                  type="number" min={1} max={180}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDuration}
+                  onChange={(e) => setStandaloneDuration(Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-4 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={() => runStart(mapStandaloneToStartPayload('system_design', {
+                count: Math.min(5, Math.max(1, Number(standaloneCount) || 1)),
+                durationMinutes: standaloneDuration,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start system design'}
+            </button>
+          </section>
+        )}
+
         {mode === 'interview' && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Interview practice</h2>
@@ -845,14 +885,14 @@ export default function Practice() {
                       onClick={() => setBlocks((prev) => addBlock(prev, category))}
                       className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:border-slate-400"
                     >
-                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : category === 'coding' ? 'Coding' : 'Interview'}
+                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : category === 'coding' ? 'Coding' : category === 'system_design' ? 'System design' : 'Interview'}
                     </button>
                   ))}
                 </div>
 
                 {blocks.length === 0 && (
                   <p className="mt-4 text-sm text-[var(--color-ink-muted)]">
-                    No blocks yet. Add Verbal, OA, SQL, coding, or interview blocks above. Adding Verbal never erases your sequence.
+                    No blocks yet. Add Verbal, OA, SQL, coding, system design, or interview blocks above. Adding Verbal never erases your sequence.
                   </p>
                 )}
 
