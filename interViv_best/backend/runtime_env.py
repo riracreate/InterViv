@@ -10,6 +10,9 @@ only fills blanks).
 
 Phase O: default ``JOBS_LIVE_FETCH=0`` so Adzuna ``httpx`` cannot fire unless
 deliberately enabled (same offline posture as Hub).
+
+Phase Q: default ``LLM_LIVE_FETCH=0`` so OpenAI/OpenRouter chat ``urlopen``
+cannot fire unless deliberately enabled (credentials alone are not a gate).
 """
 
 from __future__ import annotations
@@ -30,3 +33,5 @@ def apply_runtime_env() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     # Jobs: keep Adzuna outbound gated off unless the owner opts in.
     os.environ.setdefault("JOBS_LIVE_FETCH", "0")
+    # LLM chat completions: off unless the owner opts in (Phase Q).
+    os.environ.setdefault("LLM_LIVE_FETCH", "0")

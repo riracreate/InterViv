@@ -89,7 +89,12 @@ def _llm_extract_phrases(text: str) -> list[str] | None:
     if _LLM_OVERRIDE is not None:
         return _LLM_OVERRIDE(text)
 
+    from modules.llm_outbound_gate import llm_live_fetch_enabled
     from modules import question_bank
+
+    # Coach is independent of QUESTION_GENERATION_MODE; live-fetch gate still applies.
+    if not llm_live_fetch_enabled():
+        return None
 
     provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:

@@ -47,6 +47,14 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase P** (audit + narrow fix): systematic LLM / outbound sweep — `docs/phase_p_outbound_audit.md`. No LLM judge in scoring. Only live default outbound found (Google Fonts CDN) gated off; LLM paths remain credential-latent (recommendations in the audit).
 
+**Phase Q** (`fix` after P): `LLM_LIVE_FETCH=0` default; question LLM outbound also requires `QUESTION_GENERATION_MODE` ∈ `{llm, llm_csv_fallback}` at the shared client boundary so adaptive cannot bypass. See Phase Q note in `docs/phase_p_outbound_audit.md`.
+
+### LLM question generation — ADJACENT (owner judgment)
+
+Phase P classified the interview question path as **ADJACENT**, not CLEAR and not a VIOLATION: an LLM may generate the question text and the `ideal_answer` / `ideal_keywords` references; the deterministic scorer (and guard) then grades the candidate against those references. The LLM does not return a score, band, readiness number, or guard verdict.
+
+That sits inside the **letter** of the contract (no LLM judge in scoring, readiness, guard decisions, or gap analysis). Whether shaping the answer key this way sits inside the contract’s **intent** is an **owner judgment**, not an established fact on this chain. Reviewers who encounter LLM-authored `ideal_*` fields should treat the classification as ADJACENT and escalate intent to the owner rather than assuming CLEAR.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -146,8 +154,8 @@ degraded anyway.
 
 Other optional outbound (LLM keys, Adzuna, Sentry) is unchanged and unrelated
 to MiniLM. **Phase P** inventories every outbound path — see
-`docs/phase_p_outbound_audit.md` (LLM credential-latent; Google Fonts CDN gated
-off in default CSS).
+`docs/phase_p_outbound_audit.md`. **Phase Q** defaults `LLM_LIVE_FETCH=0` and
+enforces generation mode at the shared question-LLM client boundary.
 ---
 
 ## (f) Honest capability inventory
