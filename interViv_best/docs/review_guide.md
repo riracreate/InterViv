@@ -43,6 +43,10 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase N** (docs only): engineering assessment of what accepting real job listings would require — inventory, adapter seam, breakage, obligations stated not decided. See `docs/phase_n_jobs_data_assessment.md`. No integration; no vendor contact.
 
+**Phase O** (`fix` after N): `JOBS_LIVE_FETCH=0` default; Jobs cache preserves fixture provenance / sample banner. See `docs/phase_o_delivery.md`.
+
+**Phase P** (audit + narrow fix): systematic LLM / outbound sweep — `docs/phase_p_outbound_audit.md`. No LLM judge in scoring. Only live default outbound found (Google Fonts CDN) gated off; LLM paths remain credential-latent (recommendations in the audit).
+
 ---
 
 ## (b) Risk order (highest first)
@@ -141,7 +145,9 @@ labeled-degrades. Mode-on-attempt remains the durable record if a worker runs
 degraded anyway.
 
 Other optional outbound (LLM keys, Adzuna, Sentry) is unchanged and unrelated
-to MiniLM.
+to MiniLM. **Phase P** inventories every outbound path — see
+`docs/phase_p_outbound_audit.md` (LLM credential-latent; Google Fonts CDN gated
+off in default CSS).
 ---
 
 ## (f) Honest capability inventory
