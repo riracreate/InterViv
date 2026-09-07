@@ -526,6 +526,12 @@ class _SessionCollection:
                     "engagement_confidence": round_row.confidence_score,
                     "engagement_delta": round_row.engagement_delta,
                     "scoring_breakdown": round_row.scoring_breakdown_json or {},
+                    "scoring_mode": (round_row.scoring_breakdown_json or {}).get("scoring_mode"),
+                    "evidence_kind": (round_row.scoring_breakdown_json or {}).get("evidence_kind"),
+                    "evaluation_mode": (
+                        (round_row.scoring_breakdown_json or {}).get("evaluation_mode")
+                        or (round_row.artifact_json or {}).get("evaluation_mode")
+                    ),
                     "guard_applied": round_row.guard_applied,
                     "question_context": round_row.question_context or {},
                     "created_at": round_row.created_at,

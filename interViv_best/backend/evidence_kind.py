@@ -42,17 +42,29 @@ def scoring_mode_at_write(
 
 
 def scoring_mode_for_round(round_doc: dict[str, Any] | None) -> str:
-    """Read persisted mode; never invent one for historical rows."""
+    """Read persisted mode; never invent one for historical rows.
+
+    Prefer the top-level field when present. SQLAlchemy round rows only
+    keep known columns, so G.0 also stores ``scoring_mode`` inside
+    ``scoring_breakdown`` (JSON) — read that second. Rows with neither
+    are ``unknown``.
+    """
     if not isinstance(round_doc, dict):
         return SCORING_MODE_UNKNOWN
-    mode = round_doc.get("scoring_mode")
-    if mode in {
+    allowed = {
         SCORING_MODE_FULL,
         SCORING_MODE_DEGRADED,
         SCORING_MODE_SELF_REPORTED,
         SCORING_MODE_UNKNOWN,
-    }:
+    }
+    mode = round_doc.get("scoring_mode")
+    if mode in allowed:
         return str(mode)
+    breakdown = round_doc.get("scoring_breakdown") or {}
+    if isinstance(breakdown, dict):
+        nested = breakdown.get("scoring_mode")
+        if nested in allowed:
+            return str(nested)
     return SCORING_MODE_UNKNOWN
 
 
