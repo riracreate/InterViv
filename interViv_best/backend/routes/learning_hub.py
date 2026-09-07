@@ -22,6 +22,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.evidence_kind import is_self_reported_round
 from backend.routes.auth import require_user
 from backend.routes.session import StartSessionRequest, start_session
 
@@ -265,6 +266,10 @@ def _notebook_entries(
                 coding_rounds += 1
                 continue
             if final_score is None:
+                continue
+            if is_self_reported_round(round_doc) or round_type == "system_design":
+                # Self-assessment is labeled elsewhere; it is not a measured
+                # miss and must not seed retry topics or mastery signals.
                 continue
             scored_rounds += 1
             assisted = bool(round_doc.get("assisted"))

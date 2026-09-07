@@ -35,6 +35,12 @@ from backend.routes.session import (
     build_round_document,
 )
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
+from backend.evidence_kind import (
+    EVIDENCE_SELF_REPORTED,
+    evidence_kind_for_round,
+    is_self_reported_round,
+    measured_scores,
+)
 from modules import adaptive_question_selector
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
@@ -649,17 +655,27 @@ def submit_answer(
                     ),
                 )
 
-        # Elo update against THIS round's skill
+        # Elo / difficulty: self-reported rounds never move measured Elo.
         elo_before = float(active_round.get("elo_before") or settings.initial_elo)
-        elo_after = _compute_elo_update(
-            elo_before=elo_before,
-            difficulty=active_round.get("difficulty", "medium"),
-            final_score=float(scoring_result["final_score"]),
+        evidence_kind = evidence_kind_for_round(
+            round_type=round_type,
+            evaluation_mode=scoring_result.get("evaluation_mode"),
         )
-        next_difficulty = _difficulty_from_elo(elo_after)
-        difficulty_change = _difficulty_delta(
-            active_round.get("difficulty", "medium"), next_difficulty
-        )
+        self_reported = evidence_kind == EVIDENCE_SELF_REPORTED
+        if self_reported:
+            elo_after = elo_before
+            next_difficulty = active_round.get("difficulty", "medium")
+            difficulty_change = "same"
+        else:
+            elo_after = _compute_elo_update(
+                elo_before=elo_before,
+                difficulty=active_round.get("difficulty", "medium"),
+                final_score=float(scoring_result["final_score"]),
+            )
+            next_difficulty = _difficulty_from_elo(elo_after)
+            difficulty_change = _difficulty_delta(
+                active_round.get("difficulty", "medium"), next_difficulty
+            )
 
         persisted_answer = (
             request.answer_text
@@ -676,10 +692,10 @@ def submit_answer(
             round_document=active_round,
             now=now,
         )
+        _bd = scoring_result.get("scoring_breakdown", {}) or {}
         for index, round_document in enumerate(rounds):
             if round_document.get("round") != request.round:
                 continue
-            _bd = scoring_result.get("scoring_breakdown", {}) or {}
             rounds[index] = {
                 **round_document,
                 "skill": current_skill,
@@ -707,6 +723,16 @@ def submit_answer(
                 "scoring_breakdown": _bd,
                 "artifact_json": scoring_result.get("artifact_json") or round_document.get("artifact_json", {}),
                 "guard_applied": scoring_result.get("guard_applied"),
+                "evaluation_mode": scoring_result.get("evaluation_mode"),
+                "evidence_kind": evidence_kind,
+                "semantic_scoring_available": _bd.get(
+                    "semantic_scoring_available",
+                    scoring_result.get("semantic_scoring_available"),
+                ),
+                "semantic_fallback_reason": _bd.get(
+                    "semantic_fallback_reason",
+                    scoring_result.get("semantic_fallback_reason"),
+                ),
             }
             break
 
@@ -725,11 +751,8 @@ def submit_answer(
         next_block_category: str | None = None
 
         session_status = "completed" if request.round >= total_rounds else "active"
-        completed_scores = [
-            float(item.get("final_score"))
-            for item in rounds
-            if item.get("final_score") is not None
-        ]
+        # Measured readiness only — self-reported scores stay out of the mean.
+        completed_scores = measured_scores(rounds)
         session_update = {
             "rounds": rounds,
             "last_round": request.round,
@@ -742,32 +765,32 @@ def submit_answer(
             session_update["overall_readiness_score"] = (
                 round(sum(completed_scores) / len(completed_scores), 2)
                 if completed_scores
-                else 0.0
+                else None
             )
+            session_update["overall_readiness_population"] = "measured"
 
         try:
-            # First persist the completed round and Elo. The adaptive selector
-            # reads SkillGraph / ConceptMastery after this update, so it can
-            # react to the answer that was just submitted.
+            # First persist the completed round. Measured rounds update Elo and
+            # learning state; self-reported rounds do not.
             db["sessions"].update_one(
                 {"session_id": request.session_id},
                 {"$set": session_update},
             )
-            # Elo is stored per-skill — increment the skill THIS round was about
-            db["candidates"].update_one(
-                {"candidate_id": session["candidate_id"]},
-                {"$set": {f"elo_ratings.{current_skill}": elo_after}},
-            )
-            _update_learning_state(
-                session=session,
-                skill=current_skill,
-                final_score=float(scoring_result["final_score"]),
-                difficulty=active_round.get("difficulty", "medium"),
-                scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
-                elo_before=elo_before,
-                elo_after=elo_after,
-                session_id=request.session_id,
-            )
+            if not self_reported:
+                db["candidates"].update_one(
+                    {"candidate_id": session["candidate_id"]},
+                    {"$set": {f"elo_ratings.{current_skill}": elo_after}},
+                )
+                _update_learning_state(
+                    session=session,
+                    skill=current_skill,
+                    final_score=float(scoring_result["final_score"]),
+                    difficulty=active_round.get("difficulty", "medium"),
+                    scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
+                    elo_before=elo_before,
+                    elo_after=elo_after,
+                    session_id=request.session_id,
+                )
 
             # Clear the saved draft for the submitted round: submitted attempts
             # are immutable and drafts must not survive submission.
@@ -1081,6 +1104,24 @@ def submit_answer(
             "rubric": scoring_result.get("rubric", {}),
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evaluation_boundary": scoring_result.get("boundary"),
+            "evidence_kind": evidence_kind,
+            "semantic_scoring_available": _bd.get(
+                "semantic_scoring_available",
+                scoring_result.get("semantic_scoring_available"),
+            ),
+            "semantic_fallback_reason": _bd.get(
+                "semantic_fallback_reason",
+                scoring_result.get("semantic_fallback_reason"),
+            ),
+            "scoring_mode_label": (
+                "lexical_fallback_degraded"
+                if (
+                    _bd.get("semantic_component_source") == "lexical_fallback"
+                    or _bd.get("semantic_scoring_available") is False
+                    or scoring_result.get("semantic_scoring_available") is False
+                )
+                else ("self_reported" if self_reported else "full")
+            ),
             "concepts": scoring_result.get("concepts", {}),
             "guard": scoring_result.get("guard", {}),
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
