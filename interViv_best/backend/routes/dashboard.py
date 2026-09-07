@@ -435,6 +435,13 @@ def get_dashboard(
             breakdown[band] += 1
 
     last_feedback = completed_rounds[-1].get("feedback", {}) if completed_rounds else {}
+    # System-design (and some older rows) store feedback as a plain string.
+    if isinstance(last_feedback, str):
+        next_step = last_feedback
+    elif isinstance(last_feedback, dict):
+        next_step = last_feedback.get("next_step", "") or ""
+    else:
+        next_step = ""
 
     session["rounds"] = rounds
     session["averages"] = averages
@@ -453,7 +460,7 @@ def get_dashboard(
     ]
     session["difficulty_progression"] = [item.get("difficulty") for item in completed_rounds]
     session["topic_scores"] = _compute_topic_scores(session)
-    session["next_step"] = last_feedback.get("next_step", "")
+    session["next_step"] = next_step
     unscored = _unscored_rounds(rounds)
     session["coverage"] = {
         "scored_rounds": len(completed_rounds),
