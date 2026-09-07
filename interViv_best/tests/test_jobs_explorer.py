@@ -119,7 +119,10 @@ def test_live_fetch_enabled_without_credentials_uses_fixtures(monkeypatch) -> No
         assert body["provenance"] == "fixture"
         assert body["source"] == "fixture"
         assert body["empty_reason"]
-        assert "ADZUNA" in body["empty_reason"]
+        assert "sample data" in body["empty_reason"].lower()
+        assert "JOBS_LIVE_FETCH" not in body["empty_reason"]
+        assert "ADZUNA_APP" not in body["empty_reason"]
+        assert ".env" not in body["empty_reason"]
         assert body["cache_hit"] is False
     finally:
         monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
@@ -138,6 +141,9 @@ def test_cache_hit_preserves_fixture_provenance_and_label() -> None:
         assert first["source"] == "fixture"
         assert first["provenance"] == "fixture"
         assert first["empty_reason"]
+        assert "JOBS_LIVE_FETCH" not in first["empty_reason"]
+        assert "ADZUNA_APP" not in first["empty_reason"]
+        assert "sample" in first["empty_reason"].lower()
         assert first["fetched_at"]
         assert all(j.get("provenance") == "fixture" for j in first["jobs"])
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,6 +17,8 @@ import httpx
 
 from backend.config import get_settings
 from modules.resume_parser import extract_skills_from_text
+
+LOGGER = logging.getLogger(__name__)
 
 PROVIDER_ADZUNA = "adzuna"
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,13 +235,23 @@ def _sample_empty_reason(provenance: str) -> str | None:
             "Live Adzuna fetch failed — showing fixture listings (not live market data)."
         )
     if not settings.jobs_live_fetch:
-        return (
-            "JOBS_LIVE_FETCH is off — showing fixture listings (not live Adzuna). "
-            "Set JOBS_LIVE_FETCH=1 and Adzuna credentials in .env for live India jobs."
+        # Flag name for operators only — not shown in the user-facing string.
+        LOGGER.info(
+            "Jobs serving sample listings because live fetch is gated off "
+            "(JOBS_LIVE_FETCH=%s)",
+            "0" if not settings.jobs_live_fetch else "1",
         )
+        return (
+            "Live job search is turned off. The listings below are sample data "
+            "for practice, not live openings."
+        )
+    LOGGER.info(
+        "Jobs serving sample listings because Adzuna credentials are unset "
+        "(ADZUNA_APP_ID / ADZUNA_APP_KEY)"
+    )
     return (
-        "ADZUNA_APP_ID / ADZUNA_APP_KEY not configured — showing fixture listings "
-        "(not live Adzuna). Set credentials in .env for live India jobs."
+        "Live job search is not configured. The listings below are sample data "
+        "for practice, not live openings."
     )
 
 
