@@ -161,4 +161,42 @@ def sanitize_round_for_client(
         if "artifact_json" in cleaned and cleaned["artifact_json"]:
             cleaned["artifact_json"] = sanitize_sql_artifact_for_client(cleaned["artifact_json"])
 
+    elif round_type == "coding":
+        # Coding never exposes hidden tests, reference solutions, or
+        # hidden execution detail under any review policy.
+        for forbidden in ("hidden_tests", "reference_solution",
+                          "mutant_solution", "hidden_stdout",
+                          "hidden_stderr"):
+            q_ctx.pop(forbidden, None)
+        visible = []
+        for case in (q_ctx.get("visible_tests") or []):
+            visible.append({
+                "input": dict(case.get("input") or {}),
+                "expected": case.get("expected"),
+            })
+        q_ctx["visible_tests"] = visible
+        cleaned["question_context"] = q_ctx
+
+        artifact = dict(cleaned.get("artifact_json") or {})
+        if artifact:
+            cleaned["artifact_json"] = {
+                "evaluation": artifact.get("evaluation", "coding"),
+                "problem_id": artifact.get("problem_id"),
+                "visible": {
+                    "passed": (artifact.get("visible") or {}).get("passed"),
+                    "total": (artifact.get("visible") or {}).get("total"),
+                    "cases": [
+                        {"passed": bool(c.get("passed")),
+                         "error": c.get("error")}
+                        for c in ((artifact.get("visible") or {}).get("cases") or [])
+                    ],
+                },
+                "hidden": {
+                    "passed": (artifact.get("hidden") or {}).get("passed"),
+                    "total": (artifact.get("hidden") or {}).get("total"),
+                },
+                "capped": artifact.get("capped"),
+                "final_score": artifact.get("final_score"),
+            }
+
     return cleaned

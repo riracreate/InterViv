@@ -13,6 +13,7 @@ from .sqlalchemy_models import (
     Base,
     BuilderDraftRow,
     CandidateRow,
+    CodingSubmissionRow,
     PracticePresetRow,
     RoundRow,
     SessionRow,
@@ -788,6 +789,87 @@ class _AnswerDraftCollection:
         }
 
 
+class _CodingSubmissionCollection:
+    """Append-only view over coding_submissions (one row per attempt)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": CodingSubmissionRow.id,
+            "user_id": CodingSubmissionRow.user_id,
+            "session_id": CodingSubmissionRow.session_id,
+            "round": CodingSubmissionRow.round_number,
+            "round_number": CodingSubmissionRow.round_number,
+            "problem_id": CodingSubmissionRow.problem_id,
+            "status": CodingSubmissionRow.status,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, CodingSubmissionRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, CodingSubmissionRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = CodingSubmissionRow(
+                id=str(data.get("id") or ""),
+                user_id=data["user_id"],
+                session_id=data["session_id"],
+                round_number=int(data.get("round", data.get("round_number"))),
+                problem_id=str(data.get("problem_id") or ""),
+                language=str(data.get("language") or "python"),
+                source=str(data.get("source") or ""),
+                truncated=bool(data.get("truncated")),
+                status=str(data.get("status") or ""),
+                score=data.get("score"),
+                visible_passed=data.get("visible_passed"),
+                visible_total=data.get("visible_total"),
+                hidden_passed=data.get("hidden_passed"),
+                hidden_total=data.get("hidden_total"),
+                error=data.get("error"),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data.get("id"))
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: CodingSubmissionRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "session_id": row.session_id,
+            "round": row.round_number,
+            "problem_id": row.problem_id,
+            "language": row.language,
+            "source": row.source,
+            "truncated": row.truncated,
+            "status": row.status,
+            "score": row.score,
+            "visible_passed": row.visible_passed,
+            "visible_total": row.visible_total,
+            "hidden_passed": row.hidden_passed,
+            "hidden_total": row.hidden_total,
+            "error": row.error,
+            "created_at": row.created_at,
+        }
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -797,6 +879,7 @@ class SQLAlchemyDatabase:
             "practice_presets": _PresetCollection(),
             "builder_drafts": _BuilderDraftCollection(),
             "answer_drafts": _AnswerDraftCollection(),
+            "coding_submissions": _CodingSubmissionCollection(),
         }
 
     def __getitem__(self, name: str):

@@ -15,6 +15,7 @@ import logging
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import json
 from typing import Any
@@ -23,6 +24,7 @@ from pydantic import BaseModel, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.execution import ExecutionUnavailableError
 from backend.integrations import IntegrationError
 from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
 from backend.routes.session import (
@@ -215,6 +217,60 @@ def _clear_answer_draft(db: Any, session_id: str, round_number: int) -> None:
         pass
 
 
+MAX_SUBMISSION_SOURCE_CHARS = 100_000
+
+
+def _record_coding_attempt(
+    db: Any,
+    *,
+    user_id: str | None,
+    session_id: str,
+    round_number: int,
+    problem_id: str,
+    source: str,
+    status: str,
+    score: float | None = None,
+    visible_passed: int | None = None,
+    visible_total: int | None = None,
+    hidden_passed: int | None = None,
+    hidden_total: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Persist one coding submit attempt (best effort, aggregates only).
+
+    Attempt rows carry the candidate's own source plus outcome counts.
+    Hidden inputs, expected outputs, reference solutions, and hidden
+    stdout/stderr are never stored here.
+    """
+    if not user_id:
+        return
+    text = source or ""
+    truncated = len(text) > MAX_SUBMISSION_SOURCE_CHARS
+    if truncated:
+        text = text[:MAX_SUBMISSION_SOURCE_CHARS]
+    try:
+        db["coding_submissions"].insert_one({
+            "id": str(uuid4()),
+            "user_id": str(user_id),
+            "session_id": session_id,
+            "round": int(round_number),
+            "problem_id": problem_id,
+            "language": "python",
+            "source": text,
+            "truncated": truncated,
+            "status": status,
+            "score": score,
+            "visible_passed": visible_passed,
+            "visible_total": visible_total,
+            "hidden_passed": hidden_passed,
+            "hidden_total": hidden_total,
+            "error": error,
+            "created_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        logger.warning("Failed to record coding attempt.", exc_info=True)
+
+
 @router.post("/answer")
 def submit_answer(
     request: SubmitAnswerRequest,
@@ -244,8 +300,8 @@ def submit_answer(
 
         round_type = active_round.get("round_type", "technical_short_answer")
 
-        # Phase 2 MCQ & SQL sessions must require valid JWT principal; reject anonymous sessions
-        if round_type in ("mcq", "sql"):
+        # Phase 2 MCQ, SQL & coding rounds require a valid JWT principal; reject anonymous sessions
+        if round_type in ("mcq", "sql", "coding"):
             if not authorization:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -376,6 +432,26 @@ def submit_answer(
                 {"session_id": request.session_id},
                 {"$set": {"rounds": rounds}},
             )
+            if isinstance(exc, ExecutionUnavailableError):
+                # The attempt is recorded as unevaluated history; the round
+                # stays open, nothing is scored, and the retry is a plain
+                # resubmit (not a 409).
+                if round_type == "coding":
+                    # Coding rounds always carry an owning user_id (auth is
+                    # mandatory), so the session owner is authoritative here.
+                    _record_coding_attempt(
+                        db,
+                        user_id=session.get("user_id"),
+                        session_id=request.session_id,
+                        round_number=request.round,
+                        problem_id=str((active_round.get("config_json") or {}).get("problem_id") or ""),
+                        source=request.answer_text or "",
+                        status="unavailable",
+                        error=str(exc),
+                    )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+                ) from exc
             if isinstance(exc, (ValueError, UnsupportedRoundTypeError)):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -385,6 +461,26 @@ def submit_answer(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
                 ) from exc
             raise
+
+        if round_type == "coding":
+            # Authoritative evaluation happened; record the graded attempt
+            # alongside the round persist below (aggregates only).
+            explanation = scoring_result.get("score_explanation") or {}
+            _record_coding_attempt(
+                db,
+                user_id=session.get("user_id"),
+                session_id=request.session_id,
+                round_number=request.round,
+                problem_id=str((active_round.get("config_json") or {}).get("problem_id") or ""),
+                source=request.answer_text or "",
+                status="scored",
+                score=scoring_result.get("final_score"),
+                visible_passed=explanation.get("visible_passed"),
+                visible_total=explanation.get("visible_total"),
+                hidden_passed=explanation.get("hidden_passed"),
+                hidden_total=explanation.get("hidden_total"),
+                error=None,
+            )
 
         # Elo update against THIS round's skill
         elo_before = float(active_round.get("elo_before") or settings.initial_elo)
@@ -573,7 +669,7 @@ def submit_answer(
                                 else _difficulty_from_elo(rotation_elo)
                             )
 
-                    if planned_type in ("mcq", "sql"):
+                    if planned_type in ("mcq", "sql", "coding"):
                         if expanded_spec:
                             spec_config: dict[str, Any] = {
                                 "count": expanded_spec.get("count", 15),
@@ -593,9 +689,14 @@ def submit_answer(
                                 spec_config.pop("duration_minutes", None)
                             sql_index = 0
                         else:
-                            sql_index = sum(
-                                1 for i, t in enumerate(plan[: next_round - 1]) if t == "sql"
-                            )
+                            if planned_type == "coding":
+                                sql_index = sum(
+                                    1 for i, t in enumerate(plan[: next_round - 1]) if t == "coding"
+                                )
+                            else:
+                                sql_index = sum(
+                                    1 for i, t in enumerate(plan[: next_round - 1]) if t == "sql"
+                                )
                             spec_config = dict(session.get("round_config") or {})
                         try:
                             next_doc = build_round_document(

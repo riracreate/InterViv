@@ -6,26 +6,27 @@
 export const PRACTICE_MODES = [
   { id: 'full', title: 'Full interview', blurb: 'Multi-skill free-text interview with existing voice input.' },
   { id: 'oa_sql', title: 'OA + SQL', blurb: 'MCQ assessment followed by SQL problems (not a general coding judge).' },
-  { id: 'problems', title: 'Problem practice', blurb: 'Browse existing MCQ and SQL bank items.' },
+  { id: 'problems', title: 'Problem practice', blurb: 'Browse existing MCQ, SQL, and coding bank items.' },
   { id: 'custom', title: 'Custom interview builder', blurb: 'Choose time, count, and a real round mix.' },
 ];
 
-export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql'];
+export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding'];
 
 export const PRESET_VERSION = 1;
 export const BUILDER_DRAFT_VERSION = 1;
 export const VERBAL_SKILL = 'Verbal Ability';
 
 // Phase B standalone entries: one clear start per available block.
-// Coding arrives in Phase C and stays unsupported here.
+// Phase C adds coding practice backed by the execution service.
 export const STANDALONE_MODES = [
   { id: 'verbal', title: 'Verbal Ability', blurb: 'English MCQs: grammar, vocabulary, comprehension, ordering, idioms.' },
   { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
+  { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
 ];
 
-export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'interview'];
+export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'interview'];
 
 export function createBlockId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -41,6 +42,9 @@ export function blockTemplate(category) {
   }
   if (category === 'sql') {
     return { round_type: 'sql', category: 'sql', skills: ['SQL'], count: 1, duration_minutes: 25 };
+  }
+  if (category === 'coding') {
+    return { round_type: 'coding', category: 'coding', skills: ['DSA'], count: 1, duration_minutes: 30 };
   }
   return { round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 3 };
 }
@@ -83,6 +87,7 @@ export function formatBlockLabel(block) {
   if (category === 'verbal') return `Verbal · ${count} ${noun}`;
   if (category === 'oa') return `OA · ${count} ${noun}`;
   if (category === 'sql') return `SQL · ${count} ${count === 1 ? 'problem' : 'problems'}`;
+  if (category === 'coding') return `Coding · ${count} ${count === 1 ? 'problem' : 'problems'}`;
   return `Interview · ${count} ${noun}`;
 }
 
@@ -102,7 +107,7 @@ export function validateBuilderBlocks(blocks) {
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i] || {};
     const label = `Block ${i + 1}`;
-    if (!['mcq', 'sql', 'technical_short_answer'].includes(b.round_type)) {
+    if (!['mcq', 'sql', 'coding', 'technical_short_answer'].includes(b.round_type)) {
       return `${label}: choose a supported round type.`;
     }
     if (b.category === 'verbal') {
@@ -118,6 +123,12 @@ export function validateBuilderBlocks(blocks) {
         return `${label}: OA blocks must not include Verbal Ability; add a Verbal block.`;
       }
     }
+    if (b.category === 'coding') {
+      if (b.round_type !== 'coding') return `${label}: Coding blocks are coding rounds.`;
+      if ((b.skills || []).includes(VERBAL_SKILL)) {
+        return `${label}: Coding blocks must not include Verbal Ability.`;
+      }
+    }
     if (b.category === 'interview' && (b.skills || []).length === 0) {
       return `${label}: select at least one skill.`;
     }
@@ -127,6 +138,7 @@ export function validateBuilderBlocks(blocks) {
       return `${label}: MCQ count must be 1–30.`;
     }
     if (b.category === 'sql' && count > 5) return `${label}: SQL count must be 1–5.`;
+    if (b.category === 'coding' && count > 5) return `${label}: Coding count must be 1–5.`;
     if (b.category === 'interview' && count > 10) return `${label}: interview count must be 1–10.`;
     if (b.duration_minutes != null) {
       const minutes = Number(b.duration_minutes);
@@ -196,6 +208,15 @@ export function mapStandaloneToStartPayload(kind, form = {}) {
   }
   if (kind === 'sql') {
     const duration = Number(form.durationMinutes) || 25;
+    if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
+    const block = { ...template, duration_minutes: duration };
+    if (form.problemId) block.problem_ids = [form.problemId];
+    else block.count = 1;
+    if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
+    return mapBlocksToStartPayload([block], form);
+  }
+  if (kind === 'coding') {
+    const duration = Number(form.durationMinutes) || 30;
     if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
     const block = { ...template, duration_minutes: duration };
     if (form.problemId) block.problem_ids = [form.problemId];
@@ -374,7 +395,7 @@ export function mapFullInterviewToStartPayload(form) {
  */
 export function mapProblemItemToStartPayload(item, form = {}) {
   if (!item || !item.id || !item.type) {
-    return { error: 'Pick an MCQ or SQL item from the bank.' };
+    return { error: 'Pick an MCQ, SQL, or coding item from the bank.' };
   }
   const skills = (form.skills || [item.skill || 'DBMS']).filter(Boolean);
   if (item.type === 'mcq') {
@@ -400,6 +421,20 @@ export function mapProblemItemToStartPayload(item, form = {}) {
         round_type: 'sql',
         round_config: {
           duration_minutes: Number(form.durationMinutes) || 25,
+          problem_id: item.id,
+        },
+        ...(form.candidateId ? { candidate_id: form.candidateId } : {}),
+      },
+    };
+  }
+  if (item.type === 'coding') {
+    return {
+      payload: {
+        skills: skills.length ? skills : ['DSA'],
+        rounds_per_skill: 1,
+        round_type: 'coding',
+        round_config: {
+          duration_minutes: Number(form.durationMinutes) || 30,
           problem_id: item.id,
         },
         ...(form.candidateId ? { candidate_id: form.candidateId } : {}),

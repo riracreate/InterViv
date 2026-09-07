@@ -104,7 +104,7 @@ export default function Practice() {
   const BUILDER_LOCAL_KEY = 'interviv-builder-draft-v1';
 
   // Problem bank
-  const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [] });
+  const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [], coding: [] });
   const [bankType, setBankType] = useState('all');
   const [bankDifficulty, setBankDifficulty] = useState('all');
   const [bankSkill, setBankSkill] = useState('all');
@@ -137,7 +137,7 @@ export default function Practice() {
     let cancelled = false;
     fetchPracticeBank()
       .then((data) => {
-        if (!cancelled) setBank({ mcq: data.mcq || [], verbal: data.verbal || [], sql: data.sql || [] });
+        if (!cancelled) setBank({ mcq: data.mcq || [], verbal: data.verbal || [], sql: data.sql || [], coding: data.coding || [] });
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Could not load practice bank.');
@@ -248,6 +248,9 @@ export default function Practice() {
     if (bankType === 'all' || bankType === 'sql') {
       items = items.concat((bank.sql || []).map((q) => ({ ...q, type: 'sql' })));
     }
+    if (bankType === 'all' || bankType === 'coding') {
+      items = items.concat((bank.coding || []).map((q) => ({ ...q, type: 'coding', skill: 'DSA' })));
+    }
     if (bankDifficulty !== 'all') {
       items = items.filter((i) => String(i.difficulty).toLowerCase() === bankDifficulty);
     }
@@ -262,6 +265,7 @@ export default function Practice() {
     (bank.mcq || []).forEach((q) => q.skill && set.add(q.skill));
     (bank.verbal || []).forEach((q) => q.skill && set.add(q.skill));
     (bank.sql || []).forEach(() => set.add('SQL'));
+    (bank.coding || []).forEach(() => set.add('DSA'));
     return Array.from(set).sort();
   }, [bank]);
 
@@ -320,8 +324,8 @@ export default function Practice() {
             Choose how you want to practice
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-ink-muted)]">
-            Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, and interview practice.
-            There is no general coding judge — SQL practice uses the sandboxed SQL runner only.
+            Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, coding, and interview practice.
+            Coding practice runs Python with visible examples and hidden-test scoring; SQL practice uses the sandboxed SQL runner only.
           </p>
         </header>
 
@@ -412,7 +416,7 @@ export default function Practice() {
           </section>
         )}
 
-        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'interview') && (
+        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)
@@ -677,6 +681,50 @@ export default function Practice() {
           </section>
         )}
 
+        {mode === 'coding' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-xl font-semibold">Coding practice</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              Python problems with visible examples and hidden-test scoring (60% visible, 40% hidden).
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                Time budget (minutes)
+                <input
+                  type="number" min={1} max={180}
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDuration}
+                  onChange={(e) => setStandaloneDuration(Number(e.target.value))}
+                />
+              </label>
+              <label className="text-sm">
+                Difficulty
+                <select
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneDifficulty}
+                  onChange={(e) => setStandaloneDifficulty(e.target.value)}
+                >
+                  <option value="">Mixed</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button" disabled={busy}
+              className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              onClick={() => runStart(mapStandaloneToStartPayload('coding', {
+                durationMinutes: standaloneDuration,
+                difficulty: standaloneDifficulty || undefined,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}
+            >
+              {busy ? 'Starting…' : 'Start coding practice'}
+            </button>
+          </section>
+        )}
+
         {mode === 'interview' && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Interview practice</h2>
@@ -734,7 +782,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Custom interview builder</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Add, reorder, and repeat Verbal, OA, SQL, and interview blocks with independent settings.
+              Add, reorder, and repeat Verbal, OA, SQL, coding, and interview blocks with independent settings.
               If your settings cannot be combined, you will see an explanation before starting.
             </p>
             {!builderLoaded && (
@@ -750,14 +798,14 @@ export default function Practice() {
                       onClick={() => setBlocks((prev) => addBlock(prev, category))}
                       className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:border-slate-400"
                     >
-                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : 'Interview'}
+                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : category === 'coding' ? 'Coding' : 'Interview'}
                     </button>
                   ))}
                 </div>
 
                 {blocks.length === 0 && (
                   <p className="mt-4 text-sm text-[var(--color-ink-muted)]">
-                    No blocks yet. Add Verbal, OA, SQL, or interview blocks above. Adding Verbal never erases your sequence.
+                    No blocks yet. Add Verbal, OA, SQL, coding, or interview blocks above. Adding Verbal never erases your sequence.
                   </p>
                 )}
 
@@ -831,11 +879,11 @@ export default function Practice() {
                           </p>
                         )}
                         <label className="text-xs text-[var(--color-ink-muted)]">
-                          {block.category === 'sql' ? 'Problems' : 'Questions'}
+                          {block.category === 'sql' || block.category === 'coding' ? 'Problems' : 'Questions'}
                           <input
                             type="number"
                             min={1}
-                            max={block.category === 'sql' ? 5 : block.category === 'interview' ? 10 : 30}
+                            max={block.category === 'sql' || block.category === 'coding' ? 5 : block.category === 'interview' ? 10 : 30}
                             className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)]"
                             value={block.count}
                             onChange={(e) =>
@@ -1015,7 +1063,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Problem practice</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              OA, Verbal Ability, and SQL banks only. No Monaco editor, no hidden-test coding judge.
+              OA, Verbal Ability, SQL, and coding banks. Coding items score against visible examples and hidden tests.
             </p>
             <div className="mt-4 flex flex-wrap gap-3 text-sm">
               <label>
@@ -1029,6 +1077,7 @@ export default function Practice() {
                   <option value="mcq">mcq</option>
                   <option value="verbal">verbal</option>
                   <option value="sql">sql</option>
+                  <option value="coding">coding</option>
                 </select>
               </label>
               <label>
@@ -1072,7 +1121,7 @@ export default function Practice() {
                     onClick={() => setSelectedItem(item)}
                   >
                     <p className="truncate text-sm font-medium text-[var(--color-ink)]">
-                      {item.type === 'sql' ? item.title : item.stem}
+                      {item.type === 'sql' || item.type === 'coding' ? item.title : item.stem}
                     </p>
                     <p className="text-xs text-[var(--color-ink-muted)]">
                       {item.type} · {item.difficulty || '—'} · {item.skill || '—'}
@@ -1101,7 +1150,7 @@ export default function Practice() {
             {selectedItem && (
               <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] p-4">
                 <p className="text-sm font-semibold text-[var(--color-ink)]">
-                  {selectedItem.type === 'sql' ? selectedItem.title : selectedItem.stem}
+                  {selectedItem.type === 'sql' || selectedItem.type === 'coding' ? selectedItem.title : selectedItem.stem}
                 </p>
                 <ResourceLinks
                   questionId={selectedItem.id}
