@@ -209,12 +209,21 @@ def test_self_assessment_excluded_from_gap_readiness_retry_notebook(
     assert submit.json()["scoring_mode"] == SCORING_MODE_SELF_REPORTED
     assert submit.json()["evidence_kind"] == "self_reported"
 
+    sid = started.json()["session_id"]
     progress = client.get("/dashboard/progress", headers=headers).json()
     # Self-reported-only history must not produce a measured average.
     for row in progress.get("history") or []:
-        if row.get("session_id") == started.json()["session_id"]:
+        if row.get("session_id") == sid:
             assert row.get("average_score") is None
             assert SCORING_MODE_SELF_REPORTED in (row.get("scoring_modes") or [])
+
+    # Session report must load even when feedback is a plain string (SD path).
+    dash = client.get(f"/dashboard/{sid}", headers=headers)
+    assert dash.status_code == 200, dash.text
+    body = dash.json()
+    assert body["rounds"][0]["scoring_mode"] == SCORING_MODE_SELF_REPORTED
+    assert body.get("self_reported_average") == submit.json()["final_score"]
+    assert (body.get("averages") or {}).get("final_score") is None
 
     notebook = client.get("/learning/notebook/me", headers=headers).json()
     assert all(
