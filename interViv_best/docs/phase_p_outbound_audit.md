@@ -97,18 +97,18 @@ Gap / readiness / mastery code paths consume **deterministic scores** that may h
 
 ## Step 2 — complete outbound table
 
-**Default = disposable offline:** no API keys/DSNs, `HF_HUB_OFFLINE=1`, `JOBS_LIVE_FETCH=0`, typical `QUESTION_GENERATION_MODE=csv` (or empty keys even if mode=`llm`).
+**Default = disposable offline (post–Phase Q):** no API keys/DSNs, `HF_HUB_OFFLINE=1`, `JOBS_LIVE_FETCH=0`, `LLM_LIVE_FETCH=0` (via `runtime_env`).
 
 | # | Site | Contacts | Gate | Default | Verdict |
 |---|------|----------|------|---------|---------|
 | 1 | `jobs_explorer.fetch_adzuna` `httpx` | `api.adzuna.com` | `JOBS_LIVE_FETCH` + Adzuna keys | No | **Latent** (Phase O) |
-| 2 | `question_runtime.call_llm_with_cache_retry` | OpenAI / OpenRouter chat | Provider keys (+ mode for `generate_question`) | No | **Latent** |
-| 3 | `adaptive_question_selector._call_llm` | Same as #2 | Keys only (mode **not** checked) | No | **Latent**; hole if keys set |
-| 4 | `question_bank._generate_via_llm` | Same | Mode + keys; **no prod caller** | No | **Latent / dead** |
-| 5 | `guidance_coach._llm_extract_phrases` | Same | Keys | No | **Latent** |
+| 2 | `question_runtime.call_llm_with_cache_retry` | OpenAI / OpenRouter chat | **`LLM_LIVE_FETCH` + mode ∈ {llm, llm_csv_fallback}** + keys | No | **Latent** (Phase Q gate) |
+| 3 | `adaptive_question_selector._call_llm` | Same as #2 (shared client) | Same boundary as #2 | No | **Latent**; mode hole **closed** in Q |
+| 4 | `question_bank._generate_via_llm` | Same | Same generation outbound gate + keys | No | **Latent / dead** |
+| 5 | `guidance_coach._llm_extract_phrases` | Same | **`LLM_LIVE_FETCH`** + keys (mode N/A) | No | **Latent** (Phase Q) |
 | 6 | `backend/observability` Sentry | DSN host | `SENTRY_DSN` | No | **Latent** |
 | 7 | `frontend/src/lib/sentry.js` | DSN envelope | `VITE_SENTRY_DSN` | No | **Latent** |
-| 8 | `frontend/src/index.css` Google Fonts `@import` | `fonts.googleapis.com` → `fonts.gstatic.com` | **None (pre-P)** | **Yes** | **Was LIVE → gated in P** |
+| 8 | `frontend/src/index.css` Google Fonts | — | Removed from default CSS | No | **Gated in P** |
 | 9 | `semantic_scorer` / warmup MiniLM | HF Hub on cache miss | `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | No successful outbound | **Latent** (Phase J) |
 | 10 | `transcribe` Whisper `tiny.en` | HF Hub on cache miss | Same offline env; cold → **503** | No successful outbound | **Latent**; fail-loud if cold |
 | 11 | `frontend` `api.js` `fetch` | `VITE_API_BASE_URL` / `/api` | Always | Loopback only | **Live local** |
@@ -122,28 +122,34 @@ Gap / readiness / mastery code paths consume **deterministic scores** that may h
 
 ## Step 3 — fixes and deferrals
 
-### Gated in this phase (live + contained)
+### Gated in Phase P (live + contained)
 
 | Item | Action |
 |------|--------|
 | Google Fonts CDN | Removed active `@import` from `index.css`. Opt-in URL retained as comment in `fonts.css`. Theme stacks keep branded names with system fallbacks. Test: `frontend/tests/offlineFonts.test.js`. Documented in `.env.example` |
 
-### Deferred (latent / decision / not redesign)
+### Closed in Phase Q (gating gaps)
+
+| Item | How closed |
+|------|------------|
+| Adaptive path ignored `QUESTION_GENERATION_MODE` | Mode + `LLM_LIVE_FETCH` enforced in `call_llm_with_cache_retry` (shared client). Adaptive `_call_llm` cannot route around it. Same generation gate on `_generate_via_llm`. |
+| No `runtime_env` LLM default | `LLM_LIVE_FETCH=0` via `backend/runtime_env.py` (Phase J/O pattern). Holds even when API keys are set. Coach uses `LLM_LIVE_FETCH` only. Tests: `tests/test_phaseQ_llm_gate.py`. |
+
+**Failure mode (observed, not changed):** when the gate is off, behavior matches today’s no-credentials path — soft `None` / CSV–lexicon fallback (SemanticScorer-like silent degrade). When the gate is on and the provider call fails, the same soft-fallback pattern remains; fail-loud vs labeled-unavailable for LLM is a separate decision.
+
+### Still deferred (owner / sourcing)
 
 | Finding | Recommendation |
 |---------|----------------|
-| LLM paths credential-gated only — no `runtime_env` offline default | Consider `QUESTION_GENERATION_MODE` setdefault `csv` and/or `LLM_LIVE_FETCH=0` mirroring Jobs/Hub |
-| Adaptive targeting ignores generation mode | Gate `_generate_targeted_question` on the same mode (or shared live-fetch flag) |
-| Path B dead `get_next_question` LLM | Leave or delete later; do not revive without mode gate |
-| Coach LLM independent of generation mode | Optional `COACH_LLM=0` default |
 | Phase O: if `JOBS_LIVE_FETCH=1` and fetch fails → silent fixture fallback | Wrong vs fail-loud / labeled-unavailable; fix with sourcing decision |
 | Phase O: sample `empty_reason` names `JOBS_LIVE_FETCH` | Violates no-raw-API-labels spirit; reword when Jobs copy is owned |
+| Path B dead `get_next_question` LLM | Leave or delete later |
 | Fail-fast vs sticky SemanticScorer | Still open (Phase J/F) |
 
 ### Not fixed (by instruction)
 
 - No VIOLATION existed to escalate.
-- No JobSourceClient / bank edits / scoring changes.
+- No JobSourceClient / scoring formula changes. Phase Q inserted a minimal outbound gate into protected `question_bank._generate_via_llm` only.
 
 ---
 
@@ -151,9 +157,11 @@ Gap / readiness / mastery code paths consume **deterministic scores** that may h
 
 | Pin | Why |
 |-----|-----|
-| `frontend/tests/offlineFonts.test.js` (new) | Assert default CSS does not load Google Fonts; opt-in URL stays inactive |
+| `frontend/tests/offlineFonts.test.js` (Phase P) | Assert default CSS does not load Google Fonts |
+| `tests/test_phaseQ_llm_gate.py` (Phase Q, new) | Default / keys+csv / adaptive / coach / bank: no urlopen; gate-on without keys unchanged |
+| `tests/test_task8_hardening.py` / `test_adaptive_selector.py` | Set `LLM_LIVE_FETCH=1` so stubbed live-client tests still reach the boundary |
 
-No backend scoring / Jobs / AV pins changed.
+No scoring / Jobs labeling / fonts / AV pins otherwise changed.
 
 ---
 

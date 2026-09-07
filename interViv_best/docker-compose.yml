@@ -49,6 +49,8 @@ services:
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       # Phase O: Adzuna outbound stays off unless deliberately enabled.
       JOBS_LIVE_FETCH: ${JOBS_LIVE_FETCH:-0}
+      # Phase Q: LLM chat completions stay off unless deliberately enabled.
+      LLM_LIVE_FETCH: ${LLM_LIVE_FETCH:-0}
     ports:
       - "8000:8000"
     depends_on:

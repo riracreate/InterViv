@@ -22,6 +22,10 @@ import pytest
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ["QUESTION_GENERATION_MODE"] = "llm_csv_fallback"
 os.environ["QUESTION_REQUIRE_LLM"] = "false"
+# Adaptive tests stub _call_llm; keep generation mode llm* for stubs that
+# exercise the targeted path. Force live-fetch on so an unstubbed call would
+# still reach the client (tests that assert no dial use monkeypatch).
+os.environ["LLM_LIVE_FETCH"] = "1"
 
 from modules import adaptive_question_selector as aqs  # noqa: E402
 from modules.concept_mastery import ConceptMastery  # noqa: E402

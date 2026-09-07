@@ -325,6 +325,13 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
     global _LAST_LLM_ERROR
     _LAST_LLM_ERROR = None
 
+    # Phase Q: shared outbound gate (minimal touch on this protected module).
+    from modules.llm_outbound_gate import question_llm_outbound_allowed
+
+    if not question_llm_outbound_allowed():
+        _LAST_LLM_ERROR = "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
+        return None
+
     provider, api_key, model = _llm_provider()
     if not provider or not api_key or not model:
         _LAST_LLM_ERROR = "No supported LLM provider/key/model was configured."
