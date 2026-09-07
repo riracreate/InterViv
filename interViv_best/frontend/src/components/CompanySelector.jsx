@@ -16,6 +16,7 @@ export default function CompanySelector({
   onSelectionChange,
   initialCompanyId,
   initialRoleId,
+  onSaved,
 }) {
   const [companies, setCompanies] = useState([]);
   const [disclaimer, setDisclaimer] = useState('');
@@ -76,6 +77,7 @@ export default function CompanySelector({
     try {
       await setTargetCompany(selectedCompany, selectedRole);
       setSaveMessage('Saved as your target.');
+      onSaved?.();
     } catch (err) {
       setSaveMessage(err.message || 'Could not save target.');
     } finally {

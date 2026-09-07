@@ -15,7 +15,9 @@ async function request(path, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.detail || data.error || "Request failed.");
+    const error = new Error(data.detail || data.error || "Request failed.");
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -53,6 +55,10 @@ export function login(payload) {
 
 export function fetchMe() {
   return request("/auth/me");
+}
+
+export function fetchAccountOverview() {
+  return request("/dashboard/progress");
 }
 
 export function fetchCompanies() {

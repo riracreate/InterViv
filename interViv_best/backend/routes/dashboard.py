@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import statistics
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -8,6 +9,9 @@ from fastapi import APIRouter, Header, HTTPException, status
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.routes.auth import require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
+from modules.gap_analysis import GapAnalyzer, GapAnalysisError
+from modules.learning_signals import build_signals_payload
+from modules.skill_graph import StudentSkillGraph
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -93,6 +97,88 @@ def _compute_topic_scores(session: dict[str, Any]) -> dict[str, float]:
 
     return {
         label: round(sum(values) / len(values), 2) for label, values in buckets.items()
+    }
+
+
+def _utc_date(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+@router.get("/progress")
+def get_account_progress(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Owned summaries only; never serialize questions, answers or artifacts.
+
+    Resume follows the existing engine: technical rounds have no persisted
+    deadline; timed MCQ/SQL rounds must still be inside their stored window.
+    This read does not activate rounds or extend deadlines.
+    """
+    user = require_user(authorization)
+    user_id = str(user["id"])
+    try:
+        owned = list(get_database()["sessions"].find({"user_id": user_id}))
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(status_code=503, detail="Practice history is temporarily unavailable.") from exc
+        raise
+    now = datetime.now(timezone.utc)
+    owned.sort(key=lambda row: (_utc_date(row.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc), str(row.get("session_id", ""))), reverse=True)
+    history = []
+    resumable = None
+    for session in owned:
+        rounds = session.get("rounds") or []
+        scored = [r for r in rounds if r.get("final_score") is not None]
+        summary = {
+            "session_id": session["session_id"],
+            "created_at": _utc_date(session.get("created_at")),
+            "status": session.get("status"),
+            "skills": session.get("skills") or [session.get("skill") or "General"],
+            "round_types": list(dict.fromkeys(r.get("round_type", "technical_short_answer") for r in rounds)),
+            "completed_rounds": len(scored),
+            "total_rounds": session.get("total_rounds") or len(rounds),
+            "average_score": round(statistics.mean(float(r["final_score"]) for r in scored), 2) if scored else None,
+        }
+        if scored:
+            history.append(summary)
+        active = rounds[-1] if rounds else None
+        if resumable is not None or session.get("status") != "active" or not active:
+            continue
+        if active.get("status") != "in_progress" or active.get("final_score") is not None:
+            continue
+        kind = active.get("round_type", "technical_short_answer")
+        if kind not in {"technical_short_answer", "mcq", "sql"}:
+            continue
+        deadline = _utc_date(active.get("expires_at"))
+        if active.get("expires_at") and deadline is None:
+            continue
+        if kind in {"mcq", "sql"} and deadline is None:
+            continue
+        if deadline is not None and deadline <= now:
+            continue
+        resumable = {**summary, "expires_at": deadline}
+    graph = StudentSkillGraph(user_id).to_api_payload()
+    target = None
+    if user.get("target_role_id"):
+        try:
+            target = GapAnalyzer().compute_gap(user_id, user["target_role_id"]).to_dict()
+        except GapAnalysisError:
+            pass  # A removed/unknown target is unavailable, not a measured zero.
+    return {
+        "user": {key: user.get(key) for key in ("id", "name", "target_company_id", "target_role_id")},
+        "server_time": now,
+        "target": target,
+        "readiness": target["overall_readiness_percentage"] if target and target["tested_skill_count"] > 0 else None,
+        "skills": graph["skills"],
+        "scored_session_count": len(history),
+        # simplification: latest 100 summaries suit local practice; paginate when histories grow.
+        "history": history[:100],
+        "resumable_session": resumable,
+        "learning_signals": build_signals_payload(user_id),
     }
 
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   fetchMe,
   fetchCompanies,
@@ -50,6 +50,7 @@ function navigateToInterview(navigate, startResp, extras = {}) {
 
 export default function Practice() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = searchParams.get('mode') || '';
 
@@ -97,12 +98,12 @@ export default function Practice() {
         }
       })
       .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: '/practice' } });
+        if (!cancelled) navigate('/login', { replace: true, state: { next: location.pathname + location.search } });
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   useEffect(() => {
     if (!authReady || mode !== 'problems') return undefined;
@@ -394,8 +395,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Custom interview builder</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Builds a real <code>round_plan</code> and calls <code>POST /session/start</code>. Unsupported mixes fail
-              with an inline error — rounds are never silently dropped.
+              Choose interview, MCQ and SQL rounds. If your settings cannot be combined, you will see an explanation before starting.
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">
@@ -429,7 +429,7 @@ export default function Practice() {
                   checked={includeTechnical}
                   onChange={(e) => setIncludeTechnical(e.target.checked)}
                 />
-                Free-text (technical / verbal)
+                Interview (technical / HR)
               </label>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={includeMcq} onChange={(e) => setIncludeMcq(e.target.checked)} />
