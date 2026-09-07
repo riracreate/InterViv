@@ -127,3 +127,62 @@ steps in an unrestricted terminal:
    `coding_submissions`.
 5. Build a mixed Verbal → Coding → SQL session in the Practice Hub
    and confirm block order, timers, and resume from Progress.
+
+## Inherited-evidence correction (recorded at Phase D start)
+
+This addendum is not a Phase C code change. It corrects two evidence
+claims so later phases inherit accurate figures. The protected scorer
+was not modified.
+
+### (a) scoring_regression.py failure count
+
+Phases A–B.1 recorded exactly two known failures. Phase C reported
+4/8 FAILs, byte-identical on `39a7579`. Re-run on this machine, with
+offline settings, against disposable scratch worktrees (since removed):
+
+| Commit | Label | Failures |
+| --- | --- | --- |
+| `0442493` Phase A | 2/8 | identical pair below |
+| `1601e91` Phase B | 2/8 | identical pair below |
+| `39a7579` Phase B.1 | 2/8 | identical pair below |
+| `98d3813` Phase C / C.1 (HEAD) | 2/8 | identical pair below |
+
+The two failures, identical at every listed commit:
+
+| case | guard produced | guard expected | score | within expected band |
+| --- | --- | --- | --- | --- |
+| `gibberish` | `repetition` | `gibberish` | 6.06 | yes `[0, 25]` |
+| `keyword_stuffing` | `gibberish` | `keyword_stuffing` | 10.00 | yes `[0, 40]` |
+
+The other six cases (`excellent`, `paraphrase`, `partial`, `empty`,
+`excessive_repetition`, `off_topic`) passed at every listed commit.
+`scripts/scoring_regression.py`, `modules/answer_guard.py`, and
+`backend/scoring/pipeline.py` are byte-identical across
+`0442493..98d3813`.
+
+The count did not move from two to four at any of those commits. The
+Phase C "4/8 FAILs" figure is not reproducible here. A commit that
+introduced two extra failures **cannot be determined** from this
+environment; the extra two failures were not observed.
+
+**Corrected inherited baseline for later phases: 2/8 guard-label
+mismatches** (scores inside bands). Do not treat 4/8 as the baseline.
+
+### (b) docs/human_baseline_report.md
+
+Phase B.1 reported a clean tree and restored the research report after
+the inherited suite. Phase C reported a 163-line deletion described as
+pre-existing.
+
+In this worktree the working-tree file matches the committed bytes at
+both `39a7579` and `98d3813` (230 lines,
+MD5 `5421f9f0fd6efad395666c545e5cf76a`). No restoration was required.
+
+The 163-line deletion **is** what the inherited test produces. Running
+`tests/test_change5_baseline.py::test_analysis_produces_report`
+executes `scripts/baseline_analysis.py`, which overwrites
+`docs/human_baseline_report.md` with the original n=30 analysis and
+drops the appended n=50 validation study (230 → 68 lines; diffstat
+1 insertion, 163 deletions). That is regenerated research output, not
+an uncommitted Phase C edit. It was not committed. The research study
+was not reopened.
