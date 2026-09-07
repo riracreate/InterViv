@@ -41,6 +41,8 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase L** (`feat` after K): gate Interview camera/mic/calibration by block `category` (Verbal/OA skip; interview keeps E.1 AV). SSR pin in `frontend/tests/interviewMediaGate.test.js`. Gate item closed in `docs/phase_k_verbal_assessment.md`.
 
+**Phase N** (docs only): engineering assessment of what accepting real job listings would require — inventory, adapter seam, breakage, obligations stated not decided. See `docs/phase_n_jobs_data_assessment.md`. No integration; no vendor contact.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -164,6 +166,7 @@ to MiniLM.
 | C.2 Docker execution | Not started | **Owner:** pursue Docker or keep 503 seam? |
 | E.2 AV artifacts | Not started | Out of scope until authorized |
 | phase21 Verbal Upload entry | Not integrated | Upload entry still skipped; **media gate done in Phase L** (`docs/phase_k_verbal_assessment.md`) |
+| Real job listings vs sample fixture | Owner decision | Engineering half: `docs/phase_n_jobs_data_assessment.md` (recommend keep labeled sample / offline import; live adapter is optional later) |
 | Fail-fast vs labeled-degraded | Product | **Still open.** Phase J: Hub-offline env fixes warm-cache outbound; cold cache still sticky-degrades. Owner: abort on missing model vs continue with mode label? |
 | Home target picker vs `/target-context/me` | Known gap | Prefill inconsistency |
 
@@ -228,4 +231,4 @@ git show-ref | grep refs/rescue/
 
 ## Related delivery docs
 
-`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`. Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_n_jobs_data_assessment.md`. Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
