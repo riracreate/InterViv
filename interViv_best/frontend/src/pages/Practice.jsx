@@ -22,6 +22,7 @@ import {
   BLOCK_CATEGORIES,
   PRESET_VERSION,
   BUILDER_DRAFT_VERSION,
+  blockCategoryButtonLabel,
   createBlockId,
   addBlock,
   removeBlock,
@@ -885,7 +886,7 @@ export default function Practice() {
                       onClick={() => setBlocks((prev) => addBlock(prev, category))}
                       className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:border-slate-400"
                     >
-                      + {category === 'verbal' ? 'Verbal' : category === 'oa' ? 'OA' : category === 'sql' ? 'SQL' : category === 'coding' ? 'Coding' : category === 'system_design' ? 'System design' : 'Interview'}
+                      + {blockCategoryButtonLabel(category)}
                     </button>
                   ))}
                 </div>

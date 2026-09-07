@@ -66,6 +66,9 @@ interface Round {
   questionType?: string;
   followups?: string[];
   scoring_breakdown?: ScoringBreakdown;
+  scoring_mode?: string;
+  scoring_mode_label?: string;
+  evidence_kind?: string;
 }
 
 function fmt(n?: number | null, decimals = 1): string {
@@ -109,6 +112,16 @@ function RoundBreakdown({ round }: { round: Round }) {
   const [open, setOpen] = useState(false);
   const bd = round.scoring_breakdown;
   const hasData = bd && (bd.layer1_score != null || bd.final_score != null);
+  const scoringMode = round.scoring_mode || "unknown";
+  const scoringModeLabel =
+    round.scoring_mode_label
+    || (scoringMode === "lexical_fallback_degraded"
+      ? "Lexical fallback (semantic scorer unavailable)"
+      : scoringMode === "self_reported"
+        ? "Self-reported (not measured)"
+        : scoringMode === "full"
+          ? "Full semantic scoring"
+          : "Scoring mode unknown");
 
   const layer1Contrib = bd ? (0.55 * (bd.layer1_score ?? 0)).toFixed(1) : "–";
   const layer2Contrib = bd ? (0.25 * (bd.layer2_score ?? 0)).toFixed(1) : "–";
@@ -162,6 +175,17 @@ function RoundBreakdown({ round }: { round: Round }) {
                   Guard applied: <strong>{guardReason}</strong>.
                   {guardCap ? ` Score cap: ${Math.round(Number(guardCap))}.` : ""}
                   {" "}Your answer looks incomplete or gibberish. Please write a meaningful explanation.
+                </div>
+              )}
+
+              {(scoringMode === "lexical_fallback_degraded" || scoringMode === "unknown" || scoringMode === "self_reported") && (
+                <div className="mb-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-2 text-sky-200 text-xs">
+                  Scoring mode: <strong>{scoringModeLabel}</strong>
+                  {scoringMode === "lexical_fallback_degraded"
+                    ? ". This score used lexical fallback — it is not equivalent to a full semantic-scorer result."
+                    : scoringMode === "unknown"
+                      ? ". Mode was not recorded when this attempt was scored."
+                      : ". This result is self-reported and is not measured mastery."}
                 </div>
               )}
 

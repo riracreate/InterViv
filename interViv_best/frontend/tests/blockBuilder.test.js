@@ -8,6 +8,7 @@ import {
   moveBlock,
   duplicateBlock,
   formatBlockLabel,
+  blockCategoryButtonLabel,
   totalTimeSummary,
   validateBuilderBlocks,
   mapBlocksToStartPayload,
@@ -51,6 +52,24 @@ test('block labels use human text, never raw round names', () => {
   assert.equal(formatBlockLabel({ category: 'verbal', count: 1 }), 'Verbal · 1 question');
   assert.equal(formatBlockLabel({ category: 'sql', count: 2 }), 'SQL · 2 problems');
   assert.match(formatBlockLabel({ category: 'interview', count: 3 }), /Interview · 3 questions/);
+  assert.equal(
+    formatBlockLabel({ category: 'system_design', count: 1 }),
+    'System design · 1 prompt',
+  );
+  assert.equal(blockCategoryButtonLabel('system_design'), 'System design');
+  assert.equal(blockCategoryButtonLabel('interview'), 'Interview');
+  assert.notEqual(blockCategoryButtonLabel('system_design'), 'Interview');
+});
+
+test('standalone system design maps to a system_design block', () => {
+  const mapped = mapStandaloneToStartPayload('system_design', {
+    count: 1,
+    durationMinutes: 25,
+  });
+  assert.equal(mapped.error, undefined);
+  assert.equal(mapped.payload.blocks[0].category, 'system_design');
+  assert.equal(mapped.payload.blocks[0].round_type, 'system_design');
+  assert.equal(mapped.payload.blocks[0].count, 1);
 });
 
 test('total-time summary separates timed minutes and untimed blocks', () => {

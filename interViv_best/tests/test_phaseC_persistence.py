@@ -33,6 +33,9 @@ from backend.db.sqlalchemy_store import (
     get_sqlalchemy_database,
 )
 from backend.main import app
+from tests.alembic_helpers import parent_revision
+
+PHASE_C_REVISION = "20260907_0005"
 
 
 def _clear_db_caches() -> None:
@@ -189,7 +192,7 @@ def test_alembic_migration_creates_coding_submissions(tmp_path) -> None:
         assert col in cols, col
     engine.dispose()
 
-    _run_alembic(url, "downgrade", "20260907_0004")
+    _run_alembic(url, "downgrade", parent_revision(PHASE_C_REVISION))
     engine = create_engine(url)
     try:
         assert "coding_submissions" not in sa_inspect(engine).get_table_names()
