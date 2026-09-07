@@ -39,6 +39,8 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase K** (docs only): read-only assessment of rescued phase21 Verbal UI blobs vs the chain at `dac9c3c`. No integration. See `docs/phase_k_verbal_assessment.md`.
 
+**Phase L** (`feat` after K): gate Interview camera/mic/calibration by block `category` (Verbal/OA skip; interview keeps E.1 AV). SSR pin in `frontend/tests/interviewMediaGate.test.js`. Gate item closed in `docs/phase_k_verbal_assessment.md`.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -161,7 +163,7 @@ to MiniLM.
 | Real mic/camera | STILL BLOCKED | Hardware |
 | C.2 Docker execution | Not started | **Owner:** pursue Docker or keep 503 seam? |
 | E.2 AV artifacts | Not started | Out of scope until authorized |
-| phase21 Verbal Upload entry | Not integrated | **Owner:** see `docs/phase_k_verbal_assessment.md` (selective gate recommended; no drop-in) |
+| phase21 Verbal Upload entry | Not integrated | Upload entry still skipped; **media gate done in Phase L** (`docs/phase_k_verbal_assessment.md`) |
 | Fail-fast vs labeled-degraded | Product | **Still open.** Phase J: Hub-offline env fixes warm-cache outbound; cold cache still sticky-degrades. Owner: abort on missing model vs continue with mode label? |
 | Home target picker vs `/target-context/me` | Known gap | Prefill inconsistency |
 
