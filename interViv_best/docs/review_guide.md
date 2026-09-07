@@ -35,6 +35,8 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase I** (`feat` after H.1): spaced-review scheduling over notebook misses — ladder `(1,3,7,16,35)`, due surface on Learn, reviews reuse the block engine and **do not** move measured mastery. Delivery: `docs/phase_i_delivery.md`. Migration head becomes `20260907_0008`.
 
+**Phase J** (`ops/docs` after I): Hub-offline runtime defaults so a warm MiniLM cache loads full SemanticScorer without Hub TCP. Delivery: `docs/phase_j_delivery.md`. No migration.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -104,17 +106,36 @@ No historical migration files were edited after introduction; only new revisions
 
 ## (e) Environment-dependent scoring (fresh reader)
 
-SemanticScorer loads **`all-MiniLM-L6-v2` in-process**. If weights are not cached, a Hub fetch may **403**. Fallback is **process-sticky** for the worker lifetime and changes **both guard labels and numeric scores**.
+SemanticScorer loads **`all-MiniLM-L6-v2` in-process** from the Hugging Face Hub
+cache under `~/.cache/huggingface/hub/…`.
+
+**Phase J finding (see `docs/phase_j_delivery.md`):** on this machine the
+checkpoint is already cached (~87M `model.safetensors`). Without offline env,
+`SentenceTransformer(...)` still opens **TCP to `huggingface.co:443`** for
+Hub **HEAD** / resolve checks (metadata, not necessarily a weight re-download).
+A **403** on that path flips the process into sticky lexical fallback and
+changes **both guard labels and numeric scores**.
+
+With **`HF_HUB_OFFLINE=1`** (and typically `TRANSFORMERS_OFFLINE=1`),
+`huggingface_hub` raises `OfflineModeIsEnabled` **before** socket connect.
+Warm cache → full scorer; **no Hub TCP**. Cold / empty `HF_HOME` → library
+`OSError`, then the app’s existing sticky degrade (fail-fast still not built).
 
 | Mode | How | `scoring_regression` |
 |------|-----|----------------------|
-| full | model cached; often `HF_HUB_OFFLINE=1` | **2/8** — always-present: gibberish→repetition (6.06); keyword_stuffing→gibberish (10.00) |
-| degraded | `DISABLE_SEMANTIC_SCORING=1` (same pattern as Hub-403 fallback) | **4/8** — above + paraphrase out of band + off_topic guard None |
+| full | cached MiniLM + Hub offline env (`backend.runtime_env` / `.env.example`) | **2/8** — always-present: gibberish→repetition (6.06); keyword_stuffing→gibberish (10.00) |
+| degraded | `DISABLE_SEMANTIC_SCORING=1` (same sticky pattern as Hub-403 / cold-cache miss) | **4/8** — above + paraphrase out of band + off_topic guard None |
 
-F.0 exposed mode on `/health`. G.0/G.0b **record `scoring_mode` on each scored attempt** (inside `scoring_breakdown` JSON) and surface it; rows without a stored mode read as **`unknown`** (never guessed). **Fail-fast at startup was deliberately not built** — product decision (abort vs labeled degrade).
+F.0 exposed mode on `/health`. G.0/G.0b **record `scoring_mode` on each scored attempt** (inside `scoring_breakdown` JSON) and surface it; rows without a stored mode read as **`unknown`** (never guessed). **Fail-fast at startup was deliberately not built** — product decision (abort vs labeled degrade) **remains open**.
 
-This Hub/offline tension is a **pre–Phase A** condition. An outbound Hub fetch under an offline working constraint remains **unresolved**.
+**Phase J** makes Hub-offline the **recommended local operating configuration**
+so warm machines stay in full mode without an outbound Hub request. That does
+**not** retire fail-fast, and a fresh install without the cached model still
+labeled-degrades. Mode-on-attempt remains the durable record if a worker runs
+degraded anyway.
 
+Other optional outbound (LLM keys, Adzuna, Sentry) is unchanged and unrelated
+to MiniLM.
 ---
 
 ## (f) Honest capability inventory
@@ -139,7 +160,7 @@ This Hub/offline tension is a **pre–Phase A** condition. An outbound Hub fetch
 | C.2 Docker execution | Not started | **Owner:** pursue Docker or keep 503 seam? |
 | E.2 AV artifacts | Not started | Out of scope until authorized |
 | phase21 Verbal Upload entry | Not integrated | **Owner:** integrate rescued blobs? (`refs/rescue/phase21-blob-*`) |
-| Fail-fast vs labeled-degraded | Product | **Owner:** abort on missing model vs continue with mode label? |
+| Fail-fast vs labeled-degraded | Product | **Still open.** Phase J: Hub-offline env fixes warm-cache outbound; cold cache still sticky-degrades. Owner: abort on missing model vs continue with mode label? |
 | Home target picker vs `/target-context/me` | Known gap | Prefill inconsistency |
 
 ---

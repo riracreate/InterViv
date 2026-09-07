@@ -43,7 +43,10 @@ services:
       QUESTION_LLM_RATE_LIMIT_PER_MINUTE: 60
       QUESTION_LLM_PROVIDER: openrouter
       OPENROUTER_MODEL: anthropic/claude-haiku-4.5
-    ports:
+      # Phase J: use cached MiniLM; do not Hub-fetch during scorer warm-up.
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}    ports:
       - "8000:8000"
     depends_on:
       postgres:
