@@ -547,6 +547,51 @@ class AssistanceEventRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
+class ReviewScheduleRow(Base):
+    """Phase I spaced-review schedule for a notebook miss (or coding unavailable).
+
+    Interval ladder is applied in backend.review_schedule. Reviews never feed
+    measured mastery; coding rows stay review_available=False.
+    """
+
+    __tablename__ = "review_schedules"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    skill: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    originating_assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    miss_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    interval_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_review_assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    review_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    unavailable_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "item_type", "item_id",
+            name="uq_review_schedules_user_item",
+        ),
+    )
+
+
 class SystemDesignAttemptRow(Base):
     """Phase E system-design attempt: design text plus self-assessment rubric.
 

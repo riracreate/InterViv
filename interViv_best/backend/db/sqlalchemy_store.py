@@ -18,6 +18,7 @@ from .sqlalchemy_models import (
     CodingSubmissionRow,
     PracticePresetRow,
     RetrySetRow,
+    ReviewScheduleRow,
     RoundRow,
     SessionRow,
     SystemDesignAttemptRow,
@@ -1251,6 +1252,116 @@ class _SystemDesignAttemptCollection:
         }
 
 
+class _ReviewScheduleCollection:
+    """Phase I spaced-review schedule rows (user + item identity)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": ReviewScheduleRow.id,
+            "user_id": ReviewScheduleRow.user_id,
+            "item_type": ReviewScheduleRow.item_type,
+            "item_id": ReviewScheduleRow.item_id,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, ReviewScheduleRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, ReviewScheduleRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = ReviewScheduleRow(
+                id=str(data.get("id") or ""),
+                user_id=str(data["user_id"]),
+                item_type=str(data.get("item_type") or ""),
+                item_id=str(data.get("item_id") or ""),
+                skill=data.get("skill"),
+                title=data.get("title"),
+                source_session_id=data.get("source_session_id"),
+                source_round=data.get("source_round"),
+                originating_assisted=data.get("originating_assisted"),
+                miss_reason=data.get("miss_reason"),
+                interval_days=int(data.get("interval_days") or 1),
+                interval_index=int(data.get("interval_index") or 0),
+                due_at=_coerce_datetime(data.get("due_at")) or _now(),
+                review_count=int(data.get("review_count") or 0),
+                last_reviewed_at=_coerce_datetime(data.get("last_reviewed_at")),
+                last_outcome=data.get("last_outcome"),
+                last_review_assisted=data.get("last_review_assisted"),
+                review_available=bool(
+                    True if data.get("review_available") is None else data.get("review_available")
+                ),
+                unavailable_reason=data.get("unavailable_reason"),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data.get("id"))
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("id") and doc.get("user_id"):
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, ReviewScheduleRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: ReviewScheduleRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "item_type": row.item_type,
+            "item_id": row.item_id,
+            "skill": row.skill,
+            "title": row.title,
+            "source_session_id": row.source_session_id,
+            "source_round": row.source_round,
+            "originating_assisted": row.originating_assisted,
+            "miss_reason": row.miss_reason,
+            "interval_days": row.interval_days,
+            "interval_index": row.interval_index,
+            "due_at": row.due_at,
+            "review_count": row.review_count,
+            "last_reviewed_at": row.last_reviewed_at,
+            "last_outcome": row.last_outcome,
+            "last_review_assisted": row.last_review_assisted,
+            "review_available": row.review_available,
+            "unavailable_reason": row.unavailable_reason,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -1266,6 +1377,7 @@ class SQLAlchemyDatabase:
             "retry_sets": _RetrySetCollection(),
             "bookmarks": _BookmarkCollection(),
             "assistance_events": _AssistanceEventCollection(),
+            "review_schedules": _ReviewScheduleCollection(),
         }
 
     def __getitem__(self, name: str):

@@ -37,6 +37,7 @@ from backend.routes.session import (
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
 from backend.evidence_kind import (
     scoring_mode_at_write,
+    EVIDENCE_PRACTICE_REVIEW,
     EVIDENCE_SELF_REPORTED,
     evidence_kind_for_round,
     is_self_reported_round,
@@ -656,14 +657,22 @@ def submit_answer(
                     ),
                 )
 
-        # Elo / difficulty: self-reported rounds never move measured Elo.
+        # Elo / difficulty: self-reported and spaced-review practice never
+        # move measured Elo.
         elo_before = float(active_round.get("elo_before") or settings.initial_elo)
-        evidence_kind = evidence_kind_for_round(
-            round_type=round_type,
-            evaluation_mode=scoring_result.get("evaluation_mode"),
+        is_spaced_review = (
+            (session.get("round_config") or {}).get("purpose") == "spaced_review"
+        )
+        evidence_kind = (
+            EVIDENCE_PRACTICE_REVIEW
+            if is_spaced_review
+            else evidence_kind_for_round(
+                round_type=round_type,
+                evaluation_mode=scoring_result.get("evaluation_mode"),
+            )
         )
         self_reported = evidence_kind == EVIDENCE_SELF_REPORTED
-        if self_reported:
+        if self_reported or is_spaced_review:
             elo_after = elo_before
             next_difficulty = active_round.get("difficulty", "medium")
             difficulty_change = "same"
@@ -774,8 +783,12 @@ def submit_answer(
         next_block_category: str | None = None
 
         session_status = "completed" if request.round >= total_rounds else "active"
-        # Measured readiness only — self-reported scores stay out of the mean.
-        completed_scores = measured_scores(rounds)
+        is_spaced_review = (
+            (session.get("round_config") or {}).get("purpose") == "spaced_review"
+        )
+        # Measured readiness only — self-reported and spaced-review practice
+        # stay out of the mean.
+        completed_scores = [] if is_spaced_review else measured_scores(rounds)
         session_update = {
             "rounds": rounds,
             "last_round": request.round,
@@ -794,12 +807,12 @@ def submit_answer(
 
         try:
             # First persist the completed round. Measured rounds update Elo and
-            # learning state; self-reported rounds do not.
+            # learning state; self-reported and spaced-review practice do not.
             db["sessions"].update_one(
                 {"session_id": request.session_id},
                 {"$set": session_update},
             )
-            if not self_reported:
+            if not self_reported and not is_spaced_review:
                 db["candidates"].update_one(
                     {"candidate_id": session["candidate_id"]},
                     {"$set": {f"elo_ratings.{current_skill}": elo_after}},
@@ -814,6 +827,28 @@ def submit_answer(
                     elo_after=elo_after,
                     session_id=request.session_id,
                 )
+            elif is_spaced_review:
+                try:
+                    from backend.routes.learning_hub import (
+                        apply_review_outcome_for_session_round,
+                    )
+
+                    submitted = next(
+                        (r for r in rounds if r.get("round") == request.round),
+                        None,
+                    )
+                    if submitted is not None:
+                        apply_review_outcome_for_session_round(
+                            db,
+                            session,
+                            submitted,
+                            assisted=bool(submitted.get("assisted")),
+                        )
+                except Exception:
+                    logger.warning(
+                        "Failed to apply spaced-review schedule update.",
+                        exc_info=True,
+                    )
 
             # Clear the saved draft for the submitted round: submitted attempts
             # are immutable and drafts must not survive submission.

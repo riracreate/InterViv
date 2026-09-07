@@ -260,6 +260,26 @@ export function fetchNextSteps() {
   return request("/learning/next-steps/me");
 }
 
+export function fetchDueReviews() {
+  return request("/learning/reviews/due");
+}
+
+export function fetchReviewSchedules() {
+  return request("/learning/reviews/me");
+}
+
+export function syncReviewSchedules() {
+  return request("/learning/reviews/sync", { method: "POST" });
+}
+
+export function startDueReviews(payload = {}) {
+  return request("/learning/reviews/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function uploadResume(file) {
   const formData = new FormData();
   formData.append("file", file);

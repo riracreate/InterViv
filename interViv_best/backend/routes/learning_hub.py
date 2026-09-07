@@ -8,6 +8,8 @@ Every surface here is derived from recorded evidence only:
 - Coding rounds contribute no scored evidence while execution is
   unavailable; they are disclosed as unavailable, never as zeros and
   never silently omitted.
+- Phase I spaced-review schedules sit on notebook misses (plus coding
+  unavailable attempts). Reviews are practice, not measured mastery.
 - No answer keys, restricted explanations, reference solutions, hidden
   tests, or private execution metadata leave through these responses.
 """
@@ -23,6 +25,12 @@ from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.evidence_kind import is_self_reported_round
+from backend.review_schedule import (
+    INTERVAL_LADDER,
+    advance_after_outcome,
+    is_due,
+    ladder_days_at,
+)
 from backend.routes.auth import require_user
 from backend.routes.session import StartSessionRequest, start_session
 
@@ -33,11 +41,19 @@ ASSISTANCE_KINDS = ("hint", "explanation", "solution", "editorial")
 GOOD_SCORE_CUTOFF = 61.0  # Report bands: Good is a final score above 60.
 MAX_RETRY_ITEMS = 10
 MAX_BOOKMARK_ITEMS = 200
+MAX_REVIEW_START_ITEMS = 10
+SPACED_REVIEW_PURPOSE = "spaced_review"
 
 
 class RetrySetRequest(BaseModel):
     name: str | None = None
     max_items: int = 5
+    skills: list[str] = Field(default_factory=list)
+
+
+class ReviewStartRequest(BaseModel):
+    max_items: int = 5
+    include_unavailable: bool = False
     skills: list[str] = Field(default_factory=list)
 
 
@@ -219,15 +235,22 @@ def assistance_breakdown_for_user(user_id: str) -> dict[str, Any]:
     """Per-skill assisted/unassisted scored-round counts (read-time join).
 
     Existing mastery figures are unchanged; this sits alongside them so
-    no surface silently mixes the two populations.
+    no surface silently mixes the two populations. Spaced-review practice
+    rounds are excluded — they are not measured attempts.
     """
+    from backend.evidence_kind import is_practice_review_round
+
     db = get_database()
     sessions = _owned_sessions(db, user_id)
     per_skill: dict[str, dict[str, int]] = {}
     totals = {"assisted_rounds": 0, "unassisted_rounds": 0}
     for session in sessions:
+        if (session.get("round_config") or {}).get("purpose") == SPACED_REVIEW_PURPOSE:
+            continue
         for round_doc in session.get("rounds") or []:
             if round_doc.get("final_score") is None:
+                continue
+            if is_practice_review_round(round_doc) or is_self_reported_round(round_doc):
                 continue
             skill = str(
                 round_doc.get("skill")
@@ -257,6 +280,9 @@ def _notebook_entries(
     scored_rounds = 0
     for session in sessions:
         session_id = session.get("session_id")
+        # Spaced-review practice sessions are not measured misses.
+        if (session.get("round_config") or {}).get("purpose") == SPACED_REVIEW_PURPOSE:
+            continue
         for round_doc in session.get("rounds") or []:
             round_type = round_doc.get("round_type", "technical_short_answer")
             final_score = round_doc.get("final_score")
@@ -1042,12 +1068,18 @@ def get_explanation(
 def _mcq_item_outcomes(
     sessions: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
+    from backend.evidence_kind import is_practice_review_round
+
     outcomes: dict[str, dict[str, Any]] = {}
     for session in sessions:
+        if (session.get("round_config") or {}).get("purpose") == SPACED_REVIEW_PURPOSE:
+            continue
         for round_doc in session.get("rounds") or []:
             if round_doc.get("round_type") != "mcq":
                 continue
             if round_doc.get("final_score") is None:
+                continue
+            if is_practice_review_round(round_doc):
                 continue
             for answered in (round_doc.get("artifact_json") or {}).get("questions") or []:
                 item_id = str(answered.get("question_id"))
@@ -1065,12 +1097,18 @@ def _mcq_item_outcomes(
 def _problem_outcomes(
     sessions: list[dict[str, Any]], round_type: str
 ) -> dict[str, dict[str, Any]]:
+    from backend.evidence_kind import is_practice_review_round
+
     outcomes: dict[str, dict[str, Any]] = {}
     for session in sessions:
+        if (session.get("round_config") or {}).get("purpose") == SPACED_REVIEW_PURPOSE:
+            continue
         for round_doc in session.get("rounds") or []:
             if round_doc.get("round_type") != round_type:
                 continue
             if round_doc.get("final_score") is None:
+                continue
+            if is_practice_review_round(round_doc):
                 continue
             config = round_doc.get("config_json") or {}
             item_id = str(config.get("problem_id") or "")
@@ -1292,3 +1330,480 @@ def get_my_next_steps(
             ),
         }
     return {"suggestions": suggestions, "coverage": coverage, "empty_reason": None}
+
+
+# ---------------------------------------------------------------------------
+# Phase I: spaced-review schedule
+# ---------------------------------------------------------------------------
+
+
+def _public_schedule(doc: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    when = now or datetime.now(timezone.utc)
+    available = bool(doc.get("review_available", True))
+    return {
+        "id": doc.get("id"),
+        "item_type": doc.get("item_type"),
+        "item_id": doc.get("item_id"),
+        "skill": doc.get("skill"),
+        "title": doc.get("title"),
+        "miss_reason": doc.get("miss_reason"),
+        "originating_assisted": doc.get("originating_assisted"),
+        "interval_days": doc.get("interval_days"),
+        "interval_index": doc.get("interval_index"),
+        "interval_ladder": list(INTERVAL_LADDER),
+        "due_at": doc.get("due_at"),
+        "is_due": is_due(doc, now=when),
+        "review_count": doc.get("review_count") or 0,
+        "last_reviewed_at": doc.get("last_reviewed_at"),
+        "last_outcome": doc.get("last_outcome"),
+        "last_review_assisted": doc.get("last_review_assisted"),
+        "review_available": available,
+        "unavailable_reason": doc.get("unavailable_reason"),
+        "status": (
+            "due_but_unavailable"
+            if (is_due(doc, now=when) and not available)
+            else ("due" if is_due(doc, now=when) else "scheduled")
+        ),
+    }
+
+
+def _miss_reason_for_entry(entry: dict[str, Any]) -> str:
+    kind = entry.get("kind")
+    if kind == "mcq_miss":
+        return "Missed MCQ"
+    if kind == "sql_miss":
+        return "Missed SQL problem"
+    if kind == "interview_miss":
+        return "Interview score below Good band"
+    return "Recorded miss"
+
+
+def _sync_schedules_for_user(db: Any, user_id: str) -> dict[str, Any]:
+    """Ensure schedule rows exist for notebook misses + coding attempts.
+
+    Existing rows keep their interval state. New rows are due now (honest for
+    pre-feature history — no invented past schedule).
+    """
+    sessions = _owned_sessions(db, user_id)
+    entries, coverage = _notebook_entries(sessions, db, user_id)
+    existing = {
+        (str(d.get("item_type")), str(d.get("item_id"))): d
+        for d in db["review_schedules"].find({"user_id": user_id})
+    }
+    now = datetime.now(timezone.utc)
+    created = 0
+    for entry in entries:
+        item_type = entry.get("item_type")
+        item_id = entry.get("item_id")
+        if not item_type or not item_id:
+            continue  # interview_miss has no stable item_id
+        key = (str(item_type), str(item_id))
+        if key in existing:
+            continue
+        doc = {
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "item_type": str(item_type),
+            "item_id": str(item_id),
+            "skill": entry.get("skill"),
+            "title": (entry.get("title") or "")[:255] or None,
+            "source_session_id": entry.get("session_id"),
+            "source_round": entry.get("round"),
+            "originating_assisted": bool(entry.get("assisted")),
+            "miss_reason": _miss_reason_for_entry(entry),
+            "interval_days": ladder_days_at(0),
+            "interval_index": 0,
+            "due_at": now,
+            "review_count": 0,
+            "last_reviewed_at": None,
+            "last_outcome": None,
+            "last_review_assisted": None,
+            "review_available": True,
+            "unavailable_reason": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        db["review_schedules"].insert_one(doc)
+        existing[key] = doc
+        created += 1
+
+    # Coding attempts: scheduled as due-but-unavailable (never scored here).
+    for session in sessions:
+        if (session.get("round_config") or {}).get("purpose") == SPACED_REVIEW_PURPOSE:
+            continue
+        for round_doc in session.get("rounds") or []:
+            if round_doc.get("round_type") != "coding":
+                continue
+            ctx = round_doc.get("question_context") or {}
+            config = round_doc.get("config_json") or {}
+            item_id = (
+                ctx.get("problem_id")
+                or config.get("problem_id")
+                or (ctx.get("id") if isinstance(ctx.get("id"), str) else None)
+            )
+            if not item_id:
+                continue
+            key = ("coding", str(item_id))
+            if key in existing:
+                continue
+            title = (ctx.get("title") or str(item_id))[:255]
+            doc = {
+                "id": str(uuid4()),
+                "user_id": user_id,
+                "item_type": "coding",
+                "item_id": str(item_id),
+                "skill": "DSA",
+                "title": title,
+                "source_session_id": session.get("session_id"),
+                "source_round": round_doc.get("round"),
+                "originating_assisted": bool(round_doc.get("assisted")),
+                "miss_reason": "Coding attempt (execution unavailable)",
+                "interval_days": ladder_days_at(0),
+                "interval_index": 0,
+                "due_at": now,
+                "review_count": 0,
+                "last_reviewed_at": None,
+                "last_outcome": None,
+                "last_review_assisted": None,
+                "review_available": False,
+                "unavailable_reason": "execution_unavailable",
+                "created_at": now,
+                "updated_at": now,
+            }
+            db["review_schedules"].insert_one(doc)
+            existing[key] = doc
+            created += 1
+
+    return {
+        "created": created,
+        "total": len(existing),
+        "notebook_entries_considered": len(entries),
+        "coding_rounds_disclosed": coverage.get("excluded_coding_rounds") or 0,
+    }
+
+
+@router.post("/learning/reviews/sync")
+def sync_review_schedules(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    try:
+        db = get_database()
+        result = _sync_schedules_for_user(db, str(user["id"]))
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    return {"synced": True, **result, "interval_ladder": list(INTERVAL_LADDER)}
+
+
+@router.get("/learning/reviews/due")
+def list_due_reviews(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    user_id = str(user["id"])
+    try:
+        db = get_database()
+        _sync_schedules_for_user(db, user_id)
+        docs = list(db["review_schedules"].find({"user_id": user_id}))
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    now = datetime.now(timezone.utc)
+    due = [_public_schedule(d, now=now) for d in docs if is_due(d, now=now)]
+    due.sort(key=lambda d: (not d.get("review_available", True), str(d.get("due_at") or "")))
+    available_due = sum(1 for d in due if d.get("review_available"))
+    unavailable_due = sum(1 for d in due if not d.get("review_available"))
+    empty_reason = None
+    if not due:
+        empty_reason = (
+            "no_scheduled_items"
+            if not docs
+            else "nothing_due"
+        )
+    return {
+        "due_count": len(due),
+        "available_due_count": available_due,
+        "unavailable_due_count": unavailable_due,
+        "items": due,
+        "interval_ladder": list(INTERVAL_LADDER),
+        "empty_reason": empty_reason,
+        "note": (
+            None
+            if unavailable_due == 0
+            else (
+                f"{unavailable_due} coding item(s) are due but cannot be reviewed "
+                "while execution is unavailable. They are not scores and not zeros."
+            )
+        ),
+    }
+
+
+@router.get("/learning/reviews/me")
+def list_my_review_schedules(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    user_id = str(user["id"])
+    try:
+        db = get_database()
+        _sync_schedules_for_user(db, user_id)
+        docs = list(db["review_schedules"].find({"user_id": user_id}))
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    now = datetime.now(timezone.utc)
+    items = [_public_schedule(d, now=now) for d in docs]
+    items.sort(key=lambda d: str(d.get("due_at") or ""))
+    return {
+        "items": items,
+        "count": len(items),
+        "interval_ladder": list(INTERVAL_LADDER),
+        "empty_reason": None if items else "no_scheduled_items",
+    }
+
+
+def _blocks_from_schedule_items(
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from backend.db.phase21_verbal_bank import PHASE21_VERBAL_BANK
+
+    verbal_ids = {q.get("id") for q in PHASE21_VERBAL_BANK}
+    runnable = [
+        i for i in items
+        if i.get("review_available") and i.get("item_type") in ("mcq", "sql")
+    ]
+    verbal_items = [
+        i for i in runnable
+        if i.get("item_type") == "mcq" and i.get("item_id") in verbal_ids
+    ]
+    oa_items = [
+        i for i in runnable
+        if i.get("item_type") == "mcq" and i.get("item_id") not in verbal_ids
+    ]
+    sql_items = [i for i in runnable if i.get("item_type") == "sql"]
+    blocks: list[dict[str, Any]] = []
+    if verbal_items:
+        blocks.append({
+            "round_type": "mcq",
+            "category": "verbal",
+            "skills": ["Verbal Ability"],
+            "count": len(verbal_items),
+            "question_ids": [i["item_id"] for i in verbal_items],
+            "duration_minutes": 20,
+        })
+    if oa_items:
+        skills = sorted({str(i.get("skill") or "General") for i in oa_items})
+        blocks.append({
+            "round_type": "mcq",
+            "category": "oa",
+            "skills": [s for s in skills if s != "Verbal Ability"] or ["DBMS"],
+            "count": len(oa_items),
+            "question_ids": [i["item_id"] for i in oa_items],
+            "duration_minutes": 20,
+        })
+    if sql_items:
+        blocks.append({
+            "round_type": "sql",
+            "category": "sql",
+            "skills": ["SQL"],
+            "count": len(sql_items),
+            "problem_ids": [i["item_id"] for i in sql_items],
+            "duration_minutes": 25,
+        })
+    return blocks, runnable
+
+
+@router.post("/learning/reviews/start")
+def start_due_reviews(
+    request: ReviewStartRequest | None = None,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Start a normal block session composed of due, reviewable items."""
+    user = require_user(authorization)
+    user_id = str(user["id"])
+    body = request or ReviewStartRequest()
+    max_items = int(body.max_items or 5)
+    if max_items < 1 or max_items > MAX_REVIEW_START_ITEMS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"max_items must be 1-{MAX_REVIEW_START_ITEMS}.",
+        )
+    try:
+        db = get_database()
+        _sync_schedules_for_user(db, user_id)
+        docs = list(db["review_schedules"].find({"user_id": user_id}))
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    now = datetime.now(timezone.utc)
+    due_docs = [d for d in docs if is_due(d, now=now)]
+    # Unassisted originating misses first, then assisted; skip unavailable unless asked.
+    def _sort_key(d: dict[str, Any]) -> tuple:
+        return (
+            0 if d.get("review_available") else 1,
+            1 if d.get("originating_assisted") else 0,
+            str(d.get("due_at") or ""),
+        )
+
+    due_docs.sort(key=_sort_key)
+    if not body.include_unavailable:
+        candidates = [d for d in due_docs if d.get("review_available")]
+    else:
+        candidates = list(due_docs)
+    chosen = candidates[:max_items]
+    blocks, runnable = _blocks_from_schedule_items(chosen)
+    if not blocks:
+        unavailable_only = bool(due_docs) and not any(d.get("review_available") for d in due_docs)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Due items are coding-only and cannot be reviewed while "
+                "execution is unavailable."
+                if unavailable_only
+                else "No due reviewable items. Sync from recorded misses first."
+            ),
+        )
+    # Persist a retry_set-shaped doc so we reuse the same start path machinery,
+    # then tag the session as spaced_review so scoring cannot raise mastery.
+    set_doc = {
+        "id": str(uuid4()),
+        "user_id": user_id,
+        "name": f"Spaced review ({len(runnable)} items)",
+        "items": [
+            {
+                "item_type": d["item_type"],
+                "item_id": d["item_id"],
+                "skill": d.get("skill"),
+                "reason": "spaced-review-due",
+                "miss_assisted": d.get("originating_assisted"),
+                "schedule_id": d.get("id"),
+            }
+            for d in runnable
+        ],
+        "source": "spaced-review",
+        "created_at": now,
+    }
+    db["retry_sets"].insert_one(set_doc)
+    session = start_session(
+        StartSessionRequest(**{"blocks": blocks}),
+        authorization=authorization,
+    )
+    sid = session.get("session_id")
+    # Map expanded rounds to schedule ids by item identity.
+    stored = db["sessions"].find_one({"session_id": sid}) or {}
+    review_map: dict[str, str] = {}
+    by_item = {(i["item_type"], i["item_id"]): i["schedule_id"] for i in set_doc["items"]}
+    for round_doc in stored.get("rounds") or []:
+        rtype = round_doc.get("round_type")
+        ctx = round_doc.get("question_context") or {}
+        config = round_doc.get("config_json") or {}
+        if rtype == "mcq":
+            questions = (ctx.get("questions") or [])
+            # One MCQ block may hold many questions in one round.
+            for q in questions:
+                qid = str(q.get("id") or "")
+                sid_sched = by_item.get(("mcq", qid))
+                if sid_sched:
+                    review_map.setdefault(str(round_doc.get("round")), sid_sched)
+                    # Also store multi-question map under round config later.
+            # Prefer listing all schedule ids for the round.
+            ids = [
+                by_item[("mcq", str(q.get("id")))]
+                for q in questions
+                if ("mcq", str(q.get("id"))) in by_item
+            ]
+            if ids:
+                review_map[str(round_doc.get("round"))] = ids[0] if len(ids) == 1 else ",".join(ids)
+        elif rtype == "sql":
+            pid = str(config.get("problem_id") or ctx.get("problem_id") or "")
+            if ("sql", pid) in by_item:
+                review_map[str(round_doc.get("round"))] = by_item[("sql", pid)]
+    existing_cfg = dict(stored.get("round_config") or {})
+    existing_cfg["purpose"] = SPACED_REVIEW_PURPOSE
+    existing_cfg["review_map"] = review_map
+    existing_cfg["review_set_id"] = set_doc["id"]
+    db["sessions"].update_one(
+        {"session_id": sid},
+        {"$set": {"round_config": existing_cfg}},
+    )
+    return {
+        **session,
+        "navigate": f"/interview/{sid}",
+        "purpose": SPACED_REVIEW_PURPOSE,
+        "review_set_id": set_doc["id"],
+        "review_item_count": len(runnable),
+        "interval_ladder": list(INTERVAL_LADDER),
+    }
+
+
+def apply_review_outcome_for_session_round(
+    db: Any,
+    session: dict[str, Any],
+    round_doc: dict[str, Any],
+    *,
+    assisted: bool,
+) -> list[dict[str, Any]]:
+    """Update schedule rows after a spaced-review submit. No mastery changes."""
+    from backend.review_schedule import OUTCOME_CORRECT, OUTCOME_INCORRECT, review_correct_for_round
+
+    cfg = session.get("round_config") or {}
+    if cfg.get("purpose") != SPACED_REVIEW_PURPOSE:
+        return []
+    correct = review_correct_for_round(round_doc)
+    if correct is None:
+        return []
+    outcome = OUTCOME_CORRECT if correct else OUTCOME_INCORRECT
+    review_map = cfg.get("review_map") or {}
+    raw = review_map.get(str(round_doc.get("round")))
+    if not raw:
+        return []
+    schedule_ids = [s for s in str(raw).split(",") if s]
+    # Multi-question MCQ: refine per question when possible.
+    updates: list[dict[str, Any]] = []
+    artifact = round_doc.get("artifact_json") or {}
+    per_q = {
+        str(q.get("question_id") or q.get("id")): bool(q.get("is_correct"))
+        for q in (artifact.get("questions") or [])
+        if isinstance(q, dict)
+    }
+    now = datetime.now(timezone.utc)
+    for schedule_id in schedule_ids:
+        doc = db["review_schedules"].find_one({"id": schedule_id})
+        if not doc:
+            continue
+        if str(doc.get("user_id")) != str(session.get("user_id")):
+            continue
+        if not doc.get("review_available", True):
+            continue
+        item_outcome = outcome
+        if doc.get("item_type") == "mcq" and doc.get("item_id") in per_q:
+            item_outcome = (
+                OUTCOME_CORRECT if per_q[str(doc["item_id"])] else OUTCOME_INCORRECT
+            )
+        nxt = advance_after_outcome(
+            interval_index=int(doc.get("interval_index") or 0),
+            outcome=item_outcome,
+            now=now,
+        )
+        patch = {
+            **nxt,
+            "review_count": int(doc.get("review_count") or 0) + 1,
+            "last_review_assisted": bool(assisted),
+            "updated_at": now,
+        }
+        db["review_schedules"].update_one({"id": schedule_id}, {"$set": patch})
+        updates.append({**doc, **patch})
+    return updates
