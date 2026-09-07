@@ -6,9 +6,9 @@ import { mapCoachPlan } from '../src/lib/coachMapping.js';
 
 test('primary nav separates Home actions from Progress reports', () => {
   const labels = PRIMARY_NAV_ITEMS.map((i) => i.label);
-  assert.deepEqual(labels, ['Home', 'Progress', 'Practice', 'Problems', 'Resume check', 'Jobs', 'Coach']);
+  assert.deepEqual(labels, ['Home', 'Progress', 'Practice', 'Problems', 'Learn', 'Resume check', 'Jobs', 'Coach']);
   const paths = PRIMARY_NAV_ITEMS.map((i) => i.to);
-  assert.deepEqual(paths, ['/home', '/dashboard', '/practice', '/problems', '/ats', '/jobs', '/coach']);
+  assert.deepEqual(paths, ['/home', '/dashboard', '/practice', '/problems', '/learn', '/ats', '/jobs', '/coach']);
 });
 
 test('coach steps hrefs include /practice or /jobs', () => {

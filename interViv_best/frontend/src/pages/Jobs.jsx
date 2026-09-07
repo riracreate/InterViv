@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { fetchMe, fetchJobs, fetchJobPractice, saveInterviewState } from '../lib/api';
+import { fetchMe, fetchJobs, fetchJobPractice, saveInterviewState, saveTargetContext } from '../lib/api';
 import { mapJobCard, jobApplyHref } from '../lib/jobsMapping';
 import AppNav from '../components/AppNav';
 
@@ -190,6 +190,18 @@ export default function Jobs() {
                       className="rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
                     >
                       Practice for this role
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        saveTargetContext({ job_id: job.id, jd_source: 'job' })
+                          .then(() => setError(''))
+                          .catch((err) => setError(err.message || 'Could not target this job.'));
+                      }}
+                      className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-4 py-2 text-xs font-semibold disabled:opacity-40"
+                    >
+                      Target this job
                     </button>
                   </div>
                 </div>

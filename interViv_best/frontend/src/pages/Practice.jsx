@@ -11,6 +11,7 @@ import {
   deletePreset,
   fetchBuilderDraft,
   saveBuilderDraft,
+  fetchTargetContext,
 } from '../lib/api';
 import CompanySelector from '../components/CompanySelector';
 import ResourceLinks from '../components/ResourceLinks';
@@ -35,6 +36,7 @@ import {
   mapProblemItemToStartPayload,
   mapBlocksToStartPayload,
   mapStandaloneToStartPayload,
+  applyTargetPrefill,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
@@ -78,6 +80,8 @@ export default function Practice() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [skills, setSkills] = useState(DEFAULT_SKILLS);
+  const [skillsExplicit, setSkillsExplicit] = useState(false);
+  const [prefillNote, setPrefillNote] = useState('');
   const [target, setTarget] = useState({ companyId: '', roleId: '' });
 
   // Full interview
@@ -117,10 +121,14 @@ export default function Practice() {
         if (cancelled) return;
         setUser(me.user || me);
         setAuthReady(true);
-        if (me.user?.target_company_id || me.target_company_id) {
+        return fetchTargetContext().catch(() => null);
+      })
+      .then((data) => {
+        if (cancelled || !data?.target) return;
+        if (data.target.company_id && data.target.role_id) {
           setTarget({
-            companyId: me.user?.target_company_id || me.target_company_id || '',
-            roleId: me.user?.target_role_id || me.target_role_id || '',
+            companyId: data.target.company_id,
+            roleId: data.target.role_id,
           });
         }
       })
@@ -217,7 +225,8 @@ export default function Practice() {
     };
   }, [blocks, authReady, mode, builderLoaded, BUILDER_LOCAL_KEY]);
 
-  // Soft-load role skills when company graph is available
+  // Soft-load role skills when company graph is available. Prefill only:
+  // an explicitly chosen topic list is never overridden.
   useEffect(() => {
     if (!target.companyId || !target.roleId) return undefined;
     let cancelled = false;
@@ -229,13 +238,46 @@ export default function Practice() {
         const req = (role?.required_skills || role?.skills || [])
           .map((s) => (typeof s === 'string' ? s : s.canonical_name || s.name || s.skill))
           .filter(Boolean);
-        if (req.length) setSkills(req.slice(0, 5));
+        const { skills: next, applied } = applyTargetPrefill(skills, req, skillsExplicit);
+        if (applied) {
+          setSkills(next);
+          setPrefillNote(`Prefilled from ${role?.title || 'target role'} required skills.`);
+        } else if (skillsExplicit) {
+          setPrefillNote('Showing your explicitly chosen topics; target prefill skipped.');
+        }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target.companyId, target.roleId]);
+
+  // Connected hop: gap/roadmap weak-area skills arrive as prefill, not
+  // an override. Runs once per navigation state.
+  const hopAppliedFor = useRef(null);
+  useEffect(() => {
+    const incoming = location.state?.prefilledSkills;
+    if (!Array.isArray(incoming) || !incoming.length) return undefined;
+    const key = JSON.stringify([location.key, incoming]);
+    if (hopAppliedFor.current === key) return undefined;
+    hopAppliedFor.current = key;
+    const { skills: next, applied } = applyTargetPrefill(skills, incoming, skillsExplicit);
+    if (applied) {
+      setSkills(next);
+      setPrefillNote(
+        `Prefilled from ${location.state?.prefillSource || 'gap analysis'} weak areas.`
+      );
+    }
+    // Adopt the hop's target only when no target is set yet.
+    const hopCompany = location.state?.targetCompanyId || '';
+    const hopRole = location.state?.targetRoleId || '';
+    if (hopCompany && hopRole && !target.companyId && !target.roleId) {
+      setTarget({ companyId: hopCompany, roleId: hopRole });
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   const bankItems = useMemo(() => {
     let items = [];
@@ -403,16 +445,21 @@ export default function Practice() {
               <input
                 className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-[var(--color-ink)]"
                 value={skills.join(', ')}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setSkillsExplicit(true);
+                  setPrefillNote('');
                   setSkills(
                     e.target.value
                       .split(',')
                       .map((s) => s.trim())
                       .filter(Boolean)
-                  )
-                }
+                  );
+                }}
               />
             </label>
+            {prefillNote && (
+              <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{prefillNote}</p>
+            )}
           </section>
         )}
 

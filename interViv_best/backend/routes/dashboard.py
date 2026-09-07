@@ -79,6 +79,82 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sanitized
 
 
+def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rounds without scores, each with an honest reason.
+
+    Coding rounds without scores are execution-unavailable, never
+    candidate zeros; other unscored rounds are simply not submitted.
+    """
+    unscored = []
+    for item in rounds:
+        if item.get("final_score") is not None:
+            continue
+        kind = item.get("round_type", "technical_short_answer")
+        if kind == "coding":
+            reason = "execution_unavailable"
+        elif item.get("status") not in (None, "in_progress"):
+            reason = str(item.get("status"))
+        else:
+            reason = "not_submitted"
+        unscored.append({
+            "round": item.get("round"),
+            "round_type": kind,
+            "block_id": item.get("block_id"),
+            "block_category": item.get("block_category"),
+            "reason": reason,
+        })
+    return unscored
+
+
+def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-block results with evidence-backed next-practice suggestions."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for item in rounds:
+        key = str(item.get("block_id") or f"round-{item.get('round')}")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+    results = []
+    for key in order:
+        group = groups[key]
+        scored = [r for r in group if r.get("final_score") is not None]
+        skills = sorted({str(r.get("skill") or "General") for r in group})
+        avg = (
+            round(sum(float(r["final_score"]) for r in scored) / len(scored), 2)
+            if scored
+            else None
+        )
+        suggestion = None
+        if scored:
+            weakest = min(scored, key=lambda r: float(r["final_score"]))
+            if float(weakest["final_score"]) < 61.0:
+                skill = str(weakest.get("skill") or "General")
+                suggestion = {
+                    "text": (
+                        f"Round {weakest.get('round')} scored "
+                        f"{weakest['final_score']} on {skill}; retry "
+                        f"{skill} misses next."
+                    ),
+                    "action": {"type": "retry_set", "skills": [skill]},
+                }
+        results.append({
+            "block_id": group[0].get("block_id"),
+            "block_category": group[0].get("block_category"),
+            "round_types": list(dict.fromkeys(
+                r.get("round_type", "technical_short_answer") for r in group
+            )),
+            "skills": skills,
+            "rounds": len(group),
+            "scored_rounds": len(scored),
+            "average_score": avg,
+            "assisted_rounds": sum(1 for r in scored if r.get("assisted")),
+            "suggestion": suggestion,
+        })
+    return results
+
+
 def _compute_topic_scores(session: dict[str, Any]) -> dict[str, float]:
     buckets: dict[str, list[float]] = {}
     for round_document in session.get("rounds", []):
@@ -142,8 +218,15 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             "completed_rounds": len(scored),
             "total_rounds": session.get("total_rounds") or len(rounds),
             "average_score": round(statistics.mean(float(r["final_score"]) for r in scored), 2) if scored else None,
+            # What the average covers and what it excludes: unscored
+            # coding rounds are execution-unavailable, not zeros.
+            "unscored_rounds": _unscored_rounds(rounds),
         }
-        if scored:
+        # Coding-only sessions have no scores while execution is
+        # unavailable. Include them so they are not silently omitted
+        # (which would inflate the appearance of overall readiness).
+        has_coding = any(r.get("round_type") == "coding" for r in rounds)
+        if scored or has_coding:
             history.append(summary)
         active = rounds[-1] if rounds else None
         if resumable is not None or session.get("status") != "active" or not active:
@@ -168,13 +251,40 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             target = GapAnalyzer().compute_gap(user_id, user["target_role_id"]).to_dict()
         except GapAnalysisError:
             pass  # A removed/unknown target is unavailable, not a measured zero.
+    from backend.routes.learning_hub import assistance_breakdown_for_user
+
     return {
         "user": {key: user.get(key) for key in ("id", "name", "target_company_id", "target_role_id")},
         "server_time": now,
         "target": target,
         "readiness": target["overall_readiness_percentage"] if target and target["tested_skill_count"] > 0 else None,
+        # Readiness math is unchanged; the split sits alongside so
+        # assisted evidence is never silently mixed into the signal.
+        "readiness_assistance": assistance_breakdown_for_user(user_id),
         "skills": graph["skills"],
-        "scored_session_count": len(history),
+        "scored_session_count": sum(
+            1 for row in history if row.get("average_score") is not None
+        ),
+        "coding_coverage": {
+            "scored_coding_rounds": sum(
+                1
+                for session in owned
+                for r in (session.get("rounds") or [])
+                if r.get("round_type") == "coding" and r.get("final_score") is not None
+            ),
+            "unscored_coding_rounds": sum(
+                1
+                for session in owned
+                for r in (session.get("rounds") or [])
+                if r.get("round_type") == "coding" and r.get("final_score") is None
+            ),
+            "reason": "execution_unavailable",
+            "note": (
+                "Coding attempts produce no scored evidence while "
+                "execution is unavailable. They are not treated as "
+                "zeros and are not omitted from coverage."
+            ),
+        },
         # simplification: latest 100 summaries suit local practice; paginate when histories grow.
         "history": history[:100],
         "resumable_session": resumable,
@@ -278,4 +388,19 @@ def get_dashboard(
     session["difficulty_progression"] = [item.get("difficulty") for item in completed_rounds]
     session["topic_scores"] = _compute_topic_scores(session)
     session["next_step"] = last_feedback.get("next_step", "")
+    unscored = _unscored_rounds(rounds)
+    session["coverage"] = {
+        "scored_rounds": len(completed_rounds),
+        "unscored_rounds": unscored,
+        "note": (
+            "Averages cover scored rounds only. "
+            + (
+                f"{len(unscored)} unscored round(s) excluded "
+                f"({', '.join(sorted({u['reason'] for u in unscored}))})."
+                if unscored
+                else "All rounds scored."
+            )
+        ),
+    }
+    session["block_results"] = _block_results(rounds)
     return session

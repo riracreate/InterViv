@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { uploadResume, startSession, saveInterviewState, fetchMe } from '../lib/api';
+import { uploadResume, startSession, saveInterviewState, fetchMe, saveTargetContext } from '../lib/api';
 import CompanySelector from '../components/CompanySelector';
 
 const ROUNDS_PER_SKILL = 3;
@@ -163,6 +163,11 @@ export default function Upload() {
       setDomainProfile(r.domain_profile || {});
       setSelectedSkills(detected.slice(0, 3));
       setStep('skills');
+      // Carry the resume forward: later hops (ATS, coach, gaps) prefill
+      // from the shared target context instead of re-prompting.
+      if (r.candidate_id) {
+        saveTargetContext({ resume_ref: r.candidate_id }).catch(() => {});
+      }
     } catch (err) {
       setError(err.message || 'Resume processing failed.');
     } finally {

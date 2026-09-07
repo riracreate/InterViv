@@ -10,13 +10,17 @@ from backend.config import get_settings
 
 from .sqlalchemy_models import (
     AnswerDraftRow,
+    AssistanceEventRow,
     Base,
+    BookmarkRow,
     BuilderDraftRow,
     CandidateRow,
     CodingSubmissionRow,
     PracticePresetRow,
+    RetrySetRow,
     RoundRow,
     SessionRow,
+    TargetContextRow,
     UserRow,
 )
 
@@ -485,6 +489,8 @@ class _SessionCollection:
                     block_category=round_doc.get("block_category"),
                     block_index=round_doc.get("block_index"),
                     block_total=round_doc.get("block_total"),
+                    assisted=round_doc.get("assisted"),
+                    assistance_kinds=round_doc.get("assistance_kinds"),
                 )
             )
 
@@ -531,6 +537,8 @@ class _SessionCollection:
                     "block_category": round_row.block_category,
                     "block_index": round_row.block_index,
                     "block_total": round_row.block_total,
+                    "assisted": round_row.assisted,
+                    "assistance_kinds": round_row.assistance_kinds or [],
                 }
             )
         return {
@@ -870,6 +878,280 @@ class _CodingSubmissionCollection:
         }
 
 
+class _TargetContextCollection:
+    """Single shared target context per user (upsert by user_id)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "user_id": TargetContextRow.user_id,
+            "company_id": TargetContextRow.company_id,
+            "role_id": TargetContextRow.role_id,
+            "job_id": TargetContextRow.job_id,
+            "resume_ref": TargetContextRow.resume_ref,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, TargetContextRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, TargetContextRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = TargetContextRow(
+                user_id=data["user_id"],
+                company_id=data.get("company_id"),
+                role_id=data.get("role_id"),
+                job_id=data.get("job_id"),
+                jd_source=data.get("jd_source"),
+                jd_text=data.get("jd_text"),
+                resume_ref=data.get("resume_ref"),
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data["user_id"])
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("user_id"):
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, TargetContextRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: TargetContextRow) -> dict[str, Any]:
+        return {
+            "user_id": row.user_id,
+            "company_id": row.company_id,
+            "role_id": row.role_id,
+            "job_id": row.job_id,
+            "jd_source": row.jd_source,
+            "jd_text": row.jd_text,
+            "resume_ref": row.resume_ref,
+            "updated_at": row.updated_at,
+        }
+
+
+class _RetrySetCollection:
+    """Persisted retry sets keyed by id (user-scoped reads)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": RetrySetRow.id,
+            "user_id": RetrySetRow.user_id,
+            "source": RetrySetRow.source,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, RetrySetRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, RetrySetRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = RetrySetRow(
+                id=str(data.get("id") or ""),
+                user_id=data["user_id"],
+                name=str(data.get("name") or ""),
+                items_json=data.get("items") or data.get("items_json") or [],
+                source=str(data.get("source") or "missed-topics"),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data.get("id"))
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, RetrySetRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: RetrySetRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "name": row.name,
+            "items": row.items_json or [],
+            "source": row.source,
+            "created_at": row.created_at,
+        }
+
+
+class _BookmarkCollection:
+    """Bookmarks keyed by user + item identity (toggle by delete/insert)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "user_id": BookmarkRow.user_id,
+            "item_type": BookmarkRow.item_type,
+            "item_id": BookmarkRow.item_id,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, BookmarkRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, BookmarkRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = BookmarkRow(
+                user_id=data["user_id"],
+                item_type=str(data.get("item_type") or ""),
+                item_id=str(data.get("item_id") or ""),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult((data["user_id"], data.get("item_type"), data.get("item_id")))
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, BookmarkRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: BookmarkRow) -> dict[str, Any]:
+        return {
+            "user_id": row.user_id,
+            "item_type": row.item_type,
+            "item_id": row.item_id,
+            "created_at": row.created_at,
+        }
+
+
+class _AssistanceEventCollection:
+    """Append-only hint/solution-use events (one row per view)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": AssistanceEventRow.id,
+            "user_id": AssistanceEventRow.user_id,
+            "item_type": AssistanceEventRow.item_type,
+            "item_id": AssistanceEventRow.item_id,
+            "kind": AssistanceEventRow.kind,
+            "session_id": AssistanceEventRow.session_id,
+            "round": AssistanceEventRow.round,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, AssistanceEventRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, AssistanceEventRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            row = AssistanceEventRow(
+                id=str(data.get("id") or ""),
+                user_id=data["user_id"],
+                item_type=str(data.get("item_type") or ""),
+                item_id=str(data.get("item_id") or ""),
+                kind=str(data.get("kind") or ""),
+                session_id=data.get("session_id"),
+                round=data.get("round"),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.merge(row)
+        return _InsertResult(data.get("id"))
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: AssistanceEventRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "item_type": row.item_type,
+            "item_id": row.item_id,
+            "kind": row.kind,
+            "session_id": row.session_id,
+            "round": row.round,
+            "created_at": row.created_at,
+        }
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -880,6 +1162,10 @@ class SQLAlchemyDatabase:
             "builder_drafts": _BuilderDraftCollection(),
             "answer_drafts": _AnswerDraftCollection(),
             "coding_submissions": _CodingSubmissionCollection(),
+            "target_contexts": _TargetContextCollection(),
+            "retry_sets": _RetrySetCollection(),
+            "bookmarks": _BookmarkCollection(),
+            "assistance_events": _AssistanceEventCollection(),
         }
 
     def __getitem__(self, name: str):

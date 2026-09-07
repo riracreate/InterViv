@@ -26,12 +26,26 @@ class RoadmapProgressRequest(BaseModel):
     blocks_total: int = Field(ge=1)
 
 
+def _with_assistance(payload: dict[str, Any], user_id: str) -> dict[str, Any]:
+    """Attach the assisted/unassisted split next to unchanged figures.
+
+    Mastery and skill-graph math are preserved exactly; this sibling key
+    keeps the two populations from being silently mixed in any claim
+    built on these endpoints.
+    """
+    from backend.routes.learning_hub import assistance_breakdown_for_user
+
+    return {**payload, "assistance": assistance_breakdown_for_user(user_id)}
+
+
 @router.get("/skill-graph/me")
 def get_my_skill_graph(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     user = require_user(authorization)
-    return StudentSkillGraph(str(user["id"])).to_api_payload()
+    return _with_assistance(
+        StudentSkillGraph(str(user["id"])).to_api_payload(), str(user["id"])
+    )
 
 
 @router.get("/skill-graph/{user_id}")
@@ -45,7 +59,7 @@ def get_skill_graph(
             detail="user_id is required.",
         )
     require_matching_user(user_id, authorization)
-    return StudentSkillGraph(user_id).to_api_payload()
+    return _with_assistance(StudentSkillGraph(user_id).to_api_payload(), user_id)
 
 
 @router.get("/mastery/me")
@@ -53,7 +67,9 @@ def get_my_mastery(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     user = require_user(authorization)
-    return ConceptMastery().to_api_payload(str(user["id"]))
+    return _with_assistance(
+        ConceptMastery().to_api_payload(str(user["id"])), str(user["id"])
+    )
 
 
 @router.get("/mastery/{user_id}")
@@ -67,7 +83,7 @@ def get_mastery(
             detail="user_id is required.",
         )
     require_matching_user(user_id, authorization)
-    return ConceptMastery().to_api_payload(user_id)
+    return _with_assistance(ConceptMastery().to_api_payload(user_id), user_id)
 
 
 @router.get("/learning/signals/me")
