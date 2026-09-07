@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 import { signup } from '../lib/api';
+import { authDestination } from '../lib/authRedirect';
 
 function validate({ name, email, password, confirmPassword }) {
   if (!name.trim()) return 'Name is required.';
@@ -17,6 +18,8 @@ function validate({ name, email, password, confirmPassword }) {
 
 export default function Signup() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const next = authDestination(location, window.location.origin);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -41,7 +44,7 @@ export default function Signup() {
     setLoading(true);
     try {
       await signup({ name: form.name, email: form.email, password: form.password });
-      navigate('/upload');
+      navigate(next, { replace: true });
     } catch (err) {
       setError(err.message || 'Signup failed.');
     } finally {
@@ -156,7 +159,7 @@ export default function Signup() {
 
             <p className="mt-5 text-center text-sm text-slate-600">
               Already have an account?{' '}
-              <Link to="/login" className="font-semibold text-cyan-700 hover:text-cyan-800">
+              <Link to="/login" state={{ next }} className="font-semibold text-cyan-700 hover:text-cyan-800">
                 Login
               </Link>
             </p>

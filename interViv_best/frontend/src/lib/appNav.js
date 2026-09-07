@@ -4,9 +4,10 @@
  */
 
 export const PRIMARY_NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/home', label: 'Home' },
+  { to: '/dashboard', label: 'Progress' },
   { to: '/practice', label: 'Practice' },
-  { to: '/ats', label: 'ATS' },
+  { to: '/ats', label: 'Resume check' },
   { to: '/jobs', label: 'Jobs' },
   { to: '/coach', label: 'Coach' },
 ];

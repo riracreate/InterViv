@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, LogIn } from 'lucide-react';
 import { login } from '../lib/api';
+import { authDestination } from '../lib/authRedirect';
 
 function validate(email, password) {
   if (!email.trim()) return 'Email is required.';
@@ -13,6 +14,7 @@ function validate(email, password) {
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const next = authDestination(location, window.location.origin);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,8 +31,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login({ email, password });
-      const next = location.state?.next || '/upload';
-      navigate(next);
+      navigate(next, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed.');
     } finally {
@@ -115,7 +116,7 @@ export default function Login() {
 
             <p className="mt-5 text-center text-sm text-slate-600">
               Don&apos;t have an account?{' '}
-              <Link to="/signup" className="font-semibold text-cyan-700 hover:text-cyan-800">
+              <Link to="/signup" state={{ next }} className="font-semibold text-cyan-700 hover:text-cyan-800">
                 Sign up
               </Link>
             </p>
@@ -125,4 +126,3 @@ export default function Login() {
     </main>
   );
 }
-

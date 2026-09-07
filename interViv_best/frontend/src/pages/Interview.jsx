@@ -30,7 +30,7 @@ function mediaErrorMessage(error, device) {
   return `${device} could not be started.`;
 }
 
-export default function Interview() {
+export default function Interview({ sessionState = null }) {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -49,7 +49,7 @@ export default function Interview() {
 
   const hasBrowserSTT = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
 
-  const initState = location.state || loadInterviewState() || {};
+  const initState = sessionState || location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
   const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql'];
