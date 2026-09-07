@@ -186,7 +186,7 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | Draft reject submitted/expired | STILL BLOCKED | Not exercised against closed attempts |
 | Duplicate submit rejection | STILL BLOCKED | Not exercised in UI this session |
 | Keyboard-only builder (no drag) | PARTIAL | Controls are buttons with aria-labels; full keyboard-only pass not completed |
-| Second-account isolation (sessions/presets/drafts) | VERIFIED | User2 Progress empty; API `GET /dashboard/{user1_session}` → 403 “You cannot access another user's session.” |
+| Second-account isolation (sessions/presets/drafts) | PARTIAL | Browser: User2 Progress empty. Cross-user session deny was **API 403** only; presets/drafts dual-account UI not walked. |
 
 ### Coding (Phase C)
 
@@ -217,10 +217,10 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | Rubric named criteria visible | VERIFIED | Requirements clarity, API and data model, Scale and reliability, Trade-offs |
 | Incomplete rubric → no score | VERIFIED | Alert: “Rate every rubric criterion (1–5) before submitting.” |
 | Complete → labeled self-reported | VERIFIED | “Self-assessment score 68.8” / “Self-assessment recorded…” |
-| `/av/capabilities` distinct unavailable_states list | VERIFIED | API lists permission_not_requested, denied, no_device, unsupported_browser, service_unavailable, capture_failed, interrupted_recoverable |
+| `/av/capabilities` distinct unavailable_states list | PARTIAL | **API-only** list observation (not browser UI). Legend for this doc is browser observation. |
 | Each AV unavailable state distinct in UI | STILL BLOCKED | Needs permission/device gestures; automation cannot claim all seven |
 | Device capture with real mic/camera | STILL BLOCKED | Requires real hardware; never claimed |
-| No AV score fabricated | VERIFIED | speech_scoring `not_offered`; coding/SD unavailable paths unscored |
+| No AV score fabricated | PARTIAL | **API/capabilities** (`speech_scoring: not_offered`); not a separate browser score-panel proof |
 
 ---
 

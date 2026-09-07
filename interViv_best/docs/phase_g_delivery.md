@@ -121,40 +121,39 @@ Status legend: **VERIFIED** · **STILL BLOCKED** · **NOT APPLICABLE**
 |------|--------|-------------------|
 | Mistakes notebook from real misses only | VERIFIED | Browser `/learn`: 10 misses; coding excluded with note; no correct-answer entries |
 | Retry sets from missed topics | VERIFIED | `phase-g-misses` (5 DBMS items); UI “Generated from your genuinely missed topics only” |
-| Target context across job→skills→practice→next steps | VERIFIED | `/target-context/me` = TCS SWE; Learn next steps reference Software Engineer; Practice prefills TCS + skills `DBMS, OOP, DSA` |
-| Target prefills settings, does not override explicit topic | VERIFIED | Copy on Practice: “Targets may prefill… never override an explicitly chosen topic.”; OA/Verbal topic filters still apply |
-| Assisted vs unassisted separation | VERIFIED | Learn: “3 unassisted, 3 assisted” DBMS; notebook tags `assisted · hint` vs `unassisted`; hint recorded at `/learning/hint` before submit |
-| Per-block results / next practice from real outcomes | VERIFIED | Learn next steps Retry DBMS/OOP/Verbal; Progress Elo changes for measured skills |
-| Self-assessment not raising measured mastery | VERIFIED | Progress: System Design **Not measured** after 100 self-assessment; report: “Self-assessment recorded…”; API `averages.final_score` null, `self_reported_average` set |
+| Target context across job→skills→practice→next steps | VERIFIED | Browser: Learn next steps cite Software Engineer; Practice prefills TCS + skills `DBMS, OOP, DSA` (API `/target-context/me` corroborates, not sole evidence) |
+| Target prefills settings, does not override explicit topic | PARTIAL | Browser shows prefill + honesty copy. **Override-vs-explicit-topic behavior not exercised** (no conflicting topic chosen after target load). |
+| Assisted vs unassisted separation | VERIFIED | Browser Learn: “3 unassisted, 3 assisted” DBMS; notebook tags `assisted · hint` vs `unassisted` |
+| Per-block results / next practice from real outcomes | VERIFIED | Browser Learn next steps Retry DBMS/OOP/Verbal; Progress Elo changes for measured skills |
+| Self-assessment not raising measured mastery | VERIFIED | Browser Progress: System Design **Not measured** after 100 self-assessment; report: “Self-assessment recorded…” |
 
 ### (2) Duplicate-submit UI
 
 | Item | Status | Method |
 |------|--------|--------|
-| Double submit rejected | VERIFIED | Second `POST /session/answer` → **409** `This round has already been submitted or is finalizing.`; one scored round |
-| No double scoring / no skipped progression | VERIFIED | Dashboard for session `0c5ebeea-…`: one `submitted` round |
-| Comprehensible UI outcome | VERIFIED (path) | `Interview.jsx` surfaces `Scoring failed — {detail}`; detail is the human 409 string. Full browser double-click on a live MCQ was not re-filmed this session — API + UI mapping confirmed |
+| Double submit rejected / no double scoring | VERIFIED | **Browser (Phase H):** OA MCQ session `5f1b4a4a-…`; two `Submit Round` clicks in one tick → single **Session Complete** (“1 rounds · Average 100%”); dashboard still **one** `submitted` round score 100. Client `isScoring` gate drops the second click. |
+| Comprehensible **409** user-facing outcome | PARTIAL | Source maps 409 → `Scoring failed — {detail}`. Browser double-click **did not render** that message (second submit never left the client). Remaining gap: observe the 409 string on screen (e.g. race past the client gate or retry after submit while still on the round). API 409 alone is not UI proof. |
 
 ### (3) AV permission tour (seven states)
 
 | State | Status | Method |
 |-------|--------|--------|
-| permission_not_requested | VERIFIED | Interview default `avState`; `/av/capabilities` lists state; label helper |
-| permission_denied | PARTIAL | Wired via `classifyMediaError(NotAllowedError)` + Interview UI; live browser permission-deny override not exercised in this automation |
-| no_device | PARTIAL | Same via `NotFoundError` classifier; no device emulation run here |
-| unsupported_browser | VERIFIED | Classifier when `mediaDevices` absent; capabilities document client-only device capture |
-| service_unavailable | VERIFIED | `transcriptionFailureResult(503)` → state; capabilities transcription path |
-| capture_failed mid-session | PARTIAL | Classifier `NotReadableError` + Interview `CAPTURE_FAILED` branch; mid-session hardware fault not induced |
-| interrupted_recoverable | PARTIAL | Interview sets `INTERRUPTED_RECOVERABLE` on track end; not hardware-proven |
+| permission_not_requested | PARTIAL | Interview initializes `avState` to this; `/av/capabilities` lists it. **No browser observation of the unavailable banner for this state.** |
+| permission_denied | PARTIAL | Wired via `classifyMediaError(NotAllowedError)` + Interview UI; live browser permission-deny override not exercised |
+| no_device | PARTIAL | Same via `NotFoundError` classifier; no device emulation run |
+| unsupported_browser | PARTIAL | Classifier / unit path when `mediaDevices` absent — **not a browser UI observation** |
+| service_unavailable | PARTIAL | `transcriptionFailureResult(503)` helper + capabilities — **not a browser UI observation** |
+| capture_failed mid-session | PARTIAL | Classifier `NotReadableError` + Interview branch; mid-session hardware fault not induced |
+| interrupted_recoverable | PARTIAL | Interview sets state on track end; not hardware-proven |
 | Real mic/camera capture | **STILL BLOCKED** | Requires hardware; never claimed |
 
 ### (4) Re-verify F.1 fixes
 
 | Item | Status | Evidence |
 |------|--------|----------|
-| Builder labels System design | VERIFIED | Custom builder “+ System design”; block “4 . System design · 1 prompt” |
-| Standalone System design E2E | VERIFIED | `mode=system_design` form → session `8d4552c3-…` URL shortener → self-assessment 100 → report |
-| Coding three entry paths non-empty | VERIFIED | Standalone → Two Sum `b9a0d091-…`; Problems Practice → Valid Parentheses `3794213e-…`; builder/API `skills:['DSA']` → `coding_two_sum`; test covers all three payloads |
+| Builder labels System design | VERIFIED | Browser custom builder “+ System design”; block “4 . System design · 1 prompt” |
+| Standalone System design E2E | VERIFIED | Browser `mode=system_design` → session `8d4552c3-…` → self-assessment → report |
+| Coding three entry paths non-empty | PARTIAL | Browser: standalone → Two Sum; Problems Practice → Valid Parentheses. **Builder `skills:['DSA']` path verified by API/test only**, not a separate builder UI start this session. |
 
 Note: Problems UI is **single-problem** practice (not a multi-checkbox set). The “Problems practice set” path is `problem_ids: […]` via `mapStandaloneToStartPayload`.
 
@@ -240,10 +239,19 @@ Single head `20260907_0007`. No historical migration edits.
 - E.2 durable AV blobs / speech scores (out of scope).
 - Real microphone/camera capture.
 - Live browser permission-deny / no-device / mid-capture fault tour (classifier + UI wired; hardware/override incomplete).
+- **409 user-visible string** after duplicate submit (client gate; see §2 PARTIAL).
+- Target explicit-topic override scenario (PARTIAL).
+- Builder coding start in the browser (PARTIAL — API/test only).
 - Home target picker still shows “— Select —” while `/target-context/me` and Practice prefill TCS — Progress/Learn use target; Home form prefill gap remains.
 - Session-complete screen can flash “Average 100%” for self-assessment before report clarifies self-reported (report text is honest).
-- phase21 Verbal Upload entry not integrated (intentional).
+- phase21 Verbal Upload entry not integrated (intentional; objects rescued under `refs/rescue/*` in Phase H).
 - Branch rename (not done).
+
+---
+
+## Phase H correction note
+
+Phase H re-checked VERIFIED rows that rested on API/source/tests where the claim was interactive. Duplicate-submit **no double score** was re-proven in the browser (`5f1b4a4a-…`); the **409 toast** claim was downgraded to PARTIAL. AV classifier/API-only rows and several F-doc API-only rows were downgraded. See `docs/review_guide.md`.
 
 ---
 
@@ -254,6 +262,6 @@ Single head `20260907_0007`. No historical migration edits.
 | `dd13aab` | G.0 Step 0 fixes + tests |
 | `736b36f` | G.0b durable scoring_mode in breakdown JSON |
 | `383d8ba` | G.0c SD dashboard string feedback |
-| G.1 | This delivery doc |
+| `65a456e` | G.1 delivery doc |
 
 Working tree after G.1: clean of G-scoped changes.
