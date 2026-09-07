@@ -1,7 +1,7 @@
 # Phase J — SemanticScorer Hub-offline environment
 
-**Base:** `e8addaf` (Phase I)  
-**Scope:** investigation + local runtime configuration + docs/tests.  
+**Base:** `e8addaf` (Phase I)
+**Scope:** investigation + local runtime configuration + docs/tests.
 **Not changed:** scorer, guard, formulas, sticky fallback logic, protected modules.
 
 ## Step 0 findings
