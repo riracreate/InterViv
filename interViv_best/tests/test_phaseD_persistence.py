@@ -33,6 +33,9 @@ from backend.db.sqlalchemy_store import (
     get_sqlalchemy_database,
 )
 from backend.main import app
+from tests.alembic_helpers import parent_revision
+
+PHASE_D_REVISION = "20260907_0006"
 
 
 def _clear_db_caches() -> None:
@@ -210,10 +213,9 @@ def test_alembic_upgrade_downgrade_reupgrade_phase_d(tmp_path, monkeypatch) -> N
             pass
         _clear_db_caches()
 
-    # Pin: downgrade to the pre-Phase-D revision. Head is now 20260907_0007
-    # (Phase E); ``-1`` would only drop system_design_attempts and leave
-    # Phase D tables in place, which is the wrong assertion for this test.
-    _run_alembic(url, "downgrade", "20260907_0005")
+    # Convention: downgrade to the parent of this phase's revision — never
+    # relative ``-1`` from HEAD (that moves when later phases add migrations).
+    _run_alembic(url, "downgrade", parent_revision(PHASE_D_REVISION))
     engine = create_engine(url)
     inspector = sa_inspect(engine)
     tables = inspector.get_table_names()

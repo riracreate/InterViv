@@ -30,6 +30,15 @@ export const STANDALONE_MODES = [
 
 export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'system_design', 'interview'];
 
+export function blockCategoryButtonLabel(category) {
+  if (category === 'verbal') return 'Verbal';
+  if (category === 'oa') return 'OA';
+  if (category === 'sql') return 'SQL';
+  if (category === 'coding') return 'Coding';
+  if (category === 'system_design') return 'System design';
+  return 'Interview';
+}
+
 export function createBlockId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return `block-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
