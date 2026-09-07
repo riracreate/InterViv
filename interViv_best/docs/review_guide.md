@@ -33,6 +33,8 @@ Pure documentation / skim-first: `670f5ea`, `4303577`, `65a456e` (and F.1/G.1 de
 
 Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation only; not part of the B–G product chain above.
 
+**Phase I** (`feat` after H.1): spaced-review scheduling over notebook misses — ladder `(1,3,7,16,35)`, due surface on Learn, reviews reuse the block engine and **do not** move measured mastery. Delivery: `docs/phase_i_delivery.md`. Migration head becomes `20260907_0008`.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -90,10 +92,11 @@ $ git diff --stat 0442493..65a456e -- \
 | `20260907_0005` | `coding_submissions` table |
 | `20260907_0006` | Round `assisted` / `assistance_kinds`; `target_contexts`, `retry_sets`, `bookmarks`, `assistance_events` |
 | `20260907_0007` | `system_design_attempts` table |
+| `20260907_0008` | `review_schedules` (Phase I spaced review) |
 
-Chain: `0003 → 0004 → 0005 → 0006 → 0007`.  
-`alembic heads` → **single head** `20260907_0007`.  
-No historical migration files (0001–0007) were edited after introduction; only new revisions appended.
+Chain: `0003 → 0004 → 0005 → 0006 → 0007 → 0008`.
+`alembic heads` → **single head** `20260907_0008`.
+No historical migration files were edited after introduction; only new revisions appended.
 
 **`parent_revision()` (G.0):** persistence tests previously pinned absolute parents (e.g. E.1 pinned D downgrade to `0005`) because Alembic relative `-1` breaks when HEAD advances. `tests/alembic_helpers.py` resolves the current head’s parent dynamically so each phase does not need a pin update.
 
@@ -116,7 +119,7 @@ This Hub/offline tension is a **pre–Phase A** condition. An outbound Hub fetch
 
 ## (f) Honest capability inventory
 
-**Works today (with disposable DB + local servers):** auth/home/progress; block practice (Verbal/OA/SQL/Interview); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring.
+**Works today (with disposable DB + local servers):** auth/home/progress; block practice (Verbal/OA/SQL/Interview); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring.
 
 **Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started). Whisper transcription may be importable while device capture stays client-only.
 

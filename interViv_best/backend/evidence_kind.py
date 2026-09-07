@@ -11,6 +11,7 @@ from typing import Any
 
 EVIDENCE_MEASURED = "measured"
 EVIDENCE_SELF_REPORTED = "self_reported"
+EVIDENCE_PRACTICE_REVIEW = "practice_review"
 SELF_ASSESSMENT_MODE = "structured_self_assessment"
 
 # Scoring-mode labels persisted on each scored attempt at write time.
@@ -92,6 +93,13 @@ def is_self_reported_round(round_doc: dict[str, Any] | None) -> bool:
     return round_doc.get("evidence_kind") == EVIDENCE_SELF_REPORTED
 
 
+def is_practice_review_round(round_doc: dict[str, Any] | None) -> bool:
+    """Spaced-review practice: scored for scheduling only, never measured."""
+    if not isinstance(round_doc, dict):
+        return False
+    return round_doc.get("evidence_kind") == EVIDENCE_PRACTICE_REVIEW
+
+
 def evidence_kind_for_round(
     *,
     round_type: str | None = None,
@@ -107,7 +115,7 @@ def measured_scores(rounds: list[dict[str, Any]]) -> list[float]:
     for item in rounds:
         if item.get("final_score") is None:
             continue
-        if is_self_reported_round(item):
+        if is_self_reported_round(item) or is_practice_review_round(item):
             continue
         out.append(float(item["final_score"]))
     return out
