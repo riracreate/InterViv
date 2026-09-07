@@ -27,6 +27,7 @@ class Settings:
     length_ratio_multiplier_enabled: bool
     adzuna_app_id: str | None
     adzuna_app_key: str | None
+    jobs_live_fetch: bool
     jobs_cache_ttl_seconds: int
     jobs_rate_limit_per_minute: int
     interview_module_paths: list[Path]
@@ -118,6 +119,7 @@ def get_settings() -> Settings:
         length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
         adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
         adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
+        jobs_live_fetch=_env_bool("JOBS_LIVE_FETCH", False),
         jobs_cache_ttl_seconds=int(os.getenv("JOBS_CACHE_TTL_SECONDS", str(6 * 3600))),
         jobs_rate_limit_per_minute=int(os.getenv("JOBS_RATE_LIMIT_PER_MINUTE", "30")),
         interview_module_paths=_resolve_paths(

@@ -116,7 +116,16 @@ export default function Jobs() {
               'Listings from Adzuna (India). Apply opens the original site in a new tab. interViv is not affiliated with LinkedIn or Naukri.'}
           </p>
           {meta?.empty_reason && (
-            <p className="mt-2 text-sm text-[var(--color-warn)]">{meta.empty_reason}</p>
+            <p className="mt-2 text-sm text-[var(--color-warn)]" data-testid="jobs-sample-banner">
+              {meta.empty_reason}
+            </p>
+          )}
+          {meta?.fetched_at && (
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]" data-testid="jobs-fetched-at">
+              Results obtained {meta.fetched_at}
+              {meta.cache_hit ? ' (served from cache; provenance unchanged)' : ''}
+              {meta.provenance ? ` · source: ${meta.provenance}` : ''}
+            </p>
           )}
         </header>
 

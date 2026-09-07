@@ -7,6 +7,9 @@ Phase J: prefer the locally cached MiniLM weights and do not open Hub sockets
 during SemanticScorer warm-up. Override by setting the variables explicitly in
 ``.env`` or the process environment (``override=False`` for dotenv; setdefault
 only fills blanks).
+
+Phase O: default ``JOBS_LIVE_FETCH=0`` so Adzuna ``httpx`` cannot fire unless
+deliberately enabled (same offline posture as Hub).
 """
 
 from __future__ import annotations
@@ -25,3 +28,5 @@ def apply_runtime_env() -> None:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    # Jobs: keep Adzuna outbound gated off unless the owner opts in.
+    os.environ.setdefault("JOBS_LIVE_FETCH", "0")

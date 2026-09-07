@@ -1,4 +1,6 @@
-"""Ticket D — jobs explorer cache, lexicon overlay, practice-for-role."""
+"""Ticket D — jobs explorer cache, lexicon overlay, practice-for-role.
+Phase O — live-fetch gate + provenance survives cache warm path.
+"""
 
 from __future__ import annotations
 
@@ -10,14 +12,16 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
+os.environ.setdefault("JOBS_LIVE_FETCH", "0")
 
 from backend.auth.security import create_access_token, hash_password
+from backend.config import get_settings
 from backend.db import get_database
 from backend.main import app
 from modules.jobs_explorer import (
+    fetch_adzuna,
     load_fixture_jobs,
     match_pct,
-    put_cached_search,
     reset_memory_store,
     search_jobs,
     set_fetch_override,
@@ -68,6 +72,83 @@ def test_cache_hit_does_not_call_provider() -> None:
         assert calls["n"] == 1  # no second provider call
     finally:
         set_fetch_override(None)
+        reset_memory_store()
+
+
+def test_default_jobs_live_fetch_skips_httpx(monkeypatch) -> None:
+    """Under default JOBS_LIVE_FETCH=0, credentials must not trigger Adzuna HTTP."""
+    reset_memory_store()
+    monkeypatch.setenv("ADZUNA_APP_ID", "test-app-id")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "test-app-key")
+    monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
+    get_settings.cache_clear()
+
+    class BoomClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, *args, **kwargs):
+            raise AssertionError("Adzuna HTTP must not run when JOBS_LIVE_FETCH=0")
+
+    monkeypatch.setattr("modules.jobs_explorer.httpx.Client", BoomClient)
+    try:
+        jobs, provenance = fetch_adzuna(q="backend", where="Pune", page=1)
+        assert provenance == "fixture"
+        assert len(jobs) >= 1
+    finally:
+        get_settings.cache_clear()
+        reset_memory_store()
+
+
+def test_live_fetch_enabled_without_credentials_uses_fixtures(monkeypatch) -> None:
+    """Gate on + no credentials: same fixture path as today, honestly labeled."""
+    reset_memory_store()
+    monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
+    monkeypatch.delenv("ADZUNA_APP_ID", raising=False)
+    monkeypatch.delenv("ADZUNA_APP_KEY", raising=False)
+    get_settings.cache_clear()
+    try:
+        user = _make_user()
+        body = search_jobs(q="intern", where="Pune", page=1, user_id=user["id"])
+        assert body["provenance"] == "fixture"
+        assert body["source"] == "fixture"
+        assert body["empty_reason"]
+        assert "ADZUNA" in body["empty_reason"]
+        assert body["cache_hit"] is False
+    finally:
+        monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
+        get_settings.cache_clear()
+        reset_memory_store()
+
+
+def test_cache_hit_preserves_fixture_provenance_and_label() -> None:
+    """Warm path: second request keeps fixture provenance, sample banner, fetched_at."""
+    reset_memory_store()
+    get_settings.cache_clear()
+    user = _make_user()
+    try:
+        first = search_jobs(q="warm-path", where="Pune", page=1, user_id=user["id"])
+        assert first["cache_hit"] is False
+        assert first["source"] == "fixture"
+        assert first["provenance"] == "fixture"
+        assert first["empty_reason"]
+        assert first["fetched_at"]
+        assert all(j.get("provenance") == "fixture" for j in first["jobs"])
+
+        second = search_jobs(q="warm-path", where="Pune", page=1, user_id=user["id"])
+        assert second["cache_hit"] is True
+        assert second["source"] == "fixture"
+        assert second["provenance"] == "fixture"
+        assert second["empty_reason"] == first["empty_reason"]
+        assert second["fetched_at"] == first["fetched_at"]
+        assert all(j.get("provenance") == "fixture" for j in second["jobs"])
+    finally:
         reset_memory_store()
 
 
