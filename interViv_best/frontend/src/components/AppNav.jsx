@@ -7,7 +7,7 @@ import { isNavActive, navDestinations } from '../lib/appNav';
  * flex-wrap keeps mobile widths from overflowing (Track 3 visual bar).
  */
 export default function AppNav({
-  brandTo = '/dashboard',
+  brandTo = '/home',
   userId = null,
   roleId = null,
   trailing = null,
@@ -17,7 +17,7 @@ export default function AppNav({
 
   return (
     <nav
-      className="flex flex-wrap items-center justify-between gap-3"
+      className="app-primary-nav flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-5"
       data-testid="app-primary-nav"
       aria-label="Primary"
     >
@@ -38,7 +38,7 @@ export default function AppNav({
               data-nav={item.label}
               className={
                 active
-                  ? 'rounded-[var(--radius-pill)] border border-[var(--color-accent)] bg-[var(--color-card)] px-3 py-1.5 text-sm font-semibold text-[var(--color-ink)]'
+                  ? 'rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-3 py-1.5 text-sm font-semibold text-white'
                   : 'rounded-[var(--radius-pill)] px-3 py-1.5 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'
               }
               aria-current={active ? 'page' : undefined}

@@ -84,15 +84,14 @@ function Navbar() {
   const navigate = useNavigate();
 
   const menuItems = [
-    { label: 'Home', active: true },
-    { label: 'Practice', active: false, action: () => navigate('/upload') },
-    { label: 'Dashboard', active: false, action: () => navigate('/dashboard') },
-    { label: 'Login', active: false, action: () => navigate('/login') },
+    { label: 'Home', to: '/home' },
+    { label: 'Practice', to: '/practice' },
+    { label: 'Progress', to: '/dashboard' },
   ];
 
   return (
     <nav className="relative z-10 w-full">
-      <div className="flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-6 sm:px-8 max-w-7xl mx-auto">
         {/* Logo */}
         <a
           href="/"
@@ -108,8 +107,8 @@ function Navbar() {
           {menuItems.map((item) => (
             <li key={item.label}>
               <a
-                href="#"
-                onClick={(e) => { e.preventDefault(); item.action && item.action(); }}
+                href={item.to}
+                onClick={(e) => { e.preventDefault(); navigate(item.to); }}
                 className="text-sm transition-colors duration-200 hover:text-black"
                 style={{
                   fontFamily: "'Inter', sans-serif",
@@ -123,7 +122,7 @@ function Navbar() {
         </ul>
 
         {/* CTA Button */}
-        <button
+        <div className="flex items-center gap-3"><button type="button" onClick={() => navigate('/login')} className="rounded-full border border-black/15 px-4 py-2.5 text-sm text-black">Login</button><button
           onClick={() => navigate('/signup')}
           className="rounded-full px-6 py-2.5 text-sm text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
           style={{
@@ -132,7 +131,7 @@ function Navbar() {
           }}
         >
           Sign up
-        </button>
+        </button></div>
       </div>
     </nav>
   );

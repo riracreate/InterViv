@@ -18,9 +18,11 @@ export default function ResourceLinks({
   heading = "Learn more",
   maxPerLevel = 3,
   variant = "light",
+  emptyMessage = null,
 }) {
   const [items, setItems] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!skillId && !questionId) {
@@ -30,15 +32,17 @@ export default function ResourceLinks({
     }
     let cancelled = false;
     setLoaded(false);
+    setError('');
     fetchResources({ skillId, questionId })
       .then((data) => {
         if (cancelled) return;
         setItems(buildResourceListModel(data, { limitPerLevel: maxPerLevel }));
         setLoaded(true);
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
         setItems([]);
+        setError(err.message || 'Resources are not available right now.');
         setLoaded(true);
       });
     return () => {
@@ -46,7 +50,9 @@ export default function ResourceLinks({
     };
   }, [skillId, questionId, maxPerLevel]);
 
-  if (!loaded || items.length === 0) return null;
+  if (!loaded) return emptyMessage ? <p role="status">Loading resources…</p> : null;
+  if (error) return emptyMessage ? <p role="alert">{error}</p> : null;
+  if (items.length === 0) return emptyMessage ? <p>{emptyMessage}</p> : null;
 
   const groups = groupResourcesByLevel(items);
   const isDark = variant === "dark";
