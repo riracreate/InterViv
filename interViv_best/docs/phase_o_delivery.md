@@ -1,6 +1,6 @@
 # Phase O — Jobs honesty defects closed
 
-**Branch tip:** see git log (commit message: Phase O). **Parent:** `0d5fd54` (Phase N). **Chain root:** `0442493` (A).  
+**Branch tip:** see git log (commit message: Phase O). **Parent:** `0d5fd54` (Phase N). **Chain root:** `0442493` (A).
 **Scope:** two contained fixes only. No JobSourceClient, no real listings, fixture JSON unchanged, Step 4 sourcing decision remains owner-open. `match_pct` framing untouched / still open.
 
 **Phase M ports:** `:18000` / `:5173` were **not** disturbed. Disposable verify used `127.0.0.1:18001` + `127.0.0.1:5174` and `/tmp/interviv_phaseo_disposable.db`.

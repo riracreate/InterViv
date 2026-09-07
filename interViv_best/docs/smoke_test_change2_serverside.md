@@ -1,6 +1,6 @@
 # Smoke Test — Change 2: Remove Frontend cos_similarity
 
-**Date:** 2026-04-24  
+**Date:** 2026-04-24
 **Test file:** `tests/test_change2_serverside_metrics.py`
 
 ## Results

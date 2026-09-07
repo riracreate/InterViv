@@ -1,9 +1,14 @@
 # Review guide — chain A through Q
 
-**Audience:** reviewers of `codex/phase-b-block-practice`  
-**Base (chain root):** Phase A tip `0442493`  
-**Tip at this guide refresh (Phase R):** `c58e106` (Phase Q)  
-**This file:** introduced in Phase H.1 (`9e91e08`); **refreshed in Phase R** (docs only). No history rewrite; describe only.
+**Audience:** reviewers of `codex/phase-b-block-practice`
+
+**Base (chain root):** Phase A tip `0442493`
+
+**Tip (Phase R):** `711995c`
+
+**Phase Q commit (confirmed):** `c58e106` (`c58e1064f21eedc16bed347be4469f07b80f89e1`) — message `fix(phase-q): default LLM_LIVE_FETCH off and enforce mode at LLM client`; adds `modules/llm_outbound_gate.py` and the `_generate_via_llm` gate in `question_bank.py`.
+
+**This file:** introduced in Phase H.1 (`9e91e08`); refreshed in Phase R; Phase S pins Q’s sha, preserves Phase M findings, and clears trailing-whitespace check noise. No history rewrite; describe only.
 
 **First paragraph (read this before the tables):** Coding “execution” is a **503 seam with nothing behind it**. `POST /session/coding/run` and scored coding submits return infrastructure-unavailable; the editor stays open; Progress treats coding as unscored coverage, not a zero. C.2 (Docker/live runner) was never started. Do not review this branch as if candidates can receive coding scores today.
 
@@ -29,7 +34,7 @@
 | `383d8ba` | **G.0c** fix | Dashboard tolerates string feedback (SD reports 500ed) | 2 files | With G.0 |
 | `65a456e` | **G.1** docs | Phase G verification / backlog / review topology notes | 1 file docs | **Skim** after reading F/G.0 |
 
-### H → Q (`65a456e..c58e106`) — 10 commits
+### H → R (`65a456e..711995c`) — 11 commits
 
 | SHA | Role | What / why | Independently reviewable? |
 |-----|------|------------|---------------------------|
@@ -42,11 +47,12 @@
 | `0d5fd54` | **N** docs | Real job-data engineering assessment (no integration) | **Skim** |
 | `43ac864` | **O** fix | `JOBS_LIVE_FETCH=0`; fixture provenance survives cache | Mechanical Jobs honesty |
 | `bb5702a` | **P** docs+fix | Outbound/LLM audit; Google Fonts CDN removed from default CSS | Audit + narrow CSS gate |
-| `c58e106` | **Q** fix | `LLM_LIVE_FETCH=0`; mode enforced at shared LLM client; adaptive cannot bypass | Mechanical gating |
+| `c58e106` | **Q** fix | `LLM_LIVE_FETCH=0`; mode enforced at shared LLM client; adaptive cannot bypass. Full sha `c58e1064f21eedc16bed347be4469f07b80f89e1` (2026-09-07). Files include `modules/llm_outbound_gate.py` + `question_bank.py` gate | Mechanical gating |
+| `711995c` | **R** docs | Protected-file attestation exception; degrade-pattern §e2; inventory through Q | **Skim** |
 
-**No Phase M commit** is on this chain. Phase M work was attempted in session (whisper Step 0 offline; disposable servers on `:18000`/`:5173`) and left **incomplete** awaiting owner browser permission — see §f and §i. There is no `phase_m_delivery.md` in-tree.
+**No Phase M product commit** is on this chain. Session findings are preserved in `docs/phase_m_delivery.md` (Phase S; incomplete phase; browser verification never finished). See §f and §i. Ports `:18000`/`:5173` may still hold that stack.
 
-Pure documentation / skim-first among H–Q: `594f3d9`, `9e91e08`, `29a8998`, `0d5fd54`, and the audit half of `bb5702a`.
+Pure documentation / skim-first among H–R: `594f3d9`, `9e91e08`, `29a8998`, `0d5fd54`, the audit half of `bb5702a`, and `711995c`.
 
 ### LLM question generation — ADJACENT (owner judgment)
 
@@ -122,7 +128,7 @@ index 1c3f41b..edcaa69 100644
 @@ -325,6 +325,13 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
      global _LAST_LLM_ERROR
      _LAST_LLM_ERROR = None
- 
+
 +    # Phase Q: shared outbound gate (minimal touch on this protected module).
 +    from modules.llm_outbound_gate import question_llm_outbound_allowed
 +
@@ -210,7 +216,7 @@ The codebase documents four failure paths that do **not** agree. Stated once:
 | **SemanticScorer** (MiniLM / Hub) | Sticky lexical fallback for the process; changes labels and scores | **Silent degrade**. Mode recorded on scored attempts (G.0/G.0b) |
 | **Jobs** live Adzuna fetch | Returns fixture listings as `fixture_fallback` (when live fetch is enabled and fails) | **Silent degrade**. Default: live fetch **off** (`JOBS_LIVE_FETCH=0`, Phase O) |
 | **LLM question / coach** chat completions | Soft `None` → CSV / lexicon / plan fallback | **Silent degrade**. Default: dials **off** (`LLM_LIVE_FETCH=0`, Phase Q); generation also needs mode ∈ `{llm, llm_csv_fallback}` at the client boundary |
-| **Transcription** (Whisper / Hub cold under offline) | `LocalEntryNotFoundError` → HTTP **503** `transcription_unavailable` | **Fail loud** (Phase M Step 0 observation; no Phase M commit) |
+| **Transcription** (Whisper / Hub cold under offline) | `LocalEntryNotFoundError` → HTTP **503** `transcription_unavailable` | **Fail loud** (Phase M Step 0, as recorded in `docs/phase_m_delivery.md`; incomplete phase) |
 
 Three paths degrade silently; **transcription is the outlier** and is the behavior the project’s own honesty rules would favor (unavailable labeled, not a quiet substitute presented as success).
 
@@ -228,7 +234,7 @@ Do not treat this section as a resolution. It is the decision surface.
 
 **Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started).
 
-**Phase M (incomplete — no commit):** Step 0 observed that `faster_whisper` `"tiny.en"` loads from the local Hub cache under `HF_HUB_OFFLINE=1`, and that a cold disposable `HF_HOME` fails **loudly** (503). Owner-present browser AV verification (Allow camera/mic through calibration) was **not finished** — session left waiting on a permission prompt; ports `:18000`/`:5173` may still hold that stack. Do not treat Phase M as closing live mic/camera or the seven AV UI states.
+**Phase M (incomplete):** session findings are recorded in `docs/phase_m_delivery.md` (written in Phase S from the Phase M report — not re-verified end-to-end here). Step 0: local `faster_whisper` `"tiny.en"` cache under `HF_HUB_OFFLINE=1`; cold disposable `HF_HOME` → loud 503. Owner-present browser AV verification (calibration, seven states, real-audio transcription, retention) was **not finished**. Ports `:18000`/`:5173` may still hold that stack. Calibration has still never rendered on this chain (Phase L auto-skip on `NotAllowedError`); E.1’s transcription path has never processed real audio. Do not treat Phase M as closing live mic/camera.
 
 **Never built on this chain:** C.2 live runner; E.2 ffmpeg/blob retention; phase21 **Upload Verbal Ability entry** (rescued blobs only — see `docs/phase_h0_rescue.md`); LLM judge in scoring/readiness/guard/gaps (forbidden).
 
@@ -309,7 +315,9 @@ git show-ref | grep refs/rescue/
 | Jobs: if `JOBS_LIVE_FETCH=1` and live fetch fails → silent fixture fallback | Deferred with sourcing decision (O/P/Q) |
 | Jobs: sample `empty_reason` copy names `JOBS_LIVE_FETCH` (raw config label in UI) | Deferred with sourcing / copy ownership |
 | Three silent-degrade paths (SemanticScorer, Jobs live-fail, LLM soft fallback) vs transcription fail-loud | Decision open — see §e2 |
-| Phase M incomplete: no commit; no `phase_m_delivery.md`; live mic/camera / seven AV UI states not closed | STILL OPEN / session may still hold `:18000`/`:5173` |
+| Phase M incomplete: browser AV steps never finished; live mic/camera / seven AV UI states not closed | STILL OPEN — see `docs/phase_m_delivery.md`; session may still hold `:18000`/`:5173` |
+| Calibration never rendered on this chain (L auto-skips on `NotAllowedError`) | Unexercised UI — recorded in Phase M doc |
+| E.1 transcription path never processed real audio | Unexercised — recorded in Phase M doc |
 | 409 message visible in UI | PARTIAL (G/H) — client gate; race or post-submit retry UX not proven |
 | Target does not override explicit topic | PARTIAL — override scenario not walked |
 | Builder coding start in browser | PARTIAL — API/test covered; builder UI start not filmed |
@@ -320,10 +328,10 @@ git show-ref | grep refs/rescue/
 | phase21 Verbal Upload entry | Not integrated (L gated media only) |
 | ADJACENT LLM question generation vs contract intent | Owner judgment (§a) |
 | Home target picker vs `/target-context/me` | Known gap |
-| No Phase M delivery doc despite session work | Docs gap noticed in Phase R — record only |
+| Frozen reports `human_baseline_report.md` / `persona_validation_report.md` retain markdown hard-break trailing spaces | Left untouched to preserve committed MD5 / frozen research bytes (Phase S) |
 
 ---
 
 ## Related delivery docs
 
-`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).

@@ -1,7 +1,7 @@
 # Phase N — what real job data would require
 
-**Read-only engineering assessment. No integration. No external contact.**  
-**Branch tip assessed:** `8466c48` (Phase L). **Chain root:** `0442493` (A).  
+**Read-only engineering assessment. No integration. No external contact.**
+**Branch tip assessed:** `8466c48` (Phase L). **Chain root:** `0442493` (A).
 **Phase M** may still hold `:18000` / `:5173`; this phase started no servers and did not disturb that stack.
 
 Owner decision territory (terms of service, data protection, whether to lift offline rules) is **stated, not decided**. This document covers only what interViv would have to change to accept listings from *any* external source.
@@ -245,7 +245,7 @@ Based on current schema and what external sources typically return:
 
 ### Recommendation
 
-**Recommend A in the near term, with B as the only expansion that stays offline.**  
+**Recommend A in the near term, with B as the only expansion that stays offline.**
 Reasoning: the chain’s Jobs path already treats Adzuna as optional and fixture as the offline truth; Phase F never closed sample labeling; gap/roadmap do not need live listings; C pulls ToS, network, retention, and re-verification into a product that still has C.2/E.2 blocked. Fixing the `source: cache` / `empty_reason` wipe is a small honesty repair under A, not a live integration.
 
 **Strongest argument against A:** if the owner’s real goal is market-facing practice (“jobs like the ones I’m applying to”), three fixtures will never satisfy; delaying C only accumulates product debt. In that case B (dated static import) is the next step that does not yet open a live socket.

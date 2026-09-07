@@ -1,7 +1,7 @@
 # Phase I — spaced repetition over the mistakes notebook
 
-**Branch tip (this commit):** see `git log -1`  
-**Base:** `9e91e08` (H.1)  
+**Branch tip (this commit):** see `git log -1`
+**Base:** `9e91e08` (H.1)
 **One feature.** No scoring-formula changes. Reviews are practice, not measured mastery.
 
 ## Scheduling rule
