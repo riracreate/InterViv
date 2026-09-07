@@ -356,11 +356,23 @@ def call_llm_with_cache_retry(
     *,
     asked: list[str] | None = None,
 ) -> str | None:
-    """Return raw LLM content or ``None`` after retries/fallback-worthy errors."""
+    """Return raw LLM content or ``None`` after retries/fallback-worthy errors.
+
+    Phase Q: ``LLM_LIVE_FETCH`` and ``QUESTION_GENERATION_MODE`` are enforced
+    here so adaptive and non-adaptive callers share one outbound boundary.
+    """
+    from modules.llm_outbound_gate import question_llm_outbound_allowed
+
     _set_last_error(None)
     cached = _cache_get(context, asked or [])
     if cached:
         return cached
+
+    if not question_llm_outbound_allowed():
+        _set_last_error(
+            "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
+        )
+        return None
 
     provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:
