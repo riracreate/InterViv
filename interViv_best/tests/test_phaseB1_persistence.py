@@ -36,6 +36,9 @@ from backend.db.sqlalchemy_store import (
     get_sqlalchemy_database,
 )
 from backend.main import app
+from tests.alembic_helpers import parent_revision
+
+PHASE_B1_REVISION = "20260907_0004"
 
 
 def _clear_db_caches() -> None:
@@ -649,7 +652,7 @@ def test_alembic_migration_supports_phaseB_persistence(tmp_path, monkeypatch) ->
         _clear_db_caches()
 
     # Downgrade removes the new schema; re-upgrade restores it.
-    _run_alembic(url, "downgrade", "20260907_0003")
+    _run_alembic(url, "downgrade", parent_revision(PHASE_B1_REVISION))
     engine = create_engine(url)
     tables = sa_inspect(engine).get_table_names()
     assert "practice_presets" not in tables

@@ -730,7 +730,20 @@ export default function Interview({ sessionState = null }) {
       const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
       const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
       setCurrentScore(score);
-      setCurrentFeedback(feedback);
+      let feedbackWithMode = feedback;
+      if (resp.scoring_mode === 'lexical_fallback_degraded') {
+        feedbackWithMode = (
+          'Scoring mode: lexical fallback (semantic scorer unavailable). '
+          + 'This score is not equivalent to a full semantic-scorer result.'
+          + (feedback ? `\n\n${feedback}` : '')
+        );
+      } else if (resp.scoring_mode === 'self_reported') {
+        feedbackWithMode = (
+          'Scoring mode: self-reported (not measured mastery).'
+          + (feedback ? `\n\n${feedback}` : '')
+        );
+      }
+      setCurrentFeedback(feedbackWithMode);
       setCurrentRubric(rubric && typeof rubric === 'object' ? rubric : null);
       setCurrentConcepts(concepts && typeof concepts === 'object' ? concepts : null);
       setCurrentArtifact(resp.artifact_json || resp);

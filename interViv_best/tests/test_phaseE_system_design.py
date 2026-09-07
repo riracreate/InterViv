@@ -31,6 +31,9 @@ from backend.main import app
 from backend.db.phase_e_system_design_bank import SYSTEM_DESIGN_RUBRIC
 from modules.scoring.system_design import score_system_design_round
 from modules.av_capabilities import av_capability_report
+from tests.alembic_helpers import parent_revision
+
+PHASE_E_REVISION = "20260907_0007"
 
 
 def _clear_db_caches() -> None:
@@ -185,7 +188,7 @@ def test_alembic_system_design_up_down_up(tmp_path) -> None:
         assert col in cols, col
     engine.dispose()
 
-    _run_alembic(url, "downgrade", "20260907_0006")
+    _run_alembic(url, "downgrade", parent_revision(PHASE_E_REVISION))
     engine = create_engine(url)
     try:
         assert "system_design_attempts" not in sa_inspect(engine).get_table_names()

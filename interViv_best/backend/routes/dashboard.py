@@ -7,7 +7,12 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.evidence_kind import is_self_reported_round, measured_scores
+from backend.evidence_kind import (
+    is_self_reported_round,
+    measured_scores,
+    scoring_mode_for_round,
+    scoring_mode_label_for_display,
+)
 from backend.routes.auth import require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
 from modules.gap_analysis import GapAnalyzer, GapAnalysisError
@@ -68,6 +73,9 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if cleaned.get("round_type") == "sql" and cleaned.get("artifact_json"):
             cleaned["artifact_json"] = sanitize_sql_artifact_for_client(cleaned["artifact_json"])
         cleaned["performance_band"] = _score_bucket(cleaned.get("final_score"))
+        mode = scoring_mode_for_round(cleaned)
+        cleaned["scoring_mode"] = mode
+        cleaned["scoring_mode_label"] = scoring_mode_label_for_display(mode)
 
         breakdown = cleaned.get("scoring_breakdown") or {}
         layer_scores = [
@@ -165,6 +173,9 @@ def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "average_score_population": "measured",
             "self_reported_average": self_avg,
             "assisted_rounds": sum(1 for r in measured if r.get("assisted")),
+            "scoring_modes": sorted({
+                scoring_mode_for_round(r) for r in scored
+            }),
             "suggestion": suggestion,
         })
     return results
@@ -242,6 +253,9 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             "self_reported_rounds": sum(
                 1 for r in scored if is_self_reported_round(r)
             ),
+            "scoring_modes": sorted({
+                scoring_mode_for_round(r) for r in scored
+            }),
             # What the average covers and what it excludes: unscored
             # coding rounds are execution-unavailable, not zeros.
             "unscored_rounds": _unscored_rounds(rounds),

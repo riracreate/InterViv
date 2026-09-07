@@ -144,6 +144,9 @@ export function mapRealDataToDashboard(session) {
     questionType: r.question_type || r.question_context?.question_type || "",
     followups: r.followups || r.question_context?.followups || [],
     scoring_breakdown: r.scoring_breakdown || null,
+    scoring_mode: r.scoring_mode || "unknown",
+    scoring_mode_label: r.scoring_mode_label || null,
+    evidence_kind: r.evidence_kind || null,
   }));
 
   const strengths = [];

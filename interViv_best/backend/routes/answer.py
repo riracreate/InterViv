@@ -36,6 +36,7 @@ from backend.routes.session import (
 )
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
 from backend.evidence_kind import (
+    scoring_mode_at_write,
     EVIDENCE_SELF_REPORTED,
     evidence_kind_for_round,
     is_self_reported_round,
@@ -693,6 +694,11 @@ def submit_answer(
             now=now,
         )
         _bd = scoring_result.get("scoring_breakdown", {}) or {}
+        scoring_mode = scoring_mode_at_write(
+            self_reported=self_reported,
+            scoring_breakdown=_bd,
+            scoring_result=scoring_result,
+        )
         for index, round_document in enumerate(rounds):
             if round_document.get("round") != request.round:
                 continue
@@ -725,6 +731,7 @@ def submit_answer(
                 "guard_applied": scoring_result.get("guard_applied"),
                 "evaluation_mode": scoring_result.get("evaluation_mode"),
                 "evidence_kind": evidence_kind,
+                "scoring_mode": scoring_mode,
                 "semantic_scoring_available": _bd.get(
                     "semantic_scoring_available",
                     scoring_result.get("semantic_scoring_available"),
@@ -1105,6 +1112,7 @@ def submit_answer(
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evaluation_boundary": scoring_result.get("boundary"),
             "evidence_kind": evidence_kind,
+            "scoring_mode": scoring_mode,
             "semantic_scoring_available": _bd.get(
                 "semantic_scoring_available",
                 scoring_result.get("semantic_scoring_available"),
@@ -1113,15 +1121,7 @@ def submit_answer(
                 "semantic_fallback_reason",
                 scoring_result.get("semantic_fallback_reason"),
             ),
-            "scoring_mode_label": (
-                "lexical_fallback_degraded"
-                if (
-                    _bd.get("semantic_component_source") == "lexical_fallback"
-                    or _bd.get("semantic_scoring_available") is False
-                    or scoring_result.get("semantic_scoring_available") is False
-                )
-                else ("self_reported" if self_reported else "full")
-            ),
+            "scoring_mode_label": scoring_mode,
             "concepts": scoring_result.get("concepts", {}),
             "guard": scoring_result.get("guard", {}),
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
