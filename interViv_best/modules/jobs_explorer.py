@@ -65,6 +65,13 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """SQLite often returns naive datetimes; compare only in UTC-aware form."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _using_sql() -> bool:
     return bool(get_settings().database_url)
 
@@ -150,11 +157,19 @@ def fetch_adzuna(
     page: int,
     results_per_page: int = MAX_RESULTS,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Return (jobs, source) where source is live|fixture|empty."""
+    """Return (jobs, provenance) where provenance is live|fixture|fixture_fallback|override.
+
+    Live HTTP runs only when JOBS_LIVE_FETCH is enabled *and* credentials exist.
+    The code path is retained for a future authorized integration; default is offline.
+    """
     if _FETCH_OVERRIDE is not None:
         return _FETCH_OVERRIDE(q=q, where=where, page=page), "override"
 
     settings = get_settings()
+    if not settings.jobs_live_fetch:
+        # Phase O gate: no outbound attempt under the default configuration.
+        return load_fixture_jobs()[:results_per_page], "fixture"
+
     app_id = settings.adzuna_app_id
     app_key = settings.adzuna_app_key
     if not app_id or not app_key:
@@ -178,6 +193,7 @@ def fetch_adzuna(
             resp.raise_for_status()
             data = resp.json()
     except Exception:
+        # Silent degrade to fixtures (SemanticScorer-like), not fail-loud.
         return load_fixture_jobs()[:results_per_page], "fixture_fallback"
 
     results = data.get("results") or []
@@ -189,28 +205,91 @@ def _cache_ttl() -> timedelta:
     return timedelta(seconds=max(60, int(get_settings().jobs_cache_ttl_seconds or CACHE_TTL_DEFAULT)))
 
 
-def get_cached_search(q: str, where: str, page: int) -> list[dict[str, Any]] | None:
+def _stamp_provenance(
+    jobs: list[dict[str, Any]],
+    *,
+    provenance: str,
+    fetched_at: datetime,
+) -> list[dict[str, Any]]:
+    """Attach provenance + fetch time so cache hits keep honesty labels."""
+    iso = fetched_at.isoformat()
+    stamped: list[dict[str, Any]] = []
+    for job in jobs:
+        card = dict(job)
+        card["provenance"] = provenance
+        card["fetched_at"] = fetched_at
+        card["fetched_at_iso"] = iso
+        stamped.append(card)
+    return stamped
+
+
+def _sample_empty_reason(provenance: str) -> str | None:
+    if provenance not in {"fixture", "fixture_fallback"}:
+        return None
+    settings = get_settings()
+    if provenance == "fixture_fallback":
+        return (
+            "Live Adzuna fetch failed — showing fixture listings (not live market data)."
+        )
+    if not settings.jobs_live_fetch:
+        return (
+            "JOBS_LIVE_FETCH is off — showing fixture listings (not live Adzuna). "
+            "Set JOBS_LIVE_FETCH=1 and Adzuna credentials in .env for live India jobs."
+        )
+    return (
+        "ADZUNA_APP_ID / ADZUNA_APP_KEY not configured — showing fixture listings "
+        "(not live Adzuna). Set credentials in .env for live India jobs."
+    )
+
+
+def get_cached_search(q: str, where: str, page: int) -> dict[str, Any] | None:
+    """Return ``{jobs, fetched_at, provenance}`` or None on miss/expiry."""
     key = query_hash(q, where, page)
     if _using_sql():
         return _get_search_sql(key)
     entry = _SEARCH_MEMORY.get(key)
     if not entry:
         return None
-    if _now() - entry["fetched_at"] > _cache_ttl():
+    fetched_at = _as_utc(entry["fetched_at"])
+    if _now() - fetched_at > _cache_ttl():
         return None
-    return list(entry["jobs"])
+    return {
+        "jobs": list(entry["jobs"]),
+        "fetched_at": fetched_at,
+        "provenance": entry.get("provenance") or _provenance_from_jobs(entry["jobs"]),
+    }
 
 
-def put_cached_search(q: str, where: str, page: int, jobs: list[dict[str, Any]]) -> None:
+def _provenance_from_jobs(jobs: list[dict[str, Any]]) -> str:
+    for job in jobs or []:
+        prov = job.get("provenance")
+        if prov:
+            return str(prov)
+    # Conservative: unlabeled historical cache rows are treated as sample.
+    return "fixture"
+
+
+def put_cached_search(
+    q: str,
+    where: str,
+    page: int,
+    jobs: list[dict[str, Any]],
+    *,
+    provenance: str,
+) -> None:
     key = query_hash(q, where, page)
     fetched = _now()
-    for job in jobs:
+    stamped = _stamp_provenance(jobs, provenance=provenance, fetched_at=fetched)
+    for job in stamped:
         _upsert_job(job, fetched_at=fetched)
     if _using_sql():
-        _put_search_sql(key, page, jobs, fetched)
+        _put_search_sql(key, page, stamped, fetched, provenance=provenance)
         return
-    _SEARCH_MEMORY[key] = {"fetched_at": fetched, "jobs": list(jobs)}
-
+    _SEARCH_MEMORY[key] = {
+        "fetched_at": fetched,
+        "jobs": list(stamped),
+        "provenance": provenance,
+    }
 
 def _upsert_job(job: dict[str, Any], *, fetched_at: datetime) -> None:
     key = (job["provider"], job["external_id"])
@@ -293,11 +372,18 @@ def search_jobs(
     cached = get_cached_search(q, where, page)
     cache_hit = cached is not None
     if cached is None:
-        jobs, source = fetch_adzuna(q=q, where=where, page=page)
-        put_cached_search(q, where, page, jobs)
+        jobs, provenance = fetch_adzuna(q=q, where=where, page=page)
+        put_cached_search(q, where, page, jobs, provenance=provenance)
+        # Re-read so fetched_at / stamps match what cache stores.
+        cached = get_cached_search(q, where, page)
+        assert cached is not None
+        jobs = cached["jobs"]
+        fetched_at = cached["fetched_at"]
+        provenance = cached["provenance"]
     else:
-        jobs = cached
-        source = "cache"
+        jobs = cached["jobs"]
+        provenance = cached["provenance"]
+        fetched_at = cached["fetched_at"]
 
     user_skills = user_skills_for_overlay(user_id)
     cards = []
@@ -314,16 +400,15 @@ def search_jobs(
             "match_pct": match_pct(job.get("skills") or [], user_skills),
             "redirect_url": job.get("redirect_url"),
             "snippet": job.get("snippet"),
+            "provenance": job.get("provenance") or provenance,
         }
         cards.append(card)
 
-    settings = get_settings()
-    empty_reason = None
-    if not settings.adzuna_app_id or not settings.adzuna_app_key:
-        empty_reason = (
-            "ADZUNA_APP_ID / ADZUNA_APP_KEY not configured — showing fixture listings "
-            "(not live Adzuna). Set credentials in .env for live India jobs."
-        )
+    fetched_iso = (
+        fetched_at.isoformat()
+        if isinstance(fetched_at, datetime)
+        else str(fetched_at)
+    )
 
     return {
         "jobs": cards,
@@ -331,9 +416,12 @@ def search_jobs(
         "page": page,
         "q": q,
         "where": where,
-        "source": source,
+        # provenance travels with the data; cache_hit is a separate axis.
+        "source": provenance,
+        "provenance": provenance,
         "cache_hit": cache_hit,
-        "empty_reason": empty_reason if source in {"fixture", "fixture_fallback"} else None,
+        "fetched_at": fetched_iso,
+        "empty_reason": _sample_empty_reason(provenance),
         "disclaimer": (
             "Listings from Adzuna (India). Apply opens the original site in a new tab. "
             "interViv is not affiliated with LinkedIn or Naukri."
@@ -425,7 +513,7 @@ def _get_job_sql(provider: str, external_id: str) -> dict[str, Any] | None:
         return _normalize_adzuna_item(payload, from_fixture=True)
 
 
-def _get_search_sql(key: str) -> list[dict[str, Any]] | None:
+def _get_search_sql(key: str) -> dict[str, Any] | None:
     from backend.db.sqlalchemy_models import JobsSearchCacheRow
     from backend.db.sqlalchemy_store import session_scope
 
@@ -433,15 +521,27 @@ def _get_search_sql(key: str) -> list[dict[str, Any]] | None:
         row = session.query(JobsSearchCacheRow).filter_by(query_hash=key).one_or_none()
         if row is None:
             return None
-        if _now() - row.fetched_at > _cache_ttl():
+        fetched_at = _as_utc(row.fetched_at)
+        if _now() - fetched_at > _cache_ttl():
             return None
         jobs = []
         for item in row.results_json or []:
             jobs.append(item if "skills" in item else _normalize_adzuna_item(item, from_fixture=True))
-        return jobs
+        return {
+            "jobs": jobs,
+            "fetched_at": fetched_at,
+            "provenance": _provenance_from_jobs(jobs),
+        }
 
 
-def _put_search_sql(key: str, page: int, jobs: list[dict[str, Any]], fetched: datetime) -> None:
+def _put_search_sql(
+    key: str,
+    page: int,
+    jobs: list[dict[str, Any]],
+    fetched: datetime,
+    *,
+    provenance: str,
+) -> None:
     from backend.db.sqlalchemy_models import JobsSearchCacheRow
     from backend.db.sqlalchemy_store import session_scope
 
@@ -462,6 +562,9 @@ def _put_search_sql(key: str, page: int, jobs: list[dict[str, Any]], fetched: da
                 "redirect_url": j.get("redirect_url"),
                 "skills": j.get("skills") or [],
                 "payload": j.get("payload") or {},
+                "provenance": j.get("provenance") or provenance,
+                "fetched_at_iso": j.get("fetched_at_iso")
+                or (fetched.isoformat() if isinstance(fetched, datetime) else str(fetched)),
             }
             for j in jobs
         ]

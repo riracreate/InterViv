@@ -91,6 +91,8 @@ Applied via:
 - Documented in `.env.example` and `docker-compose.yml` backend env.
 - Test `tests/test_phaseJ_offline_scoring.py` (skips if cache absent).
 
+Phase O extends the same `runtime_env` pattern for Jobs: `JOBS_LIVE_FETCH` defaults to `0` so Adzuna `httpx` cannot fire unless deliberately enabled (see `docs/phase_o_delivery.md`).
+
 ## What this closes / leaves open
 
 | Topic | Status |
