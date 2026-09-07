@@ -693,12 +693,28 @@ def submit_answer(
             round_document=active_round,
             now=now,
         )
-        _bd = scoring_result.get("scoring_breakdown", {}) or {}
+        _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
         scoring_mode = scoring_mode_at_write(
             self_reported=self_reported,
             scoring_breakdown=_bd,
             scoring_result=scoring_result,
         )
+        # Persist disclosure fields inside scoring_breakdown JSON — the
+        # SQLAlchemy rounds table has no dedicated columns for them.
+        _bd["scoring_mode"] = scoring_mode
+        _bd["evidence_kind"] = evidence_kind
+        if scoring_result.get("evaluation_mode"):
+            _bd["evaluation_mode"] = scoring_result.get("evaluation_mode")
+        if "semantic_scoring_available" not in _bd:
+            _bd["semantic_scoring_available"] = scoring_result.get(
+                "semantic_scoring_available"
+            )
+        if "semantic_fallback_reason" not in _bd and scoring_result.get(
+            "semantic_fallback_reason"
+        ):
+            _bd["semantic_fallback_reason"] = scoring_result.get(
+                "semantic_fallback_reason"
+            )
         for index, round_document in enumerate(rounds):
             if round_document.get("round") != request.round:
                 continue
