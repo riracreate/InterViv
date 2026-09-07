@@ -313,7 +313,9 @@ git show-ref | grep refs/rescue/
 | Finding | Status |
 |---------|--------|
 | Jobs: if `JOBS_LIVE_FETCH=1` and live fetch fails → silent fixture fallback | Deferred with sourcing decision (O/P/Q) |
-| Jobs: sample `empty_reason` copy names `JOBS_LIVE_FETCH` (raw config label in UI) | Deferred with sourcing / copy ownership |
+| Jobs: sample `empty_reason` named `JOBS_LIVE_FETCH` / `ADZUNA_APP_*` | **Closed in Phase T** — product copy; flag names only in server logs |
+| Jobs freshness line still renders `source: fixture` (and `fixture_fallback` empty_reason still says “Adzuna” / “fixture”) | Finding — not env-flag class; left untouched (Phase O provenance/freshness) |
+| LLM `last_runtime_error` / `_LAST_LLM_ERROR` strings name `LLM_LIVE_FETCH` / `QUESTION_GENERATION_MODE` | Finding — may surface via `llm_fallback_reason` on question payloads; not Jobs copy; leave for a later copy pass |
 | Three silent-degrade paths (SemanticScorer, Jobs live-fail, LLM soft fallback) vs transcription fail-loud | Decision open — see §e2 |
 | Phase M incomplete: browser AV steps never finished; live mic/camera / seven AV UI states not closed | STILL OPEN — see `docs/phase_m_delivery.md`; session may still hold `:18000`/`:5173` |
 | Calibration never rendered on this chain (L auto-skips on `NotAllowedError`) | Unexercised UI — recorded in Phase M doc |

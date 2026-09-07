@@ -142,7 +142,7 @@ Gap / readiness / mastery code paths consume **deterministic scores** that may h
 | Finding | Recommendation |
 |---------|----------------|
 | Phase O: if `JOBS_LIVE_FETCH=1` and fetch fails → silent fixture fallback | Wrong vs fail-loud / labeled-unavailable; fix with sourcing decision |
-| Phase O: sample `empty_reason` names `JOBS_LIVE_FETCH` | Violates no-raw-API-labels spirit; reword when Jobs copy is owned |
+| Phase O: sample `empty_reason` names `JOBS_LIVE_FETCH` | **Closed in Phase T** (product copy; flag names in logs only) |
 | Path B dead `get_next_question` LLM | Leave or delete later |
 | Fail-fast vs sticky SemanticScorer | Still open (Phase J/F) |
 
