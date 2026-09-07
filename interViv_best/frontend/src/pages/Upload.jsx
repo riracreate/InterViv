@@ -210,6 +210,7 @@ export default function Upload() {
         question: r.question,
         difficulty: r.difficulty,
         round_type: r.round_type || 'technical_short_answer',
+        block_category: r.block_category || null,
         question_context: r.question_context || {},
         config_json: r.config_json || {},
         expires_at: r.expires_at || null,

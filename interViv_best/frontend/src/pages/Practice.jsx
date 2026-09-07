@@ -57,6 +57,7 @@ function navigateToInterview(navigate, startResp, extras = {}) {
     question: startResp.question,
     difficulty: startResp.difficulty,
     round_type: startResp.round_type || 'technical_short_answer',
+    block_category: startResp.block_category || null,
     question_context: startResp.question_context || {},
     config_json: startResp.config_json || {},
     expires_at: startResp.expires_at || null,

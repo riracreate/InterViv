@@ -74,6 +74,7 @@ export default function Learn() {
       question: resp.question,
       difficulty: resp.difficulty,
       round_type: resp.round_type || 'mcq',
+      block_category: resp.block_category || null,
       question_context: resp.question_context || {},
       config_json: resp.config_json || {},
       expires_at: resp.expires_at || null,
