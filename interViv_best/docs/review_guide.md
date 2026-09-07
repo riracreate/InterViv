@@ -37,6 +37,8 @@ Phase H adds `594f3d9` (H.0 rescue doc) and this guide (H.1) — documentation o
 
 **Phase J** (`ops/docs` after I): Hub-offline runtime defaults so a warm MiniLM cache loads full SemanticScorer without Hub TCP. Delivery: `docs/phase_j_delivery.md`. No migration.
 
+**Phase K** (docs only): read-only assessment of rescued phase21 Verbal UI blobs vs the chain at `dac9c3c`. No integration. See `docs/phase_k_verbal_assessment.md`.
+
 ---
 
 ## (b) Risk order (highest first)
@@ -159,7 +161,7 @@ to MiniLM.
 | Real mic/camera | STILL BLOCKED | Hardware |
 | C.2 Docker execution | Not started | **Owner:** pursue Docker or keep 503 seam? |
 | E.2 AV artifacts | Not started | Out of scope until authorized |
-| phase21 Verbal Upload entry | Not integrated | **Owner:** integrate rescued blobs? (`refs/rescue/phase21-blob-*`) |
+| phase21 Verbal Upload entry | Not integrated | **Owner:** see `docs/phase_k_verbal_assessment.md` (selective gate recommended; no drop-in) |
 | Fail-fast vs labeled-degraded | Product | **Still open.** Phase J: Hub-offline env fixes warm-cache outbound; cold cache still sticky-degrades. Owner: abort on missing model vs continue with mode label? |
 | Home target picker vs `/target-context/me` | Known gap | Prefill inconsistency |
 
@@ -224,4 +226,4 @@ git show-ref | grep refs/rescue/
 
 ## Related delivery docs
 
-`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`. Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`. Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
