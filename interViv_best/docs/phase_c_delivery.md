@@ -104,10 +104,11 @@ test pins were updated with assertions otherwise unchanged:
 - `npm test` (frontend): 44 passed.
 - `npm run build`: clean (`tsc` + `vite build`).
 - `alembic heads`: single head `20260907_0005`.
-- `scripts/scoring_regression.py`: 4/8 FAILs, byte-identical on the
-  base commit `39a7579` (verified via a scratch worktree, since
-  removed) — pre-existing offline-model behavior, no Phase C
-  regression.
+- `scripts/scoring_regression.py`: **2/8** FAILs (corrected inherited
+  baseline; see addendum below). Earlier Phase C text said 4/8; that
+  figure is not reproducible. The two failures are guard-label
+  mismatches with scores still inside band — pre-existing, no Phase C
+  regression. Do not treat 4/8 as the baseline.
 - `git diff --check`: clean.
 
 ## Known limits and manual checklist (NOT VERIFIED)
