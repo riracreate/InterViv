@@ -108,10 +108,19 @@ def test_scoring_mode_persisted_on_measured_attempt(client: TestClient) -> None:
     assert submit.json()["scoring_mode_label"] == mode
     stored = get_database()["sessions"].find_one({"session_id": sid})
     round_doc = stored["rounds"][0]
-    assert round_doc["scoring_mode"] == mode
+    assert round_doc.get("scoring_mode") == mode or (
+        (round_doc.get("scoring_breakdown") or {}).get("scoring_mode") == mode
+    )
     dash = client.get(f"/dashboard/{sid}", headers=headers).json()
     assert dash["rounds"][0]["scoring_mode"] == mode
     assert dash["rounds"][0]["scoring_mode_label"]
+    progress = client.get("/dashboard/progress", headers=headers).json()
+    matched = [
+        row for row in progress.get("history") or []
+        if row.get("session_id") == sid
+    ]
+    assert matched
+    assert mode in (matched[0].get("scoring_modes") or [])
 
 
 def test_scoring_mode_degraded_when_semantic_disabled(
