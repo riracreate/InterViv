@@ -443,3 +443,19 @@ export function mapProblemItemToStartPayload(item, form = {}) {
   }
   return { error: `Unsupported bank item type "${item.type}".` };
 }
+
+/**
+ * Target/weak-area prefill for the shared skills field.
+ * Prefills only when the user has not explicitly chosen topics;
+ * an explicit selection is never overridden. Pure for tests.
+ */
+export function applyTargetPrefill(currentSkills, requiredSkills, explicit) {
+  const current = Array.isArray(currentSkills) ? currentSkills : [];
+  const required = (Array.isArray(requiredSkills) ? requiredSkills : [])
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+  if (explicit || required.length === 0) {
+    return { skills: current, applied: false };
+  }
+  return { skills: required.slice(0, 5), applied: true };
+}

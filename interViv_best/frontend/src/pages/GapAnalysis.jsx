@@ -86,13 +86,15 @@ export default function GapAnalysis() {
 
   const startPracticeOnWeakest = () => {
     if (!report || topWeakAreas.length === 0) {
-      navigate('/upload');
+      navigate('/practice');
       return;
     }
-    navigate('/upload', {
+    navigate('/practice?mode=full', {
       state: {
         prefilledSkills: topWeakAreas.map(w => w.skill),
-        sourceRoleId: report.role_id,
+        prefillSource: 'gap analysis',
+        targetCompanyId: report.company_id || '',
+        targetRoleId: report.role_id || '',
       },
     });
   };
@@ -271,7 +273,7 @@ export default function GapAnalysis() {
             Build my study plan →
           </button>
           <button
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/practice')}
             className="rounded-full px-6 py-3 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
             style={{ fontFamily: "'Inter', sans-serif" }}
           >

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchMe, fetchProblems, startSession, saveInterviewState } from '../lib/api';
+import { fetchMe, fetchProblems, startSession, saveInterviewState, fetchItemStatus, fetchBookmarks, saveBookmark, removeBookmark } from '../lib/api';
 import { mapStandaloneToStartPayload } from '../lib/practiceBuilder';
 import AppNav from '../components/AppNav';
 
@@ -16,6 +16,16 @@ export default function Problems() {
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [states, setStates] = useState({});
+  const [bookmarked, setBookmarked] = useState(new Set());
+
+  const statusLabel = (state) => {
+    if (state === 'solved') return 'solved';
+    if (state === 'attempted') return 'attempted';
+    if (state === 'attempted_unscored') return 'attempted · unscored';
+    return 'untried';
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -50,10 +60,49 @@ export default function Problems() {
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Could not load problems.');
       });
+    fetchItemStatus('coding')
+      .then((data) => {
+        if (!cancelled) setStates(data.states || {});
+      })
+      .catch(() => {});
+    fetchBookmarks()
+      .then((data) => {
+        if (cancelled) return;
+        setBookmarked(new Set(
+          (data.bookmarks || [])
+            .filter((b) => b.item_type === 'coding')
+            .map((b) => b.item_id)
+        ));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [authReady, difficulty, topic]);
+
+  const toggleBookmark = async (problemId) => {
+    try {
+      if (bookmarked.has(problemId)) {
+        await removeBookmark('coding', problemId);
+        setBookmarked((prev) => {
+          const next = new Set(prev);
+          next.delete(problemId);
+          return next;
+        });
+      } else {
+        await saveBookmark('coding', problemId);
+        setBookmarked((prev) => new Set(prev).add(problemId));
+      }
+    } catch (err) {
+      setError(err.message || 'Could not update bookmark.');
+    }
+  };
+
+  const visibleProblems = problems.filter((p) => {
+    if (statusFilter === 'bookmarked') return bookmarked.has(p.id);
+    if (!statusFilter) return true;
+    return (states[p.id]?.state || 'untried') === statusFilter;
+  });
 
   const formatValue = (value) => {
     try {
@@ -150,14 +199,29 @@ export default function Problems() {
               placeholder="arrays, strings, dp…"
             />
           </label>
+          <label>
+            Status{' '}
+            <select
+              className="ml-1 rounded border border-[var(--color-border)] px-2 py-1"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">all</option>
+              <option value="untried">untried</option>
+              <option value="attempted">attempted</option>
+              <option value="attempted_unscored">attempted · unscored</option>
+              <option value="solved">solved</option>
+              <option value="bookmarked">bookmarked</option>
+            </select>
+          </label>
           <span className="ml-auto self-center text-xs text-[var(--color-ink-muted)]">
-            {count} problem{count === 1 ? '' : 's'}
+            {visibleProblems.length} of {count} problem{count === 1 ? '' : 's'}
           </span>
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[5fr_7fr]">
           <ul className="max-h-[32rem] space-y-2 overflow-auto">
-            {problems.map((p) => (
+            {visibleProblems.map((p) => (
               <li
                 key={p.id}
                 className={`flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border px-3 py-2 ${
@@ -171,8 +235,18 @@ export default function Problems() {
                 >
                   <p className="truncate text-sm font-medium text-[var(--color-ink)]">{p.title}</p>
                   <p className="text-xs text-[var(--color-ink-muted)]">
-                    {p.difficulty || '—'} · {(p.topics || []).join(', ') || '—'}
+                    {p.difficulty || '—'} · {(p.topics || []).join(', ') || '—'} ·{' '}
+                    {statusLabel(states[p.id]?.state || 'untried')}
+                    {bookmarked.has(p.id) ? ' · ★' : ''}
                   </p>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
+                  onClick={() => toggleBookmark(p.id)}
+                  aria-label={bookmarked.has(p.id) ? 'Remove bookmark' : 'Bookmark'}
+                >
+                  {bookmarked.has(p.id) ? '★' : '☆'}
                 </button>
                 <button
                   type="button"
@@ -184,7 +258,7 @@ export default function Problems() {
                 </button>
               </li>
             ))}
-            {problems.length === 0 && (
+            {visibleProblems.length === 0 && (
               <li className="text-sm text-[var(--color-ink-muted)]">No problems match these filters.</li>
             )}
           </ul>

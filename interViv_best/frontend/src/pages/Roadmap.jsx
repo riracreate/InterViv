@@ -257,7 +257,14 @@ export default function Roadmap() {
         </div>
 
         <div className="mt-12 flex flex-wrap gap-3">
-          <button onClick={() => navigate('/upload')}
+          <button onClick={() => navigate('/practice?mode=full', {
+                    state: {
+                      prefilledSkills: roadmap.focus_skills || [],
+                      prefillSource: 'study plan',
+                      targetCompanyId: roadmap.company_id || '',
+                      targetRoleId: roadmap.role_id || '',
+                    },
+                  })}
                   className="rounded-full px-6 py-3 text-sm font-medium text-white bg-black cursor-pointer"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                   data-testid="roadmap-start-practice">

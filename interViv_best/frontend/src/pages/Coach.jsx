@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchMe, fetchCoachPlan, fetchCoachStartPractice, saveInterviewState } from '../lib/api';
+import { fetchMe, fetchCoachPlan, fetchCoachStartPractice, saveInterviewState, fetchTargetContext, saveTargetContext } from '../lib/api';
 import { mapCoachPlan } from '../lib/coachMapping';
 import AppNav from '../components/AppNav';
 
@@ -9,6 +9,7 @@ export default function Coach() {
   const [authReady, setAuthReady] = useState(false);
   const [mode, setMode] = useState('goal'); // goal | jd
   const [text, setText] = useState('');
+  const [textTouched, setTextTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [plan, setPlan] = useState(null);
@@ -28,6 +29,18 @@ export default function Coach() {
       .catch(() => {
         if (!cancelled) navigate('/login', { state: { next: '/coach' } });
       });
+    // Prefill from the shared target context only when fields are empty;
+    // user input is never overridden.
+    fetchTargetContext()
+      .then((data) => {
+        if (cancelled || !data.target) return;
+        if (data.target.role_id) setRoleId((prev) => prev || data.target.role_id);
+        if (data.target.jd_text && !textTouched) {
+          setText(data.target.jd_text);
+          setMode('jd');
+        }
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -43,6 +56,10 @@ export default function Coach() {
           : { goal_text: text, jd_text: '', include_dashboard: true, role_id: roleId || null };
       const data = await fetchCoachPlan(body);
       setPlan(mapCoachPlan(data));
+      // Carry a pasted JD forward so ATS and later visits prefill it.
+      if (mode === 'jd' && text.trim()) {
+        saveTargetContext({ jd_text: text.trim(), jd_source: 'paste' }).catch(() => {});
+      }
     } catch (err) {
       setError(err.message || 'Could not build a plan.');
       setPlan(null);
@@ -146,7 +163,10 @@ export default function Coach() {
           <textarea
             className="mt-2 w-full min-h-[140px] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-3 text-sm leading-6"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setTextTouched(true);
+              setText(e.target.value);
+            }}
             placeholder={
               mode === 'jd'
                 ? 'Paste a job description…'

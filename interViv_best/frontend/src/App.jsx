@@ -9,6 +9,7 @@ import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import Practice from './pages/Practice.jsx';
 import Problems from './pages/Problems.jsx';
+import Learn from './pages/Learn.jsx';
 import Ats from './pages/Ats.jsx';
 import Jobs from './pages/Jobs.jsx';
 import Coach from './pages/Coach.jsx';
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/upload" element={<Upload />} />
       <Route path="/practice" element={<Practice />} />
       <Route path="/problems" element={<Problems />} />
+      <Route path="/learn" element={<Learn />} />
       <Route path="/ats" element={<Ats />} />
       <Route path="/jobs" element={<Jobs />} />
       <Route path="/coach" element={<Coach />} />

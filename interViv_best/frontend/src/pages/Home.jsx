@@ -71,7 +71,7 @@ export function HomeContent({ data, reload }) {
 
     <section className="hub-guide" aria-labelledby="guide-heading">
       <div><p className="hub-eyebrow">04 · Guide</p><h2 id="guide-heading">Find your next step.<br /><em>Start with the goal.</em></h2><p>Describe what you want to work toward. The coach maps your goal to supported skills and useful practice.</p></div>
-      <div className="hub-guide-actions"><Link className="hub-button" to="/coach">Ask the coach<ArrowUpRight size={17} aria-hidden="true" /></Link><Link className="hub-button" to="/resources">Resources by skill</Link></div>
+      <div className="hub-guide-actions"><Link className="hub-button" to="/coach">Ask the coach<ArrowUpRight size={17} aria-hidden="true" /></Link><Link className="hub-button" to="/learn">Mistakes and retry sets</Link><Link className="hub-button" to="/resources">Resources by skill</Link></div>
     </section>
     <footer className="hub-footer"><p>Your measured readiness, skill mastery and practice history live in Progress.</p><Link className="hub-button" to="/dashboard">Open Progress →</Link></footer>
   </>;

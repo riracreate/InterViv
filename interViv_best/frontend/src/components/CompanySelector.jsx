@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCompanies, setTargetCompany } from '../lib/api';
 
@@ -26,6 +26,18 @@ export default function CompanySelector({
   const [selectedRole, setSelectedRole] = useState(initialRoleId || '');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const prefilled = useRef(Boolean(initialCompanyId && initialRoleId));
+
+  // Shared target context may arrive after first paint. Prefill once;
+  // never override a company/role the user already picked.
+  useEffect(() => {
+    if (prefilled.current) return;
+    if (initialCompanyId && initialRoleId) {
+      setSelectedCompany(initialCompanyId);
+      setSelectedRole(initialRoleId);
+      prefilled.current = true;
+    }
+  }, [initialCompanyId, initialRoleId]);
 
   useEffect(() => {
     let cancelled = false;
