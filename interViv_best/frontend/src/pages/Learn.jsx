@@ -12,11 +12,14 @@ import {
   fetchHint,
   fetchExplanation,
   fetchNextSteps,
+  fetchDueReviews,
+  fetchReviewSchedules,
+  startDueReviews,
   saveInterviewState,
 } from '../lib/api';
 import AppNav from '../components/AppNav';
 
-/** Phase D learning hub: next steps, mistakes notebook, retry sets, bookmarks. */
+/** Phase D+I learning hub: notebook, retry sets, spaced reviews, bookmarks. */
 export default function Learn() {
   const navigate = useNavigate();
   const [authReady, setAuthReady] = useState(false);
@@ -25,6 +28,8 @@ export default function Learn() {
   const [retrySets, setRetrySets] = useState([]);
   const [bookmarks, setBookmarks] = useState([]);
   const [nextSteps, setNextSteps] = useState(null);
+  const [dueReviews, setDueReviews] = useState(null);
+  const [allSchedules, setAllSchedules] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [retryName, setRetryName] = useState('');
@@ -56,6 +61,30 @@ export default function Learn() {
     fetchRetrySets().then((d) => setRetrySets(d.retry_sets || [])).catch(() => {});
     fetchBookmarks().then((d) => setBookmarks(d.bookmarks || [])).catch(() => {});
     fetchNextSteps().then(setNextSteps).catch(() => {});
+    fetchDueReviews().then(setDueReviews).catch(() => {});
+    fetchReviewSchedules().then(setAllSchedules).catch(() => {});
+  };
+
+  const navigateIntoSession = (resp) => {
+    const state = {
+      candidateId: resp.candidate_id,
+      skill: (resp.skills && resp.skills[0]) || 'DBMS',
+      allSkills: resp.skills || [],
+      sessionId: resp.session_id,
+      question: resp.question,
+      difficulty: resp.difficulty,
+      round_type: resp.round_type || 'mcq',
+      question_context: resp.question_context || {},
+      config_json: resp.config_json || {},
+      expires_at: resp.expires_at || null,
+      round: resp.round || 1,
+      elo: resp.elo || 1200,
+      totalRounds: resp.total_rounds || 1,
+      roundsPerSkill: resp.rounds_per_skill || 1,
+      purpose: resp.purpose || null,
+    };
+    saveInterviewState(state);
+    navigate(resp.navigate || `/interview/${resp.session_id}`, { state });
   };
 
   useEffect(() => {
@@ -83,26 +112,22 @@ export default function Learn() {
     setError('');
     try {
       const resp = await startRetrySet(setId);
-      const state = {
-        candidateId: resp.candidate_id,
-        skill: (resp.skills && resp.skills[0]) || 'DBMS',
-        allSkills: resp.skills || [],
-        sessionId: resp.session_id,
-        question: resp.question,
-        difficulty: resp.difficulty,
-        round_type: resp.round_type || 'mcq',
-        question_context: resp.question_context || {},
-        config_json: resp.config_json || {},
-        expires_at: resp.expires_at || null,
-        round: resp.round || 1,
-        elo: resp.elo || 1200,
-        totalRounds: resp.total_rounds || 1,
-        roundsPerSkill: resp.rounds_per_skill || 1,
-      };
-      saveInterviewState(state);
-      navigate(resp.navigate || `/interview/${resp.session_id}`, { state });
+      navigateIntoSession(resp);
     } catch (err) {
       setError(err.message || 'Could not start retry set.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStartDueReviews = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const resp = await startDueReviews({ max_items: 5 });
+      navigateIntoSession(resp);
+    } catch (err) {
+      setError(err.message || 'Could not start review session.');
     } finally {
       setBusy(false);
     }
@@ -190,9 +215,10 @@ export default function Learn() {
           Learn
         </h1>
         <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-          Next steps, mistakes, retry sets, and bookmarks — everything here is
-          built from your recorded attempts. Assisted and unassisted work is
-          labeled throughout.
+          Next steps, mistakes, spaced reviews, retry sets, and bookmarks —
+          everything here is built from your recorded attempts. Assisted and
+          unassisted work is labeled throughout. Reviews are practice, not
+          measured mastery.
         </p>
 
         {error && (
@@ -200,6 +226,104 @@ export default function Learn() {
             {error}
           </div>
         )}
+
+        <section className="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5" data-testid="due-reviews">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-xl font-semibold">Due for review</h2>
+            {dueReviews && dueReviews.due_count > 0 && (
+              <p className="text-sm text-[var(--color-ink-muted)]" data-testid="due-count">
+                {dueReviews.due_count} due
+                {dueReviews.unavailable_due_count > 0
+                  ? ` (${dueReviews.available_due_count} reviewable, ${dueReviews.unavailable_due_count} coding unavailable)`
+                  : ''}
+              </p>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+            Interval ladder: {(dueReviews?.interval_ladder || [1, 3, 7, 16, 35]).join(', ')} days.
+            Correct lengthens; incorrect resets to 1 day. Scheduling never changes readiness or mastery.
+          </p>
+          {!dueReviews || dueReviews.items.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--color-ink-muted)]" data-testid="due-empty">
+              {dueReviews?.empty_reason === 'nothing_due'
+                ? 'Nothing is due right now — scheduled items will appear when their interval arrives.'
+                : 'No review schedule yet. Misses from completed attempts appear here after they are recorded.'}
+            </p>
+          ) : (
+            <>
+              <ul className="mt-3 space-y-3">
+                {dueReviews.items.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-[var(--radius-card)] border border-[var(--color-border)] p-4"
+                    data-testid={`due-item-${item.item_id}`}
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm font-semibold">
+                        {item.title || item.item_id}
+                        {item.skill ? ` · ${item.skill}` : ''}
+                      </p>
+                      <p className="text-xs text-[var(--color-ink-muted)]">
+                        {item.status === 'due_but_unavailable'
+                          ? 'Due but unavailable'
+                          : `Interval ${item.interval_days} day${item.interval_days === 1 ? '' : 's'}`}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+                      {item.miss_reason || 'Recorded miss'}
+                      {item.originating_assisted ? ' · originating attempt assisted' : ' · originating attempt unassisted'}
+                      {item.last_outcome
+                        ? ` · last review ${item.last_outcome}${item.last_review_assisted ? ' (assisted)' : ''}`
+                        : ''}
+                    </p>
+                    {item.status === 'due_but_unavailable' && (
+                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+                        Coding execution is unavailable — this item stays on the due list
+                        but cannot be reviewed to an outcome. Not a score and not a zero.
+                      </p>
+                    )}
+                    {item.due_at && (
+                      <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                        Due {new Date(item.due_at).toLocaleString()}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {dueReviews.note && (
+                <p className="mt-3 text-sm text-[var(--color-ink-muted)]">{dueReviews.note}</p>
+              )}
+              {dueReviews.available_due_count > 0 && (
+                <button
+                  type="button"
+                  className="hub-button mt-4"
+                  disabled={busy}
+                  onClick={handleStartDueReviews}
+                  data-testid="start-due-reviews"
+                >
+                  {busy ? 'Working…' : 'Start review session'}
+                </button>
+              )}
+            </>
+          )}
+          {allSchedules?.items?.some((i) => !i.is_due) && (
+            <div className="mt-5 border-t border-[var(--color-border)] pt-4" data-testid="scheduled-reviews">
+              <h3 className="text-sm font-semibold">Scheduled (not due yet)</h3>
+              <ul className="mt-2 space-y-2">
+                {allSchedules.items.filter((i) => !i.is_due).map((item) => (
+                  <li key={item.id} className="text-sm text-[var(--color-ink-muted)]" data-testid={`scheduled-${item.item_id}`}>
+                    <span className="font-medium text-[var(--color-ink)]">{item.title || item.item_id}</span>
+                    {item.skill ? ` · ${item.skill}` : ''}
+                    {' · '}
+                    interval {item.interval_days} day{item.interval_days === 1 ? '' : 's'}
+                    {item.last_outcome ? ` · last ${item.last_outcome}` : ''}
+                    {item.due_at ? ` · next due ${new Date(item.due_at).toLocaleString()}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
 
         <section className="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h2 className="text-xl font-semibold">Next steps</h2>
