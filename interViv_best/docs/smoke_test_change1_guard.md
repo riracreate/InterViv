@@ -1,7 +1,7 @@
 # Smoke Test — Change 1: Anti-Gaming Guard
 
-**Date:** 2026-04-24  
-**File tested:** `modules/answer_guard.py`  
+**Date:** 2026-04-24
+**File tested:** `modules/answer_guard.py`
 **Test file:** `tests/test_guard.py`
 
 ## Results

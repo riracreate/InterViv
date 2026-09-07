@@ -1,8 +1,8 @@
 # Phase K — rescued phase21 Verbal UI vs current chain
 
-**Read-only assessment. No integration.**  
-**Branch tip assessed:** `dac9c3c` (Phase J). **Chain root:** `0442493` (A).  
-**Rescue refs inspected (unchanged):** `refs/rescue/phase21-blob-*`, `refs/rescue/phase21-verbal-ui`.  
+**Read-only assessment. No integration.**
+**Branch tip assessed:** `dac9c3c` (Phase J). **Chain root:** `0442493` (A).
+**Rescue refs inspected (unchanged):** `refs/rescue/phase21-blob-*`, `refs/rescue/phase21-verbal-ui`.
 **Origin worktree:** `phase21-verbal-ability` @ `fe75a32` — read-only; not checked out or modified.
 
 Scratch extracts used for inspection lived **outside** the repository (`/tmp/phasek_verbal_scratch_*`). No rescued bytes were applied to product source.
@@ -31,8 +31,8 @@ Scratch extracts used for inspection lived **outside** the repository (`/tmp/pha
 | Role | Live interview shell; gates mic / camera / face-api / calibration to technical rounds only |
 | Completeness | **Complete relative to fe75a32 Interview.** ~19-line conceptual delta (`usesInterviewMedia`). Not mid-syntax. Still an **older product surface** than the B–J Interview (no E.1 AV panel, no answer drafts, weaker multi-round coverage vs current). |
 
-**Function (plain):** Introduces  
-`const usesInterviewMedia = roundType === 'technical_short_answer'`.  
+**Function (plain):** Introduces
+`const usesInterviewMedia = roundType === 'technical_short_answer'`.
 That flag gates: loading engagement models, wiring `SpeechRecognition`, starting the camera, showing the calibration screen, running engagement classification during the round, and showing the technical per-round timer chrome. MCQ (Verbal) therefore opens straight into the MCQ UI without calibration / camera permission theatre.
 
 **Depends on:** `../lib/engagement` (`loadModels`, `classifyFrame`, …), existing MCQ/SQL round components of that era, `getUserMedia` / `MediaRecorder` / `SpeechRecognition`, interview state helpers, calibration UI already in that file. Does **not** depend on `fetchAvCapabilities`, `AvUnavailablePanel`, or `AV_STATES` (those arrived later in E.1).
@@ -51,10 +51,10 @@ That flag gates: loading engagement models, wiring `SpeechRecognition`, starting
 
 ### Phase H claims — confirmed
 
-1. **The three blobs are one coherent Verbal UI snapshot on `fe75a32`.**  
+1. **The three blobs are one coherent Verbal UI snapshot on `fe75a32`.**
    Evidence: Upload vs `fe75a32` Upload is a ~10-line auth + Verbal-entry delta (`diffstat`: 6 insertions / 4 deletions). Interview vs `fe75a32` Interview is the `usesInterviewMedia` gate (~95 unified-diff lines, small conceptual change). The render test asserts exactly that Interview behaviour. Same WIP theme: Verbal entry + media gate + regression test.
 
-2. **Commit `381c7841` (`refs/rescue/phase21-verbal-ui`) is unrelated docs work.**  
+2. **Commit `381c7841` (`refs/rescue/phase21-verbal-ui`) is unrelated docs work.**
    Evidence: message `docs: keep keyword stuffing task diagnosis-only`. Its tree’s Upload / Interview blobs are `848b18bc…` and `6af568c0…` — **different SHAs and MD5s** from the rescued Verbal UI blobs (`65bf858a…` / `8405effd…`). It does not contain the three WIP files.
 
 ---
@@ -101,7 +101,7 @@ They are **not** the same solution. Dropping the rescued Interview over the curr
 | Phase D target / resume carry-forward | No (fe75a32-era Upload) | Yes |
 | Where Verbal actually starts today | Would be Upload | **Practice Hub** (`Practice.jsx` mode `verbal`, builder Verbal blocks) — browser-verified in Phase F |
 
-**Does the chain have an Upload Verbal entry?** No.  
+**Does the chain have an Upload Verbal entry?** No.
 **Is the product missing a Verbal start path?** No — Practice Hub covers standalone Verbal and mixed builder Verbal blocks (Phase F VERIFIED journeys).
 
 To make the rescued Upload work against the **current** API / block contract / routing it would need re-basing onto current Upload (target/resume), and its start helper must emit the **block-contract** Verbal payload the B–J backend expects — not assume fe75a32-only start shapes. That is adaptation work, not a blob checkout.

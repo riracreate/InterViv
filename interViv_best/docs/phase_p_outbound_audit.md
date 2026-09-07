@@ -1,23 +1,23 @@
 # Phase P — LLM path audit and outbound sweep
 
-**Read-mostly investigation.** Branch tip before this commit: `43ac864` (Phase O).  
-**Chain root:** `0442493` (A). **Alembic head:** `20260907_0008` (unchanged).  
+**Read-mostly investigation.** Branch tip before this commit: `43ac864` (Phase O).
+**Chain root:** `0442493` (A). **Alembic head:** `20260907_0008` (unchanged).
 **Phase M ports:** not started / not disturbed (no servers required).
 
-No LLM judge was found in scoring, readiness, guard, gap analysis, or mastery.  
-One **live** default outbound (Google Fonts CDN) was gated off in this phase.  
+No LLM judge was found in scoring, readiness, guard, gap analysis, or mastery.
+One **live** default outbound (Google Fonts CDN) was gated off in this phase.
 LLM chat paths remain **latent** (credential-gated); recommendations below, not redesigned here.
 
 ---
 
 ## Step 0 — each LLM call path
 
-Shared URL helper: `modules/question_bank._chat_completion_url` →  
+Shared URL helper: `modules/question_bank._chat_completion_url` →
 `https://openrouter.ai/api/v1/chat/completions` or `https://api.openai.com/v1/chat/completions`.
 
-Credentials (all paths): `QUESTION_LLM_PROVIDER` (`auto`/`openai`/`openrouter`),  
-`OPENAI_API_KEY` / `OPENROUTER_API_KEY`, optional model overrides.  
-**This environment:** no `.env`; keys **unset**. `.env.example` has empty placeholders.  
+Credentials (all paths): `QUESTION_LLM_PROVIDER` (`auto`/`openai`/`openrouter`),
+`OPENAI_API_KEY` / `OPENROUTER_API_KEY`, optional model overrides.
+**This environment:** no `.env`; keys **unset**. `.env.example` has empty placeholders.
 Code default when `QUESTION_GENERATION_MODE` unset: **`llm`** (disposable recipe usually forces `csv`).
 
 ### Path A — `modules/question_runtime.call_llm_with_cache_retry`
