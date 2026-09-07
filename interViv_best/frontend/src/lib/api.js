@@ -178,6 +178,88 @@ export function setTargetCompany(targetCompanyId, targetRoleId) {
   });
 }
 
+export function fetchTargetContext() {
+  return request("/target-context/me");
+}
+
+export function saveTargetContext(payload) {
+  return request("/target-context/me", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchNotebook() {
+  return request("/learning/notebook/me");
+}
+
+export function createRetrySet(payload) {
+  return request("/learning/retry-sets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchRetrySets() {
+  return request("/learning/retry-sets/me");
+}
+
+export function fetchRetrySet(setId) {
+  return request(`/learning/retry-sets/${encodeURIComponent(setId)}`);
+}
+
+export function deleteRetrySet(setId) {
+  return request(`/learning/retry-sets/${encodeURIComponent(setId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function startRetrySet(setId) {
+  return request(`/learning/retry-sets/${encodeURIComponent(setId)}/start`, {
+    method: "POST",
+  });
+}
+
+export function fetchBookmarks() {
+  return request("/learning/bookmarks/me");
+}
+
+export function saveBookmark(itemType, itemId) {
+  return request("/learning/bookmarks", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_type: itemType, item_id: itemId }),
+  });
+}
+
+export function removeBookmark(itemType, itemId) {
+  const params = new URLSearchParams({ item_type: itemType, item_id: itemId });
+  return request(`/learning/bookmarks?${params.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchHint(itemType, itemId) {
+  const params = new URLSearchParams({ item_type: itemType, item_id: itemId });
+  return request(`/learning/hint?${params.toString()}`);
+}
+
+export function fetchExplanation(itemType, itemId) {
+  const params = new URLSearchParams({ item_type: itemType, item_id: itemId });
+  return request(`/learning/explanation?${params.toString()}`);
+}
+
+export function fetchItemStatus(itemType) {
+  const params = new URLSearchParams({ item_type: itemType });
+  return request(`/learning/item-status/me?${params.toString()}`);
+}
+
+export function fetchNextSteps() {
+  return request("/learning/next-steps/me");
+}
+
 export function uploadResume(file) {
   const formData = new FormData();
   formData.append("file", file);

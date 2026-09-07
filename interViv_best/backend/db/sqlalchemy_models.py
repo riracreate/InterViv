@@ -200,6 +200,9 @@ class RoundRow(Base):
     block_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     block_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Phase D assistance marking (nullable: legacy rounds read as unassisted).
+    assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    assistance_kinds: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -475,4 +478,70 @@ class CodingSubmissionRow(Base):
     hidden_passed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hidden_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class TargetContextRow(Base):
+    """Phase D shared target context: one row per user.
+
+    Carries company, role, the selected job or JD, and the relevant
+    resume reference so every hop (jobs, coach, ATS, gap, roadmap,
+    practice) can prefill from one server-validated source instead of
+    re-prompting. Selecting a target is intent, not evidence: nothing
+    here feeds mastery or readiness math.
+    """
+
+    __tablename__ = "target_contexts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    jd_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    jd_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class RetrySetRow(Base):
+    """Phase D retry set: a persisted practice set drawn from missed topics."""
+
+    __tablename__ = "retry_sets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    items_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="missed-topics")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class BookmarkRow(Base):
+    """Phase D bookmarked problem/question (user + item identity)."""
+
+    __tablename__ = "bookmarks"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    item_type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AssistanceEventRow(Base):
+    """Phase D hint/solution-use metadata, recorded at the point of use.
+
+    Append-only. A round is marked assisted when an event exists for one
+    of its items before submit; learning surfaces keep assisted and
+    unassisted populations separate. Scores are never altered.
+    """
+
+    __tablename__ = "assistance_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

@@ -143,9 +143,32 @@ def patch_my_target(
     }
 
     try:
-        users = get_database()["users"]
+        db = get_database()
+        users = db["users"]
         users.update_one({"id": user["id"]}, {"$set": update_payload})
         refreshed = users.find_one({"id": user["id"]}) or user
+        # Keep the shared target context in sync (company/role only; a
+        # legacy save never clears a selected job, JD, or resume).
+        current = db["target_contexts"].find_one({"user_id": user["id"]}) or {}
+        merged = {
+            "user_id": user["id"],
+            "company_id": company_slug,
+            "role_id": role_slug,
+            "job_id": current.get("job_id"),
+            "jd_source": current.get("jd_source"),
+            "jd_text": current.get("jd_text"),
+            "resume_ref": current.get("resume_ref"),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if any(
+            merged.get(key)
+            for key in ("company_id", "role_id", "job_id", "jd_text", "resume_ref")
+        ):
+            db["target_contexts"].update_one(
+                {"user_id": user["id"]}, {"$set": merged}, upsert=True
+            )
+        else:
+            db["target_contexts"].delete_one({"user_id": user["id"]})
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
             raise HTTPException(

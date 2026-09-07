@@ -6,6 +6,7 @@ import {
   uploadResume,
   scoreAts,
   fetchAtsRuns,
+  fetchTargetContext,
 } from '../lib/api';
 import { mapAtsResultToView } from '../lib/atsMapping';
 import ResourceLinks from '../components/ResourceLinks';
@@ -22,6 +23,7 @@ export default function AtsChecker() {
   const [roleId, setRoleId] = useState('');
   const [jdText, setJdText] = useState('');
   const [mode, setMode] = useState('role'); // role | jd
+  const [fieldsTouched, setFieldsTouched] = useState(false);
   const [result, setResult] = useState(null);
   const [lastTotal, setLastTotal] = useState(null);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
@@ -49,14 +51,34 @@ export default function AtsChecker() {
   useEffect(() => {
     if (!authReady) return undefined;
     let cancelled = false;
-    fetchCompanies()
+    // Shared target context wins over the first-role default; typed
+    // input is never overridden (prefill applies to empty fields only).
+    fetchTargetContext()
       .then((data) => {
-        if (cancelled) return;
-        setCompanies(data.companies || []);
-        const firstRole = data.companies?.[0]?.roles?.[0]?.id;
-        if (firstRole) setRoleId(firstRole);
+        if (cancelled || !data.target) return null;
+        if (data.target.resume_ref) setCandidateId((prev) => prev || data.target.resume_ref);
+        if (data.target.jd_text && !fieldsTouched) {
+          setJdText(data.target.jd_text);
+          setMode('jd');
+        }
+        return data.target.role_id || null;
       })
-      .catch(() => {});
+      .catch(() => null)
+      .then((targetRole) => {
+        if (cancelled) return;
+        fetchCompanies()
+          .then((data) => {
+            if (cancelled) return;
+            setCompanies(data.companies || []);
+            if (targetRole) {
+              setRoleId((prev) => prev || targetRole);
+              return;
+            }
+            const firstRole = data.companies?.[0]?.roles?.[0]?.id;
+            if (firstRole) setRoleId((prev) => prev || firstRole);
+          })
+          .catch(() => {});
+      });
     fetchAtsRuns()
       .then((data) => {
         if (cancelled) return;
@@ -189,7 +211,10 @@ export default function AtsChecker() {
               <select
                 className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                 value={roleId}
-                onChange={(e) => setRoleId(e.target.value)}
+                onChange={(e) => {
+                  setFieldsTouched(true);
+                  setRoleId(e.target.value);
+                }}
               >
                 {roleOptions.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -204,7 +229,10 @@ export default function AtsChecker() {
               <textarea
                 className="mt-1 min-h-[120px] w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                 value={jdText}
-                onChange={(e) => setJdText(e.target.value)}
+                onChange={(e) => {
+                  setFieldsTouched(true);
+                  setJdText(e.target.value);
+                }}
                 placeholder="Paste JD text…"
               />
             </label>

@@ -14,6 +14,7 @@ import {
   mapStandaloneToStartPayload,
   validatePresetPayload,
   validateDraftPayload,
+  applyTargetPrefill,
 } from '../src/lib/practiceBuilder.js';
 
 test('standalone entries cover Verbal, OA, SQL, coding, and interview', () => {
@@ -125,4 +126,17 @@ test('preset and draft payloads enforce versions', () => {
     blocks: [{ round_type: 'mcq', category: 'oa', skills: ['DBMS'], count: 5, duration_minutes: 10 }],
   });
   assert.equal(presetOk, null);
+});
+
+test('target prefill never overrides an explicit topic list', () => {
+  const required = ['DSA', 'OOP', 'DBMS'];
+  const filled = applyTargetPrefill([], required, false);
+  assert.equal(filled.applied, true);
+  assert.deepEqual(filled.skills, required);
+  const kept = applyTargetPrefill(['Python'], required, true);
+  assert.equal(kept.applied, false);
+  assert.deepEqual(kept.skills, ['Python']);
+  const emptyRequired = applyTargetPrefill(['DBMS'], [], false);
+  assert.equal(emptyRequired.applied, false);
+  assert.deepEqual(emptyRequired.skills, ['DBMS']);
 });

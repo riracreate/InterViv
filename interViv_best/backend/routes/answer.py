@@ -207,6 +207,83 @@ def _update_learning_state(
         logger.warning("Failed to update Phase 2 learning state.", exc_info=True)
 
 
+def _assistance_for_round(
+    db: Any,
+    *,
+    user_id: str | None,
+    session_id: str | None,
+    round_type: str,
+    round_document: dict,
+    now: datetime,
+) -> tuple[bool, list[str]]:
+    """Snapshot whether THIS attempt used assistance before submit.
+
+    Only events for this session/round, or unscoped events inside this
+    round's time window, count. A later review of the same item must not
+    taint a future unassisted retry. Best effort: a lookup failure leaves
+    the round unmarked rather than failing the submit.
+    """
+    if not user_id:
+        return False, []
+    try:
+        if round_type == "mcq":
+            questions = (round_document.get("question_context") or {}).get("questions") or []
+            wanted = {("mcq", str(q.get("id"))) for q in questions if q.get("id")}
+        elif round_type in ("sql", "coding"):
+            config = round_document.get("config_json") or {}
+            problem_id = config.get("problem_id")
+            wanted = {(round_type, str(problem_id))} if problem_id else set()
+        else:
+            return False, []
+        if not wanted:
+            return False, []
+        started = round_document.get("started_at")
+        if isinstance(started, str):
+            try:
+                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            except ValueError:
+                started = None
+        if isinstance(started, datetime) and started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        round_number = round_document.get("round")
+        kinds: list[str] = []
+        for event in db["assistance_events"].find({"user_id": str(user_id)}):
+            key = (str(event.get("item_type")), str(event.get("item_id")))
+            if key not in wanted:
+                continue
+            event_session = event.get("session_id")
+            if event_session and session_id and str(event_session) != str(session_id):
+                continue
+            event_round = event.get("round")
+            if event_round is not None and round_number is not None:
+                try:
+                    if int(event_round) != int(round_number):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+            created = event.get("created_at")
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                except ValueError:
+                    created = None
+            if isinstance(created, datetime):
+                moment = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
+                if moment > now:
+                    continue
+                # Unscoped events (Learn-page views) only count inside
+                # this attempt's window, not forever after.
+                if not event_session and started is not None and moment < started:
+                    continue
+            kind = str(event.get("kind") or "")
+            if kind and kind not in kinds:
+                kinds.append(kind)
+        return bool(kinds), kinds
+    except Exception:
+        logger.warning("Failed to mark round assistance.", exc_info=True)
+        return False, []
+
+
 def _clear_answer_draft(db: Any, session_id: str, round_number: int) -> None:
     """Remove the saved draft for a submitted round (best effort)."""
     try:
@@ -501,6 +578,14 @@ def submit_answer(
         )
 
         # Persist this round
+        assisted, assistance_kinds = _assistance_for_round(
+            db,
+            user_id=session.get("user_id"),
+            session_id=session.get("session_id"),
+            round_type=round_type,
+            round_document=active_round,
+            now=now,
+        )
         for index, round_document in enumerate(rounds):
             if round_document.get("round") != request.round:
                 continue
@@ -510,6 +595,8 @@ def submit_answer(
                 "skill": current_skill,
                 "answer_text": persisted_answer,
                 "status": "submitted",
+                "assisted": assisted,
+                "assistance_kinds": assistance_kinds,
                 "submitted_at": now,
                 "nlp_score": scoring_result.get("nlp_score"),
                 "svm_label": scoring_result.get("svm_label"),
@@ -918,4 +1005,6 @@ def submit_answer(
             "difficulty_change": difficulty_change,
             "total_rounds": total_rounds,
             "session_complete": request.round >= total_rounds,
+            "assisted": assisted,
+            "assistance_kinds": assistance_kinds,
         }

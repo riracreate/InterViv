@@ -8,6 +8,7 @@ export const PRIMARY_NAV_ITEMS = [
   { to: '/dashboard', label: 'Progress' },
   { to: '/practice', label: 'Practice' },
   { to: '/problems', label: 'Problems' },
+  { to: '/learn', label: 'Learn' },
   { to: '/ats', label: 'Resume check' },
   { to: '/jobs', label: 'Jobs' },
   { to: '/coach', label: 'Coach' },
