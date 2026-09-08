@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.execution import get_execution_status
+
 EVIDENCE_MEASURED = "measured"
 EVIDENCE_SELF_REPORTED = "self_reported"
 EVIDENCE_PRACTICE_REVIEW = "practice_review"
@@ -108,6 +110,21 @@ def evidence_kind_for_round(
     if round_type == "system_design" or evaluation_mode == SELF_ASSESSMENT_MODE:
         return EVIDENCE_SELF_REPORTED
     return EVIDENCE_MEASURED
+
+
+def evaluation_unavailable(round_type: str | None) -> bool:
+    """True when no evaluation service could score this round right now.
+
+    Expiry mirrors the submit path: a submit that would 503 as
+    unavailable must record as unscored on expiry, never a zero.
+    Unknown round types default to False so existing behaviour holds
+    for categories this predicate has never heard of.
+    """
+    if round_type == "ml_primitives":
+        return True  # No evaluator exists; every submit 503s.
+    if round_type == "coding":
+        return not get_execution_status().get("available", False)
+    return False
 
 
 def measured_scores(rounds: list[dict[str, Any]]) -> list[float]:
