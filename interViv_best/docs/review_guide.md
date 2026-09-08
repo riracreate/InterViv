@@ -54,6 +54,16 @@
 
 Pure documentation / skim-first among H–R: `594f3d9`, `9e91e08`, `29a8998`, `0d5fd54`, the audit half of `bb5702a`, and `711995c`.
 
+### S → X.1 (`711995c..56ec00d`) — 5 commits
+
+| SHA | Role | What / why | Independently reviewable? |
+|-----|------|------------|---------------------------|
+| `3a16de2` | **S** docs | Trailing-whitespace cleanup; pin Phase Q sha; preserve Phase M findings | **Skim** (docs) |
+| `e062e0d` | **T** fix | Jobs `empty_reason` product copy; flag names only in server logs | After O/P copy context |
+| `e5a1bcc` | **U** docs | Execution-service spike; negative result — daemon unreachable, C.2 stays blocked | **Skim** (docs) |
+| `32b4a0b` | **X** docs | Phase X delivery doc + review-guide pointer ONLY; implementation still uncommitted (see X.1 correction) | **Skim** (docs) |
+| `56ec00d` | **X** feat | ml_primitives block category, Layers A+B: 6 packs, catalog, grade(), 503 store path, migration 0009, editor UI, tests; scoring unavailable | After B.1/I persistence pattern |
+
 ### LLM question generation — ADJACENT (owner judgment)
 
 Phase P classified the interview question path as **ADJACENT**, not CLEAR and not a VIOLATION: an LLM may generate the question text and the `ideal_answer` / `ideal_keywords` references; the deterministic scorer (and guard) then grades the candidate against those references. The LLM does not return a score, band, readiness number, or guard verdict.
@@ -230,9 +240,9 @@ Do not treat this section as a resolution. It is the decision surface.
 
 ## (f) Honest capability inventory
 
-**Works today (with disposable DB + local servers):** auth/home/progress; block practice (Verbal/OA/SQL/Interview) with Phase L media gate (Verbal/OA skip camera/mic); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring; Jobs explorer with **fixture provenance / sample banner** (including warm cache, Phase O); offline Google Fonts default (Phase P).
+**Works today (with disposable DB + local servers):** auth/home/progress; block practice (Verbal/OA/SQL/Interview) with Phase L media gate (Verbal/OA skip camera/mic); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring; Jobs explorer with **fixture provenance / sample banner** (including warm cache, Phase O); offline Google Fonts default (Phase P); ml_primitives block flow (start, stored-ungraded submit, attempt history) — API-proven, never browser-rendered.
 
-**Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started).
+**Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started). **ml_primitives candidate scoring** (503 stored-ungraded; Layer A/B oracles run in tests only, pending execution infrastructure).
 
 **Phase M (incomplete):** session findings are recorded in `docs/phase_m_delivery.md` (written in Phase S from the Phase M report — not re-verified end-to-end here). Step 0: local `faster_whisper` `"tiny.en"` cache under `HF_HUB_OFFLINE=1`; cold disposable `HF_HOME` → loud 503. Owner-present browser AV verification (calibration, seven states, real-audio transcription, retention) was **not finished**. Ports `:18000`/`:5173` may still hold that stack. Calibration has still never rendered on this chain (Phase L auto-skip on `NotAllowedError`); E.1’s transcription path has never processed real audio. Do not treat Phase M as closing live mic/camera.
 
