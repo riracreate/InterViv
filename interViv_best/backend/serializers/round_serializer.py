@@ -94,6 +94,27 @@ def sanitize_round_for_client(
 
     q_ctx = dict(cleaned.get("question_context") or {})
 
+    if round_type == "ml_primitives":
+        from backend.ml_primitives.catalog import public_problem
+
+        # Rebuild content from the public-only reader, then allowlist round
+        # fields. Stored private oracle material cannot escape on any policy.
+        public = public_problem(config["problem_id"])
+        safe_keys = (
+            "round", "round_type", "status", "difficulty", "skill",
+            "block_id", "block_position", "block_category", "block_index", "block_total",
+            "started_at", "expires_at", "submitted_at",
+        )
+        result = {key: cleaned[key] for key in safe_keys if key in cleaned}
+        result.update(question=public["title"], question_context=public, final_score=None)
+        result["config_json"] = {
+            key: config[key] for key in (
+                "duration_minutes", "attempt_policy", "review_policy",
+                "problem_id", "problem_version", "language", "scoring_available",
+            ) if key in config
+        }
+        return result
+
     if round_type == "mcq":
         # Sanitize assigned questions in question_context
         sanitized_questions = []

@@ -1,0 +1,15 @@
+{
+  "id": "minmax_normalize.v1",
+  "version": 1,
+  "title": "Min-max normalisation",
+  "difficulty": "easy",
+  "topics": ["normalisation", "preprocessing"],
+  "constraints": [
+    "Use only NumPy. Do not import sklearn.",
+    "x is a float64 array with at least one axis.",
+    "Normalise independently along the last axis.",
+    "Return a float64 array of the same shape. Vectorize over leading axes."
+  ],
+  "function": "minmax",
+  "starter_code": "import numpy as np\n\n\ndef minmax(x):\n    \"\"\"Scale each last-axis slice into [0, 1].\"\"\"\n    raise NotImplementedError\n"
+}

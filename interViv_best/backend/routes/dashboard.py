@@ -57,6 +57,9 @@ def compute_confidence_band(layer_scores: list[float | None]) -> float | None:
 def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sanitized = []
     for round_document in rounds:
+        if round_document.get("round_type") == "ml_primitives":
+            from backend.serializers.round_serializer import sanitize_round_for_client
+            round_document = sanitize_round_for_client(round_document)
         cleaned = dict(round_document)
         question_context = cleaned.get("question_context", {}) or {}
         cleaned["ideal_answer"] = question_context.get("ideal_answer", "")
@@ -99,7 +102,7 @@ def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if item.get("final_score") is not None:
             continue
         kind = item.get("round_type", "technical_short_answer")
-        if kind == "coding":
+        if kind in ("coding", "ml_primitives"):
             reason = "execution_unavailable"
         elif item.get("status") not in (None, "in_progress"):
             reason = str(item.get("status"))
@@ -264,7 +267,8 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
         # unavailable. Include them so they are not silently omitted
         # (which would inflate the appearance of overall readiness).
         has_coding = any(r.get("round_type") == "coding" for r in rounds)
-        if scored or has_coding:
+        has_ml = any(r.get("round_type") == "ml_primitives" for r in rounds)
+        if scored or has_coding or has_ml:
             history.append(summary)
         active = rounds[-1] if rounds else None
         if resumable is not None or session.get("status") != "active" or not active:
@@ -272,12 +276,12 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
         if active.get("status") != "in_progress" or active.get("final_score") is not None:
             continue
         kind = active.get("round_type", "technical_short_answer")
-        if kind not in {"technical_short_answer", "mcq", "sql", "coding"}:
+        if kind not in {"technical_short_answer", "mcq", "sql", "coding", "ml_primitives"}:
             continue
         deadline = _utc_date(active.get("expires_at"))
         if active.get("expires_at") and deadline is None:
             continue
-        if kind in {"mcq", "sql", "coding"} and deadline is None:
+        if kind in {"mcq", "sql", "coding", "ml_primitives"} and deadline is None:
             continue
         if deadline is not None and deadline <= now:
             continue
@@ -361,7 +365,7 @@ def get_dashboard(
     # is never served (a bare session_id must not become a capability URL
     # for assessment content).
     has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql", "coding", "system_design")
+        r.get("round_type") in ("mcq", "sql", "coding", "system_design", "ml_primitives")
         for r in session.get("rounds", [])
     )
     if has_phase2_round or session.get("user_id"):

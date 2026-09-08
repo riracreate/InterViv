@@ -10,7 +10,7 @@ export const PRACTICE_MODES = [
   { id: 'custom', title: 'Custom interview builder', blurb: 'Choose time, count, and a real round mix.' },
 ];
 
-export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design'];
+export const REAL_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design', 'ml_primitives'];
 
 export const PRESET_VERSION = 1;
 export const BUILDER_DRAFT_VERSION = 1;
@@ -25,10 +25,11 @@ export const STANDALONE_MODES = [
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
   { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
   { id: 'system_design', title: 'System design', blurb: 'Design prompts with an explicit self-assessment rubric (no auto diagram scoring).' },
+  { id: 'ml_primitives', title: 'ML primitives', blurb: 'Implement numerical algorithms in Python. Submissions are stored; scoring is unavailable.' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
 ];
 
-export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'system_design', 'interview'];
+export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'system_design', 'ml_primitives', 'interview'];
 
 export function blockCategoryButtonLabel(category) {
   if (category === 'verbal') return 'Verbal';
@@ -36,6 +37,7 @@ export function blockCategoryButtonLabel(category) {
   if (category === 'sql') return 'SQL';
   if (category === 'coding') return 'Coding';
   if (category === 'system_design') return 'System design';
+  if (category === 'ml_primitives') return 'ML primitives';
   return 'Interview';
 }
 
@@ -56,6 +58,9 @@ export function blockTemplate(category) {
   }
   if (category === 'coding') {
     return { round_type: 'coding', category: 'coding', skills: ['DSA'], count: 1, duration_minutes: 30 };
+  }
+  if (category === 'ml_primitives') {
+    return { round_type: 'ml_primitives', category, skills: ['ML primitives'], count: 1, duration_minutes: 30, language: 'python' };
   }
   if (category === 'system_design') {
     return {
@@ -107,6 +112,7 @@ export function formatBlockLabel(block) {
   if (category === 'verbal') return `Verbal · ${count} ${noun}`;
   if (category === 'oa') return `OA · ${count} ${noun}`;
   if (category === 'sql') return `SQL · ${count} ${count === 1 ? 'problem' : 'problems'}`;
+  if (category === 'ml_primitives') return `ML primitives · ${count} ${count === 1 ? 'problem' : 'problems'} (ungraded)`;
   if (category === 'coding') return `Coding · ${count} ${count === 1 ? 'problem' : 'problems'}`;
   if (category === 'system_design') return `System design · ${count} ${count === 1 ? 'prompt' : 'prompts'}`;
   return `Interview · ${count} ${noun}`;
@@ -128,7 +134,7 @@ export function validateBuilderBlocks(blocks) {
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i] || {};
     const label = `Block ${i + 1}`;
-    if (!['mcq', 'sql', 'coding', 'system_design', 'technical_short_answer'].includes(b.round_type)) {
+    if (!['mcq', 'sql', 'coding', 'system_design', 'ml_primitives', 'technical_short_answer'].includes(b.round_type)) {
       return `${label}: choose a supported round type.`;
     }
     if (b.category === 'verbal') {
@@ -150,6 +156,9 @@ export function validateBuilderBlocks(blocks) {
         return `${label}: Coding blocks must not include Verbal Ability.`;
       }
     }
+    if (b.category === 'ml_primitives' && b.round_type !== 'ml_primitives') {
+      return `${label}: ML primitive blocks use ml_primitives rounds.`;
+    }
     if (b.category === 'system_design') {
       if (b.round_type !== 'system_design') {
         return `${label}: System-design blocks use system_design rounds.`;
@@ -164,6 +173,7 @@ export function validateBuilderBlocks(blocks) {
       return `${label}: MCQ count must be 1–30.`;
     }
     if (b.category === 'sql' && count > 5) return `${label}: SQL count must be 1–5.`;
+    if (b.category === 'ml_primitives' && count > 5) return `${label}: ML primitive count must be 1–5.`;
     if (b.category === 'coding' && count > 5) return `${label}: Coding count must be 1–5.`;
     if (b.category === 'system_design' && count > 5) {
       return `${label}: System-design count must be 1–5.`;
@@ -244,7 +254,7 @@ export function mapStandaloneToStartPayload(kind, form = {}) {
     if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
     return mapBlocksToStartPayload([block], form);
   }
-  if (kind === 'coding') {
+  if (kind === 'coding' || kind === 'ml_primitives') {
     const duration = Number(form.durationMinutes) || 30;
     if (duration < 1 || duration > 180) return { error: 'Time budget must be 1–180 minutes.' };
     const block = { ...template, duration_minutes: duration };

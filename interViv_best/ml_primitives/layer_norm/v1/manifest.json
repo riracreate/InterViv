@@ -1,0 +1,15 @@
+{
+  "id": "layer_norm.v1",
+  "version": 1,
+  "title": "Last-axis layer normalisation",
+  "difficulty": "hard",
+  "topics": ["layer-norm", "normalisation"],
+  "constraints": [
+    "Use only NumPy. Do not import sklearn.",
+    "x is float64. Normalise the last axis with population mean and variance.",
+    "Use eps = 1e-5 inside the square root.",
+    "Return float64 of the same shape. Vectorize over leading axes."
+  ],
+  "function": "layer_norm",
+  "starter_code": "import numpy as np\n\n\ndef layer_norm(x, eps=1e-5):\n    \"\"\"Centre and scale each last-axis slice.\"\"\"\n    raise NotImplementedError\n"
+}
