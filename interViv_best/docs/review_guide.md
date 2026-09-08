@@ -336,4 +336,7 @@ git show-ref | grep refs/rescue/
 
 ## Related delivery docs
 
+Phase X is delivered as Layers A and B only: [ML primitives](phase_x_ml_primitives.md).
+Candidate ML submissions are stored and ungraded; pack oracles are proven in tests.
+
 `phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes), `phase_u_execution_spike.md` (execution-service spike; negative result — daemon unreachable, C.2 stays blocked). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
