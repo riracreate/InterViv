@@ -1,0 +1,15 @@
+# PHASEX_RULE_INTERNAL_attention_scores
+imports:
+  name: approved dependencies
+  allow:
+    - numpy
+rules:
+  - name: unshifted exponentiation
+    kind: call_on_unshifted_input
+    calls: ["numpy.exp"]
+    inputs: ["query", "key"]
+    reductions: ["numpy.max"]
+    reduction_methods: ["max"]
+  - name: batch axis loop
+    kind: for_over_axis
+    arrays: ["query"]

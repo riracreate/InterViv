@@ -110,7 +110,7 @@ export default function Practice() {
   const BUILDER_LOCAL_KEY = 'interviv-builder-draft-v1';
 
   // Problem bank
-  const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [], coding: [] });
+  const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [], coding: [], ml_primitives: [] });
   const [bankType, setBankType] = useState('all');
   const [bankDifficulty, setBankDifficulty] = useState('all');
   const [bankSkill, setBankSkill] = useState('all');
@@ -147,7 +147,7 @@ export default function Practice() {
     let cancelled = false;
     fetchPracticeBank()
       .then((data) => {
-        if (!cancelled) setBank({ mcq: data.mcq || [], verbal: data.verbal || [], sql: data.sql || [], coding: data.coding || [] });
+        if (!cancelled) setBank({ mcq: data.mcq || [], verbal: data.verbal || [], sql: data.sql || [], coding: data.coding || [], ml_primitives: data.ml_primitives || [] });
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Could not load practice bank.');
@@ -465,7 +465,7 @@ export default function Practice() {
           </section>
         )}
 
-        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'interview') && (
+        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)
@@ -774,6 +774,35 @@ export default function Practice() {
           </section>
         )}
 
+        {mode === 'ml_primitives' && (
+          <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <h2 className="text-lg font-semibold">ML primitives</h2>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">Implement numerical algorithms in Python. Submissions are saved without being run or graded; scoring is unavailable.</p>
+            <label className="mt-4 block text-sm">Problem
+              <select value={selectedItem?.type === 'ml_primitives' ? selectedItem.id : ''}
+                onChange={e => setSelectedItem(bank.ml_primitives.find(p => p.id === e.target.value) || null)}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2">
+                <option value="">Choose automatically</option>
+                {bank.ml_primitives.map(p => <option key={p.id} value={p.id}>{p.title} · {p.difficulty}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm">Time budget (minutes)
+              <input type="number" min={1} max={180} value={standaloneDuration}
+                onChange={e => setStandaloneDuration(Number(e.target.value))}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
+            </label>
+            <button type="button" disabled={busy}
+              className="mt-4 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={() => runStart(mapStandaloneToStartPayload('ml_primitives', {
+                durationMinutes: standaloneDuration,
+                problemId: selectedItem?.type === 'ml_primitives' ? selectedItem.id : undefined,
+                targetCompanyId: target.companyId, targetRoleId: target.roleId,
+              }))}>
+              {busy ? 'Starting…' : 'Start ML primitives'}
+            </button>
+          </section>
+        )}
+
         {mode === 'system_design' && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">System design</h2>
@@ -871,7 +900,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Custom interview builder</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Add, reorder, and repeat Verbal, OA, SQL, coding, and interview blocks with independent settings.
+              Add, reorder, and repeat Verbal, OA, SQL, coding, system design, ML primitives, and interview blocks with independent settings.
               If your settings cannot be combined, you will see an explanation before starting.
             </p>
             {!builderLoaded && (
@@ -894,7 +923,7 @@ export default function Practice() {
 
                 {blocks.length === 0 && (
                   <p className="mt-4 text-sm text-[var(--color-ink-muted)]">
-                    No blocks yet. Add Verbal, OA, SQL, coding, system design, or interview blocks above. Adding Verbal never erases your sequence.
+                    No blocks yet. Add Verbal, OA, SQL, coding, system design, ML primitives, or interview blocks above. Adding Verbal never erases your sequence.
                   </p>
                 )}
 
@@ -968,11 +997,11 @@ export default function Practice() {
                           </p>
                         )}
                         <label className="text-xs text-[var(--color-ink-muted)]">
-                          {block.category === 'sql' || block.category === 'coding' ? 'Problems' : 'Questions'}
+                          {['sql', 'coding', 'ml_primitives'].includes(block.category) ? 'Problems' : 'Questions'}
                           <input
                             type="number"
                             min={1}
-                            max={block.category === 'sql' || block.category === 'coding' ? 5 : block.category === 'interview' ? 10 : 30}
+                            max={['sql', 'coding', 'ml_primitives'].includes(block.category) ? 5 : block.category === 'interview' ? 10 : 30}
                             className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)]"
                             value={block.count}
                             onChange={(e) =>

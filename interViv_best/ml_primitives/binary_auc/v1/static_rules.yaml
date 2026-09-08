@@ -1,0 +1,9 @@
+# PHASEX_RULE_INTERNAL_binary_auc
+imports:
+  name: approved dependencies
+  allow:
+    - numpy
+rules:
+  - name: score axis loop
+    kind: for_over_axis
+    arrays: ["y_score"]

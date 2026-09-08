@@ -1,0 +1,15 @@
+{
+  "id": "binary_auc.v1",
+  "version": 1,
+  "title": "Pairwise binary AUC",
+  "difficulty": "medium",
+  "topics": ["auc", "ranking"],
+  "constraints": [
+    "Use only NumPy. Do not import sklearn.",
+    "y_true is a 1-d array of 0/1 labels; y_score is a 1-d float64 score array of the same length.",
+    "Return a float64 0-d array.",
+    "Vectorize pairwise comparisons; do not write nested Python loops over scores."
+  ],
+  "function": "binary_auc",
+  "starter_code": "import numpy as np\n\n\ndef binary_auc(y_true, y_score):\n    \"\"\"Mann-Whitney AUC for a binary ranking.\"\"\"\n    raise NotImplementedError\n"
+}

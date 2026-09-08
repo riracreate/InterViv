@@ -427,7 +427,7 @@ def submit_answer(
         round_type = active_round.get("round_type", "technical_short_answer")
 
         # Phase 2 MCQ, SQL, coding & system-design require a valid JWT
-        if round_type in ("mcq", "sql", "coding", "system_design"):
+        if round_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
             if not authorization:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -491,7 +491,8 @@ def submit_answer(
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at and now > expires_at:
                 active_round["status"] = "expired"
-                active_round["final_score"] = 0.0
+                if round_type != "ml_primitives":
+                    active_round["final_score"] = 0.0
                 db["sessions"].update_one(
                     {"session_id": request.session_id},
                     {"$set": {"rounds": rounds}},
@@ -512,6 +513,15 @@ def submit_answer(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This round has already been submitted or is finalizing.",
             )
+
+        if round_type == "ml_primitives":
+            from backend.routes.ml_primitives import store_unavailable_attempt
+
+            # Persist before returning 503. No scorer, executor, or aggregate
+            # update runs on this path, and an unsuccessful write is never
+            # represented as an accepted submission.
+            detail = store_unavailable_attempt(db, session, active_round, request.answer_text)
+            raise HTTPException(status_code=503, detail=detail)
 
         # Claim finalization
         active_round["status"] = "finalizing"
@@ -927,7 +937,7 @@ def submit_answer(
                                 else _difficulty_from_elo(rotation_elo)
                             )
 
-                    if planned_type in ("mcq", "sql", "coding", "system_design"):
+                    if planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
                         if expanded_spec:
                             spec_config: dict[str, Any] = {
                                 "count": expanded_spec.get("count", 15),

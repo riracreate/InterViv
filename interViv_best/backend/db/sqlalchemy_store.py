@@ -16,6 +16,7 @@ from .sqlalchemy_models import (
     BuilderDraftRow,
     CandidateRow,
     CodingSubmissionRow,
+    MLPrimitivesAttemptRow,
     PracticePresetRow,
     RetrySetRow,
     ReviewScheduleRow,
@@ -1362,6 +1363,61 @@ class _ReviewScheduleCollection:
         }
 
 
+class _MLPrimitivesAttemptCollection:
+    """Immutable attempts, deletable by their owner through the route."""
+
+    @staticmethod
+    def _field_columns():
+        columns = {c.name: getattr(MLPrimitivesAttemptRow, c.name)
+                   for c in MLPrimitivesAttemptRow.__table__.columns}
+        columns["round"] = columns.pop("round_number")
+        return columns
+
+    @staticmethod
+    def _to_doc(row):
+        return {
+            "id": row.id, "user_id": row.user_id, "session_id": row.session_id,
+            "round": row.round_number, "block_id": row.block_id,
+            "problem_id": row.problem_id, "problem_version": row.problem_version,
+            "language": row.language, "source": row.source, "status": row.status,
+            "error_code": row.error_code,
+            "created_at": row.created_at.replace(tzinfo=timezone.utc)
+                if row.created_at.tzinfo is None else row.created_at,
+        }
+
+    def find(self, query=None):
+        with session_scope() as session:
+            docs = [self._to_doc(row) for row in _filtered_rows(
+                session, MLPrimitivesAttemptRow, self._field_columns(), query)]
+        return iter(doc for doc in docs if _matches(doc, query))
+
+    def find_one(self, query, projection=None):
+        doc = next(self.find(query), None)
+        return _project(doc, projection) if doc is not None else None
+
+    def insert_one(self, doc):
+        with session_scope() as session:
+            session.add(MLPrimitivesAttemptRow(
+                id=doc["id"], user_id=doc["user_id"], session_id=doc["session_id"],
+                round_number=doc["round"], block_id=doc["block_id"],
+                problem_id=doc["problem_id"], problem_version=doc["problem_version"],
+                language=doc["language"], source=doc["source"], status=doc["status"],
+                error_code=doc["error_code"], created_at=_coerce_datetime(doc["created_at"]),
+            ))
+        return _InsertResult(doc["id"])
+
+    def delete_one(self, query):
+        with session_scope() as session:
+            for row in _filtered_rows(session, MLPrimitivesAttemptRow,
+                                      self._field_columns(), query):
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query):
+        return sum(1 for _ in self.find(query))
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -1373,6 +1429,7 @@ class SQLAlchemyDatabase:
             "answer_drafts": _AnswerDraftCollection(),
             "coding_submissions": _CodingSubmissionCollection(),
             "system_design_attempts": _SystemDesignAttemptCollection(),
+            "ml_primitives_attempts": _MLPrimitivesAttemptCollection(),
             "target_contexts": _TargetContextCollection(),
             "retry_sets": _RetrySetCollection(),
             "bookmarks": _BookmarkCollection(),

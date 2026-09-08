@@ -3,7 +3,7 @@ export function displayScore(value) {
 }
 
 export function sessionLabel(types = []) {
-  const names = { technical_short_answer: 'Interview', mcq: 'OA', sql: 'SQL', coding: 'Coding' };
+  const names = { technical_short_answer: 'Interview', mcq: 'OA', sql: 'SQL', coding: 'Coding', ml_primitives: 'ML primitives' };
   return [...new Set(types)].map(type => names[type] || 'Assessment').join(' + ') || 'Practice';
 }
 

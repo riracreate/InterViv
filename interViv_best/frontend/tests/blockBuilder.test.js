@@ -18,9 +18,9 @@ import {
   applyTargetPrefill,
 } from '../src/lib/practiceBuilder.js';
 
-test('standalone entries cover Verbal, OA, SQL, coding, system design, and interview', () => {
+test('standalone entries cover Verbal, OA, SQL, coding, system design, ML primitives, and interview', () => {
   const ids = STANDALONE_MODES.map((m) => m.id).sort();
-  assert.deepEqual(ids, ['coding', 'interview', 'oa', 'sql', 'system_design', 'verbal']);
+  assert.deepEqual(ids, ['coding', 'interview', 'ml_primitives', 'oa', 'sql', 'system_design', 'verbal']);
   const verbal = STANDALONE_MODES.find((m) => m.id === 'verbal');
   assert.match(verbal.blurb, /English MCQ/i);
   assert.doesNotMatch(verbal.blurb, /speak|voice|HR question/i);
@@ -59,6 +59,11 @@ test('block labels use human text, never raw round names', () => {
   assert.equal(blockCategoryButtonLabel('system_design'), 'System design');
   assert.equal(blockCategoryButtonLabel('interview'), 'Interview');
   assert.notEqual(blockCategoryButtonLabel('system_design'), 'Interview');
+  assert.equal(
+    formatBlockLabel({ category: 'ml_primitives', count: 2 }),
+    'ML primitives · 2 problems (ungraded)',
+  );
+  assert.equal(blockCategoryButtonLabel('ml_primitives'), 'ML primitives');
 });
 
 test('standalone system design maps to a system_design block', () => {
