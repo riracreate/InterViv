@@ -17,6 +17,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data.detail || data.error || "Request failed.");
     error.status = response.status;
+    error.detail = data.detail;
     throw error;
   }
 
@@ -439,4 +440,8 @@ export function loadInterviewState() {
 
 export function clearInterviewState() {
   localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+export function fetchMLAttempts() {
+  return request("/ml-primitives/attempts");
 }

@@ -50,6 +50,7 @@ ALLOWED_ROUND_TYPES = (
     "sql",
     "coding",
     "system_design",
+    "ml_primitives",
 )
 
 
@@ -607,6 +608,30 @@ def build_round_document(
             block_total=block_total,
         )
 
+    if round_type == "ml_primitives":
+        from backend.ml_primitives.catalog import select_problems
+
+        ids = cfg.get("problem_ids") or []
+        problem_id = ids[sql_problem_index] if ids else cfg.get("problem_id")
+        public = select_problems(problem_ids=[problem_id] if problem_id else None)[0]
+        duration_mins = int(cfg.get("duration_minutes", 30))
+        return RoundDocument(
+            round=round_number, round_type="ml_primitives",
+            question=public["title"], difficulty=public["difficulty"],
+            elo_before=elo_before, question_context=public,
+            config_json={
+                "duration_minutes": duration_mins,
+                "attempt_policy": "retryable_unavailable",
+                "review_policy": cfg.get("review_policy", "none"),
+                "problem_id": public["id"], "problem_version": public["version"],
+                "language": "python", "scoring_available": False,
+            },
+            started_at=now, expires_at=now + timedelta(minutes=duration_mins),
+            status="in_progress", block_id=block_id,
+            block_position=block_position, block_category="ml_primitives",
+            block_index=block_index, block_total=block_total,
+        )
+
     if round_type == "system_design":
         duration_mins = int(cfg.get("duration_minutes", 25))
         prompt_ids = cfg.get("problem_ids") or []
@@ -739,18 +764,22 @@ def list_practice_bank_items() -> dict[str, Any]:
     )
 
     system_design = [public_system_design_prompt(p) for p in SYSTEM_DESIGN_PROMPTS]
+    from backend.ml_primitives.catalog import list_problems
+    ml_primitives = list_problems()
     return {
         "mcq": mcq,
         "verbal": verbal,
         "sql": sql,
         "coding": coding,
         "system_design": system_design,
+        "ml_primitives": ml_primitives,
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),
             "sql": len(sql),
             "coding": len(coding),
             "system_design": len(system_design),
+            "ml_primitives": len(ml_primitives),
         },
     }
 
@@ -1074,6 +1103,16 @@ def _validate_block_content(
                 for spec, problem in zip(specs, selected):
                     spec["problem_ids"] = [problem["id"]]
                 block["problem_ids"] = [p["id"] for p in selected]
+        elif category == "ml_primitives":
+            from backend.ml_primitives.catalog import select_problems
+
+            selected = select_problems(
+                problem_ids=block.get("problem_ids"), topics=block.get("skills"),
+                difficulty=block.get("difficulty"), count=block["count"],
+            )
+            for spec, problem in zip(by_block[str(block["id"])], selected):
+                spec["problem_ids"] = [problem["id"]]
+            block["problem_ids"] = [p["id"] for p in selected]
         elif category == "system_design":
             prompt_ids = list(block.get("problem_ids") or [])
             if prompt_ids:
@@ -1178,7 +1217,7 @@ def start_session(
     user = get_user_from_authorization(authorization) if authorization else None
 
     needs_phase2_auth = any(
-        t in ("mcq", "sql", "coding", "system_design") for t in plan
+        t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
     )
     if needs_phase2_auth:
         if not authorization:
@@ -1395,7 +1434,7 @@ def start_session(
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
         response["starter_code"] = sanitized["question_context"].get("starter_code")
-    elif round_document.round_type == "system_design":
+    elif round_document.round_type in ("system_design", "ml_primitives"):
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
     return response
@@ -1437,7 +1476,7 @@ def get_session(
 
     rounds = session.get("rounds", [])
     has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql", "coding", "system_design")
+        r.get("round_type") in ("mcq", "sql", "coding", "system_design", "ml_primitives")
         for r in rounds
     )
     if has_phase2_round or session.get("user_id"):

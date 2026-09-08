@@ -5,6 +5,7 @@ import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from 
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
 import CodingRound from '../components/CodingRound';
+import MLPrimitivesRound from '../components/MLPrimitivesRound';
 import SystemDesignRound from '../components/SystemDesignRound';
 import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
@@ -16,7 +17,7 @@ const ROUND_SECONDS = 120;
  *  so a late-arriving verbal/oa category cannot race a getUserMedia call. */
 function blockUsesInterviewMedia(category, roundType) {
   const c = String(category || '').toLowerCase();
-  if (c === 'verbal' || c === 'oa') return false;
+  if (c === 'verbal' || c === 'oa' || c === 'ml_primitives') return false;
   if (c) return true;
   const t = String(roundType || '');
   return t === 'technical_short_answer' || t === 'sql' || t === 'coding' || t === 'system_design';
@@ -67,7 +68,7 @@ export default function Interview({ sessionState = null }) {
   const initState = sessionState || location.state || loadInterviewState() || {};
   const candidateId = initState.candidateId || '';
 
-  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design'];
+  const SUPPORTED_ROUND_TYPES = ['technical_short_answer', 'mcq', 'sql', 'coding', 'system_design', 'ml_primitives'];
   const isSupportedRoundType = (t) => SUPPORTED_ROUND_TYPES.includes(t);
 
   const [question, setQuestion] = useState(initState.question || '');
@@ -572,7 +573,7 @@ export default function Interview({ sessionState = null }) {
   useEffect(() => {
     if (!sessionId) return;
     if (
-      (roundType === 'mcq' || roundType === 'sql' || roundType === 'coding') &&
+      (roundType === 'mcq' || roundType === 'sql' || roundType === 'coding' || roundType === 'ml_primitives') &&
       (!questionContext || Object.keys(questionContext).length === 0)
     ) {
       fetchSession(sessionId)
@@ -1143,6 +1144,12 @@ export default function Interview({ sessionState = null }) {
             onNextRound={handleNext}
             sessionComplete={sessionComplete}
           />
+        </div>
+      ) : roundType === 'ml_primitives' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <MLPrimitivesRound key={`${sessionId}:${round}`}
+            sessionId={sessionId} round={round} questionContext={questionContext}
+            configJson={configJson} expiresAt={expiresAt} />
         </div>
       ) : roundType === 'system_design' ? (
         <div className="flex-1 overflow-y-auto min-h-0">

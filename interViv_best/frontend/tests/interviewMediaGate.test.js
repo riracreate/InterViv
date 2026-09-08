@@ -137,3 +137,13 @@ test('mixed Verbal→Interview: interview block still presents calibration after
   assert.match(html, /Calibration/);
   assert.doesNotMatch(html, /data-testid="mcq-round-container"/);
 });
+
+
+test('ML primitives renders its ungraded editor without calibration or a score', () => {
+  const html = render({ roundType: 'ml_primitives', blockCategory: 'ml_primitives' });
+  assert.match(html, /data-testid="ml-primitives-round"/);
+  assert.match(html, /Scoring is currently unavailable/);
+  assert.match(html, /Submit solution \(ungraded\)/);
+  assert.match(html, /aria-label="Python solution"/);
+  assert.doesNotMatch(html, /Calibration|<video|Run Examples|Time left in this round/);
+});

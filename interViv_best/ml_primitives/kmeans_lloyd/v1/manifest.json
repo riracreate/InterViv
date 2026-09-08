@@ -1,0 +1,15 @@
+{
+  "id": "kmeans_lloyd.v1",
+  "version": 1,
+  "title": "One Lloyd iteration",
+  "difficulty": "medium",
+  "topics": ["k-means", "clustering"],
+  "constraints": [
+    "Use only NumPy. Do not import sklearn.",
+    "points has shape (n, d); centroids has shape (k, d); both float64.",
+    "Return a dict with assignments (n,) int64, centroids (k, d) float64, and inertia a float64 scalar array.",
+    "Vectorize over the n points; do not write a Python for-loop over points."
+  ],
+  "function": "lloyd_step",
+  "starter_code": "import numpy as np\n\n\ndef lloyd_step(points, centroids):\n    \"\"\"One assignment-and-update step of Lloyd's algorithm.\"\"\"\n    raise NotImplementedError\n"
+}

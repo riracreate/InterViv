@@ -1,0 +1,15 @@
+{
+  "id": "attention_scores.v1",
+  "version": 1,
+  "title": "Scaled attention weights",
+  "difficulty": "medium",
+  "topics": ["attention"],
+  "constraints": [
+    "Use only NumPy.",
+    "query has shape (batch, queries, dim); key has shape (batch, keys, dim); both float64.",
+    "Return float64 weights of shape (batch, queries, keys).",
+    "Vectorize over the batch axis."
+  ],
+  "function": "attention_weights",
+  "starter_code": "import numpy as np\n\n\ndef attention_weights(query, key):\n    \"\"\"Return scaled-dot-product attention weights.\"\"\"\n    raise NotImplementedError\n"
+}
