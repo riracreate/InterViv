@@ -9,6 +9,9 @@ references and known-bad solutions in the test suite only.
 - Worktree: `.worktrees/phase-b-block-practice`.
 - Branch: `codex/phase-b-block-practice`.
 - Base: `e5a1bcceb1bb6805f2e1f94e29ff2cd13c58fdf3`.
+- Implementation: `56ec00d3592a224d2b46826b9c2d03ab81c85c99`
+  (`feat(phase-x)`; 81 files). `32b4a0b` held this delivery doc and
+  the review-guide pointer only — corrected in Phase X.1.
 - Chain root `0442493` is an ancestor.
 - No execution service, no runtime LLM call, no Layer C or D scaffolding.
 - Protected scorers, banks, and `backend/scoring/pipeline.py` were not edited.
@@ -112,14 +115,27 @@ parent checkout venv; NumPy 2.4.4, PyYAML 6.0.3):
 
 ## Browser verification
 
-No Playwright/Selenium in the venv and no browser MCP in this
-environment, so no desktop browser was driven. The planned substitute
-(disposable uvicorn on a non-colliding port) was attempted and blocked:
+CORRECTION (Phase X.1): browser verification was not performed. No
+desktop browser was driven, no page was rendered, and no HTTP ran over
+a socket. Phase X labeled the fallback results below VERIFIED; every
+such item is downgraded to PARTIAL here. The fallback evidence is kept
+because the route-level results are sound, but an in-process client
+cannot find the class of defect this project has repeatedly found only
+by rendering a page — three real defects so far; cf. Phase H, which
+downgraded nine claims for exactly this reason.
+
+What blocked the real check: no Playwright/Selenium in the venv and no
+browser MCP in this environment, and the planned substitute
+(disposable uvicorn on a non-colliding port) could not bind:
 `uvicorn backend.main:app --host 127.0.0.1 --port 18234` failed with
-`[Errno 1] ... operation not permitted` on bind, the `--uds` variant
-failed the same way, and escalated execution is unavailable in this
-profile. Ports 18000/5173 were never touched, and the developer's
-existing database was never pointed at.
+`[Errno 1] ... operation not permitted`, the `--uds` variant failed
+the same way, and escalated execution is unavailable in this profile.
+This was a session capability limit, not a machine limit: Phase D's
+delivery doc records uvicorn binding `127.0.0.1:8000` in this sandbox
+profile, and Phase O ran a disposable stack on `127.0.0.1:18001` /
+`127.0.0.1:5174`. A session with socket access can clear these items.
+Ports 18000/5173 were never touched, and the developer's existing
+database was never pointed at.
 
 What ran instead: the real FastAPI app over ASGI transport
 (`TestClient`, `raise_server_exceptions=False`) against a disposable,
@@ -128,27 +144,34 @@ migrated SQLite file (`/tmp/phasex_http_18234.db`, alembic head
 `/tmp/phasex_http_probe.py` (not committed): 21/21 checks passed.
 
 - ML round starts and public statement/editor payload is present:
-  VERIFIED (ASGI + disposable SQLite + real signup). Resume
-  `active_round` is `ml_primitives`/`in_progress`; context id
-  `softmax_stable.v1`, title 14 chars, statement 480 chars,
-  `scoring_available: false`, `starter_code` present; no sentinels.
-- Submit stored, 503 unavailable, no score: VERIFIED (same method).
-  Submit → HTTP 503, detail `code: execution_unavailable`,
-  `submission_saved: true`, `retryable: true`, `attempt_id` set, no
-  `score` key; `GET /ml-primitives/attempts` returns the exact source
-  bytes with `status: unavailable`; the row survives engine dispose
-  and reopen (count still 1).
-- Mixed session reaches ML and does not advance past it: VERIFIED
-  (same method). Interview round scored 13.51, advanced into
+  PARTIAL (was VERIFIED). Exercised: start + resume routes over ASGI
+  with real signup on disposable SQLite; `active_round`
+  `ml_primitives`/`in_progress`; context id `softmax_stable.v1`,
+  title 14 chars, statement 480 chars, `scoring_available: false`,
+  `starter_code` present; no sentinels. Not exercised: HTTP over a
+  socket, or the React editor rendering this payload in a browser.
+- Submit stored, 503 unavailable, no score: PARTIAL (was VERIFIED).
+  Exercised: submit route returns HTTP 503 with `code:
+  execution_unavailable`, `submission_saved: true`, `retryable: true`,
+  `attempt_id` set and no `score` key; `GET /ml-primitives/attempts`
+  returns the exact source bytes with `status: unavailable`; the row
+  survives engine dispose and reopen on disposable SQLite. Not
+  exercised: status propagation over socket HTTP, the unavailable UI
+  as displayed in a browser, or retry from the real editor.
+- Mixed session reaches ML and does not advance past it: PARTIAL (was
+  VERIFIED). Exercised: interview round scored 13.51 and advanced into
   `ml_primitives` (`minmax_normalize.v1`, unscored); ML submit → 503
   stored; resume still shows ML `in_progress` with `final_score:
-  null`; dashboard average 13.51 equals the interview score and ML
-  appears in `unscored_rounds` with `execution_unavailable`; no
-  sentinels on any payload.
-- Render half: VERIFIED via the committed suites —
-  `interviewMediaGate.test.js` (5 pass: ML renders without
-  calibration/score) and `blockBuilder.test.js` (13 pass: ungraded ML
-  label pinned).
-- Socket-level HTTP and a real desktop browser: STILL BLOCKED in this
-  environment (sandbox denies all listener binds). The behaviors above
-  are proven at the ASGI + disposable-SQLite level, not over TCP.
+  null`; dashboard average 13.51 equals the interview score; ML in
+  `unscored_rounds` with `execution_unavailable`; no sentinels. Not
+  exercised: multi-round navigation in a real browser, or Interview /
+  media-gate behavior around the stuck round.
+- Render half: PARTIAL (was VERIFIED via the committed suites).
+  Exercised: `node --test` suites — `interviewMediaGate.test.js`
+  (5 pass: ML gating without calibration/score) and
+  `blockBuilder.test.js` (13 pass: ungraded ML label pinned) — prove
+  component logic. Not exercised: rendering in a real browser engine;
+  no page was loaded and no DOM was interacted with.
+- Socket-level HTTP and a real desktop browser: STILL BLOCKED (kept).
+  The behaviors above are proven at the ASGI + disposable-SQLite
+  level, not over TCP and not in a browser.
