@@ -4,7 +4,7 @@
 
 **Base (chain root):** Phase A tip `0442493`
 
-**Tip (Phase R):** `711995c`
+**Tip (Phase Y):** this commit (parent `ed0701e`)
 
 **Phase Q commit (confirmed):** `c58e106` (`c58e1064f21eedc16bed347be4469f07b80f89e1`) — message `fix(phase-q): default LLM_LIVE_FETCH off and enforce mode at LLM client`; adds `modules/llm_outbound_gate.py` and the `_generate_via_llm` gate in `question_bank.py`.
 
@@ -176,9 +176,10 @@ index 1c3f41b..edcaa69 100644
 | `20260907_0006` | Round `assisted` / `assistance_kinds`; `target_contexts`, `retry_sets`, `bookmarks`, `assistance_events` |
 | `20260907_0007` | `system_design_attempts` table |
 | `20260907_0008` | `review_schedules` (Phase I spaced review) |
+| `20260908_0009` | `ml_primitives_attempts` (Phase X attempts, unscored) |
 
-Chain: `0003 → 0004 → 0005 → 0006 → 0007 → 0008`.
-`alembic heads` → **single head** `20260907_0008`.
+Chain: `0003 → 0004 → 0005 → 0006 → 0007 → 0008 → 0009`.
+`alembic heads` → **single head** `20260908_0009`.
 No historical migration files were edited after introduction; only new revisions appended.
 
 **`parent_revision()` (G.0):** persistence tests previously pinned absolute parents because Alembic relative `-1` breaks when HEAD advances. `tests/alembic_helpers.py` resolves the current head’s parent dynamically.
@@ -303,7 +304,7 @@ cd frontend && npm test && npm run build
 HF_HUB_OFFLINE=1 .venv/bin/python scripts/scoring_regression.py          # expect 2/8 fail full (6/8 pass)
 DISABLE_SEMANTIC_SCORING=1 HF_HUB_OFFLINE=1 .venv/bin/python scripts/scoring_regression.py  # expect 4/8 fail
 
-.venv/bin/alembic heads   # 20260907_0008
+.venv/bin/alembic heads   # 20260908_0009
 # After pytest: restore docs/human_baseline_report.md
 # MD5 5421f9f0fd6efad395666c545e5cf76a, 230 lines
 git checkout -- docs/human_baseline_report.md

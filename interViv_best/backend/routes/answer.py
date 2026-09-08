@@ -39,6 +39,7 @@ from backend.evidence_kind import (
     scoring_mode_at_write,
     EVIDENCE_PRACTICE_REVIEW,
     EVIDENCE_SELF_REPORTED,
+    evaluation_unavailable,
     evidence_kind_for_round,
     is_self_reported_round,
     measured_scores,
@@ -491,7 +492,7 @@ def submit_answer(
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at and now > expires_at:
                 active_round["status"] = "expired"
-                if round_type != "ml_primitives":
+                if not evaluation_unavailable(round_type):
                     active_round["final_score"] = 0.0
                 db["sessions"].update_one(
                     {"session_id": request.session_id},
