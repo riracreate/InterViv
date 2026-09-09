@@ -158,16 +158,16 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | Login / logout | VERIFIED | Logout → `/login`; login works |
 | Safe `next=/practice?mode=custom` | VERIFIED | Landed on custom builder |
 | Unsafe `next=https://example.test` | VERIFIED | Landed on `/home` |
-| Other unsafe next variants (`//…`, `/login`, encoded) | STILL BLOCKED | Not each exercised this session; same sanitizer path as unit coverage |
+| Other unsafe next variants (`//…`, `/login`, encoded) | STILL BLOCKED | Z #26: not individually exercised before AV/scoring stop; sanitizer tests do not close browser behavior |
 | Home empty starter actions | VERIFIED | New account: Start practicing / Help me choose; target Not set |
 | Progress absence (not zeros) for new account | VERIFIED | “Readiness Not measured”, “No scored sessions yet.” |
 | Progress with measured data | VERIFIED | User1 Verbal Ability 40%, Elo changes; System Design **Not measured** |
-| Continue practice / deep-link restore | STILL BLOCKED | Mixed session left mid-plan; Continue path not fully closed |
+| Continue practice / deep-link restore | STILL BLOCKED | Z #27: full interrupted-plan resume not closed before stop |
 | Target alone does not invent readiness | VERIFIED | Readiness stayed Not measured without target practice |
 | Responsive 375 / no page-wide overflow | VERIFIED | `innerWidth=375`, `scrollWidth=375` on Progress |
-| Keyboard-only full Home/Progress pass | STILL BLOCKED | Aria labels present; full Tab/Enter tour not completed |
+| Keyboard-only full Home/Progress pass | STILL BLOCKED | Z #28: full keyboard tour not completed |
 | `/dashboard/:sessionId` report loads dark premium UI | VERIFIED | Verbal report with C4 panels at `/dashboard/ba80ea9e-…` |
-| Pixel compare vs pre-A screenshot | STILL BLOCKED | No frozen baseline screenshot in-repo |
+| Pixel compare vs pre-A screenshot | STILL BLOCKED | Z #29: frozen pre-A screenshot still unavailable |
 
 ### Practice blocks (Phase B / B.1)
 
@@ -178,15 +178,15 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | SQL / Interview standalone entry | VERIFIED | Present on hub; Interview used in mixed builder |
 | Mixed Verbal→Interview→SQL start | VERIFIED | Session `2d47ad75-…`; order Verbal first |
 | Mid-session refresh identity/options | VERIFIED | Same concise/expand stems and option order after reload |
-| Repeated block type | STILL BLOCKED | Two OA blocks not fully run this session |
+| Repeated block type | PARTIAL | Z #30: two OA blocks completed at 50%; wrong question/result association and stale answered count (Z-F04/05) |
 | Builder add/remove/reorder/repeat UI | VERIFIED | Blocks, Up/Down, Repeat, Remove, per-block settings, total-time summary “45 timed minutes…” |
-| Presets save/load/delete | PARTIAL | Saved `phase-f-mixed` with Load/Delete; Load/Delete click not re-proven after start |
+| Presets save/load/delete | PARTIAL | Z #31: real save and keyboard load verified; delete not exercised before stop |
 | Autosaved drafts | VERIFIED | “Draft saved” / “Saving…” status |
 | Draft recovery after refresh | VERIFIED | Returning to `mode=custom` restored Verbal/Interview/SQL draft |
-| Draft reject submitted/expired | STILL BLOCKED | Not exercised against closed attempts |
-| Duplicate submit rejection | STILL BLOCKED | Not exercised in UI this session |
-| Keyboard-only builder (no drag) | PARTIAL | Controls are buttons with aria-labels; full keyboard-only pass not completed |
-| Second-account isolation (sessions/presets/drafts) | PARTIAL | Browser: User2 Progress empty. Cross-user session deny was **API 403** only; presets/drafts dual-account UI not walked. |
+| Draft reject submitted/expired | PARTIAL | Z #32: stale submitted draft reached server 409 without visible error; expired-draft UI not separately closed |
+| Duplicate submit rejection | PARTIAL | Z #33: real stale tab reached 409; no visible rejection message (Z-F06), no additional scored round shown |
+| Keyboard-only builder (no drag) | PARTIAL | Z #34: keyboard remove/load/reorder worked; complete add/repeat tour remains open |
+| Second-account isolation (sessions/presets/drafts) | PARTIAL | Z #35: browser session denial and preset isolation observed; builder draft leaked between accounts (Z-F03) |
 
 ### Coding (Phase C)
 
@@ -196,19 +196,19 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | Standalone coding start | VERIFIED | After F.1 DSA-topic fix; session `c5dca423-…` Two Sum |
 | Run → unavailable panel | VERIFIED | “Code execution is currently unavailable… submitting now will not score” |
 | Submit → 503, round open | VERIFIED | `POST /session/coding/run` 503; `POST /session/answer` 503; UI remained on editor |
-| Retry submit 503 (not 409) | PARTIAL | One UI submit + log 503; second UI retry interrupted by navigation |
+| Retry submit 503 (not 409) | PARTIAL | Z #37: only natural-expiry 409 was exercised; unexpired 503 retry remains open |
 | Progress shows unscored / coding unavailable (not 0%) | VERIFIED | “0/1 rounds scored · … coding unavailable · Not measured” |
 
 ### Learning / target (Phase D)
 
 | Item | Status | Evidence |
 |------|--------|----------|
-| Target prefill ATS/coach/practice | STILL BLOCKED | Not fully walked this session |
-| Resume upload → ATS selection | STILL BLOCKED | Not exercised |
-| Jobs sample-data labeling | STILL BLOCKED | Not exercised |
-| Mistakes notebook / retry set | STILL BLOCKED | Not exercised |
-| Hint-assisted vs unassisted miss | STILL BLOCKED | Not exercised |
-| Ownership of notebook/bookmarks/target | PARTIAL | Cross-account session 403 + empty Progress; notebook/bookmarks UI not dual-account walked |
+| Target prefill ATS/coach/practice | PARTIAL | Z #38/39: Practice explicit Python retained after saving TCS target; ATS/Coach not exercised |
+| Resume upload → ATS selection | STILL BLOCKED | Z #40: not exercised before AV/scoring stop |
+| Jobs sample-data labeling | STILL BLOCKED | Z #41: not freshly exercised; Phase O historical browser evidence remains separately attributed |
+| Mistakes notebook / retry set | VERIFIED | Z #42: actual Python miss appeared in Learn; UI-created five-question retry completed; no inserted attempts |
+| Hint-assisted vs unassisted miss | PARTIAL | Z #43: actual unassisted misses observed; fresh assisted pair not exercised; G historical evidence retained |
+| Ownership of notebook/bookmarks/target | PARTIAL | Z #44: second-account notebook/retry/schedule empty; meaningful bookmark and target comparison incomplete |
 
 ### System design + AV (Phase E)
 
@@ -217,10 +217,10 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | Rubric named criteria visible | VERIFIED | Requirements clarity, API and data model, Scale and reliability, Trade-offs |
 | Incomplete rubric → no score | VERIFIED | Alert: “Rate every rubric criterion (1–5) before submitting.” |
 | Complete → labeled self-reported | VERIFIED | “Self-assessment score 68.8” / “Self-assessment recorded…” |
-| `/av/capabilities` distinct unavailable_states list | PARTIAL | **API-only** list observation (not browser UI). Legend for this doc is browser observation. |
-| Each AV unavailable state distinct in UI | STILL BLOCKED | Needs permission/device gestures; automation cannot claim all seven |
-| Device capture with real mic/camera | STILL BLOCKED | Requires real hardware; never claimed |
-| No AV score fabricated | PARTIAL | **API/capabilities** (`speech_scoring: not_offered`); not a separate browser score-panel proof |
+| `/av/capabilities` distinct unavailable_states list | PARTIAL | Z #16: two permission banners rendered; API list is not proof of all seven states |
+| Each AV unavailable state distinct in UI | PARTIAL | Z #7–13: not-requested and denied rendered; five states remain unverified |
+| Device capture with real mic/camera | VERIFIED | Z #14: owner manual screenshot and confirmation; agent browser remained denied |
+| No AV score fabricated | PARTIAL | Z #17/Z-F00: source-confirmed label enters scoring metadata; no live numeric influence demonstrated; verification stopped |
 
 ---
 
@@ -228,7 +228,7 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 
 - C.2 live coding execution (out of scope).
 - E.2 durable AV blobs / ffmpeg / speech scores (out of scope).
-- Real microphone/camera capture verification.
+- Real microphone/camera capture: closed by owner manual evidence in Z; server transcription and full calibration remain open.
 - Exhaustive AV permission-state UI tour.
 - Full duplicate-submit and draft-vs-expired UI proofs.
 - Full Phase D learning/ATS/jobs browser checklist.
@@ -245,3 +245,7 @@ Status legend: **VERIFIED** (browser observation) · **STILL BLOCKED** · **NOT 
 | F.1 | This delivery doc + Practice.jsx system-design/label fixes + session.py DSA topic filter honesty |
 
 Working tree after F.1: clean of F-scoped changes. Unrelated untracked Ticket/Track files preserved and unstaged.
+
+## Phase Z status update
+
+The updated rows above refer to [Phase Z](phase_z_browser_verification.md), the current itemized evidence record. Z stopped at a source-confirmed AV-label-to-scoring interface path; numeric influence was not established. No product fixes were made. Older VERIFIED rows otherwise retain their original phase attribution.

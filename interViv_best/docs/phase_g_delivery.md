@@ -122,9 +122,9 @@ Status legend: **VERIFIED** · **STILL BLOCKED** · **NOT APPLICABLE**
 | Mistakes notebook from real misses only | VERIFIED | Browser `/learn`: 10 misses; coding excluded with note; no correct-answer entries |
 | Retry sets from missed topics | VERIFIED | `phase-g-misses` (5 DBMS items); UI “Generated from your genuinely missed topics only” |
 | Target context across job→skills→practice→next steps | VERIFIED | Browser: Learn next steps cite Software Engineer; Practice prefills TCS + skills `DBMS, OOP, DSA` (API `/target-context/me` corroborates, not sole evidence) |
-| Target prefills settings, does not override explicit topic | PARTIAL | Browser shows prefill + honesty copy. **Override-vs-explicit-topic behavior not exercised** (no conflicting topic chosen after target load). |
+| Target prefills settings, does not override explicit topic | VERIFIED | Z #38: explicitly selected Python, then saved TCS/entry-role target; resulting OA question remained Python |
 | Assisted vs unassisted separation | VERIFIED | Browser Learn: “3 unassisted, 3 assisted” DBMS; notebook tags `assisted · hint` vs `unassisted` |
-| Per-block results / next practice from real outcomes | VERIFIED | Browser Learn next steps Retry DBMS/OOP/Verbal; Progress Elo changes for measured skills |
+| Per-block results / next practice from real outcomes | PARTIAL | Z #45: real Learn retry suggestions observed, but repeated OA result displayed next question with previous score (Z-F04) |
 | Self-assessment not raising measured mastery | VERIFIED | Browser Progress: System Design **Not measured** after 100 self-assessment; report: “Self-assessment recorded…” |
 
 ### (2) Duplicate-submit UI
@@ -132,20 +132,20 @@ Status legend: **VERIFIED** · **STILL BLOCKED** · **NOT APPLICABLE**
 | Item | Status | Method |
 |------|--------|--------|
 | Double submit rejected / no double scoring | VERIFIED | **Browser (Phase H):** OA MCQ session `5f1b4a4a-…`; two `Submit Round` clicks in one tick → single **Session Complete** (“1 rounds · Average 100%”); dashboard still **one** `submitted` round score 100. Client `isScoring` gate drops the second click. |
-| Comprehensible **409** user-facing outcome | PARTIAL | Source maps 409 → `Scoring failed — {detail}`. Browser double-click **did not render** that message (second submit never left the client). Remaining gap: observe the 409 string on screen (e.g. race past the client gate or retry after submit while still on the round). API 409 alone is not UI proof. |
+| Comprehensible **409** user-facing outcome | PARTIAL | Z #33/Z-F06: a real stale second tab reached server 409, but no rejection message rendered and the question stayed editable. Observed UX failure, no longer merely an untested server path |
 
 ### (3) AV permission tour (seven states)
 
 | State | Status | Method |
 |-------|--------|--------|
-| permission_not_requested | PARTIAL | Interview initializes `avState` to this; `/av/capabilities` lists it. **No browser observation of the unavailable banner for this state.** |
-| permission_denied | PARTIAL | Wired via `classifyMediaError(NotAllowedError)` + Interview UI; live browser permission-deny override not exercised |
-| no_device | PARTIAL | Same via `NotFoundError` classifier; no device emulation run |
-| unsupported_browser | PARTIAL | Classifier / unit path when `mediaDevices` absent — **not a browser UI observation** |
-| service_unavailable | PARTIAL | `transcriptionFailureResult(503)` helper + capabilities — **not a browser UI observation** |
-| capture_failed mid-session | PARTIAL | Classifier `NotReadableError` + Interview branch; mid-session hardware fault not induced |
-| interrupted_recoverable | PARTIAL | Interview sets state on track end; not hardware-proven |
-| Real mic/camera capture | **STILL BLOCKED** | Requires hardware; never claimed |
+| permission_not_requested | VERIFIED | Z #7: microphone permission-not-yet-requested banner rendered in the interview |
+| permission_denied | VERIFIED | Z #8: camera and microphone denied messages rendered, including after owner-reported Allow/retry |
+| no_device | STILL BLOCKED | Z #9: missing-device state not induced; no device-emulation tool capability available |
+| unsupported_browser | STILL BLOCKED | Z #10: no unsupported-browser UI observation |
+| service_unavailable | STILL BLOCKED | Z #11: no real server-transcription request; helper/API evidence remains insufficient |
+| capture_failed mid-session | STILL BLOCKED | Z #12: no controlled mid-capture hardware fault induced |
+| interrupted_recoverable | STILL BLOCKED | Z #13: no controlled track interruption/recovery verified |
+| Real mic/camera capture | VERIFIED | Z #14: owner manual screenshot and explicit confirmation; not a local-server transcription verification |
 
 ### (4) Re-verify F.1 fixes
 
@@ -153,7 +153,7 @@ Status legend: **VERIFIED** · **STILL BLOCKED** · **NOT APPLICABLE**
 |------|--------|----------|
 | Builder labels System design | VERIFIED | Browser custom builder “+ System design”; block “4 . System design · 1 prompt” |
 | Standalone System design E2E | VERIFIED | Browser `mode=system_design` → session `8d4552c3-…` → self-assessment → report |
-| Coding three entry paths non-empty | PARTIAL | Browser: standalone → Two Sum; Problems Practice → Valid Parentheses. **Builder `skills:['DSA']` path verified by API/test only**, not a separate builder UI start this session. |
+| Coding three entry paths non-empty | VERIFIED | Z #36 closes missing builder start: custom Coding/DSA → Two Sum editor after calibration Skip. Standalone and Problems evidence remains historical G evidence, not live execution proof |
 
 Note: Problems UI is **single-problem** practice (not a multi-checkbox set). The “Problems practice set” path is `problem_ids: […]` via `mapStandaloneToStartPayload`.
 
@@ -240,8 +240,8 @@ Single head `20260907_0007`. No historical migration edits.
 - Real microphone/camera capture.
 - Live browser permission-deny / no-device / mid-capture fault tour (classifier + UI wired; hardware/override incomplete).
 - **409 user-visible string** after duplicate submit (client gate; see §2 PARTIAL).
-- Target explicit-topic override scenario (PARTIAL).
-- Builder coding start in the browser (PARTIAL — API/test only).
+- Target explicit-topic override scenario: VERIFIED in Z #38.
+- Builder coding start in the browser: VERIFIED in Z #36 (rendering only).
 - Home target picker still shows “— Select —” while `/target-context/me` and Practice prefill TCS — Progress/Learn use target; Home form prefill gap remains.
 - Session-complete screen can flash “Average 100%” for self-assessment before report clarifies self-reported (report text is honest).
 - phase21 Verbal Upload entry not integrated (intentional; objects rescued under `refs/rescue/*` in Phase H).
@@ -265,3 +265,7 @@ Phase H re-checked VERIFIED rows that rested on API/source/tests where the claim
 | `65a456e` | G.1 delivery doc |
 
 Working tree after G.1: clean of G-scoped changes.
+
+## Phase Z follow-up
+
+[Phase Z](phase_z_browser_verification.md) supplies the current browser status for the updated rows. It reached the real stale-tab 409 and found missing error feedback; it also found builder draft ownership and expired Coding report defects. Further checks stopped at the AV/scoring interface condition. Prior G/H evidence elsewhere remains attributed to its original phase.

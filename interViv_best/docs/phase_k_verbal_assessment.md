@@ -218,3 +218,7 @@ This is **the owner’s decision**. The rescued work is **theirs** (phase21 WIP,
 | Migration needed | **No** (Alembic head remains `20260907_0008`) |
 
 Baseline reminder (unchanged by this phase): scoring_regression 2/8 full, 4/8 degraded; always-present pair gibberish / keyword_stuffing; `human_baseline_report.md` committed form 230 lines, MD5 `5421f9f0fd6efad395666c545e5cf76a`.
+
+## Phase Z follow-up on the L media gate
+
+Z observed OA screens without media chrome/prompts, but the automated browser did not have a proven working grant. Verbal/OA under granted permission and mixed Verbal → Interview remain **PARTIAL / STILL BLOCKED** respectively (Z #18–19). Owner manual capture proof applies to an interview, not those gate scenarios. See [Phase Z](phase_z_browser_verification.md); do not infer closure from source/tests.

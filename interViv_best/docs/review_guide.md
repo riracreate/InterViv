@@ -1,10 +1,10 @@
-# Review guide — chain A through Q
+# Review guide — chain A through Z
 
 **Audience:** reviewers of `codex/phase-b-block-practice`
 
 **Base (chain root):** Phase A tip `0442493`
 
-**Tip (Phase Y):** this commit (parent `ed0701e`)
+**Product tip (Phase Y):** `6ae830338ad9c3b5e2173ff75341ab397fb78b68` (parent `ed0701e`). Phase Z adds documentation only; see [browser verification](phase_z_browser_verification.md) for the incomplete backlog and stop condition.
 
 **Phase Q commit (confirmed):** `c58e106` (`c58e1064f21eedc16bed347be4469f07b80f89e1`) — message `fix(phase-q): default LLM_LIVE_FETCH off and enforce mode at LLM client`; adds `modules/llm_outbound_gate.py` and the `_generate_via_llm` gate in `question_bank.py`.
 
@@ -13,6 +13,10 @@
 **First paragraph (read this before the tables):** Coding “execution” is a **503 seam with nothing behind it**. `POST /session/coding/run` and scored coding submits return infrastructure-unavailable; the editor stays open; Progress treats coding as unscored coverage, not a zero. C.2 (Docker/live runner) was never started. Do not review this branch as if candidates can receive coding scores today.
 
 ---
+
+## Phase Z review warning
+
+[Phase Z](phase_z_browser_verification.md) found browser defects despite 539 backend and 56 frontend tests passing: immediate typed-round expiry, unscored Coding reports presented as 0%, cross-account builder drafts, repeated-round question/count state leaks, and missing stale-submit error feedback. No fixes were made. Further browser checks stopped at a source-confirmed engagement-label-to-scoring metadata path (Z-F00); a numeric score effect was not established. Do not treat the capability inventory below as a claim that these flows are defect-free.
 
 ## (a) Commit inventory
 
@@ -241,11 +245,11 @@ Do not treat this section as a resolution. It is the decision surface.
 
 ## (f) Honest capability inventory
 
-**Works today (with disposable DB + local servers):** auth/home/progress; block practice (Verbal/OA/SQL/Interview) with Phase L media gate (Verbal/OA skip camera/mic); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring; Jobs explorer with **fixture provenance / sample banner** (including warm cache, Phase O); offline Google Fonts default (Phase P); ml_primitives block flow (start, stored-ungraded submit, attempt history) — API-proven, never browser-rendered.
+**Implemented surfaces (subject to the Phase Z findings above):** auth/home/progress; block practice (Verbal/OA/SQL/Interview) with Phase L media gate (Verbal/OA skip camera/mic); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring; Jobs explorer with **fixture provenance / sample banner** (including warm cache, Phase O); offline Google Fonts default (Phase P); ml_primitives block flow (start, stored-ungraded submit, attempt history) — browser-rendered in Z, but immediate expiry blocked ML submission; mixed navigation and stored-submit UI remain unverified.
 
 **Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started). **ml_primitives candidate scoring** (503 stored-ungraded; Layer A/B oracles run in tests only, pending execution infrastructure).
 
-**Phase M (incomplete):** session findings are recorded in `docs/phase_m_delivery.md` (written in Phase S from the Phase M report — not re-verified end-to-end here). Step 0: local `faster_whisper` `"tiny.en"` cache under `HF_HUB_OFFLINE=1`; cold disposable `HF_HOME` → loud 503. Owner-present browser AV verification (calibration, seven states, real-audio transcription, retention) was **not finished**. Ports `:18000`/`:5173` may still hold that stack. Calibration has still never rendered on this chain (Phase L auto-skip on `NotAllowedError`); E.1’s transcription path has never processed real audio. Do not treat Phase M as closing live mic/camera.
+**Phase M (incomplete):** session findings are recorded in `docs/phase_m_delivery.md` (written in Phase S from the Phase M report — not re-verified end-to-end here). Step 0: local `faster_whisper` `"tiny.en"` cache under `HF_HUB_OFFLINE=1`; cold disposable `HF_HOME` → loud 503. Owner-present browser AV verification (calibration, seven states, real-audio transcription, retention) was **not finished**. Ports `:18000`/`:5173` may still hold that stack. Z subsequently rendered calibration with zero samples and exercised Skip; successful calibration remains unverified. The owner manually verified capture in Z. E.1’s local-server transcription path still has no real-audio browser verification. Z stopped at an AV label entering scoring metadata; no numeric influence was established.
 
 **Never built on this chain:** C.2 live runner; E.2 ffmpeg/blob retention; phase21 **Upload Verbal Ability entry** (rescued blobs only — see `docs/phase_h0_rescue.md`); LLM judge in scoring/readiness/guard/gaps (forbidden).
 
@@ -328,19 +332,25 @@ git show-ref | grep refs/rescue/
 | Jobs freshness line still renders `source: fixture` (and `fixture_fallback` empty_reason still says “Adzuna” / “fixture”) | Finding — not env-flag class; left untouched (Phase O provenance/freshness) |
 | LLM `last_runtime_error` / `_LAST_LLM_ERROR` strings name `LLM_LIVE_FETCH` / `QUESTION_GENERATION_MODE` | Finding — may surface via `llm_fallback_reason` on question payloads; not Jobs copy; leave for a later copy pass |
 | Three silent-degrade paths (SemanticScorer, Jobs live-fail, LLM soft fallback) vs transcription fail-loud | Decision open — see §e2 |
-| Phase M incomplete: browser AV steps never finished; live mic/camera / seven AV UI states not closed | STILL OPEN — see `docs/phase_m_delivery.md`; session may still hold `:18000`/`:5173` |
-| Calibration never rendered on this chain (L auto-skips on `NotAllowedError`) | Unexercised UI — recorded in Phase M doc |
+| Phase M / Z AV backlog | PARTIAL — owner verified capture in Z; two states rendered, five remain unverified; server transcription/retention still open |
+| Calibration | PARTIAL — Z rendered blank/zero-sample calibration and successful Skip; ten-second real-frame completion unverified |
 | E.1 transcription path never processed real audio | Unexercised — recorded in Phase M doc |
-| 409 message visible in UI | PARTIAL (G/H) — client gate; race or post-submit retry UX not proven |
-| Target does not override explicit topic | PARTIAL — override scenario not walked |
-| Builder coding start in browser | PARTIAL — API/test covered; builder UI start not filmed |
-| AV seven states in live UI | PARTIAL / BLOCKED — permission overrides / hardware |
-| Real mic/camera | STILL BLOCKED — hardware; Phase M did not finish |
+| 409 message visible in UI | PARTIAL, observed failure — Z stale tab reached server 409 but no visible error; Z-F06 |
+| Target does not override explicit topic | VERIFIED — Z explicit Python retained after TCS/entry-role target save |
+| Builder coding start in browser | VERIFIED — Z builder → calibration Skip → Two Sum editor; not execution proof |
+| AV seven states in live UI | PARTIAL — not-requested and denied rendered in Z; five states unverified |
+| Real mic/camera | VERIFIED by owner manual evidence in Z; does not prove local-server transcription |
 | C.2 Docker execution | Not started |
 | E.2 AV artifacts | Not started |
 | phase21 Verbal Upload entry | Not integrated (L gated media only) |
 | ADJACENT LLM question generation vs contract intent | Owner judgment (§a) |
 | Home target picker vs `/target-context/me` | Known gap |
+| AV label enters scoring interface/metadata | Z-F00, source-confirmed; verification stopped; no live numeric influence established |
+| Immediate typed-round 00:00 / ML Submit disabled | Z-F01, P1 — observed in browser |
+| Expired unscored Coding report shows 0% / Needs Work | Z-F02, P1 — Progress exclusion works; report presentation fails |
+| Cross-account builder draft | Z-F03, P1 — leaked draft after signout/signup and reload; presets isolated |
+| Repeated OA wrong result question / answered count | Z-F04/05, P2 — observed across two real rounds |
+| Coding calibration / intermittent fetch failures / execution copy | Z-F07–09 — details and evidence limits in Phase Z |
 | Frozen reports `human_baseline_report.md` / `persona_validation_report.md` retain markdown hard-break trailing spaces | Left untouched to preserve committed MD5 / frozen research bytes (Phase S) |
 
 ---
@@ -351,3 +361,7 @@ Phase X is delivered as Layers A and B only: [ML primitives](phase_x_ml_primitiv
 Candidate ML submissions are stored and ungraded; pack oracles are proven in tests.
 
 `phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes), `phase_u_execution_spike.md` (execution-service spike; negative result — daemon unreachable, C.2 stays blocked). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+
+## Phase Z delivery
+
+Canonical itemized backlog: [Phase Z browser verification](phase_z_browser_verification.md). Rows in E/F/G/I/K/M/N/X and D have attribution/status follow-ups. The backlog remains incomplete at the user-defined AV/scoring stop condition. Documentation only; no fixes, push, merge or blocked implementation. The unrelated untracked worktree-root workspace file is preserved and prevents an unqualified-clean claim.

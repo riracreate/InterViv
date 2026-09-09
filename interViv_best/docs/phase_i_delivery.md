@@ -54,7 +54,7 @@ Environment: `/tmp/interviv_phasei_disposable.db`, signup `contributors@example.
 | Review session starts/runs/completes via existing engine | **VERIFIED** | Browser Start review → `/interview/…` → submit correct → Session Complete 100% |
 | Correct lengthens interval (visible) | **VERIFIED** | Browser scheduled list: MCQ “interval 3 days · last correct” |
 | Incorrect shortens/resets (visible) | **VERIFIED** | Browser scheduled list: second MCQ “interval 1 day · last incorrect” (after forced prior interval 7 via disposable SQLite for the demo) |
-| Progress/mastery unchanged by review | **PARTIAL** | API: assistance stayed `unassisted_rounds=1` after correct review. Progress UI before/after isolated review not re-captured before a later measured miss for the incorrect-reset demo (that miss correctly moved measured rounds 1→2). |
+| Progress/mastery unchanged by review | VERIFIED | Z #46: isolated correct review followed by browser Progress comparison retained measured session/skill counts, scores, rounds and Elo; Learn interval increased to three days. See Z before/after values |
 | Second account sees none of first schedule | **VERIFIED** | Browser signup `contributors@example.invalid` → Learn empty due / no user-1 items |
 
 ## Commands (evidence)

@@ -277,3 +277,7 @@ Assessment-only Phase N; fixes landed in Phase O (`docs/phase_o_delivery.md`). S
 | **2. Cache hit clears sample banner** (`source: cache` wiped `empty_reason`) | Provenance stamped onto cached records; `source` / `provenance` stay `fixture` (etc.) on warm path; `cache_hit` is a separate axis; `fetched_at` survives round-trip; sample banner keys off provenance. Test: `test_cache_hit_preserves_fixture_provenance_and_label`. |
 
 **Still open (not Phase O):** `match_pct` framing beside real company names; live JobSourceClient / Step 4 sourcing choice.
+
+## Phase Z attribution update
+
+Jobs sample labeling was not freshly exercised before the Z-F00 stop (Z #41). The Phase O provenance fix and historical verification remain separately attributed; this assessment is not evidence of a current cache-label failure. See [Phase Z](phase_z_browser_verification.md).
