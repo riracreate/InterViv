@@ -24,7 +24,7 @@
 | ffmpeg-based media processing | `ffmpeg` not installed |
 | Speech fluency / audio readiness scores | Explicitly not offered; would invent signal |
 | Automatic diagram correctness | No diagram editor; product forbids auto verdict |
-| Device-capture verification claim | Needs real browser + real hardware |
+| Device-capture verification claim | Closed by Phase Z owner manual camera/microphone evidence; server transcription and successful calibration remain unverified |
 | C.2 live coding execution | Out of Phase E scope |
 
 ## Step 0 notes
@@ -71,3 +71,7 @@ python scripts/scoring_regression.py
 alembic heads
 git diff --check
 ```
+
+## Phase Z browser follow-up
+
+[Phase Z](phase_z_browser_verification.md) rendered calibration and observed Skip, plus not-requested/denied banners. The owner verified actual capture manually. E.2 retention remains unimplemented; no real server transcription was tested. Z-F00 records an engagement label passed into scoring metadata and the resulting verification stop; no live numeric score influence was established.

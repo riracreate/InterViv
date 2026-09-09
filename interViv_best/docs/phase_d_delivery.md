@@ -231,3 +231,7 @@ Open `http://127.0.0.1:5173/home`. Stop each server with `Ctrl+C`.
 
 Phase E remains planned. No push, merge, C.2, or Phase E work is
 part of this delivery.
+
+## Phase Z browser follow-up
+
+[Phase Z](phase_z_browser_verification.md) #38–46 records real UI-created mistake/retry history, explicit-topic target precedence, second-account empty learning history and isolated review/mastery comparison. ATS/Coach prefills, upload→ATS, fresh Jobs labeling, assisted-pair and full bookmark/target ownership checks remain incomplete. The source-confirmed AV/scoring boundary stopped further exercises; no D product changes were made.

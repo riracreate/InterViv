@@ -175,3 +175,13 @@ migrated SQLite file (`/tmp/phasex_http_18234.db`, alembic head
 - Socket-level HTTP and a real desktop browser: STILL BLOCKED (kept).
   The behaviors above are proven at the ASGI + disposable-SQLite
   level, not over TCP and not in a browser.
+
+## Phase Z browser follow-up (supersedes the remaining-gap descriptions above)
+
+- **VERIFIED — start/render:** a real browser rendered the scaled-attention ML statement, constraints and starter in session `012627c9-9f86-4b1d-b02e-1a0f6b2bc159` (Z #20).
+- **PARTIAL — editor/recovery:** editor visible, but source edits and persistence were not closed; recovery warning appeared (Z #21).
+- **PARTIAL — submit/unavailable:** honest unavailable panel rendered, but a fresh 20-minute round immediately showed 00:00 and disabled Submit (Z-F01). Stored submission, retry and post-submit score absence are still not browser-proven.
+- **STILL BLOCKED — mixed navigation:** not exercised before the Z-F00 AV/scoring stop; earlier ASGI evidence remains historical.
+- **VERIFIED — socket/browser capability:** approved localhost servers and actual rendered screens remove the old environment blocker; this does not close unexercised behaviors.
+
+See [Phase Z](phase_z_browser_verification.md) #20–24 for method and exact remaining gaps. No product fix was made.
