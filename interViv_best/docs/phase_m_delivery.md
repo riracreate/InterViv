@@ -33,20 +33,20 @@ Load-time “~5 s under `HF_HUB_OFFLINE=1`” and the cold-`HF_HOME` → 503 map
 
 ## Browser / AV work that was planned and never finished
 
-All remain **STILL BLOCKED** pending the owner at a browser (permission prompt):
+Phase M itself did not finish these checks. [Phase Z](phase_z_browser_verification.md) updates their current status:
 
-1. Calibration rendered for the first time (owner Allow camera/mic)
-2. The seven AV unavailable / capability states in live UI
-3. Transcription with **real** audio
-4. Recorded-media retention
+1. **PARTIAL:** calibration rendered with zero samples/blank media preview; Skip handed off to Coding. Successful ten-second calibration remains unverified.
+2. **PARTIAL:** not-requested and denied banners rendered; five states remain unverified.
+3. **STILL BLOCKED:** no real audio processed by local-server transcription.
+4. **STILL BLOCKED:** durable recorded-media pipeline remains unimplemented.
 
-Phase M did not close live mic/camera verification.
+Real mic/camera capture is now **VERIFIED by owner manual evidence in Z**, not by the original Phase M session. Z stopped on a source-confirmed AV-label-to-scoring metadata path; numeric influence was not demonstrated.
 
 ---
 
 ## Still unexercised on this chain (cross-phase)
 
-- **Calibration UI has still never rendered** as a completed flow: Phase L established Interview media requests auto-skip on `NotAllowedError` for gated categories; without an Allow, calibration does not appear as a successful gate. Recorded here so it is not mistaken for Phase M completion.
+- **Successful calibration remains unverified.** Z rendered the screen and exercised Skip; it did not demonstrate completion with actual camera samples. Do not repeat the earlier claim that the screen has never rendered.
 - **E.1’s transcription path has never processed real audio** on this chain — code exists; end-to-end audio → transcript was not observed.
 
 ---
