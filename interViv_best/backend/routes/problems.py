@@ -17,6 +17,8 @@ from backend.db.phase_c_coding_bank import (
     public_coding_problem,
 )
 from backend.routes.auth import require_user
+from backend.coding_languages import starter_codes
+from backend.execution import get_execution_status
 
 router = APIRouter(prefix="/problems", tags=["problems"])
 
@@ -41,9 +43,15 @@ def list_problems(
             )
     problems = list_coding_problems(difficulty=difficulty, topic=topic)
     return {
-        "problems": [public_coding_problem(p) for p in problems],
+        "problems": [{**public_coding_problem(p), "starter_codes": starter_codes(p)} for p in problems],
         "count": len(problems),
     }
+
+
+@router.get("/execution/status")
+def execution_status(authorization: str | None = Header(default=None)) -> dict:
+    require_user(authorization)
+    return get_execution_status()
 
 
 @router.get("/{problem_id}")
@@ -59,4 +67,4 @@ def get_problem(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Unknown coding problem: {problem_id!r}.",
         )
-    return public_coding_problem(problem)
+    return {**public_coding_problem(problem), "starter_codes": starter_codes(problem)}
