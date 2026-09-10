@@ -4,6 +4,11 @@ const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
 const AUTH_TOKEN_KEY = "interviv-auth-token";
 
+export function fetchCodingExecutionStatus() { return request('/problems/execution/status'); }
+export function fetchCodingCoach(payload) {
+  return request('/problems/coach/hint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
 async function request(path, options = {}) {
   const requestPath = API_BASE_URL ? `${API_BASE_URL}${path}` : `/api${path}`;
   const token = localStorage.getItem(AUTH_TOKEN_KEY);

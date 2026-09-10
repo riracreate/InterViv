@@ -208,7 +208,10 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     f"Block {index + 1}: SQL blocks use language 'sql'."
                 )
             language = "sql"
-        elif category in ("coding", "ml_primitives"):
+        elif category == "coding":
+            from backend.coding_languages import normalize_language
+            language = normalize_language(language)
+        elif category == "ml_primitives":
             if language is not None and language != CODING_LANGUAGE:
                 raise ValueError(
                     f"Block {index + 1}: coding blocks use language "

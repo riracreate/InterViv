@@ -1,0 +1,40 @@
+name: interviv-coding
+
+services:
+  executor:
+    image: ghcr.io/engineer-man/piston@sha256:2f66b7456189c4d713aa986d98eccd0b6ee16d26c7ec5f21b30e942756fd127a
+    platform: linux/amd64
+    # Piston requires this to create its isolate namespaces and cgroups.
+    # Local development only: never mount the Docker socket or project files.
+    privileged: true
+    ports:
+      - "127.0.0.1:19000:2000"
+    environment:
+      PISTON_REPO_URL: "http://runtime-cache/index"
+      PISTON_DISABLE_NETWORKING: "true"
+      PISTON_MAX_CONCURRENT_JOBS: "2"
+      PISTON_MAX_PROCESS_COUNT: "64"
+      PISTON_OUTPUT_MAX_SIZE: "65536"
+      PISTON_MAX_FILE_SIZE: "10000000"
+      PISTON_COMPILE_TIMEOUT: "15000"
+      PISTON_RUN_TIMEOUT: "5000"
+      PISTON_COMPILE_CPU_TIME: "10000"
+      PISTON_RUN_CPU_TIME: "3000"
+      PISTON_COMPILE_MEMORY_LIMIT: "805306368"
+      PISTON_RUN_MEMORY_LIMIT: "268435456"
+    volumes:
+      - runtimes:/piston/packages
+    tmpfs:
+      - /tmp:exec,size=768m
+    mem_limit: 2g
+    cpus: 2.0
+
+  runtime-cache:
+    image: nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    # Setup-only static files; no host port. Stop this after runtime installation.
+    volumes:
+      - ${CODING_RUNTIME_CACHE:?Set CODING_RUNTIME_CACHE to the verified package cache}:/usr/share/nginx/html:ro
+    mem_limit: 64m
+
+volumes:
+  runtimes:

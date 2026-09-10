@@ -109,6 +109,7 @@ class SubmitAnswerRequest(BaseModel):
     wpm: float | None = None
     pause_count: int | None = None
     rubric_ratings: dict[str, Any] | None = None
+    language: str = "python"
 
     @model_validator(mode="before")
     @classmethod
@@ -126,6 +127,7 @@ class SubmitAnswerRequest(BaseModel):
                 "wpm",
                 "pause_count",
                 "rubric_ratings",
+                "language",
             }
             extra = set(values.keys()) - allowed
             if extra:
@@ -326,6 +328,7 @@ def _record_coding_attempt(
     hidden_passed: int | None = None,
     hidden_total: int | None = None,
     error: str | None = None,
+    language: str = "python",
 ) -> None:
     """Persist one coding submit attempt (best effort, aggregates only).
 
@@ -346,7 +349,7 @@ def _record_coding_attempt(
             "session_id": session_id,
             "round": int(round_number),
             "problem_id": problem_id,
-            "language": "python",
+            "language": language,
             "source": text,
             "truncated": truncated,
             "status": status,
@@ -550,6 +553,22 @@ def submit_answer(
                     question_context=active_round.get("question_context", {}),
                     config=active_round.get("config_json", {}),
                 )
+            elif round_type == "coding":
+                from functools import partial
+                from backend.coding_languages import normalize_language
+                from backend.db.phase_c_coding_bank import get_coding_problem
+                from backend.execution import execute_python_tests
+
+                language = normalize_language(request.language)
+                coding_config = dict(active_round.get("config_json") or {})
+                problem = get_coding_problem(coding_config.get("problem_id"))
+                scoring_result = score_round(
+                    round_type="coding", answer_text=request.answer_text,
+                    question_context=active_round.get("question_context", {}),
+                    config=coding_config,
+                    executor=partial(execute_python_tests, language=language, problem=problem),
+                )
+                active_round["config_json"] = {**coding_config, "language": language}
             elif round_type == "system_design":
                 scoring_result = score_round(
                     round_type="system_design",
@@ -593,6 +612,7 @@ def submit_answer(
                         source=request.answer_text or "",
                         status="unavailable",
                         error=str(exc),
+                        language=request.language,
                     )
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -619,6 +639,7 @@ def submit_answer(
                 problem_id=str((active_round.get("config_json") or {}).get("problem_id") or ""),
                 source=request.answer_text or "",
                 status="scored",
+                language=request.language,
                 score=scoring_result.get("final_score"),
                 visible_passed=explanation.get("visible_passed"),
                 visible_total=explanation.get("visible_total"),

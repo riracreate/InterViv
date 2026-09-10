@@ -17,10 +17,10 @@ const ROUND_SECONDS = 120;
  *  so a late-arriving verbal/oa category cannot race a getUserMedia call. */
 function blockUsesInterviewMedia(category, roundType) {
   const c = String(category || '').toLowerCase();
-  if (c === 'verbal' || c === 'oa' || c === 'ml_primitives') return false;
+  if (roundType === 'coding' || c === 'coding' || c === 'verbal' || c === 'oa' || c === 'ml_primitives') return false;
   if (c) return true;
   const t = String(roundType || '');
-  return t === 'technical_short_answer' || t === 'sql' || t === 'coding' || t === 'system_design';
+  return t === 'technical_short_answer' || t === 'sql' || t === 'system_design';
 }
 
 function stopMediaStream(stream) {
@@ -736,7 +736,8 @@ export default function Interview({ sessionState = null }) {
     const force = Boolean(options.force);
     const isMcq = roundType === 'mcq';
     const isSystemDesign = roundType === 'system_design';
-    const answerText = (options.answer_text ?? options.answerText ?? transcript).trim();
+    const suppliedAnswer = options.answer_text ?? options.answerText ?? transcript;
+    const answerText = roundType === 'coding' ? suppliedAnswer : suppliedAnswer.trim();
     const answers = options.answers;
     const rubricRatings = options.rubric_ratings;
     if (!isMcq && (!answerText && !force) || isScoring) return;
@@ -764,6 +765,14 @@ export default function Interview({ sessionState = null }) {
       }
       if (isSystemDesign) {
         payload.rubric_ratings = rubricRatings || {};
+      }
+      if (roundType === 'coding') {
+        payload.language = options.language || configJson.language || 'python';
+        delete payload.engagement_label;
+        delete payload.engagement_confidence;
+        delete payload.engagement_delta;
+        delete payload.wpm;
+        delete payload.pause_count;
       }
       const resp = await apiSubmitAnswer(payload);
 
@@ -997,7 +1006,7 @@ export default function Interview({ sessionState = null }) {
     );
   }
 
-  if (sessionComplete) {
+  if (sessionComplete && roundType !== 'coding') {
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b.score, 0) / scores.length) : 0;
     return (
       <div className="min-h-screen bg-white flex flex-col">
@@ -1129,7 +1138,7 @@ export default function Interview({ sessionState = null }) {
         </div>
       ) : roundType === 'coding' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <CodingRound
+          <CodingRound key={`${sessionId}:${round}`}
             sessionId={sessionId}
             round={round}
             question={question}
