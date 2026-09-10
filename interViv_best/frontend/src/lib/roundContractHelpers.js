@@ -56,7 +56,10 @@ export function normalizeSessionData(data) {
  */
 export function computeSecondsRemaining(expiresAt, fallbackDurationMinutes = 20, nowMs = Date.now()) {
   if (expiresAt) {
-    const expMs = new Date(expiresAt).getTime();
+    // SQLite-backed API deadlines are UTC even when the ISO string omits Z.
+    const timestamp = typeof expiresAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(expiresAt)
+      && !/(Z|[+-]\d\d:\d\d)$/i.test(expiresAt) ? `${expiresAt}Z` : expiresAt;
+    const expMs = new Date(timestamp).getTime();
     if (!isNaN(expMs)) {
       return Math.max(0, Math.floor((expMs - nowMs) / 1000));
     }

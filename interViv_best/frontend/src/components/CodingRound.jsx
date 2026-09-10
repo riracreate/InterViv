@@ -1,412 +1,154 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Send, CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw, Code2 } from 'lucide-react';
-import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
+import React, { useEffect, useRef, useState } from 'react';
+import { Play, Send, Check, X, Clock3, RotateCcw, Code2, BookOpen, Lightbulb, Terminal } from 'lucide-react';
+import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft, fetchCodingExecutionStatus, fetchCodingCoach } from '../lib/api';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
+import CodeEditor from './CodeEditor';
+import './coding-workspace.css';
 
-export default function CodingRound({
-  sessionId,
-  round = 1,
-  question = '',
-  questionContext = {},
-  configJson = {},
-  expiresAt = null,
-  isScoring = false,
-  currentScore = null,
-  currentArtifact = null,
-  currentFeedback = '',
-  onSubmit,
-  onNextRound,
-  sessionComplete = false,
-}) {
-  const starterCode = questionContext?.starter_code
-    || '# Write your Python solution here\n';
-  const [source, setSource] = useState(starterCode);
-  const [activeTab, setActiveTab] = useState('problem'); // 'problem' | 'examples'
-  const [isRunning, setIsRunning] = useState(false);
-  const [previewResult, setPreviewResult] = useState(null);
-  const [previewError, setPreviewError] = useState(null);
-  const [runUnavailable, setRunUnavailable] = useState(false);
-  const [draftNotice, setDraftNotice] = useState('');
-  const draftTimer = useRef(null);
-  const draftLoadedFor = useRef('');
-  const [secondsRemaining, setSecondsRemaining] = useState(() =>
-    computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 30)
-  );
+const LABELS = { python: 'Python 3.12', javascript: 'JavaScript', java: 'Java 15', cpp: 'C++17' };
+const json = value => value === undefined ? 'No output' : JSON.stringify(value);
+
+export default function CodingRound({ sessionId, round = 1, question = '', questionContext = {},
+  configJson = {}, expiresAt = null, isScoring = false, currentScore = null, currentArtifact = null,
+  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false }) {
+  const starters = questionContext.starter_codes || { python: questionContext.starter_code || '# Write your solution here\n' };
+  const [language, setLanguage] = useState(configJson.language || 'python');
+  const [sources, setSources] = useState(starters);
+  const source = sources[language] || '';
+  const [tab, setTab] = useState('description');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [running, setRunning] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftNotice, setDraftNotice] = useState('Loading saved solution…');
+  const [execution, setExecution] = useState(null);
+  const [now, setNow] = useState(Date.now());
+  const [coach, setCoach] = useState(null);
+  const [coachBusy, setCoachBusy] = useState(false);
+  const generation = useRef(0);
+  const remaining = computeSecondsRemaining(expiresAt, configJson.duration_minutes || 30, now);
+  const closed = currentScore !== null;
+  const expired = remaining <= 0;
+  const activeLanguage = execution?.languages?.find(item => item.id === language);
+  const tests = questionContext.visible_tests || [];
 
   useEffect(() => {
-    const key = `${sessionId}:${round}`;
-    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
-    draftLoadedFor.current = key;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    fetchAnswerDraft(sessionId, round)
-      .then((data) => {
-        if (cancelled) return;
-        const saved = String(data?.draft?.answer_text || '').trim();
-        if (saved) {
-          setSource(saved);
-          setDraftNotice('Restored your saved solution.');
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, round, currentScore]);
+    fetchCodingExecutionStatus().then(data => { if (!cancelled) setExecution(data); }).catch(() => {});
+    if (closed) { setDraftReady(true); setDraftNotice('Submitted solution'); return; }
+    fetchAnswerDraft(sessionId, round).then(({ draft }) => {
+      if (cancelled) return;
+      const savedLanguage = draft.language || configJson.language || 'python';
+      setSources({ ...starters, ...draft.language_sources, [savedLanguage]: draft.answer_text ?? starters[savedLanguage] });
+      setLanguage(savedLanguage);
+      setDraftNotice('Saved solution restored');
+    }).catch(err => {
+      if (!cancelled) setDraftNotice(err.status === 404 ? 'Draft ready' : 'Draft recovery unavailable — keep a local copy');
+    }).finally(() => { if (!cancelled) setDraftReady(true); });
+    return () => { cancelled = true; };
+  }, [sessionId, round]);
 
   useEffect(() => {
-    if (!sessionId || currentScore !== null || !source.trim()) return undefined;
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => {
-      saveAnswerDraft(sessionId, { round, answer_text: source }).catch(() => {});
-    }, 1500);
-    return () => {
-      if (draftTimer.current) clearTimeout(draftTimer.current);
-    };
-  }, [source, sessionId, round, currentScore]);
-
-  // Countdown timer
-  useEffect(() => {
-    if (currentScore !== null || isScoring || secondsRemaining <= 0) return undefined;
-    const interval = setInterval(() => {
-      setSecondsRemaining(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleFinalSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
+    if (!draftReady || closed || expired || isScoring) return;
+    const saveGeneration = ++generation.current;
+    setDraftNotice('Saving…');
+    const timer = setTimeout(() => {
+      saveAnswerDraft(sessionId, { round, answer_text: source, language, language_sources: sources })
+        .then(() => { if (saveGeneration === generation.current) setDraftNotice('All changes saved'); })
+        .catch(err => { if (saveGeneration === generation.current) setDraftNotice(`Not saved: ${err.message}`); });
     }, 1000);
-    return () => clearInterval(interval);
-  }, [currentScore, isScoring, secondsRemaining]);
+    return () => clearTimeout(timer);
+  }, [sources, language, draftReady, closed, expired, isScoring, sessionId, round]);
 
-  const statement = questionContext?.statement || questionContext?.prompt || question
-    || 'Solve the coding problem below.';
-  const constraints = questionContext?.constraints || [];
-  const visibleTests = questionContext?.visible_tests || [];
-  const functionName = questionContext?.function || '';
-  const difficulty = questionContext?.difficulty || '';
-
-  const handleRun = async () => {
-    if (isRunning || !source.trim()) return;
-    setIsRunning(true);
-    setPreviewError(null);
-    setPreviewResult(null);
-    setRunUnavailable(false);
-    try {
-      const resp = await runCodingPreview({
-        session_id: sessionId,
-        round,
-        source: source.trim(),
-      });
-      setPreviewResult(resp);
-    } catch (err) {
-      if (err.status === 503) {
-        setRunUnavailable(true);
-      } else {
-        setPreviewError(err.message || 'Failed to run solution.');
-      }
-    } finally {
-      setIsRunning(false);
-    }
+  const run = async () => {
+    if (running || isScoring || closed || expired || !draftReady || !source.trim()) return;
+    setRunning(true); setError(''); setResult(null);
+    try { setResult(await runCodingPreview({ session_id: sessionId, round, source, language })); }
+    catch (err) { setError(err.message || 'Execution failed. Your solution remains in the editor.'); }
+    finally { setRunning(false); }
   };
-
-  const handleFinalSubmit = () => {
-    if (isScoring || currentScore !== null || !source.trim()) return;
-    onSubmit({ answer_text: source.trim() });
+  const submit = () => {
+    if (!running && !isScoring && !closed && !expired && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
-
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  const requestHint = async () => {
+    setCoachBusy(true); setError('');
+    try { setCoach(await fetchCodingCoach({ session_id: sessionId, round, level: Math.min((coach?.level || 0) + 1, 3) })); }
+    catch (err) { setError(err.message); }
+    finally { setCoachBusy(false); }
   };
+  const totalPassed = (currentArtifact?.visible?.passed || 0) + (currentArtifact?.hidden?.passed || 0);
+  const totalTests = (currentArtifact?.visible?.total || 0) + (currentArtifact?.hidden?.total || 0);
 
-  const formatValue = (value) => {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  };
-
-  const visibleArtifact = currentArtifact?.visible || {};
-  const hiddenArtifact = currentArtifact?.hidden || {};
-
-  return (
-    <div className="flex flex-col gap-5 p-6 max-w-6xl mx-auto w-full" data-testid="coding-round-container">
-      {/* Top Header Bar */}
-      <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold uppercase">
-            Coding Round
-          </div>
-          <span className="text-sm font-medium text-gray-700">
-            Python Evaluation
-          </span>
-          {difficulty && (
-            <span className="text-xs text-gray-400 capitalize">
-              ({difficulty})
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold ${
-            secondsRemaining < 120 ? 'bg-red-50 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'
-          }`}>
-            <Clock className="w-3.5 h-3.5" />
-            <span>{formatTime(secondsRemaining)}</span>
-          </div>
-
-          <button
-            onClick={handleFinalSubmit}
-            disabled={isScoring || !source.trim() || currentScore !== null}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition"
-          >
-            <Send className="w-3 h-3" />
-            <span>{isScoring ? 'Submitting...' : currentScore !== null ? 'Submitted' : 'Submit Final Solution'}</span>
-          </button>
-        </div>
+  return <section className="coding-workspace" data-testid="coding-round-container">
+    <div className="coding-toolbar">
+      <div className="coding-title"><Code2 size={19} /><span>Coding practice</span><span className="coding-round-label">Round {round}</span></div>
+      <div className="coding-actions">
+        <span className={`coding-clock ${expired ? 'is-expired' : ''}`}><Clock3 size={15} />{String(Math.floor(remaining / 60)).padStart(2, '0')}:{String(remaining % 60).padStart(2, '0')}</span>
+        <button className="coding-button" onClick={run} disabled={running || isScoring || closed || expired || !draftReady}><Play size={15} />{running ? 'Running…' : 'Run'}</button>
+        <button className="coding-button coding-submit" onClick={submit} disabled={running || isScoring || closed || expired || !draftReady}><Send size={14} />{isScoring ? 'Submitting…' : closed ? 'Submitted' : 'Submit'}</button>
       </div>
-
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Left Column: Statement and Visible Examples */}
-        <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col overflow-hidden h-[540px]">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-100 bg-gray-50/70 p-1.5 gap-1">
-            <button
-              onClick={() => setActiveTab('problem')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${
-                activeTab === 'problem' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Problem Description
-            </button>
-            <button
-              onClick={() => setActiveTab('examples')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${
-                activeTab === 'examples' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Visible Examples
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <div className="p-5 flex-1 overflow-y-auto">
-            {activeTab === 'problem' && (
-              <div className="prose prose-sm text-gray-800 max-w-none space-y-3">
-                {functionName && (
-                  <div className="flex items-center gap-2 text-xs font-mono text-gray-600">
-                    <Code2 className="w-3.5 h-3.5" />
-                    <span>Implement: {functionName}(...)</span>
-                  </div>
-                )}
-                <div className="whitespace-pre-line text-sm leading-relaxed">
-                  {statement}
-                </div>
-                {constraints.length > 0 && (
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Constraints</span>
-                    <ul className="list-disc pl-5 text-xs text-gray-600 font-mono space-y-0.5">
-                      {constraints.map((c, idx) => (
-                        <li key={idx}>{c}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'examples' && (
-              <div className="flex flex-col gap-3">
-                <span className="text-xs uppercase tracking-wider text-gray-400 font-mono">Visible Examples</span>
-                {visibleTests.length > 0 ? (
-                  visibleTests.map((tc, idx) => (
-                    <div key={idx} className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                      <span className="text-xs font-semibold text-gray-700">Example {idx + 1}</span>
-                      <div className="text-xs font-mono text-gray-800">
-                        <span className="text-gray-400">Input: </span>
-                        {formatValue(tc.input)}
-                      </div>
-                      <div className="text-xs font-mono text-gray-800">
-                        <span className="text-gray-400">Expected: </span>
-                        {formatValue(tc.expected)}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-gray-500">No visible examples available.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Code Editor & Output */}
-        <div className="flex flex-col gap-4 h-[540px]">
-          {/* Code Editor Box */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">
-                Python Editor
-                {draftNotice && <span className="ml-2 normal-case text-blue-600" role="status">{draftNotice}</span>}
-              </span>
-              <button
-                onClick={handleRun}
-                disabled={isRunning || isScoring || !source.trim()}
-                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition shadow-sm"
-              >
-                {isRunning ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                <span>{isRunning ? 'Executing...' : 'Run Examples'}</span>
-              </button>
-            </div>
-
-            <textarea
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              disabled={currentScore !== null || isScoring}
-              placeholder="def solve(...):"
-              className="flex-1 w-full p-4 font-mono text-xs text-gray-900 bg-white focus:outline-none resize-none leading-relaxed"
-              spellCheck={false}
-            />
-          </div>
-
-          {/* Results / Feedback Panel */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col h-[230px] overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">Run Output</span>
-              {previewResult && (
-                <span className="text-xs text-gray-400 font-mono">
-                  {previewResult.visible_passed} / {previewResult.visible_total} examples passed
-                </span>
-              )}
-            </div>
-
-            <div className="p-3 flex-1 overflow-auto text-xs">
-              {runUnavailable && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-semibold">Code execution is currently unavailable.</div>
-                    <div className="mt-0.5">Your solution is safe in the editor. Final scoring also requires execution — submitting now will not score this round.</div>
-                  </div>
-                </div>
-              )}
-
-              {previewError && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                  <div className="font-mono text-xs whitespace-pre-wrap">{previewError}</div>
-                </div>
-              )}
-
-              {previewResult && (
-                <div className="flex flex-col gap-2">
-                  {(previewResult.visible || []).map((v, idx) => (
-                    <div key={idx} className={`p-2.5 rounded-xl border flex items-start gap-2 ${
-                      v.passed ? 'bg-green-50/60 border-green-200' : 'bg-red-50/60 border-red-200'
-                    }`}>
-                      {v.passed ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      )}
-                      <div className="min-w-0">
-                        <span className="block text-xs font-semibold text-gray-800">
-                          Example {idx + 1}: {v.passed ? 'Passed' : 'Failed'}
-                        </span>
-                        {v.error && (
-                          <span className="block text-[11px] text-red-600 font-mono whitespace-pre-wrap break-words">
-                            {v.error}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {!previewResult && !previewError && !runUnavailable && (
-                <div className="h-full flex items-center justify-center text-gray-400 font-mono">
-                  Click &ldquo;Run Examples&rdquo; to test your solution against the visible examples.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Submission Score & Aggregate Results */}
-      {currentScore !== null && (
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="coding-review-summary">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Evaluation Score</span>
-              <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{currentScore.toFixed(1)}</h3>
-              <p className="text-xs text-gray-500 mt-1">{currentFeedback || 'Solution scored deterministically: 60% visible examples, 40% hidden tests.'}</p>
-            </div>
-
-            {onNextRound && (
-              <button
-                onClick={onNextRound}
-                className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
-              >
-                {sessionComplete ? 'View Summary' : 'Next Round'}
-              </button>
-            )}
-          </div>
-
-          {/* Safe Aggregate Evaluation Evidence */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
-            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
-              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Visible Examples</span>
-              <span className="text-lg font-bold text-gray-900 mt-0.5">
-                {visibleArtifact.passed ?? 0} / {visibleArtifact.total ?? 0}
-              </span>
-            </div>
-            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
-              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Hidden Tests</span>
-              <span className="text-lg font-bold text-gray-900 mt-0.5">
-                {hiddenArtifact.passed ?? 0} / {hiddenArtifact.total ?? 0}
-              </span>
-            </div>
-            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col">
-              <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Cap Applied</span>
-              <span className="text-lg font-bold text-gray-900 mt-0.5">
-                {currentArtifact?.capped ? 'Yes (25)' : 'No'}
-              </span>
-            </div>
-          </div>
-
-          {/* Visible per-example breakdown (safe: pass/fail only) */}
-          {visibleArtifact.cases && visibleArtifact.cases.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-              {visibleArtifact.cases.map((c, idx) => (
-                <div key={idx} className={`p-3.5 rounded-xl border flex items-center gap-3 ${
-                  c.passed ? 'bg-green-50/50 border-green-200' : 'bg-red-50/50 border-red-200'
-                }`}>
-                  {c.passed ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-red-600 shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <span className="block text-xs font-semibold text-gray-800">
-                      Example {idx + 1}
-                    </span>
-                    <span className="block text-[11px] text-gray-500 truncate">
-                      {c.passed ? 'Passed' : c.error || 'Output mismatch'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
-  );
+    <div className="coding-panes">
+      <aside className="coding-description">
+        <div className="coding-tabs" role="tablist" aria-label="Problem information">
+          <button role="tab" aria-selected={tab === 'description'} onClick={() => setTab('description')}><BookOpen size={14} />Description</button>
+          <button role="tab" aria-selected={tab === 'coach'} onClick={() => setTab('coach')}><Lightbulb size={14} />Coach</button>
+        </div>
+        <div className="coding-problem-body" role="tabpanel">
+          {tab === 'description' ? <>
+            <span className={`coding-difficulty ${questionContext.difficulty || 'easy'}`}>{questionContext.difficulty || 'Practice'}</span>
+            <h1>{questionContext.title || question}</h1>
+            <div className="coding-tags">{questionContext.topics?.map(t => <span key={t}>{t.replaceAll('_', ' ')}</span>)}</div>
+            <p className="coding-statement">{questionContext.statement || questionContext.prompt || question}</p>
+            <p className="coding-signature">Implement <code>{questionContext.function}(…)</code>. Return the result; the test driver calls your function.</p>
+            {tests.map((test, index) => <div className="coding-example" key={index}>
+              <h3>Example {index + 1}</h3><dl><dt>Input</dt><dd><code>{json(test.input.args ?? test.input)}</code></dd><dt>Output</dt><dd><code>{json(test.expected)}</code></dd></dl>
+            </div>)}
+            <h3>Constraints</h3><ul className="coding-constraints">{questionContext.constraints?.map(c => <li key={c}>{c}</li>)}</ul>
+            <p className="coding-attribution">Original interViv exercise · Test-based evaluation</p>
+          </> : <>
+            <span className="coding-eyebrow">Build the reasoning</span><h2>A nudge, when you need it.</h2>
+            <p>Reveal one hint at a time. Hints are recorded as assistance; they do not change the test verdict.</p>
+            {coach && <div className="coding-hint"><span>{coach.kind === 'ai' ? 'AI explanation' : 'Curated hint'} · {coach.level}/3</span><p>{coach.hint}</p></div>}
+            <button className="coding-button" disabled={coachBusy || coach?.level === 3} onClick={requestHint}><Lightbulb size={15} />{coachBusy ? 'Loading…' : coach ? 'Next hint' : 'Get a hint'}</button>
+            <p className="coding-attribution">AI coaching requires a separately configured local model. Scores always come from execution results.</p>
+          </>}
+        </div>
+      </aside>
+      <div className="coding-right">
+        <div className="coding-editor-panel">
+          <div className="coding-editor-toolbar"><label className="sr-only" htmlFor="coding-language">Programming language</label>
+            <select id="coding-language" value={language} disabled={!draftReady || closed || running || isScoring} onChange={event => { setLanguage(event.target.value); setResult(null); setError(''); }}>
+              {Object.keys(starters).map(id => <option key={id} value={id}>{LABELS[id] || id}</option>)}
+            </select>
+            <span className="coding-draft-status" role="status">{draftNotice}</span>
+            <button className="coding-reset" title="Reset current language to starter" aria-label="Reset current language to starter" disabled={closed || isScoring || !draftReady} onClick={() => { if (window.confirm('Replace this language’s draft with the starter code?')) setSources(p => ({ ...p, [language]: starters[language] })); }}><RotateCcw size={15} /></button>
+          </div>
+          <CodeEditor value={source} language={language} documentKey={`${sessionId}:${round}:${language}`} readOnly={!draftReady || closed || isScoring}
+            onChange={value => setSources(previous => ({ ...previous, [language]: value }))} onRun={run} onSubmit={submit} />
+          <div className="coding-editor-footer"><span>{source.split('\n').length} lines · UTF-8</span><span>⌘/Ctrl + Enter to run</span></div>
+        </div>
+        <div className="coding-console" aria-live="polite">
+          <div className="coding-console-title"><Terminal size={15} /><span>Test results</span>{result && <strong>{result.visible_passed}/{result.visible_total} passed</strong>}</div>
+          <div className="coding-console-body">
+            {expired && !closed && <p className="coding-warning" role="alert">This round has ended. Your code remains available to copy; start a new practice round to run it.</p>}
+            {activeLanguage && !activeLanguage.available && <p className="coding-warning">{LABELS[language]} execution is unavailable. Your draft can still be saved.</p>}
+            {(error || (!closed && currentFeedback)) && <p className="coding-error" role="alert">{error || currentFeedback}</p>}
+            {running && <p className="coding-muted">Running visible examples in the execution service…</p>}
+            {!result && !error && !running && !closed && <div className="coding-console-empty"><Terminal size={25} /><p>Your next idea starts here.</p><span>Run checks the examples. Submit also runs hidden tests.</span></div>}
+            {result?.visible?.map((item, index) => <div className={`coding-test-case ${item.passed ? 'passed' : 'failed'}`} key={index}>
+              <div>{item.passed ? <Check size={15} /> : <X size={15} />}<strong>Case {index + 1}</strong><span>{item.passed ? 'Passed' : item.error || 'Failed'}</span></div>
+              {!item.passed && <><p>Expected <code>{json(tests[index]?.expected)}</code></p><p>Returned <code>{json(item.actual)}</code></p>{item.message && <pre>{item.message}</pre>}</>}
+            </div>)}
+            {closed && <div className="coding-verdict" data-testid="coding-review-summary"><h2>{totalTests > 0 && totalPassed === totalTests ? 'Accepted' : 'Tests not passed'}</h2><p>{totalPassed}/{totalTests} tests passed · Score {currentScore.toFixed(1)}/100</p><p>{currentFeedback}</p>{onNextRound && <button className="coding-button" onClick={onNextRound}>{sessionComplete ? 'View summary' : 'Next round'}</button>}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>;
 }

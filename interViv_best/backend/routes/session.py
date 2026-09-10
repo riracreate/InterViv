@@ -14,7 +14,7 @@ Helper export:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, model_validator
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.execution import ExecutionUnavailableError, execute_python_tests
+from backend.coding_languages import starter_codes, normalize_language
 from backend.integrations import IntegrationError
 from backend.models.blocks import (
     VERBAL_SKILL,
@@ -129,7 +130,8 @@ class RunSQLPreviewRequest(BaseModel):
 class RunCodingPreviewRequest(BaseModel):
     session_id: str
     round: int
-    source: str
+    source: str = Field(min_length=1, max_length=20000)
+    language: Literal["python", "javascript", "java", "cpp"] = "python"
 
 
 class SaveAnswerDraftRequest(BaseModel):
@@ -137,6 +139,8 @@ class SaveAnswerDraftRequest(BaseModel):
     answer_text: str | None = None
     answers: list[dict[str, Any]] | None = None
     rubric_ratings: dict[str, Any] | None = None
+    language: Literal["python", "javascript", "java", "cpp"] = "python"
+    language_sources: dict[str, str] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -595,9 +599,9 @@ def build_round_document(
                 "attempt_policy": "single_submission_final",
                 "review_policy": cfg.get("review_policy", "none"),
                 "problem_id": problem.get("id"),
-                "language": "python",
+                "language": normalize_language(cfg.get("language")),
             },
-            question_context=coding_problem_public_context(problem),
+            question_context={**coding_problem_public_context(problem), "starter_codes": starter_codes(problem)},
             started_at=now,
             expires_at=expires_at,
             status="in_progress",
@@ -1741,6 +1745,8 @@ def run_coding_preview(
             function=str(problem.get("function") or ""),
             visible_tests=list(problem.get("visible_tests") or []),
             hidden_tests=[],
+            language=request.language,
+            problem=problem,
         )
     except ExecutionUnavailableError as exc:
         raise HTTPException(
@@ -1749,12 +1755,14 @@ def run_coding_preview(
         ) from exc
     visible = [
         {"passed": bool(o.get("passed")), "error": o.get("error"),
-         "stdout": (o.get("stdout") or "")[:4000]}
+         "stdout": (o.get("stdout") or "")[:4000],
+         "actual": o.get("actual"), "message": str(o.get("message") or "")[:4000]}
         for o in ((result or {}).get("visible") or [])
     ]
     return {
         "success": True,
         "scored": False,
+        "language": request.language,
         "visible": visible,
         "visible_passed": sum(1 for v in visible if v["passed"]),
         "visible_total": len(visible),
@@ -1861,6 +1869,14 @@ def save_answer_draft(
                 detail=f"Round type '{round_type}' draft requires 'answer_text'.",
             )
         draft["answer_text"] = str(request.answer_text or "")[:20000]
+        if round_type == "coding":
+            draft["language"] = request.language
+            sources = request.language_sources or {request.language: request.answer_text}
+            if any(k not in ("python", "javascript", "java", "cpp") for k in sources):
+                raise HTTPException(status_code=422, detail="Unsupported draft language.")
+            if any(len(s.encode()) > 20000 for s in sources.values()):
+                raise HTTPException(status_code=422, detail="Each solution is limited to 20,000 UTF-8 bytes.")
+            draft["language_sources"] = dict(sources)
         if round_type == "system_design" and request.rubric_ratings is not None:
             draft["rubric_ratings"] = dict(request.rubric_ratings)
     now = datetime.now(timezone.utc)
