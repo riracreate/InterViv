@@ -1,5 +1,14 @@
 name: interviv-coding
 
+# Local coding executor only.
+# - Host bind is 127.0.0.1:19000 — never 0.0.0.0.
+# - No Docker socket, project source, or app database mounts into the executor.
+# - PISTON_DISABLE_NETWORKING must stay true for candidate jobs.
+# - Production: put Piston on a separate VM from web/DB; keep edge rate limits
+#   (Nginx/Cloudflare) in front of the app. Do not publish Piston publicly.
+# - Isolation for this local compose project = localhost-only + no socket/project
+#   mounts + separate compose project name (interviv-coding).
+
 services:
   executor:
     image: ghcr.io/engineer-man/piston@sha256:2f66b7456189c4d713aa986d98eccd0b6ee16d26c7ec5f21b30e942756fd127a

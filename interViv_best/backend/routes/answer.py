@@ -24,7 +24,11 @@ from pydantic import BaseModel, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.execution import ExecutionUnavailableError
+from backend.execution import (
+    CodingRateLimitedError,
+    ExecutionUnavailableError,
+    assert_coding_exec_allowed,
+)
 from backend.integrations import IntegrationError
 from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
 from backend.routes.session import (
@@ -562,6 +566,7 @@ def submit_answer(
                 language = normalize_language(request.language)
                 coding_config = dict(active_round.get("config_json") or {})
                 problem = get_coding_problem(coding_config.get("problem_id"))
+                assert_coding_exec_allowed(str(user["id"]), active_round)
                 scoring_result = score_round(
                     round_type="coding", answer_text=request.answer_text,
                     question_context=active_round.get("question_context", {}),
@@ -596,6 +601,10 @@ def submit_answer(
                 {"session_id": request.session_id},
                 {"$set": {"rounds": rounds}},
             )
+            if isinstance(exc, CodingRateLimitedError):
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+                ) from exc
             if isinstance(exc, ExecutionUnavailableError):
                 # The attempt is recorded as unevaluated history; the round
                 # stays open, nothing is scored, and the retry is a plain
