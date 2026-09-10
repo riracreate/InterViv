@@ -22,7 +22,12 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.execution import ExecutionUnavailableError, execute_python_tests
+from backend.execution import (
+    CodingRateLimitedError,
+    ExecutionUnavailableError,
+    assert_coding_exec_allowed,
+    execute_python_tests,
+)
 from backend.coding_languages import starter_codes, normalize_language
 from backend.integrations import IntegrationError
 from backend.models.blocks import (
@@ -1740,6 +1745,11 @@ def run_coding_preview(
             detail=f"Unknown coding problem: {problem_id!r}.",
         )
     try:
+        assert_coding_exec_allowed(str(user["id"]), target_round)
+        db["sessions"].update_one(
+            {"session_id": request.session_id},
+            {"$set": {"rounds": rounds}},
+        )
         result = execute_python_tests(
             source=request.source or "",
             function=str(problem.get("function") or ""),
@@ -1748,6 +1758,11 @@ def run_coding_preview(
             language=request.language,
             problem=problem,
         )
+    except CodingRateLimitedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     except ExecutionUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

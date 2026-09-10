@@ -2,7 +2,8 @@
 
 The server compares returned values with private expectations. Infrastructure
 failure stays retryable and never becomes a candidate score. Disabled by
-default; configure CODING_EXECUTOR_URL after running the isolation probes.
+default; set ``CODING_EXECUTOR_URL=http://127.0.0.1:19000`` only after isolation
+probes pass. Public executors (emkc.org and similar) are rejected.
 """
 
 from __future__ import annotations
@@ -11,7 +12,8 @@ from dataclasses import asdict, dataclass
 import json
 import math
 import os
-from threading import BoundedSemaphore
+import time
+from threading import BoundedSemaphore, Lock
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -19,6 +21,9 @@ from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 from backend.coding_languages import LANGUAGES, build_driver, normalize_language
+
+# Only this loopback URL is accepted. Never emkc.org / public Piston.
+ALLOWED_EXECUTOR_URL = "http://127.0.0.1:19000"
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,11 @@ UNAVAILABLE_REASON = (
     "Your code was not run and nothing was scored; retry later."
 )
 
+RATE_LIMIT_REASON = (
+    "Too many coding execution requests. Wait a minute and retry; "
+    "nothing was scored."
+)
+
 
 class ExecutionUnavailableError(Exception):
     """Infrastructure cannot run candidate code right now (retryable)."""
@@ -57,6 +67,14 @@ class ExecutionUnavailableError(Exception):
         self.reason = reason
         self.missing = missing
         self.retryable = retryable
+
+
+class CodingRateLimitedError(Exception):
+    """Per-user or per-round app-boundary limit hit (HTTP 429)."""
+
+    def __init__(self, reason: str = RATE_LIMIT_REASON) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 def execute_python_tests(
@@ -87,15 +105,87 @@ def execute_python_tests(
 
 
 _JOBS = BoundedSemaphore(2)
+_RATE_LOCK = Lock()
+_USER_RATE: dict[str, list[float]] = {}
+
+
+def executor_url_is_allowed(url: str | None) -> bool:
+    """True only for the localhost-bound self-hosted executor."""
+    raw = (url or "").strip().rstrip("/")
+    if raw != ALLOWED_EXECUTOR_URL:
+        return False
+    parsed = urlsplit(raw)
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname == "127.0.0.1"
+        and parsed.port == 19000
+        and not parsed.username
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+        and parsed.path in ("", "/")
+    )
+
+
+def _configured_executor_url() -> str:
+    url = os.environ.get("CODING_EXECUTOR_URL", "").strip().rstrip("/")
+    if not executor_url_is_allowed(url):
+        raise ExecutionUnavailableError()
+    return url
+
+
+def coding_user_rate_ok(user_id: str, *, per_minute: int | None = None) -> bool:
+    """In-process per-user sliding window for coding run/submit execute paths."""
+    limit = per_minute
+    if limit is None:
+        try:
+            limit = int(os.environ.get("CODING_RATE_LIMIT_PER_MINUTE") or "30")
+        except ValueError:
+            limit = 30
+    limit = max(1, limit)
+    key = str(user_id or "").strip() or "anonymous"
+    now = time.time()
+    with _RATE_LOCK:
+        bucket = [t for t in _USER_RATE.get(key, []) if now - t < 60.0]
+        if len(bucket) >= limit:
+            _USER_RATE[key] = bucket
+            return False
+        bucket.append(now)
+        _USER_RATE[key] = bucket
+        return True
+
+
+def consume_round_exec_slot(
+    target_round: dict[str, Any],
+    *,
+    limits: CodingLimits | None = None,
+) -> int:
+    """Increment and enforce ``max_requests_per_round`` on the round dict.
+
+    Returns the new count. Raises ``CodingRateLimitedError`` when exhausted.
+    Caller must persist the updated round.
+    """
+    limits = limits or DEFAULT_LIMITS
+    count = int(target_round.get("coding_exec_count") or 0)
+    if count >= limits.max_requests_per_round:
+        raise CodingRateLimitedError(
+            f"This round reached the {limits.max_requests_per_round} execution "
+            "request limit. Nothing further was run or scored."
+        )
+    count += 1
+    target_round["coding_exec_count"] = count
+    return count
+
+
+def assert_coding_exec_allowed(user_id: str, target_round: dict[str, Any]) -> None:
+    """App-boundary gates before any call into the executor."""
+    if not coding_user_rate_ok(user_id):
+        raise CodingRateLimitedError()
+    consume_round_exec_slot(target_round)
 
 
 def _service_request(path: str, payload: dict | None = None) -> Any:
-    url = os.environ.get("CODING_EXECUTOR_URL", "").strip().rstrip("/")
-    parsed = urlsplit(url)
-    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
-            or parsed.username or parsed.password or parsed.query or parsed.fragment
-            or parsed.path not in ("", "/")):
-        raise ExecutionUnavailableError()
+    url = _configured_executor_url()
     data = json.dumps(payload, allow_nan=False).encode() if payload is not None else None
     request = Request(url + "/api/v2/" + path, data=data,
                       headers={"Content-Type": "application/json"})
@@ -226,4 +316,5 @@ def get_execution_status() -> dict[str, Any]:
     return {"available": available, "reason": None if available else UNAVAILABLE_REASON,
             "missing": [] if available else list(MISSING_INFRASTRUCTURE),
             "languages": languages, "limits": asdict(DEFAULT_LIMITS), "provider": "piston",
+            "executor_url_policy": ALLOWED_EXECUTOR_URL,
             "scoring": "Deterministic visible and hidden test comparison; no AI judge."}
