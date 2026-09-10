@@ -7,22 +7,35 @@ and mutant solutions never leave the server.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
+from backend.coding_coach import build_hint, coach_status
+from backend.coding_languages import starter_codes
 from backend.db.phase_c_coding_bank import (
     get_coding_problem,
     list_coding_problems,
     public_coding_problem,
 )
-from backend.routes.auth import require_user
-from backend.coding_languages import starter_codes
+from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.execution import get_execution_status
+from backend.routes.auth import require_user
 
 router = APIRouter(prefix="/problems", tags=["problems"])
 
 ALLOWED_DIFFICULTIES = ("easy", "medium", "hard")
+
+
+class CodingCoachHintRequest(BaseModel):
+    session_id: str
+    round: int = Field(ge=1)
+    level: int = Field(default=1, ge=1, le=3)
+    source: str | None = None
+    last_error: str | None = None
 
 
 @router.get("")
@@ -51,7 +64,86 @@ def list_problems(
 @router.get("/execution/status")
 def execution_status(authorization: str | None = Header(default=None)) -> dict:
     require_user(authorization)
-    return get_execution_status()
+    status_payload = get_execution_status()
+    status_payload["coach"] = coach_status()
+    return status_payload
+
+
+@router.get("/coach/status")
+def coding_coach_status(authorization: str | None = Header(default=None)) -> dict:
+    require_user(authorization)
+    return coach_status()
+
+
+@router.post("/coach/hint")
+def coding_coach_hint(
+    body: CodingCoachHintRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Progressive coding hint. Records assistance; never changes scores."""
+    user = require_user(authorization)
+    user_id = str(user["id"])
+    try:
+        db = get_database()
+        session = db["sessions"].find_one({"session_id": body.session_id})
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    if str(session.get("user_id") or "") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot request coaching on another user's session.",
+        )
+    rounds = list(session.get("rounds") or [])
+    target = next((r for r in rounds if int(r.get("round") or 0) == int(body.round)), None)
+    if not target or str(target.get("round_type") or "") != "coding":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Coach hints are only available on an active coding round.",
+        )
+    problem_id = str(
+        (target.get("config_json") or {}).get("problem_id")
+        or target.get("problem_id")
+        or ""
+    )
+    problem = get_coding_problem(problem_id) if problem_id else None
+    if problem is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coding problem not found.")
+
+    payload = build_hint(
+        problem=problem,
+        level=body.level,
+        source=body.source,
+        last_error=body.last_error,
+        prefer_ai=True,
+    )
+    try:
+        db["assistance_events"].insert_one(
+            {
+                "id": str(uuid4()),
+                "user_id": user_id,
+                "item_type": "coding",
+                "item_id": problem["id"],
+                "kind": "hint",
+                "session_id": body.session_id,
+                "round": body.round,
+                "coach_kind": payload["kind"],
+                "coach_level": payload["level"],
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+    return payload
 
 
 @router.get("/{problem_id}")
