@@ -1,14 +1,39 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { PRIMARY_NAV_ITEMS } from '../src/lib/appNav.js';
+import {
+  PRIMARY_NAV_ITEMS,
+  contextualNavItems,
+  navDestinations,
+} from '../src/lib/appNav.js';
 import { mapCoachPlan } from '../src/lib/coachMapping.js';
 
-test('primary nav separates Home actions from Progress reports', () => {
+test('primary nav includes unified destinations with Resources', () => {
   const labels = PRIMARY_NAV_ITEMS.map((i) => i.label);
-  assert.deepEqual(labels, ['Home', 'Progress', 'Practice', 'Problems', 'Learn', 'Resume check', 'Jobs', 'Coach']);
-  const paths = PRIMARY_NAV_ITEMS.map((i) => i.to);
-  assert.deepEqual(paths, ['/home', '/dashboard', '/practice', '/problems', '/learn', '/ats', '/jobs', '/coach']);
+  assert.deepEqual(labels, [
+    'Home',
+    'Progress',
+    'Practice',
+    'Problems',
+    'Learn',
+    'Resources',
+    'Resume check',
+    'Jobs',
+    'Coach',
+    'Resume upload',
+  ]);
+});
+
+test('nav destinations always include Gap and Roadmap', () => {
+  const labels = navDestinations({}).map((i) => i.label);
+  assert.ok(labels.includes('Gap'));
+  assert.ok(labels.includes('Roadmap'));
+  assert.ok(labels.includes('Resources'));
+  assert.ok(labels.includes('Problems'));
+
+  const withTarget = contextualNavItems({ userId: 'u1', roleId: 'r1' });
+  assert.match(withTarget[0].to, /\/gap-analysis\/u1\/r1/);
+  assert.match(withTarget[1].to, /\/roadmap\/u1\/r1/);
 });
 
 test('coach steps hrefs include /practice or /jobs', () => {

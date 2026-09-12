@@ -44,9 +44,11 @@ export function HomeContent({ data, reload }) {
           <Link className="hub-button hub-button-primary" to="/practice?mode=full">Choose interview skills<ArrowUpRight size={17} aria-hidden="true" /></Link>
         </div>
         <div>
-          <FeatureLink to="/practice?mode=oa_sql" title="OA + SQL" icon={<ListChecks size={20} aria-hidden="true" />}>A technical MCQ assessment followed by SQL problems.</FeatureLink>
-          <FeatureLink to="/practice?mode=problems" title="Problem practice" icon={<Code2 size={20} aria-hidden="true" />}>Pick an individual MCQ or SQL problem from the available library.</FeatureLink>
-          <FeatureLink to="/practice?mode=custom" title="Custom interview" icon={<FileText size={20} aria-hidden="true" />}>Configure the supported interview, MCQ and SQL round mix.</FeatureLink>
+          <FeatureLink to="/practice?mode=oa" title="OA practice" icon={<ListChecks size={20} aria-hidden="true" />}>Timed technical MCQs only — separate from SQL and coding.</FeatureLink>
+          <FeatureLink to="/problems" title="Coding platform" icon={<Code2 size={20} aria-hidden="true" />}>Python problems with the local runner, examples, and coach hints.</FeatureLink>
+          <FeatureLink to="/practice?mode=sql" title="SQL practice" icon={<FileText size={20} aria-hidden="true" />}>SQL problems with schemas and execution-based evaluation.</FeatureLink>
+          <FeatureLink to="/practice?mode=custom" title="Custom interview" icon={<FileText size={20} aria-hidden="true" />}>Configure interview, OA, SQL, coding and more in the block builder.</FeatureLink>
+          <FeatureLink to="/resources" title="Resources" icon={<BookOpen size={20} aria-hidden="true" />}>Curated study links by category — DSA, system design, behavioral, and more.</FeatureLink>
         </div>
       </div>
     </section>
