@@ -7,6 +7,7 @@ const LEVEL_LABEL = {
   intermediate: "Intermediate",
   advanced: "Advanced",
 };
+const SOURCE_LABEL = { youtube: 'YouTube', docs: 'Guide / course', other: 'Practice / tool' };
 
 /**
  * Compact curated links for a skill or bank question.
@@ -33,7 +34,7 @@ export default function ResourceLinks({
     let cancelled = false;
     setLoaded(false);
     setError('');
-    fetchResources({ skillId, questionId })
+    fetchResources({ skillId, questionId, limitPerLevel: maxPerLevel })
       .then((data) => {
         if (cancelled) return;
         setItems(buildResourceListModel(data, { limitPerLevel: maxPerLevel }));
@@ -85,7 +86,7 @@ export default function ResourceLinks({
                   >
                     {row.title}
                   </a>
-                  <span className={`ml-2 text-[10px] ${muted}`}>{row.source}</span>
+                  <span className={`ml-2 text-[10px] ${muted}`}>{SOURCE_LABEL[row.source] || row.source}</span>
                 </li>
               ))}
             </ul>
