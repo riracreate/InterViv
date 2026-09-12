@@ -4,11 +4,14 @@ import { fetchMe } from '../lib/api';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 
+const CATEGORIES = ['DSA', 'System Design', 'Behavioral', 'SQL', 'OA / MCQ', 'Resume / ATS'];
+const OTHER_SKILLS = ['DBMS', 'OOP', 'Operating Systems', 'Computer Networks', 'Python', 'Machine Learning'];
+
 /** Skill-resources UI so /resources?skill_id= from coach/ATS resolves (not API-only). */
 export default function Resources() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const skillId = params.get('skill_id') || '';
+  const skillId = params.get('skill_id') || 'DSA';
   const [skillInput, setSkillInput] = useState(skillId);
   const [authReady, setAuthReady] = useState(false);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
@@ -53,16 +56,28 @@ export default function Resources() {
           Learning resources
         </h1>
         <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-          {skillId ? `Skill: ${skillId}` : 'Explore curated learning links for the skills you want to practice.'}
+          Courses, videos, practice sites, and guides for your next interview. Choose a category to get started.
         </p>
+        <nav aria-label="Resource categories" className="mt-6 flex flex-wrap gap-2">
+          {CATEGORIES.map(category => (
+            <button key={category} type="button" aria-pressed={skillId === category}
+              onClick={() => setParams({ skill_id: category })}
+              className={`rounded-[var(--radius-pill)] border px-4 py-2 text-sm font-medium ${skillId === category ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white' : 'border-[var(--color-border)] bg-white hover:bg-[var(--color-surface)]'}`}>
+              {category}
+            </button>
+          ))}
+        </nav>
         <form className="mt-6 flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setParams(skillInput.trim() ? { skill_id: skillInput.trim() } : {}); }}>
           <label className="flex-1 text-sm">Skill
-            <input className="mt-2 block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2" value={skillInput} onChange={event => setSkillInput(event.target.value)} placeholder="For example, Python or DBMS" />
+            <input list="resource-skills" className="mt-2 block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2" value={skillInput} onChange={event => setSkillInput(event.target.value)} placeholder="For example, Python or DBMS" />
+            <datalist id="resource-skills">{[...CATEGORIES, ...OTHER_SKILLS].map(skill => <option key={skill} value={skill} />)}</datalist>
           </label>
           <button type="submit" disabled={!skillInput.trim()} className="rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Find resources</button>
         </form>
         <div className="mt-6">
-          {skillId ? <ResourceLinks skillId={skillId} heading="Curated links" emptyMessage="No curated resources are available for this skill yet. Try another skill." /> : <p className="text-sm text-[var(--color-ink-muted)]">Enter a skill to explore its available learning links. External resources open only when you choose a link.</p>}
+          <h2 className="text-lg font-semibold">{skillId}</h2>
+          <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Links open in a new tab. Some providers offer paid extras or require an account.</p>
+          <ResourceLinks key={skillId} skillId={skillId} maxPerLevel={100} heading="Curated links" emptyMessage="No curated resources are available for this skill yet. Try another skill." />
         </div>
       </div>
     </main>

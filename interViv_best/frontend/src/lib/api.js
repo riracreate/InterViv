@@ -107,7 +107,7 @@ export function fetchPracticeBank() {
   return request("/session/practice-bank");
 }
 
-export function fetchResources({ skillId, questionId } = {}) {
+export function fetchResources({ skillId, questionId, limitPerLevel } = {}) {
   const params = new URLSearchParams();
   if (skillId != null && String(skillId).trim() !== "") {
     params.set("skill_id", String(skillId));
@@ -115,6 +115,7 @@ export function fetchResources({ skillId, questionId } = {}) {
   if (questionId != null && String(questionId).trim() !== "") {
     params.set("question_id", String(questionId));
   }
+  if (limitPerLevel != null) params.set("limit_per_level", String(limitPerLevel));
   const qs = params.toString();
   return request(`/resources${qs ? `?${qs}` : ""}`);
 }
