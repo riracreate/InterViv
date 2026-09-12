@@ -134,3 +134,32 @@ def test_seed_fixture_skips_hr_and_has_no_junk_flags() -> None:
     skills = {r["skill"] for r in rows}
     assert "HR/Professional Judgment" not in skills
     assert all(not r.get("_skip_reason") for r in rows)
+
+
+def test_expanded_catalog_is_complete_without_changing_compact_defaults() -> None:
+    client = TestClient(app)
+    user = _make_user()
+    headers = {"Authorization": f"Bearer {user['token']}"}
+    rows = load_seed_fixture()
+    assert len({(row["skill"], row["url"]) for row in rows}) == len(rows)
+    assert all(row["url"].startswith("https://") for row in rows)
+    for skill in ("DSA", "System Design", "Behavioral", "SQL", "OA / MCQ", "Resume / ATS"):
+        expected = {row["url"] for row in rows if row["skill"] == skill}
+        assert expected, skill
+        response = client.get("/resources", params={"skill_id": skill, "limit_per_level": 100}, headers=headers)
+        assert response.status_code == 200, response.text
+        assert {row["url"] for row in response.json()["resources"]} == expected
+    compact = client.get("/resources", params={"skill_id": "DSA"}, headers=headers).json()
+    assert all(len(group) <= 3 for group in compact["by_level"].values())
+    assert compact["count"] < len([row for row in rows if row["skill"] == "DSA"])
+    assert sum("system-design-primer" in row["url"] for row in rows) == 1
+
+
+def test_resource_limit_is_bounded_and_requires_auth() -> None:
+    client = TestClient(app)
+    assert client.get("/resources?skill_id=DSA&limit_per_level=100").status_code == 401
+    user = _make_user()
+    headers = {"Authorization": f"Bearer {user['token']}"}
+    for invalid in (0, -1, 101, "all"):
+        response = client.get("/resources", params={"skill_id": "DSA", "limit_per_level": invalid}, headers=headers)
+        assert response.status_code == 422, response.text

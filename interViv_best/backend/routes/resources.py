@@ -15,6 +15,7 @@ router = APIRouter(tags=["resources"])
 def get_resources(
     skill_id: str | None = Query(default=None),
     question_id: str | None = Query(default=None),
+    limit_per_level: int = Query(default=3, ge=1, le=100),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Curated lecture/solution links. Auth matches practice-bank (student JWT)."""
@@ -24,4 +25,6 @@ def get_resources(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Provide skill_id or question_id.",
         )
-    return list_resources(skill_id=skill_id, question_id=question_id)
+    return list_resources(
+        skill_id=skill_id, question_id=question_id, limit_per_level=limit_per_level
+    )
