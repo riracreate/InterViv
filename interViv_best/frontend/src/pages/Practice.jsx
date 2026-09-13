@@ -32,6 +32,8 @@ import {
   totalTimeSummary,
   validateBuilderBlocks,
   validateDraftPayload,
+  loadLocalBuilderDraft,
+  saveLocalBuilderDraft,
   mapFullInterviewToStartPayload,
   mapOaSqlToStartPayload,
   mapProblemItemToStartPayload,
@@ -107,7 +109,7 @@ export default function Practice() {
   const [presets, setPresets] = useState([]);
   const [presetName, setPresetName] = useState('');
   const draftTimer = useRef(null);
-  const BUILDER_LOCAL_KEY = 'interviv-builder-draft-v1';
+  const userId = user?.id || null;
 
   // Problem bank
   const [bank, setBank] = useState({ mcq: [], verbal: [], sql: [], coding: [], ml_primitives: [] });
@@ -164,36 +166,15 @@ export default function Practice() {
     fetchBuilderDraft()
       .then((data) => {
         if (cancelled) return;
-        const draftError = validateDraftPayload(data);
-        if (!draftError && data.blocks?.length) {
-          setBlocks(data.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
-          setBuilderLoaded(true);
-          return;
-        }
-        const raw = localStorage.getItem(BUILDER_LOCAL_KEY);
-        if (raw) {
-          try {
-            const local = JSON.parse(raw);
-            if (!validateDraftPayload(local) && local.blocks?.length) {
-              setBlocks(local.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
-              setBuilderLoaded(true);
-              return;
-            }
-          } catch { /* fall through to empty builder */ }
-        }
+        const serverBlocks = !validateDraftPayload(data) && data.blocks?.length ? data.blocks : null;
+        const found = serverBlocks || loadLocalBuilderDraft(userId);
+        if (found) setBlocks(found.map((b) => ({ ...b, id: b.id || createBlockId() })));
         setBuilderLoaded(true);
       })
       .catch(() => {
         if (cancelled) return;
-        try {
-          const raw = localStorage.getItem(BUILDER_LOCAL_KEY);
-          if (raw) {
-            const local = JSON.parse(raw);
-            if (!validateDraftPayload(local) && local.blocks?.length) {
-              setBlocks(local.blocks.map((b) => ({ ...b, id: b.id || createBlockId() })));
-            }
-          }
-        } catch { /* empty builder */ }
+        const local = loadLocalBuilderDraft(userId);
+        if (local) setBlocks(local.map((b) => ({ ...b, id: b.id || createBlockId() })));
         setBuilderLoaded(true);
       });
     fetchPresets()
@@ -204,17 +185,12 @@ export default function Practice() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, mode, BUILDER_LOCAL_KEY]);
+  }, [authReady, mode, userId]);
 
   // Phase B: autosave builder drafts (debounced server + immediate local).
   useEffect(() => {
     if (!authReady || mode !== 'custom' || !builderLoaded) return undefined;
-    try {
-      localStorage.setItem(
-        BUILDER_LOCAL_KEY,
-        JSON.stringify({ version: BUILDER_DRAFT_VERSION, blocks })
-      );
-    } catch { /* storage full or unavailable */ }
+    saveLocalBuilderDraft(userId, blocks);
     setDraftStatus(blocks.length ? 'Saving…' : '');
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
@@ -225,7 +201,7 @@ export default function Practice() {
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
     };
-  }, [blocks, authReady, mode, builderLoaded, BUILDER_LOCAL_KEY]);
+  }, [blocks, authReady, mode, builderLoaded, userId]);
 
   // Soft-load role skills when company graph is available. Prefill only:
   // an explicitly chosen topic list is never overridden.

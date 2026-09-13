@@ -2,6 +2,7 @@
  * Maps /dashboard/:sessionId API payloads into session-dashboard view models.
  * Pure functions — no React — so node:test can cover them without a DOM.
  */
+import { unscoredReasonLabel } from "./accountOverview.js";
 
 function clamp01(n) {
   return Math.min(1, Math.max(0, n));
@@ -26,6 +27,27 @@ function capitalizeDifficulty(raw) {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
+// The API sends a null average when no measured round was scored (e.g. an
+// expired round that could not be evaluated). Absence is not a zero.
+function measuredAverage(session) {
+  const avg = session?.averages?.final_score;
+  return typeof avg === "number" && Number.isFinite(avg) ? avg : null;
+}
+
+function gradeFor(score) {
+  if (score == null) return "Not measured";
+  return score >= 75 ? "Excellent" : score >= 55 ? "Good" : score >= 35 ? "Average" : "Needs Work";
+}
+
+// Rounds the API reports as unscored (coverage.unscored_rounds, the same
+// list Progress renders), labeled with Progress's wording.
+function unscoredRounds(session) {
+  return (session?.coverage?.unscored_rounds || []).map((u) => ({
+    round: u.round,
+    label: unscoredReasonLabel(u),
+  }));
+}
+
 /**
  * Build props for ReviewSummary from the same session object the dashboard fetches.
  * Uses only fields already present on the API / mapped rounds — no invented scores.
@@ -34,9 +56,9 @@ export function buildReviewSummaryProps(session, mapped) {
   const rounds = session?.rounds || [];
   const completed = rounds.filter((r) => r.final_score != null);
   const scores = completed.map((r) => Number(r.final_score));
-  const overallScore = mapped?.overall?.score ?? Math.round(session?.averages?.final_score || 0);
-  const gradeLabel = mapped?.overall?.gradeLabel
-    || (overallScore >= 75 ? "Excellent" : overallScore >= 55 ? "Good" : overallScore >= 35 ? "Average" : "Needs Work");
+  const average = measuredAverage(session);
+  const overallScore = mapped ? mapped.overall.score : average == null ? null : Math.round(average);
+  const gradeLabel = mapped?.overall?.gradeLabel || gradeFor(overallScore);
 
   const guardCount = completed.filter(
     (r) => Boolean(r.guard_applied) || Boolean(r.scoring_breakdown?.guard_applied),
@@ -57,7 +79,7 @@ export function buildReviewSummaryProps(session, mapped) {
     ).length || 1,
   }));
 
-  if (prioritySkills.length === 0) {
+  if (prioritySkills.length === 0 && overallScore != null) {
     const skills = session?.skills || (session?.skill ? [session.skill] : []);
     prioritySkills = skills.map((skill) => ({
       skill,
@@ -91,6 +113,7 @@ export function buildReviewSummaryProps(session, mapped) {
           score: priorityRound.score,
         }
       : null,
+    unscored: unscoredRounds(session),
     nextStep: session?.next_step || "Continue practising with harder questions to improve your Elo.",
   };
 }
@@ -98,25 +121,28 @@ export function buildReviewSummaryProps(session, mapped) {
 export function mapRealDataToDashboard(session) {
   const rounds = session.rounds || [];
   const completed = rounds.filter((r) => r.final_score != null);
-  const avg = session.averages?.final_score || 0;
+  const average = measuredAverage(session);
+  const measured = average != null;
+  const avg = average ?? 0; // only read below when measured
+  const unscored = unscoredRounds(session);
   const skills = session.skills || [session.skill || "General"];
   const elos = session.elo_progression || [];
   const finalElo = elos.length ? elos[elos.length - 1] : (session.elo_after || 1200);
   const topicScores = session.topic_scores || {};
 
-  const gradeLabel = avg >= 75 ? "Excellent" : avg >= 55 ? "Good" : avg >= 35 ? "Average" : "Needs Work";
+  const gradeLabel = gradeFor(average);
 
-  const layers = [
+  const layers = measured ? [
     { label: "Layer 1", subtitle: "Content & Relevance", score: session.averages?.nlp_score ?? avg },
     { label: "Layer 2", subtitle: "Quality & Depth", score: session.averages?.kg_score ?? avg * 0.9 },
     { label: "Layer 3", subtitle: "Classifier Signal", score: avg * 0.95 },
-  ];
+  ] : [];
 
-  const radarSkills = Object.keys(topicScores).length > 0
+  const radarSkills = !measured ? [] : Object.keys(topicScores).length > 0
     ? Object.entries(topicScores).map(([skill, value]) => ({ skill, value }))
     : skills.map((s) => ({ skill: s, value: avg }));
 
-  if (radarSkills.length < 3) {
+  if (measured && radarSkills.length < 3) {
     const extras = [
       { skill: "Clarity", value: avg * 0.9 },
       { skill: "Structure", value: avg * 0.85 },
@@ -151,7 +177,7 @@ export function mapRealDataToDashboard(session) {
 
   const strengths = [];
   const weaknesses = [];
-  if (session.breakdown) {
+  if (measured && session.breakdown) {
     const { Good = 0, Average = 0, Poor = 0 } = session.breakdown;
     if (Good > 0) {
       strengths.push({
@@ -172,10 +198,11 @@ export function mapRealDataToDashboard(session) {
       });
     }
   }
-  if (strengths.length === 0) {
+  // Completion is never claimed for a round that could not be evaluated.
+  if (measured && strengths.length === 0 && unscored.length === 0) {
     strengths.push({ title: "Participation", detail: "You completed all rounds — consistency is key." });
   }
-  if (weaknesses.length === 0) {
+  if (measured && weaknesses.length === 0) {
     weaknesses.push({
       title: "Push for depth",
       detail: "Try to include trade-offs, examples, and edge cases in each answer.",
@@ -188,7 +215,9 @@ export function mapRealDataToDashboard(session) {
       id: "c1",
       title: "C4 — Context",
       tag: "Structure",
-      body: `Your overall session score was ${Math.round(avg)}%. ${nextStepText}`,
+      body: measured
+        ? `Your overall session score was ${Math.round(avg)}%. ${nextStepText}`
+        : `No round in this session produced a score. ${unscored.length} unscored round${unscored.length === 1 ? " is" : "s are"} excluded from every average.`,
     },
     {
       id: "c2",
@@ -206,7 +235,9 @@ export function mapRealDataToDashboard(session) {
       id: "c4",
       title: "C4 — Code",
       tag: "Delivery",
-      body: `Your best round scored ${Math.round(Math.max(...completed.map((r) => r.final_score ?? 0), 0))}%. Aim to replicate that depth.`,
+      body: completed.length
+        ? `Your best round scored ${Math.round(Math.max(...completed.map((r) => r.final_score ?? 0), 0))}%. Aim to replicate that depth.`
+        : "No scored rounds in this session.",
     },
   ];
 
@@ -222,7 +253,9 @@ export function mapRealDataToDashboard(session) {
       durationLabel: `${completed.length} rounds`,
       skillFocus: skills[0] || "General",
     },
-    overall: { score: Math.round(avg), gradeLabel, deltaLabel: `${Math.round(avg)}% avg score` },
+    overall: measured
+      ? { score: Math.round(avg), gradeLabel, deltaLabel: `${Math.round(avg)}% avg score` }
+      : { score: null, gradeLabel, deltaLabel: "No scored rounds" },
     layers,
     radar: radarSkills,
     performance: { finalRating: finalElo, difficulty: diffProgression, score: scoreProgression },

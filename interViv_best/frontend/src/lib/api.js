@@ -1,4 +1,5 @@
 import { normalizeSessionData } from './roundContractHelpers.js';
+import { LEGACY_BUILDER_DRAFT_KEY } from './practiceBuilder.js';
 
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
@@ -29,11 +30,21 @@ async function request(path, options = {}) {
   return data;
 }
 
+// Browser state not keyed by account. Removed whenever the signed-in account
+// changes (signin, signup, signout) so it never surfaces under another
+// account on a shared browser. Per-account keys are left intact.
+function clearUnscopedAccountState() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_BUILDER_DRAFT_KEY);
+}
+
 export function saveAuthToken(token) {
+  clearUnscopedAccountState();
   localStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
 export function clearAuthToken() {
+  clearUnscopedAccountState();
   localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
