@@ -50,14 +50,64 @@ Every file was chosen by reading and comparing its equivalent across all four co
 pip install -r requirements.txt
 cp .env.example .env
 # Edit .env. Set DATABASE_URL for PostgreSQL persistence, or leave it blank for demo memory mode.
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 
 # 2. Frontend
 cd frontend
 npm install
-npm run dev
-# Opens at http://localhost:5173
+npm run dev -- --host 127.0.0.1 --port 5175
+# Opens at http://127.0.0.1:5175
 ```
+
+### Running locally (unified shell)
+
+| Port | Process | Start | Required |
+|------|---------|-------|----------|
+| `8000` | FastAPI backend (uvicorn) | command above | yes |
+| `5175` | Vite frontend | command above | yes |
+| `19000` | Piston coding executor (Docker, loopback only) | `docker compose -f compose.coding.yml up executor` | only for Run/Submit on `/problems` |
+| `11434` | Ollama (`gemma2:2b`) for coding hints | system Ollama | no; curated hints are the fallback |
+
+Sign in with any account created via `/signup` (or `POST /auth/signup`). There is
+no built-in demo account; with the in-memory DB, accounts disappear when the
+backend restarts.
+
+Stop everything:
+
+```bash
+# Ctrl+C the uvicorn and vite terminals, or:
+kill $(lsof -nP -tiTCP:8000,5175 -sTCP:LISTEN)
+docker stop interviv-coding-executor-1 interviv-coding-runtime-cache-1
+lsof -nP -iTCP:8000,5175,19000 -sTCP:LISTEN   # should print nothing
+```
+
+### Coding practice executor (Piston)
+
+Candidate code runs only in a local Piston container bound to
+`127.0.0.1:19000`. `backend/execution.py` rejects every other URL (public
+emkc.org included). Scoring is a deterministic visible + hidden test
+comparison; no model judges code.
+
+```bash
+# one-time: fetch and checksum the four approved runtimes into a local mirror
+python scripts/setup_coding_runtimes.py --download ~/piston-cache
+CODING_RUNTIME_CACHE=~/piston-cache docker compose -f compose.coding.yml up -d
+python scripts/setup_coding_runtimes.py --install     # python 3.12, node 20, java 15, gcc 10
+docker stop interviv-coding-runtime-cache-1           # setup-only container
+
+# then, for the backend:
+export CODING_EXECUTOR_URL=http://127.0.0.1:19000
+```
+
+If the editor shows **"<Language> execution is unavailable. Your draft can
+still be saved."** for every language, the backend cannot reach Piston (or the
+runtime is not installed). `GET /problems/execution/status` reports
+per-language availability; the UI reads that endpoint, so the warning follows
+the selected language but the cause is shared. Drafts still autosave.
+
+Optional env: `CODING_RATE_LIMIT_PER_MINUTE` (default 30), `CODING_COACH_URL`
+(default `http://127.0.0.1:11434`), `CODING_COACH_MODEL` (default `gemma2:2b`).
+Security evidence: `docs/coding_execution_security.md`.
 
 ### PostgreSQL and Auth
 
@@ -165,7 +215,9 @@ interViv_best/
 │   │   ├── styles/
 │   │   │   ├── theme.css          fade-rise animations
 │   │   │   └── fonts.css          CSS vars for fonts
-│   │   ├── App.jsx                Routes: / /upload /interview/:id /dashboard
+│   │   ├── App.jsx                Routes: / /login /signup /home /practice /problems /learn /resources /ats /jobs /coach /upload /interview/:id /dashboard /gap-analysis /roadmap
+│   │   ├── lib/appNav.js          Nav destinations for the hamburger panel
+│   │   ├── components/AppNav.jsx  Brand + hamburger slide panel (no profile/sign-out control)
 │   │   ├── main.jsx               React entry point
 │   │   ├── lib/api.js             All API calls + buildAnswerMetrics
 │   │   ├── pages/
@@ -253,16 +305,26 @@ Calibration: after round 2 → 85% raw + 15% session average
 
 ---
 
-## Demo path
+## App shell and demo path
 
-Logged-in student happy path (Tickets A–E):
+Login and signup land on `/home`. The nav is a brand link plus a hamburger
+that opens a translucent panel of destinations (`frontend/src/lib/appNav.js`):
+Home, Progress, Practice, Gap, Roadmap, Problems, Learn, Resources, Resume
+check, Jobs, Coach, Resume upload. Gap and Roadmap deep-link once a target
+company/role is set; otherwise they point at `/home#target`. Sign out lives on
+the Account page, not in the nav.
 
-1. `/coach` — paste a goal or JD → plan with skill chips + links (maps to lexicon; **does not score interviews**)
-2. **Start practice** → `/interview/:sessionId`
-3. `/ats` — score resume vs role → Practice / Resources for a missing skill
-4. `/jobs` — Apply opens Adzuna `redirect_url` in a new tab; **Practice for this role** starts a session
-5. `/practice` — custom builder and **OA + SQL** (MCQ then SQL — **not** a general coding judge)
-6. `/dashboard` — last ATS total (if scored) + learning signals + entry cards
+Logged-in student happy path:
+
+1. `/home` — pick a target company/role; prepare cards for OA, Coding, SQL, Resources
+2. `/practice` — Interview, **OA** (MCQ), **SQL**, or custom session builder
+3. `/problems` — coding practice: Monaco editor, Python/JavaScript/Java/C++, Run (visible tests) and Submit (hidden tests) via local Piston; Coach tab gives up to 3 hints (Gemma via Ollama, curated fallback). Hints are logged as assistance and never change the score.
+4. `/interview/:sessionId` — verbal rounds with deterministic NLP scoring
+5. `/resources` — 32 curated links browsable by skill and category (`docs/resources_curation.md`)
+6. `/coach` — paste a goal or JD → plan with skill chips + links (maps to lexicon; **does not score interviews**)
+7. `/ats` — score resume vs role → Practice / Resources for a missing skill
+8. `/jobs` — Apply opens Adzuna `redirect_url` in a new tab; **Practice for this role** starts a session
+9. `/dashboard` — progress, last ATS total (if scored), learning signals, entry cards
 
 ### Env (optional pieces)
 
@@ -271,10 +333,12 @@ Logged-in student happy path (Tickets A–E):
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Question gen + coach phrase extract; coach falls back to lexicon if unset |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Live India jobs; without keys the explorer uses fixture / documented empty state |
 | `SENTRY_TRACES_SAMPLE_RATE=0.1` | Optional tracing sample rate |
+| `CODING_EXECUTOR_URL=http://127.0.0.1:19000` | Enables Run/Submit on `/problems`; only this loopback URL is accepted |
+| `CODING_COACH_URL` / `CODING_COACH_MODEL` | Ollama endpoint/model for coding hints; curated hints if unreachable |
 
 Honest labels:
 
-- OA+SQL ≠ “coding interview”
+- OA+SQL ≠ “coding interview”; `/problems` is the test-based coding judge and needs Piston running
 - ATS layout: `extract_layout_unchecked` (no invented multi-column penalties)
 - Jobs need Adzuna keys for live listings; else fixture
 - Paper notes: report **Krippendorff α**, not Cronbach; `LENGTH_RATIO_MULTIPLIER_ENABLED` stays **off**; **506** ambiguous annotation groups remain human-only / quarantined
