@@ -1,0 +1,36 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: python.generators
+version: 1
+category: technical_short_answer
+skill: Python
+topic: Iteration and generators
+difficulty: medium
+question: What are Python generators and when would you use them?
+reference_answer: >-
+  Generators are functions that use yield to produce a sequence of values lazily, one at a time, instead
+  of building the entire sequence in memory. When called, a generator function returns a generator iterator.
+  Each call to next() resumes execution until the next yield. They are ideal for large or infinite sequences,
+  streaming data, and pipelines. Compared to list comprehensions, generator expressions use less memory.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 14
+  dataset_source_label: curated_v3
+  dataset_sub_domain: python_core
+  dataset_skill_label: Python
+  dataset_difficulty_label: Medium
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.

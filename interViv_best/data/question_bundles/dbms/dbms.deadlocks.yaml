@@ -1,0 +1,37 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: dbms.deadlocks
+version: 1
+category: technical_short_answer
+skill: DBMS
+topic: Concurrency control
+difficulty: hard
+question: What is a deadlock and how do databases handle it?
+reference_answer: >-
+  A deadlock occurs when two or more transactions each hold a lock that the other needs, creating a circular
+  wait. Databases detect deadlocks using a wait-for graph (looking for cycles). Upon detection, the database
+  selects a victim transaction (usually the one with the least cost to roll back), aborts it, and allows
+  the others to proceed. Prevention strategies include acquiring locks in a consistent order and using
+  lock timeouts. Optimistic concurrency avoids locks entirely.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 197
+  dataset_source_label: curated_v3
+  dataset_sub_domain: dbms_core
+  dataset_skill_label: DBMS
+  dataset_difficulty_label: Hard
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.

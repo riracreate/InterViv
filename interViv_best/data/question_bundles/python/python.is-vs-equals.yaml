@@ -1,0 +1,36 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: python.is-vs-equals
+version: 1
+category: technical_short_answer
+skill: Python
+topic: Identity and equality
+difficulty: easy
+question: What is the difference between is and == in Python?
+reference_answer: >-
+  == tests value equality — whether two objects have the same content. is tests identity — whether two
+  variables point to the exact same object in memory. For example, two lists with equal contents will
+  pass == but fail is. The is operator is appropriate for comparing to singletons like None, True, and
+  False, which have guaranteed single instances in CPython.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 26
+  dataset_source_label: curated_v3
+  dataset_sub_domain: python_core
+  dataset_skill_label: Python
+  dataset_difficulty_label: Easy
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.
