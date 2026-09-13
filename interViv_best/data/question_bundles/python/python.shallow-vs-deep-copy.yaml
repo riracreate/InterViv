@@ -1,0 +1,36 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: python.shallow-vs-deep-copy
+version: 1
+category: technical_short_answer
+skill: Python
+topic: Object copying
+difficulty: medium
+question: What is the difference between shallow copy and deep copy?
+reference_answer: >-
+  A shallow copy creates a new object but inserts references to the same child objects as the original.
+  Modifying a mutable child object affects both copies. A deep copy recursively copies all nested objects,
+  producing a fully independent clone. Use copy.copy() for shallow and copy.deepcopy() for deep copies.
+  Shallow copies are faster and sufficient when nested objects are immutable or won't be mutated.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 20
+  dataset_source_label: curated_v3
+  dataset_sub_domain: python_core
+  dataset_skill_label: Python
+  dataset_difficulty_label: Medium
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.

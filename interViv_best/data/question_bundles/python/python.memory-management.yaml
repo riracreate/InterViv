@@ -1,0 +1,37 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: python.memory-management
+version: 1
+category: technical_short_answer
+skill: Python
+topic: Memory management
+difficulty: hard
+question: How does Python's memory management work?
+reference_answer: >-
+  CPython uses reference counting as the primary memory management strategy: every object tracks how many
+  references point to it, and when the count drops to zero the memory is immediately freed. To handle
+  reference cycles (A → B → A), CPython also runs a cyclic garbage collector. Memory is allocated from
+  private heaps managed by CPython's allocator, with small objects pooled for efficiency. The gc module
+  exposes the cyclic collector and lets you trigger or tune collection.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 11
+  dataset_source_label: curated_v3
+  dataset_sub_domain: python_core
+  dataset_skill_label: Python
+  dataset_difficulty_label: Hard
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.
