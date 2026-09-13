@@ -46,6 +46,7 @@ from modules.concept_mastery import ConceptMastery, MasteryLevel
 from modules.question_runtime import (
     MarketQuestionContext,
     QuestionCacheContext,
+    _resolve_market_context,
     build_question_prompt,
     call_llm_with_cache_retry,
     generate_question,
@@ -321,11 +322,23 @@ def _generate_targeted_question(
         resume_skills=resume_skills,
         weak_skills=weak_skills,
     )
+    market = _resolve_market_context(
+        MarketQuestionContext(
+            company_id=target_company_id,
+            role_id=target_role_id,
+            resume_skills=tuple(resume_skills or ()),
+            weak_skills=tuple(weak_skills or target_concepts or ()),
+        )
+    )
     _CURRENT_CACHE_CONTEXT = QuestionCacheContext(
         skill=skill,
         sub_domain=sub_domain or "general",
         difficulty=difficulty,
         target_concepts=tuple(target_concepts or ()),
+        company=market.company,
+        role=market.role,
+        resume_skills=market.resume_skills,
+        weak_skills=market.weak_skills,
     )
     _CURRENT_ASKED = list(asked or [])
     try:
