@@ -17,7 +17,7 @@ function ConceptPill({ topic }) {
     <span
       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
       style={{
-        fontFamily: "'Inter', sans-serif",
+        fontFamily: "var(--font-body)",
         backgroundColor: 'rgba(0,0,0,0.04)',
         color: '#000',
       }}
@@ -40,19 +40,19 @@ function WeekCard({ block, isFirst }) {
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Week {block.index} · {block.day_range}
           </p>
           <h3
             className="text-2xl tracking-tight"
-            style={{ fontFamily: "'Instrument Serif', serif", letterSpacing: '-0.5px' }}
+            style={{ fontFamily: "var(--font-display)", letterSpacing: '-0.5px' }}
           >
             {block.label}
           </h3>
         </div>
         {isFirst && (
           <span className="rounded-full text-xs px-2 py-0.5 bg-black text-white"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
             Start here
           </span>
         )}
@@ -60,19 +60,19 @@ function WeekCard({ block, isFirst }) {
 
       <div className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
           Focus skills
         </p>
         <div className="flex flex-wrap gap-2">
           {block.focus_skills.length === 0 && (
             <span className="text-sm text-[#6F6F6F]"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
               No focus skills queued.
             </span>
           )}
           {block.focus_skills.map((s) => (
             <span key={s} className="rounded-full border border-black/10 px-3 py-1 text-xs"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
               {s}
             </span>
           ))}
@@ -82,7 +82,7 @@ function WeekCard({ block, isFirst }) {
       {block.focus_topics.length > 0 && (
         <div className="mb-4">
           <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Concepts to cover
           </p>
           <div className="flex flex-wrap gap-1.5" data-testid="roadmap-concepts">
@@ -91,7 +91,7 @@ function WeekCard({ block, isFirst }) {
             ))}
             {block.focus_topics.length > 12 && (
               <span className="text-xs text-[#6F6F6F]"
-                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    style={{ fontFamily: "var(--font-body)" }}>
                 +{block.focus_topics.length - 12} more
               </span>
             )}
@@ -102,13 +102,13 @@ function WeekCard({ block, isFirst }) {
       {block.daily_practice_suggestions.length > 0 && (
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Daily practice
           </p>
           <ul className="space-y-1.5">
             {block.daily_practice_suggestions.map((s, idx) => (
               <li key={idx} className="flex items-start gap-2 text-sm text-black"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                 <span className="text-[#6F6F6F] mt-0.5">·</span>
                 <span>{s}</span>
               </li>
@@ -155,7 +155,7 @@ export default function Roadmap() {
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <p className="text-sm text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <p className="text-sm text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
           Building your roadmap…
         </p>
       </div>
@@ -165,7 +165,7 @@ export default function Roadmap() {
   if (error) {
     return (
       <div className="min-h-screen bg-white px-6 py-16 max-w-3xl mx-auto">
-        <p className="text-sm text-red-700" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <p className="text-sm text-red-700" style={{ fontFamily: "var(--font-body)" }}>
           {error}
         </p>
         <button onClick={() => navigate(-1)}
@@ -184,12 +184,12 @@ export default function Roadmap() {
         <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
           <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
              className="text-2xl tracking-tight text-black"
-             style={{ fontFamily: "'Instrument Serif', serif" }}>
+             style={{ fontFamily: "var(--font-display)" }}>
             interViv<sup className="text-xs align-super">©</sup>
           </a>
           <button onClick={() => navigate(-1)}
                   className="text-sm text-[#6F6F6F] hover:text-black"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
             ← Back
           </button>
         </div>
@@ -197,14 +197,14 @@ export default function Roadmap() {
 
       <div className="max-w-5xl mx-auto px-6 pt-12 pb-24">
         <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-3"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
           Roadmap · {roadmap.company_name} · {roadmap.role_title}
         </p>
 
         <h1
           className="tracking-tight mb-4"
           style={{
-            fontFamily: "'Instrument Serif', serif",
+            fontFamily: "var(--font-display)",
             letterSpacing: '-1.5px',
             fontSize: 'clamp(40px, 6vw, 64px)',
           }}
@@ -214,13 +214,13 @@ export default function Roadmap() {
         </h1>
 
         <p className="text-base text-[#6F6F6F] mb-6 max-w-2xl leading-relaxed"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
           {roadmap.plan_note}
         </p>
 
         <div className="rounded-2xl border border-black/8 p-4 mb-10 flex flex-wrap items-center gap-4">
           <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Plan length
           </p>
           <div className="flex gap-2" data-testid="roadmap-day-toggle">
@@ -230,7 +230,7 @@ export default function Roadmap() {
                 onClick={() => onDaysChange(d)}
                 className="rounded-full px-4 py-1.5 text-xs font-medium cursor-pointer border transition-all"
                 style={{
-                  fontFamily: "'Inter', sans-serif",
+                  fontFamily: "var(--font-body)",
                   borderColor: d === days ? '#000' : 'rgba(0,0,0,0.10)',
                   backgroundColor: d === days ? '#000' : 'transparent',
                   color: d === days ? '#fff' : '#000',
@@ -242,7 +242,7 @@ export default function Roadmap() {
           </div>
           <div className="grow" />
           <p className="text-xs text-[#6F6F6F]"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Current readiness:{' '}
             <span className="font-medium text-black">
               {Math.round(roadmap.overall_readiness_percentage)}%
@@ -266,13 +266,13 @@ export default function Roadmap() {
                     },
                   })}
                   className="rounded-full px-6 py-3 text-sm font-medium text-white bg-black cursor-pointer"
-                  style={{ fontFamily: "'Inter', sans-serif" }}
+                  style={{ fontFamily: "var(--font-body)" }}
                   data-testid="roadmap-start-practice">
             Start practice now →
           </button>
           <button onClick={() => navigate(`/gap-analysis/${userId}/${roleId}`)}
                   className="rounded-full px-6 py-3 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
             ← Back to gap analysis
           </button>
         </div>
@@ -281,7 +281,7 @@ export default function Roadmap() {
           <p
             data-testid="roadmap-disclaimer"
             className="mt-10 text-xs text-[#6F6F6F] leading-relaxed border-t border-black/5 pt-4"
-            style={{ fontFamily: "'Inter', sans-serif" }}
+            style={{ fontFamily: "var(--font-body)" }}
           >
             <span className="font-medium text-black">Note:</span> {roadmap.disclaimer}
           </p>

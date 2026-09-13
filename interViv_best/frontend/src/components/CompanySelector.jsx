@@ -100,7 +100,7 @@ export default function CompanySelector({
   if (loading) {
     return (
       <div className="rounded-2xl border border-black/8 p-6 text-sm text-[#6F6F6F]"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
         Loading target companies…
       </div>
     );
@@ -109,7 +109,7 @@ export default function CompanySelector({
   if (error) {
     return (
       <div className="rounded-2xl border border-red-300 bg-red-50 p-6 text-sm text-red-700"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
         {error} — continuing in general practice mode.
       </div>
     );
@@ -120,11 +120,11 @@ export default function CompanySelector({
          data-testid="company-selector">
       <div>
         <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
-           style={{ fontFamily: "'Inter', sans-serif" }}>
+           style={{ fontFamily: "var(--font-body)" }}>
           Pick your target (optional — skip for general practice)
         </p>
         <h3 className="text-2xl tracking-tight text-black"
-            style={{ fontFamily: "'Instrument Serif', serif", letterSpacing: '-0.5px' }}>
+            style={{ fontFamily: "var(--font-display)", letterSpacing: '-0.5px' }}>
           Target company &amp; role
         </h3>
       </div>
@@ -132,7 +132,7 @@ export default function CompanySelector({
       <div className="grid md:grid-cols-2 gap-3">
         <label className="block">
           <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-1 block"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
             Company
           </span>
           <select
@@ -142,7 +142,7 @@ export default function CompanySelector({
               setSelectedRole('');
             }}
             className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm bg-white"
-            style={{ fontFamily: "'Inter', sans-serif" }}
+            style={{ fontFamily: "var(--font-body)" }}
           >
             <option value="">— Select —</option>
             {companies.map((c) => (
@@ -153,7 +153,7 @@ export default function CompanySelector({
 
         <label className="block">
           <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-1 block"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
             Role
           </span>
           <select
@@ -161,7 +161,7 @@ export default function CompanySelector({
             disabled={!selectedCompany}
             onChange={(e) => setSelectedRole(e.target.value)}
             className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm bg-white disabled:opacity-50"
-            style={{ fontFamily: "'Inter', sans-serif" }}
+            style={{ fontFamily: "var(--font-body)" }}
           >
             <option value="">— Select —</option>
             {roles.map((r) => (
@@ -174,13 +174,13 @@ export default function CompanySelector({
       {selectedCompany && selectedRole && (
         <div className="rounded-xl bg-black/[0.03] border border-black/5 p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
-             style={{ fontFamily: "'Inter', sans-serif" }}>
+             style={{ fontFamily: "var(--font-body)" }}>
             Skill profile for this role
           </p>
           <ul className="space-y-1">
             {(roles.find((r) => r.id === selectedRole)?.skill_requirements || []).map((req) => (
               <li key={req.skill} className="flex items-center justify-between text-sm"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                 <span className="text-black">{req.display_name || req.skill}</span>
                 <span className="text-[#6F6F6F]">
                   target {Math.round(req.required_level)} · weight {Math.round((req.importance_weight || 0) * 100)}%
@@ -197,7 +197,7 @@ export default function CompanySelector({
           disabled={!selectedCompany || !selectedRole || saving}
           onClick={persistSelection}
           className="rounded-full px-5 py-2 text-sm font-medium text-white bg-black disabled:opacity-30 cursor-pointer"
-          style={{ fontFamily: "'Inter', sans-serif" }}
+          style={{ fontFamily: "var(--font-body)" }}
         >
           {saving ? 'Saving…' : isAuthenticated ? 'Save as my target' : 'Use for this session'}
         </button>
@@ -205,7 +205,7 @@ export default function CompanySelector({
           <Link
             to={`/gap-analysis/${isAuthenticated ? 'me' : 'anonymous'}/${selectedRole}`}
             className="rounded-full px-5 py-2 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
-            style={{ fontFamily: "'Inter', sans-serif" }}
+            style={{ fontFamily: "var(--font-body)" }}
             data-testid="open-gap-analysis"
           >
             See readiness →
@@ -214,7 +214,7 @@ export default function CompanySelector({
       </div>
 
       {saveMessage && (
-        <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
           {saveMessage}
         </p>
       )}
@@ -223,7 +223,7 @@ export default function CompanySelector({
         <p
           data-testid="company-disclaimer"
           className="text-xs text-[#6F6F6F] leading-relaxed border-t border-black/5 pt-3"
-          style={{ fontFamily: "'Inter', sans-serif" }}
+          style={{ fontFamily: "var(--font-body)" }}
         >
           <span className="font-medium text-black">Note:</span> {disclaimer}
         </p>

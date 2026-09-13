@@ -67,7 +67,7 @@ export default function Signup() {
         <section className="grid flex-1 items-center gap-10 py-12 lg:grid-cols-[0.92fr_1.08fr]">
           <div className="max-w-xl">
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-700">Student readiness profile</p>
-            <h1 className="mt-4 text-5xl font-normal leading-[0.96] tracking-normal sm:text-6xl" style={{ fontFamily: "'Instrument Serif', serif" }}>
+            <h1 className="mt-4 text-5xl font-normal leading-[0.96] tracking-normal sm:text-6xl" style={{ fontFamily: "var(--font-display)" }}>
               Build a practice record that follows your goals.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
