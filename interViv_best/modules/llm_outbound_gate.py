@@ -49,3 +49,33 @@ def question_llm_outbound_allowed() -> bool:
     if not llm_live_fetch_enabled():
         return False
     return question_generation_mode() in {"llm", "llm_csv_fallback"}
+
+
+def question_source_health() -> dict[str, object]:
+    """Configured vs effective question-source disclosure. Does not change mode."""
+    configured = question_generation_mode()
+    live = llm_live_fetch_enabled()
+    outbound = question_llm_outbound_allowed()
+    if configured == "csv":
+        effective = "csv"
+        note = "Question generation uses the CSV/template bank; LLM is not dialed."
+    elif outbound:
+        effective = configured
+        note = None
+    elif configured == "llm_csv_fallback":
+        effective = "csv_fallback"
+        note = "LLM live fetch is off; generation uses CSV/template fallback."
+    else:
+        effective = "llm_gated_off"
+        note = (
+            "QUESTION_GENERATION_MODE is llm but LLM_LIVE_FETCH is off, so "
+            "outbound generation is blocked. Fallback then follows "
+            "QUESTION_REQUIRE_LLM / fallback_question."
+        )
+    return {
+        "configured_mode": configured,
+        "llm_live_fetch": live,
+        "outbound_allowed": outbound,
+        "effective_mode": effective,
+        "operator_note": note,
+    }

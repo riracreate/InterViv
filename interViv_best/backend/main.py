@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.config import get_settings
 from backend.observability import init_sentry
+from modules.llm_outbound_gate import question_source_health
 from backend.routes.admin import router as admin_router
 from backend.routes.answer import router as answer_router
 from backend.routes.ats import router as ats_router
@@ -164,4 +165,5 @@ def healthcheck() -> dict[str, object]:
                 )
             ),
         },
+        "question_source": question_source_health(),
     }

@@ -17,7 +17,7 @@ from modules import adaptive_question_selector as aqs
 from modules import guidance_coach as coach
 from modules import question_bank as qb
 from modules import question_runtime as qr
-from modules.llm_outbound_gate import llm_live_fetch_enabled, question_llm_outbound_allowed
+from modules.llm_outbound_gate import llm_live_fetch_enabled, question_llm_outbound_allowed, question_source_health
 
 
 class BoomUrlopen:
@@ -137,3 +137,25 @@ def test_gate_on_without_credentials_unchanged(monkeypatch: pytest.MonkeyPatch) 
     gen = qr.generate_question("DSA", "general", "medium", [])
     assert gen.get("question")
     assert gen.get("source") != "llm"
+
+
+def test_question_source_health_reports_gated_llm_without_changing_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+    monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm")
+    body = question_source_health()
+    assert body["configured_mode"] == "llm"
+    assert body["llm_live_fetch"] is False
+    assert body["outbound_allowed"] is False
+    assert body["effective_mode"] == "llm_gated_off"
+
+
+def test_question_source_health_fallback_when_live_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+    monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
+    body = question_source_health()
+    assert body["configured_mode"] == "llm_csv_fallback"
+    assert body["effective_mode"] == "csv_fallback"
