@@ -246,7 +246,7 @@ export default function Upload() {
         <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
           <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
             className="text-2xl tracking-tight text-black"
-            style={{ fontFamily: "'Instrument Serif', serif" }}>
+            style={{ fontFamily: "var(--font-display)" }}>
             interViv<sup className="text-xs align-super">©</sup>
           </a>
           <button onClick={() => {
@@ -255,7 +255,7 @@ export default function Upload() {
             else navigate('/');
           }}
             className="text-sm text-[#6F6F6F] hover:text-black transition-colors cursor-pointer"
-            style={{ fontFamily: "'Inter', sans-serif" }}>
+            style={{ fontFamily: "var(--font-body)" }}>
             ← {step === 'upload' ? 'Home' : 'Back'}
           </button>
         </div>
@@ -277,12 +277,12 @@ export default function Upload() {
                       backgroundColor: isActive ? '#000' : 'transparent',
                       color: isActive ? '#fff' : '#6F6F6F',
                       borderColor: isActive ? '#000' : '#E0E0E0',
-                      fontFamily: "'Inter', sans-serif",
+                      fontFamily: "var(--font-body)",
                     }}>
                     {isDone ? '✓' : i + 1}
                   </div>
                   <span className="text-xs font-medium hidden sm:inline"
-                    style={{ fontFamily: "'Inter', sans-serif", color: isActive ? '#000' : '#6F6F6F' }}>
+                    style={{ fontFamily: "var(--font-body)", color: isActive ? '#000' : '#6F6F6F' }}>
                     {s}
                   </span>
                 </div>
@@ -296,10 +296,10 @@ export default function Upload() {
         {step === 'upload' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: '#000', letterSpacing: '-1.5px' }}>
               Upload your profile
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: '#6F6F6F' }}>
               Our resume parser extracts your skills and builds your interview profile.
             </p>
 
@@ -315,11 +315,11 @@ export default function Upload() {
                   <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   </div>
-                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>{file.name}</p>
-                  <p className="text-xs font-medium tracking-wider uppercase text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>Ready to process</p>
+                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "var(--font-body)" }}>{file.name}</p>
+                  <p className="text-xs font-medium tracking-wider uppercase text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>Ready to process</p>
                   <button onClick={(e) => { e.stopPropagation(); setFile(null); }}
                     className="mt-3 text-xs text-[#6F6F6F] hover:text-black transition-colors"
-                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    style={{ fontFamily: "var(--font-body)" }}>
                     ✕ Remove
                   </button>
                 </div>
@@ -328,31 +328,31 @@ export default function Upload() {
                   <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </div>
-                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>Drag and drop your PDF resume</p>
-                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>Maximum file size 10MB</p>
+                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "var(--font-body)" }}>Drag and drop your PDF resume</p>
+                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "var(--font-body)" }}>Maximum file size 10MB</p>
                   <input type="file" accept=".pdf" className="hidden" id="fileInput" onChange={(e) => handleFile(e.target.files[0])} />
                   <label htmlFor="fileInput"
                     className="rounded-full px-6 py-2.5 text-sm text-black cursor-pointer border border-black/15 hover:border-black/30 transition-colors"
-                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    style={{ fontFamily: "var(--font-body)" }}>
                     Select File
                   </label>
                 </div>
               )}
             </div>
 
-            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }}>{error}</p>}
 
             {/* Quick start without resume */}
             <div className="mt-8">
-              <p className="text-sm text-[#6F6F6F] mb-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <p className="text-sm text-[#6F6F6F] mb-4" style={{ fontFamily: "var(--font-body)" }}>
                 Or pick domains directly to start immediately:
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {DOMAIN_PRESETS.map(d => (
                   <button key={d.short} onClick={() => chooseDomainPreset(d)}
                     className="rounded-2xl border border-black/8 p-4 text-left hover:border-black/20 transition-all cursor-pointer">
-                    <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{d.name}</p>
-                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    <p className="text-sm font-medium text-black" style={{ fontFamily: "var(--font-body)" }}>{d.name}</p>
+                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "var(--font-body)" }}>
                       {d.skills.slice(0, 3).join(' · ')}
                     </p>
                   </button>
@@ -363,7 +363,7 @@ export default function Upload() {
             {file && (
               <button disabled={isProcessing} onClick={processResume}
                 className="w-full mt-6 rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
                 {isProcessing ? 'Extracting Intelligence...' : 'Continue →'}
               </button>
             )}
@@ -374,20 +374,20 @@ export default function Upload() {
         {step === 'skills' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: '#000', letterSpacing: '-1.5px' }}>
               Extracted intelligence
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: '#6F6F6F' }}>
               We identified these core competencies from your resume. Select the ones to practice.
             </p>
 
             <div className="rounded-2xl border border-black/8 p-8 mb-6">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                   {extractedSkills.length ? 'Detected skills' : 'Choose skills'}
                 </p>
-                <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
                   Tap chips to select or remove
                 </p>
               </div>
@@ -396,7 +396,7 @@ export default function Upload() {
                   <button key={skill} onClick={() => toggleSkill(skill)}
                     className="rounded-full px-4 py-2 text-sm border transition-all cursor-pointer"
                     style={{
-                      fontFamily: "'Inter', sans-serif",
+                      fontFamily: "var(--font-body)",
                       borderColor: hasSkill(selectedSkills, skill) ? '#000' : 'rgba(0,0,0,0.08)',
                       backgroundColor: hasSkill(selectedSkills, skill) ? '#000' : 'transparent',
                       color: hasSkill(selectedSkills, skill) ? '#fff' : '#000',
@@ -409,14 +409,14 @@ export default function Upload() {
 
             <div className="rounded-2xl border border-black/8 p-6 mb-6">
               <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-4"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Add more skills or languages
               </p>
               <div className="space-y-5">
                 {DOMAIN_PRESETS.map(domain => (
                   <div key={domain.short}>
                     <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>
+                      <p className="text-sm font-medium text-black" style={{ fontFamily: "var(--font-body)" }}>
                         {domain.name}
                       </p>
                       <button
@@ -426,7 +426,7 @@ export default function Upload() {
                           setSelectedSkills(prev => mergeUnique(prev, domain.skills));
                         }}
                         className="text-xs text-[#6F6F6F] hover:text-black transition-colors"
-                        style={{ fontFamily: "'Inter', sans-serif" }}
+                        style={{ fontFamily: "var(--font-body)" }}
                       >
                         Select all
                       </button>
@@ -441,7 +441,7 @@ export default function Upload() {
                             onClick={() => toggleSkill(skill)}
                             className="rounded-full px-3 py-1.5 text-xs border transition-all cursor-pointer"
                             style={{
-                              fontFamily: "'Inter', sans-serif",
+                              fontFamily: "var(--font-body)",
                               borderColor: active ? '#000' : 'rgba(0,0,0,0.10)',
                               backgroundColor: active ? '#000' : 'rgba(0,0,0,0.02)',
                               color: active ? '#fff' : '#000',
@@ -458,7 +458,7 @@ export default function Upload() {
             </div>
 
             {selectedSkills.length > 0 && (
-              <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "var(--font-body)" }}>
                 {selectedSkills.length} skill{selectedSkills.length > 1 ? 's' : ''} selected · {selectedSkills.length * ROUNDS_PER_SKILL} total rounds
               </p>
             )}
@@ -472,7 +472,7 @@ export default function Upload() {
 
             <button onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
               className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-30"
-              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
               Choose Interview Domains →
             </button>
           </div>
@@ -482,10 +482,10 @@ export default function Upload() {
         {step === 'domains' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: '#000', letterSpacing: '-1.5px' }}>
               Ready to begin
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: '#6F6F6F' }}>
               Your adaptive session is configured. Each skill is tested in rotation.
             </p>
 
@@ -494,21 +494,21 @@ export default function Upload() {
                 <div key={skill} className="px-6 py-4 border-b border-black/5 last:border-0 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold"
-                      style={{ fontFamily: "'Inter', sans-serif" }}>{i + 1}</span>
-                    <span className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{skill}</span>
+                      style={{ fontFamily: "var(--font-body)" }}>{i + 1}</span>
+                    <span className="text-sm font-medium text-black" style={{ fontFamily: "var(--font-body)" }}>{skill}</span>
                   </div>
-                  <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
                     Rounds {i * ROUNDS_PER_SKILL + 1}–{(i + 1) * ROUNDS_PER_SKILL}
                   </span>
                 </div>
               ))}
             </div>
 
-            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }}>{error}</p>}
 
             <button disabled={isStarting} onClick={startInterview}
               className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
               {isStarting ? 'Starting Session...' : `Start Interview · ${(selectedSkills.length || 1) * ROUNDS_PER_SKILL} Rounds →`}
             </button>
           </div>

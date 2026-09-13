@@ -97,7 +97,7 @@ function Navbar() {
           href="/"
           onClick={(e) => { e.preventDefault(); navigate('/'); }}
           className="text-3xl tracking-tight text-black"
-          style={{ fontFamily: "'Instrument Serif', serif" }}
+          style={{ fontFamily: "var(--font-display)" }}
         >
           interViv<sup className="text-sm align-super">©</sup>
         </a>
@@ -111,7 +111,7 @@ function Navbar() {
                 onClick={(e) => { e.preventDefault(); navigate(item.to); }}
                 className="text-sm transition-colors duration-200 hover:text-black"
                 style={{
-                  fontFamily: "'Inter', sans-serif",
+                  fontFamily: "var(--font-body)",
                   color: item.active ? '#000000' : '#6F6F6F',
                 }}
               >
@@ -127,7 +127,7 @@ function Navbar() {
           className="rounded-full px-6 py-2.5 text-sm text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
           style={{
             backgroundColor: '#000000',
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "var(--font-body)",
           }}
         >
           Sign up
@@ -152,7 +152,7 @@ function HeroSection() {
       <h1
         className="animate-fade-rise text-5xl sm:text-7xl md:text-8xl max-w-7xl font-normal"
         style={{
-          fontFamily: "'Instrument Serif', serif",
+          fontFamily: "var(--font-display)",
           lineHeight: 0.95,
           letterSpacing: 0,
           color: '#000000',
@@ -169,7 +169,7 @@ function HeroSection() {
       <p
         className="animate-fade-rise-delay text-base sm:text-lg max-w-2xl mt-8 leading-relaxed"
         style={{
-          fontFamily: "'Inter', sans-serif",
+          fontFamily: "var(--font-body)",
           color: '#334155',
           textShadow: '0 1px 18px rgba(255,255,255,0.96)',
         }}
@@ -185,7 +185,7 @@ function HeroSection() {
         className="animate-fade-rise-delay-2 rounded-full px-14 py-5 text-base mt-20 text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
         style={{
           backgroundColor: '#000000',
-          fontFamily: "'Inter', sans-serif",
+          fontFamily: "var(--font-body)",
         }}
       >
         Start Interview

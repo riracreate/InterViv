@@ -51,8 +51,16 @@ export default function Interview({ sessionState = null }) {
   const location = useLocation();
   const navigate = useNavigate();
   const videoRef = useRef(null);
-  const recognitionRef = useRef(null);
   const cameraStreamRef = useRef(null);
+  const attachVideoEl = useCallback((node) => {
+    videoRef.current = node;
+    const stream = cameraStreamRef.current;
+    if (node && stream && node.srcObject !== stream) {
+      node.srcObject = stream;
+      node.play?.().catch(() => {});
+    }
+  }, []);
+  const recognitionRef = useRef(null);
   const micStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaChunksRef = useRef([]);
@@ -432,6 +440,15 @@ export default function Interview({ sessionState = null }) {
     currentScore === null &&
     !sessionComplete;
   const calibrationActive = showCalibrationScreen && cameraReady;
+
+  useEffect(() => {
+    const node = videoRef.current;
+    const stream = cameraStreamRef.current;
+    if (node && stream && node.srcObject !== stream) {
+      node.srcObject = stream;
+      node.play?.().catch(() => {});
+    }
+  }, [calibrationComplete, isVideoOn, showCalibrationScreen]);
 
   useEffect(() => {
     if (!calibrationActive) return undefined;
@@ -951,12 +968,12 @@ export default function Interview({ sessionState = null }) {
           <div className="flex items-center gap-4">
             <button onClick={() => { if (confirm('Exit? Progress will be lost.')) { clearInterviewState(); navigate('/'); } }}
               className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
-              style={{ fontFamily: "'Inter', sans-serif" }}>
+              style={{ fontFamily: "var(--font-body)" }}>
               ← Exit
             </button>
             <div className="h-4 w-px bg-black/10" />
             <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-              style={{ fontFamily: "'Inter', sans-serif" }}>{currentSkill || 'Live Session'}</span>
+              style={{ fontFamily: "var(--font-body)" }}>{currentSkill || 'Live Session'}</span>
           </div>
           {/* Typed rounds show only their own deadline timer (Phase AB). */}
           {roundType === 'technical_short_answer' && (
@@ -966,11 +983,11 @@ export default function Interview({ sessionState = null }) {
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
           <div className="relative flex-1 bg-black/[0.02] rounded-2xl overflow-hidden border border-black/8">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
             <div className="absolute top-4 left-4 flex items-center gap-2 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-black/8">
               <div className={`w-2 h-2 rounded-full ${engagementReady ? 'bg-blue-500' : 'bg-[#6F6F6F]/30'}`} />
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Calibration
               </span>
             </div>
@@ -978,11 +995,11 @@ export default function Interview({ sessionState = null }) {
 
           <div className="rounded-2xl border border-black/8 p-6 flex flex-col justify-center">
             <h1 className="text-4xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif" }}>
+              style={{ fontFamily: "var(--font-display)" }}>
               Calibration
             </h1>
             <p className="text-sm text-[#6F6F6F] leading-relaxed mb-8"
-              style={{ fontFamily: "'Inter', sans-serif" }}>
+              style={{ fontFamily: "var(--font-body)" }}>
               Look at the camera with a relaxed expression for 10 seconds.
             </p>
             <div className="h-2 rounded-full bg-black/5 overflow-hidden mb-3">
@@ -990,17 +1007,17 @@ export default function Interview({ sessionState = null }) {
                 style={{ width: `${calibrationProgress}%` }} />
             </div>
             <div className="flex items-center justify-between mb-8">
-              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
                 {calibrationProgress}%
               </span>
-              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
                 {baselineSamples.length} samples
               </span>
             </div>
             <button
               onClick={skipCalibration}
               className="rounded-full px-6 py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform"
-              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
               Skip
             </button>
           </div>
@@ -1016,7 +1033,7 @@ export default function Interview({ sessionState = null }) {
         <nav className="border-b border-black/5">
           <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
             <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
-              className="text-2xl tracking-tight text-black" style={{ fontFamily: "'Instrument Serif', serif" }}>
+              className="text-2xl tracking-tight text-black" style={{ fontFamily: "var(--font-display)" }}>
               interViv<sup className="text-xs align-super">©</sup>
             </a>
           </div>
@@ -1024,10 +1041,10 @@ export default function Interview({ sessionState = null }) {
         <div className="flex-1 flex items-start justify-center px-6 pt-12 pb-20">
           <div className="max-w-2xl w-full">
             <div className="text-center mb-10">
-              <h1 className="text-5xl tracking-tight mb-3" style={{ fontFamily: "'Instrument Serif', serif", letterSpacing: '-1.5px' }}>
+              <h1 className="text-5xl tracking-tight mb-3" style={{ fontFamily: "var(--font-display)", letterSpacing: '-1.5px' }}>
                 Session Complete
               </h1>
-              <p className="text-base" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+              <p className="text-base" style={{ fontFamily: "var(--font-body)", color: '#6F6F6F' }}>
                 {scores.length} rounds · Average{' '}
                 <span style={{ color: scoreColor(avg), fontWeight: 600 }}>{avg}%</span>
               </p>
@@ -1035,20 +1052,20 @@ export default function Interview({ sessionState = null }) {
             <div className="grid grid-cols-2 gap-4 mb-8">
               {[{ v: elo, l: 'Final Elo' }, { v: `${avg}%`, l: 'Average Score' }].map(s => (
                 <div key={s.l} className="rounded-2xl border border-black/8 py-5 text-center">
-                  <div className="text-2xl font-normal text-black mb-1" style={{ fontFamily: "'Instrument Serif', serif" }}>{s.v}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>{s.l}</div>
+                  <div className="text-2xl font-normal text-black mb-1" style={{ fontFamily: "var(--font-display)" }}>{s.v}</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>{s.l}</div>
                 </div>
               ))}
             </div>
             <div className="flex items-center justify-center gap-3">
               <button onClick={() => { clearInterviewState(); navigate(`/dashboard/${sessionId}`); }}
                 className="rounded-full px-8 py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.02] transition-transform"
-                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
                 View Dashboard
               </button>
               <button onClick={() => navigate('/upload')}
                 className="rounded-full px-8 py-3 text-sm font-medium text-[#6F6F6F] cursor-pointer hover:text-black transition-colors border border-black/10"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 New Session
               </button>
             </div>
@@ -1064,19 +1081,19 @@ export default function Interview({ sessionState = null }) {
         <div className="flex items-center gap-4">
           <button onClick={() => { if (confirm('Exit? Progress will be lost.')) { clearInterviewState(); navigate('/'); } }}
             className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
-            style={{ fontFamily: "'Inter', sans-serif" }}>
+            style={{ fontFamily: "var(--font-body)" }}>
             ← Exit
           </button>
           <div className="h-4 w-px bg-black/10" />
           <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-            style={{ fontFamily: "'Inter', sans-serif" }}>{currentSkill || 'Live Session'}</span>
+            style={{ fontFamily: "var(--font-body)" }}>{currentSkill || 'Live Session'}</span>
         </div>
         <div className="flex items-center gap-5">
           <div className="hidden sm:flex items-center gap-2">
             <div className="w-24 h-1.5 bg-black/5 rounded-full overflow-hidden">
               <div className="h-full bg-black rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>{round}/{totalRounds}</span>
+            <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>{round}/{totalRounds}</span>
           </div>
           {usesInterviewMedia && roundType === 'technical_short_answer' && (
             <span
@@ -1087,12 +1104,12 @@ export default function Interview({ sessionState = null }) {
             </span>
           )}
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-black/[0.03] text-[#6F6F6F]"
-            style={{ fontFamily: "'Inter', sans-serif" }}>Elo {elo}</span>
+            style={{ fontFamily: "var(--font-body)" }}>Elo {elo}</span>
           <div className="hidden md:flex gap-1">
             {allSkills.map(s => (
               <span key={s} className="text-[10px] px-2 py-1 rounded-full border"
                 style={{
-                  fontFamily: "'Inter', sans-serif",
+                  fontFamily: "var(--font-body)",
                   borderColor: s === currentSkill ? '#000' : '#E0E0E0',
                   backgroundColor: s === currentSkill ? '#000' : 'transparent',
                   color: s === currentSkill ? '#fff' : '#6F6F6F',
@@ -1212,20 +1229,20 @@ export default function Interview({ sessionState = null }) {
             <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
               <div className={`w-2 h-2 rounded-full ${isRecording || serverRecording ? 'bg-red-500 animate-pulse' : serverTranscribing ? 'bg-blue-500 animate-pulse' : micError ? 'bg-amber-500' : 'bg-[#6F6F6F]/30'}`} />
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 {voiceStatus}
               </span>
             </div>
             <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
               <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
               </span>
             </div>
             <div className="bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Baseline {calibrationSkipped ? 'Skipped' : baselineLabel}
               </span>
             </div>
@@ -1235,16 +1252,16 @@ export default function Interview({ sessionState = null }) {
           <div className="flex-1 flex flex-col justify-center px-8 md:px-12 py-6 overflow-y-auto min-h-0">
             <div className="flex items-center gap-3 mb-5 flex-wrap">
               <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Question {String(round).padStart(2, '0')} / {String(totalRounds).padStart(2, '0')}
               </span>
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[#6F6F6F] capitalize"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 {currentSkill} · {difficulty}
               </span>
             </div>
             <p className="text-2xl md:text-3xl lg:text-[34px] font-normal text-black leading-[1.3] max-w-3xl"
-              style={{ fontFamily: "'Instrument Serif', serif" }}>
+              style={{ fontFamily: "var(--font-display)" }}>
               {question || 'Loading…'}
             </p>
           </div>
@@ -1252,14 +1269,14 @@ export default function Interview({ sessionState = null }) {
           {/* Compact self-view — small and out of the way so it isn't distracting */}
           <div className="absolute bottom-4 right-4 w-36 lg:w-48 aspect-video rounded-xl overflow-hidden border border-black/10 bg-black/[0.04] shadow-md">
             {isVideoOn
-              ? <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              ? <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
               : (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-2 text-center">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.2">
                     <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
                     <line x1="1" y1="1" x2="23" y2="23"/>
                   </svg>
-                  <span className="text-[9px] text-[#6F6F6F] leading-tight" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <span className="text-[9px] text-[#6F6F6F] leading-tight" style={{ fontFamily: "var(--font-body)" }}>
                     {cameraError || 'Camera Off'}
                   </span>
                 </div>
@@ -1273,9 +1290,9 @@ export default function Interview({ sessionState = null }) {
             <div role="alert" data-testid="unsupported-round-type"
               className="rounded-2xl border border-red-300 bg-red-50 p-5 flex-1 flex flex-col justify-center">
               <h3 className="text-sm font-medium text-red-800"
-                style={{ fontFamily: "'Inter', sans-serif" }}>Unsupported round type</h3>
+                style={{ fontFamily: "var(--font-body)" }}>Unsupported round type</h3>
               <p className="mt-2 text-xs leading-relaxed text-red-700"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 This round uses type &ldquo;{roundType}&rdquo;, which this version cannot
                 render. Nothing was submitted and nothing was scored — your progress
                 is saved.
@@ -1285,7 +1302,7 @@ export default function Interview({ sessionState = null }) {
           <div className="rounded-2xl border border-black/8 p-5 flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 Answer Draft
                 {draftNotice && (
                   <span className="ml-2 normal-case text-blue-600" role="status"> — {draftNotice}</span>
@@ -1293,12 +1310,12 @@ export default function Interview({ sessionState = null }) {
               </h3>
               <div className="flex items-center gap-3">
                 {answerWordCount > 0 && (
-                  <span className="text-[10px] text-[#6F6F6F]/60" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <span className="text-[10px] text-[#6F6F6F]/60" style={{ fontFamily: "var(--font-body)" }}>
                     {answerWordCount} words
                   </span>
                 )}
                 <label className="flex items-center gap-1.5 text-[10px] text-[#6F6F6F] select-none"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                   <input
                     type="checkbox"
                     checked={serverSttActive}
@@ -1325,17 +1342,17 @@ export default function Interview({ sessionState = null }) {
               disabled={isScoring || currentScore !== null}
               placeholder={isRecording || serverRecording ? 'Listening...' : serverTranscribing ? 'Transcribing...' : 'Type your answer here or use the microphone.'}
               className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[#333] outline-none transition-colors placeholder:text-[#6F6F6F]/40 focus:border-black/10 focus:bg-black/[0.015] disabled:cursor-default"
-              style={{ fontFamily: "'Inter', sans-serif" }}
+              style={{ fontFamily: "var(--font-body)" }}
             />
             {interimText && currentScore === null && (
               <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-xs italic text-[#6F6F6F]/70"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 {interimText}
               </p>
             )}
             {micError && currentScore === null && (
               <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+                style={{ fontFamily: "var(--font-body)" }}>
                 {micError}
               </p>
             )}
@@ -1345,12 +1362,12 @@ export default function Interview({ sessionState = null }) {
           {currentScore !== null && (
             <div className="rounded-2xl border border-black/8 p-5">
               <div className="text-3xl font-normal mb-1 text-center"
-                style={{ fontFamily: "'Instrument Serif', serif", color: scoreColor(currentScore) }}>
+                style={{ fontFamily: "var(--font-display)", color: scoreColor(currentScore) }}>
                 {Math.round(currentScore)}%
               </div>
               {currentFeedback && (
                 <p className="text-xs text-[#6F6F6F] text-center mt-1 leading-relaxed"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                   {currentFeedback}
                 </p>
               )}
@@ -1363,13 +1380,13 @@ export default function Interview({ sessionState = null }) {
                     return (
                       <div key={dim} className="flex items-center gap-2">
                         <span className="text-[10px] uppercase tracking-wider text-[#6F6F6F] w-[68px] shrink-0 capitalize"
-                          style={{ fontFamily: "'Inter', sans-serif" }}>{dim}</span>
+                          style={{ fontFamily: "var(--font-body)" }}>{dim}</span>
                         <div className="flex-1 h-1.5 rounded-full bg-black/5 overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-500"
                             style={{ width: `${pct}%`, backgroundColor: scoreColor(pct) }} />
                         </div>
                         <span className="text-[10px] text-[#6F6F6F] w-7 text-right tabular-nums"
-                          style={{ fontFamily: "'Inter', sans-serif" }}>{val.toFixed(1)}</span>
+                          style={{ fontFamily: "var(--font-body)" }}>{val.toFixed(1)}</span>
                       </div>
                     );
                   })}
@@ -1377,7 +1394,7 @@ export default function Interview({ sessionState = null }) {
               )}
               {currentConcepts?.missing?.length > 0 && (
                 <p className="mt-3 text-[11px] text-[#6F6F6F] leading-relaxed"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  style={{ fontFamily: "var(--font-body)" }}>
                   <span className="font-medium text-black">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
@@ -1411,7 +1428,7 @@ export default function Interview({ sessionState = null }) {
                 : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
               }
               {serverSttActive && (
-                <span className="text-xs font-medium" style={{ fontFamily: "'Inter', sans-serif" }}>
+                <span className="text-xs font-medium" style={{ fontFamily: "var(--font-body)" }}>
                   {serverTranscribing ? 'Transcribing' : serverRecording ? 'Stop' : 'Record (server)'}
                 </span>
               )}
@@ -1420,7 +1437,7 @@ export default function Interview({ sessionState = null }) {
             {currentScore === null && (
               <button onClick={submitAnswer} disabled={!canSubmit}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:cursor-not-allowed disabled:opacity-35"
-                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
                 {isScoring
                   ? <span className="flex items-center justify-center gap-2">
                       <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin"/>Scoring...
@@ -1433,7 +1450,7 @@ export default function Interview({ sessionState = null }) {
             {currentScore !== null && (
               <button onClick={handleNext}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform"
-                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
                 {sessionComplete ? 'View Dashboard →' : 'Next Question →'}
               </button>
             )}

@@ -11,7 +11,7 @@ const SOURCE_LABEL = { youtube: 'YouTube', docs: 'Guide / course', other: 'Pract
 
 /**
  * Compact curated links for a skill or bank question.
- * Renders nothing when the API returns no rows (no empty-state essay).
+ * Always shows loading, error, or a one-line empty state.
  */
 export default function ResourceLinks({
   skillId = null,
@@ -19,7 +19,7 @@ export default function ResourceLinks({
   heading = "Learn more",
   maxPerLevel = 3,
   variant = "light",
-  emptyMessage = null,
+  emptyMessage = "No curated resources for this skill yet.",
 }) {
   const [items, setItems] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -51,9 +51,9 @@ export default function ResourceLinks({
     };
   }, [skillId, questionId, maxPerLevel]);
 
-  if (!loaded) return emptyMessage ? <p role="status">Loading resources…</p> : null;
-  if (error) return emptyMessage ? <p role="alert">{error}</p> : null;
-  if (items.length === 0) return emptyMessage ? <p>{emptyMessage}</p> : null;
+  if (!loaded) return <p role="status">Loading resources…</p>;
+  if (error) return <p role="alert">{error}</p>;
+  if (items.length === 0) return <p>{emptyMessage}</p>;
 
   const groups = groupResourcesByLevel(items);
   const isDark = variant === "dark";
