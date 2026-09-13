@@ -44,6 +44,8 @@ frontend/dist/
 
 # Generated/runtime copies
 .interviv_model_lab_runtime/
+.interviv-build.*/
+.interviv-speaker.*/
 tmp/
 
 # Local assistant/editor state
@@ -53,6 +55,7 @@ tmp/
 .agents/
 .vscode/
 .idea/
+*.code-workspace
 
 # OS metadata
 .DS_Store
