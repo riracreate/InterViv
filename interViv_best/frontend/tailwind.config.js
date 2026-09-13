@@ -4,11 +4,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ["'Instrument Serif'", "serif"],
-        body: ["'Barlow'", "sans-serif"],
+        display: ["var(--font-display)"],
+        body: ["var(--font-body)"],
       },
       colors: {
-        // Velorah dark palette
+        // interViv dark palette
         background: "#FFFFFF",
         foreground: "#000000",
         muted: "#6F6F6F",

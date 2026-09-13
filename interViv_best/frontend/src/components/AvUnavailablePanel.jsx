@@ -11,7 +11,7 @@ export default function AvUnavailablePanel({ state, detail = '', onRetry = null 
       data-testid={`av-state-${state}`}
       data-av-state={state}
       className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-      style={{ fontFamily: "'Inter', sans-serif" }}
+      style={{ fontFamily: "var(--font-body)" }}
     >
       <div className="font-medium">{avStateLabel(state)}</div>
       {detail ? <p className="mt-1 text-amber-900/80">{detail}</p> : null}

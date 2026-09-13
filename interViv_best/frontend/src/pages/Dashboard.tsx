@@ -4,9 +4,6 @@ import { motion } from "motion/react";
 import {
   ArrowLeft,
   BarChart3,
-  BookOpen,
-  Briefcase,
-  Building2,
   Clock,
   Download,
   Map,
@@ -17,8 +14,9 @@ import {
   Target,
   Upload,
 } from "lucide-react";
-import { fetchDashboard, fetchLearningSignals, fetchAtsRuns, fetchMe } from "../lib/api";
+import { fetchDashboard, fetchLearningSignals, fetchAtsRuns, fetchMe, fetchAccountOverview } from "../lib/api";
 import { mapRealDataToDashboard, scoreAccent } from "../lib/dashboardMapping";
+import { displayScore, sessionLabel } from "../lib/accountOverview";
 import AppNav from "../components/AppNav";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
@@ -43,33 +41,6 @@ const item = {
   hidden: { opacity: 0, y: 14, filter: "blur(10px)" },
   show:   { opacity: 1, y: 0,  filter: "blur(0px)",  transition: { duration: 0.55, ease: [0.2, 0.8, 0.2, 1] } },
 };
-
-const PRACTICE_COMPANIES = ["TCS", "Infosys", "Accenture", "Wipro", "Amazon", "Microsoft", "Google", "Meta"];
-const PRACTICE_ROLES = [
-  "SDE Intern",
-  "Software Engineer",
-  "Full Stack Developer",
-  "Frontend Developer",
-  "Backend Developer",
-  "Data Analyst",
-  "Data Scientist",
-  "DevOps Engineer",
-];
-const PRACTICE_SKILLS = [
-  "DSA",
-  "DBMS",
-  "OS",
-  "CN",
-  "OOP",
-  "Python",
-  "Java",
-  "JavaScript",
-  "React",
-  "Node.js",
-  "FastAPI",
-  "System Design",
-  "HR / Behavioral",
-];
 
 function GlassButton({ icon, label, variant = "primary", onClick }) {
   const base = "group inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 active:translate-y-[1px]";
@@ -171,6 +142,9 @@ function DashboardHome() {
   const [signals, setSignals] = useState(null);
   const [lastAts, setLastAts] = useState(null);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
+  const [overview, setOverview] = useState(null);
+  const [overviewError, setOverviewError] = useState("");
+  const [overviewLoading, setOverviewLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,16 +172,41 @@ function DashboardHome() {
         });
       })
       .catch(() => {});
+    fetchAccountOverview()
+      .then((data) => {
+        if (cancelled) return;
+        setOverview(data);
+        setOverviewLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setOverviewError(err.message || "Progress is not available.");
+        setOverviewLoading(false);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const scoredSessions = overviewLoading ? "…" : overviewError ? "Unavailable" : String(overview?.scored_session_count ?? 0);
+  const skillsMeasured = overviewLoading
+    ? "…"
+    : overviewError
+      ? "Unavailable"
+      : String((overview?.skills || []).filter((skill) => skill.attempts > 0).length);
+  const readinessValue = overviewLoading ? "…" : overviewError ? "Unavailable" : displayScore(overview?.readiness);
+  const history = overview?.history || [];
+  const recent = history.slice(0, 3);
+  const weakSkills = [...(overview?.skills || [])]
+    .filter((skill) => skill.attempts > 0)
+    .sort((a, b) => (a.current_score ?? 0) - (b.current_score ?? 0))
+    .slice(0, 3);
+
   return (
     <main className="dashboard-home min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
       <div className="mx-auto w-full max-w-7xl px-[var(--space-4)] py-[var(--space-6)] sm:px-[var(--space-6)] lg:px-[var(--space-8)]">
         <AppNav
-          brandTo="/"
+          brandTo="/home"
           userId={navUser.userId}
           roleId={navUser.roleId}
           trailing={
@@ -243,22 +242,18 @@ function DashboardHome() {
             </div>
           </div>
 
-          <div className="mt-7 grid gap-3 border-y border-[var(--color-border)] py-4 sm:grid-cols-4">
+          <div className="mt-7 grid gap-3 border-y border-[var(--color-border)] py-4 sm:grid-cols-3">
             <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">0</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">sessions</p>
+              <p className="text-2xl font-semibold text-[var(--color-ink)]">{scoredSessions}</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">scored sessions</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">8</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">company tracks</p>
+              <p className="text-2xl font-semibold text-[var(--color-ink)]">{skillsMeasured}</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">skills measured</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">8</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">role tracks</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">13</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">skill areas</p>
+              <p className="text-2xl font-semibold text-[var(--color-ink)]">{readinessValue}</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">readiness</p>
             </div>
           </div>
         </section>
@@ -274,59 +269,60 @@ function DashboardHome() {
         <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <DashboardCard
             icon={<BarChart3 className="h-5 w-5" />}
-            title="Overall Readiness Score"
-            value="New"
-            detail="Complete an interview session to unlock your readiness score and confidence bands."
-            action="Start with a resume upload"
-          />
-          <DashboardCard
-            icon={<Building2 className="h-5 w-5" />}
-            title="Company Practice"
-            value={`${PRACTICE_COMPANIES.length} tracks`}
-            detail={PRACTICE_COMPANIES.join(", ")}
-            action="Company-style questions"
-          />
-          <DashboardCard
-            icon={<Briefcase className="h-5 w-5" />}
-            title="Role Practice"
-            value={`${PRACTICE_ROLES.length} roles`}
-            detail={PRACTICE_ROLES.slice(0, 5).join(", ") + ", and more"}
-            action="Role-aware preparation"
-          />
-          <DashboardCard
-            icon={<BookOpen className="h-5 w-5" />}
-            title="Skill Library"
-            value={`${PRACTICE_SKILLS.length} skills`}
-            detail={PRACTICE_SKILLS.slice(0, 8).join(", ") + ", ..."}
-            action="Skill-first drills"
+            title="Overall Readiness"
+            value={overviewLoading ? null : readinessValue}
+            detail={
+              overviewError
+                ? overviewError
+                : overview?.readiness == null
+                  ? "Readiness is measured against a target role after you practice its required skills."
+                  : `Based on ${overview.target?.tested_skill_count ?? 0} of ${overview.target?.required_skill_count ?? 0} required skills.`
+            }
+            action={<Link to="/dashboard">Open Progress</Link>}
           />
           <DashboardCard
             icon={<Target className="h-5 w-5" />}
             title="Weak Skills"
-            detail="Your weakest skills appear here after two or more practice rounds."
-            action="Empty until you practice"
-            muted
+            detail={
+              overviewError
+                ? overviewError
+                : weakSkills.length === 0
+                  ? "Not measured. Skills appear here after scored rounds."
+                  : weakSkills.map((skill) => `${skill.name} ${displayScore(skill.current_score)}`).join(", ")
+            }
+            action={weakSkills.length === 0 ? "Empty until you practice" : `${weakSkills.length} lowest measured`}
+            muted={weakSkills.length === 0}
           />
           <DashboardCard
             icon={<Clock className="h-5 w-5" />}
             title="Recent Sessions"
-            detail="Past interview sessions will show score, skill focus, and next-step summaries."
-            action="No sessions yet"
-            muted
+            detail={
+              overviewError
+                ? overviewError
+                : recent.length === 0
+                  ? "No scored sessions yet."
+                  : recent.map((session) => `${sessionLabel(session.round_types)} ${displayScore(session.average_score)}`).join(" · ")
+            }
+            action={recent.length === 0 ? "No sessions yet" : <Link to="/dashboard">View history</Link>}
+            muted={recent.length === 0}
           />
           <DashboardCard
             icon={<RotateCcw className="h-5 w-5" />}
             title="Replay / Past Questions"
-            detail="Review previous questions, your answers, and deterministic scoring breakdowns."
-            action="Available after a session"
-            muted
+            detail="Open a session report to review answers and deterministic scoring breakdowns."
+            action={history.length === 0 ? "Available after a session" : `${history.length} reports`}
+            muted={history.length === 0}
           />
           <DashboardCard
             icon={<Map className="h-5 w-5" />}
             title="Recommended Roadmap"
-            detail="Get a 7, 14, or 30 day plan after selecting a target role and generating a gap report."
-            action="Target role required"
-            muted
+            detail={
+              overview?.target
+                ? `${overview.target.company_name} · ${overview.target.role_title}`
+                : "Select a target company and role, then generate a gap report."
+            }
+            action={overview?.target ? <Link to="/home#target">View target</Link> : "Target role required"}
+            muted={!overview?.target}
           />
         </section>
       </div>
@@ -338,7 +334,7 @@ export default function Dashboard() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [raw, setRaw] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(sessionId));
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -387,7 +383,7 @@ export default function Dashboard() {
     <div className="dashboard-session min-h-screen w-full bg-[var(--color-session-bg)] text-white selection:bg-cyan-300/20 selection:text-white">
       <motion.div {...pageMotion} className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button onClick={() => navigate('/')}
+          <button onClick={() => navigate('/home')}
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 backdrop-blur-xl transition hover:bg-white/8"
             style={{ fontFamily: "var(--font-body)" }}>
             <ArrowLeft className="h-4 w-4" />

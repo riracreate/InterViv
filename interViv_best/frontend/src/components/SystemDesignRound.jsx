@@ -138,7 +138,7 @@ export default function SystemDesignRound({
 
       <h2
         className="text-2xl text-black"
-        style={{ fontFamily: "'Instrument Serif', serif" }}
+        style={{ fontFamily: "var(--font-display)" }}
       >
         {question || questionContext?.title || 'System design prompt'}
       </h2>

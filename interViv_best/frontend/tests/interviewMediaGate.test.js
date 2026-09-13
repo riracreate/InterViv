@@ -76,6 +76,10 @@ try {
           contents: 'export const classifyFrame = async () => null; export const computeEngagementDelta = () => 0; export const loadModels = async () => false; export const modeOfLabels = () => null;',
           loader: 'js',
         }));
+        builder.onLoad({ filter: /[/\\]lib[/\\]codingEditor\.js$/ }, () => ({
+          contents: 'export const monaco = { editor: { defineTheme() {} } };',
+          loader: 'js',
+        }));
       },
     }],
   });
