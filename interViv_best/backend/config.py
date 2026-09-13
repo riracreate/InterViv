@@ -24,6 +24,12 @@ class Settings:
     jwt_algorithm: str
     jwt_access_token_minutes: int
     enable_admin_endpoints: bool
+    # Phase 1A: authenticated users allowed to act on admin bundle-review routes.
+    # Empty (default) means every review action is 403 even when the router is mounted.
+    admin_user_emails: frozenset[str]
+    # Phase 1A: selector flag. Default off; nothing in the question flow reads
+    # reviewed bundles until the round contract change (Phase 1B) lands.
+    reviewed_bundles_only: bool
     length_ratio_multiplier_enabled: bool
     adzuna_app_id: str | None
     adzuna_app_key: str | None
@@ -116,6 +122,10 @@ def get_settings() -> Settings:
         jwt_algorithm=(os.getenv("JWT_ALGORITHM") or "HS256").strip().upper(),
         jwt_access_token_minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "1440")),
         enable_admin_endpoints=_env_bool("ENABLE_ADMIN_ENDPOINTS", False),
+        admin_user_emails=frozenset(
+            item.lower() for item in _split_csv(os.getenv("ADMIN_USER_EMAILS", ""))
+        ),
+        reviewed_bundles_only=_env_bool("REVIEWED_BUNDLES_ONLY", False),
         length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
         adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
         adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
