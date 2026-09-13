@@ -54,17 +54,19 @@ def test_every_attempt_field_survives_migrated_store_reopen(migrated_store):
 
 def test_upgrade_store_downgrade_one_revision_reupgrade_store(migrated_store):
     script = _script_directory()
-    assert script.get_heads() == ["20260908_0009"]
+    assert script.get_heads() == ["20260913_0010"]  # Phase 1A head
     assert_roundtrip(attempt_document())
     get_engine().dispose()
     _clear_db_caches()
-    _run_alembic(migrated_store, "downgrade", parent_revision("head"))
+    # Downgrade below Phase X's own revision (tests/alembic_helpers.py convention;
+    # "head" moved when Phase 1A added 20260913_0010).
+    _run_alembic(migrated_store, "downgrade", parent_revision("20260908_0009"))
     assert "ml_primitives_attempts" not in inspect(get_engine()).get_table_names()
     get_engine().dispose()
     _clear_db_caches()
     _run_alembic(migrated_store, "upgrade", "head")
     assert_roundtrip(attempt_document())
-    assert script.get_heads() == ["20260908_0009"]
+    assert script.get_heads() == ["20260913_0010"]  # Phase 1A head
 
 
 def test_unavailable_submission_and_ownership_on_durable_adapter(migrated_store, monkeypatch, tmp_path):

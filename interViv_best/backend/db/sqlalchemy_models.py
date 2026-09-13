@@ -637,3 +637,87 @@ class MLPrimitivesAttemptRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# Phase 1A: reviewed question bundles. Content is immutable per version; only
+# ``status`` moves, and every move is appended to ``bundle_status_audit``.
+BUNDLE_STATUSES = ("draft", "in_review", "reviewed", "rejected", "retired")
+BUNDLE_DECISIONS = ("approve", "reject", "adjudicate_approve", "adjudicate_reject")
+
+
+class QuestionBundleRow(Base):
+    __tablename__ = "question_bundles"
+
+    bundle_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    skill: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class QuestionBundleVersionRow(Base):
+    """One immutable content version. No writer updates ``content_json``."""
+
+    __tablename__ = "question_bundle_versions"
+
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)  # "<bundle_id>@<version>"
+    bundle_id: Mapped[str] = mapped_column(ForeignKey("question_bundles.bundle_id"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    attribution_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    author_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    status_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("bundle_id", "version", name="uq_bundle_versions_bundle_version"),
+        UniqueConstraint("bundle_id", "content_hash", name="uq_bundle_versions_bundle_hash"),
+        CheckConstraint("version >= 1", name="ck_bundle_versions_version_positive"),
+        CheckConstraint(
+            "status IN ('draft','in_review','reviewed','rejected','retired')",
+            name="ck_bundle_versions_status",
+        ),
+    )
+
+
+class BundleReviewDecisionRow(Base):
+    """A human decision bound to the exact content hash it reviewed."""
+
+    __tablename__ = "bundle_review_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version_id: Mapped[str] = mapped_column(ForeignKey("question_bundle_versions.id"), nullable=False, index=True)
+    bundle_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    checklist_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    reasons: Mapped[str] = mapped_column(Text, nullable=False)
+    calibration_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "reviewer_id", name="uq_bundle_review_version_reviewer"),
+        CheckConstraint(
+            "decision IN ('approve','reject','adjudicate_approve','adjudicate_reject')",
+            name="ck_bundle_review_decision",
+        ),
+    )
+
+
+class BundleStatusAuditRow(Base):
+    __tablename__ = "bundle_status_audit"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version_id: Mapped[str] = mapped_column(ForeignKey("question_bundle_versions.id"), nullable=False, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
