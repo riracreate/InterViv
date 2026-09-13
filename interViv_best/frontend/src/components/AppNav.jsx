@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, User } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { isNavActive, navDestinations } from '../lib/appNav';
-import { clearAuthToken, clearInterviewState, fetchMe } from '../lib/api';
+import { fetchMe } from '../lib/api';
 
 /**
- * Brand + animated hamburger (translucent destinations bar) + profile.
- * Profile is not inside the sliding bar.
+ * Brand + animated hamburger (translucent destinations bar).
+ * Sign-out lives on Account / Settings, not in the primary nav.
  */
 export default function AppNav({
   brandTo = '/home',
@@ -17,7 +16,6 @@ export default function AppNav({
   trailing = null,
 }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const [profile, setProfile] = useState({
     userId,
     roleId,
@@ -25,7 +23,6 @@ export default function AppNav({
     userEmail,
   });
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -63,17 +60,15 @@ export default function AppNav({
   });
 
   useEffect(() => {
-    if (!menuOpen && !profileOpen) return undefined;
+    if (!menuOpen) return undefined;
     function onPointerDown(event) {
       if (rootRef.current && !rootRef.current.contains(event.target)) {
         setMenuOpen(false);
-        setProfileOpen(false);
       }
     }
     function onKeyDown(event) {
       if (event.key === 'Escape') {
         setMenuOpen(false);
-        setProfileOpen(false);
       }
     }
     document.addEventListener('pointerdown', onPointerDown);
@@ -82,22 +77,12 @@ export default function AppNav({
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [menuOpen, profileOpen]);
+  }, [menuOpen]);
 
   useEffect(() => {
     setMenuOpen(false);
-    setProfileOpen(false);
   }, [location.pathname, location.hash]);
 
-  function handleSignOut() {
-    setProfileOpen(false);
-    setMenuOpen(false);
-    clearAuthToken();
-    clearInterviewState();
-    navigate('/login', { replace: true });
-  }
-
-  const initial = (profile.userName || '').trim().charAt(0).toUpperCase();
   const needsTarget = !profile.roleId;
 
   return (
@@ -120,10 +105,7 @@ export default function AppNav({
           {trailing}
           <button
             type="button"
-            onClick={() => {
-              setMenuOpen((v) => !v);
-              setProfileOpen(false);
-            }}
+            onClick={() => setMenuOpen((v) => !v)}
             aria-haspopup="true"
             aria-expanded={menuOpen}
             aria-controls="app-nav-slide-panel"
@@ -149,56 +131,6 @@ export default function AppNav({
               />
             </span>
           </button>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setProfileOpen((v) => !v);
-                setMenuOpen(false);
-              }}
-              aria-haspopup="menu"
-              aria-expanded={profileOpen}
-              aria-label="Profile menu"
-              data-testid="app-nav-profile-button"
-              title={profile.userName || profile.userEmail || 'Profile'}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-ink)] text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              {initial ? initial : <User size={18} aria-hidden="true" />}
-            </button>
-            {profileOpen && (
-              <div
-                role="menu"
-                aria-label="Profile"
-                data-testid="app-nav-profile-menu"
-                className="absolute right-0 z-50 mt-2 w-60 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)]/95 p-1.5 shadow-lg backdrop-blur-md"
-              >
-                {(profile.userName || profile.userEmail) && (
-                  <div className="border-b border-[var(--color-border)] px-3 py-2.5">
-                    {profile.userName && (
-                      <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
-                        {profile.userName}
-                      </p>
-                    )}
-                    {profile.userEmail && (
-                      <p className="truncate text-xs text-[var(--color-ink-muted)]">
-                        {profile.userEmail}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleSignOut}
-                  className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]"
-                >
-                  <LogOut size={15} aria-hidden="true" />
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
