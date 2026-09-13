@@ -1,0 +1,37 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: dbms.normalisation-1nf-3nf
+version: 1
+category: technical_short_answer
+skill: DBMS
+topic: Normalisation
+difficulty: medium
+question: What is database normalisation? Explain 1NF, 2NF, 3NF.
+reference_answer: >-
+  Normalisation eliminates data redundancy and ensures integrity. 1NF: each column holds atomic (indivisible)
+  values and each row is unique. 2NF: in 1NF and every non-key column is fully functionally dependent
+  on the whole primary key (eliminates partial dependencies). 3NF: in 2NF and no non-key column depends
+  on another non-key column (eliminates transitive dependencies). BCNF is a stricter version of 3NF. Normalising
+  reduces update anomalies but may require more JOINs.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 173
+  dataset_source_label: curated_v3
+  dataset_sub_domain: dbms_core
+  dataset_skill_label: DBMS
+  dataset_difficulty_label: Medium
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.

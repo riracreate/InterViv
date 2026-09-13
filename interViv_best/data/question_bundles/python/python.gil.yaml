@@ -1,0 +1,37 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# Editing content = bump `version`. Same version with changed content is rejected on import.
+bundle_id: python.gil
+version: 1
+category: technical_short_answer
+skill: Python
+topic: Concurrency and the GIL
+difficulty: hard
+question: What is the GIL in CPython and what are its implications?
+reference_answer: >-
+  The Global Interpreter Lock is a mutex in CPython that allows only one thread to execute Python bytecode
+  at a time. It simplifies memory management by protecting reference counts, but it means CPU-bound multi-threaded
+  Python programs cannot truly run in parallel on multiple cores. I/O-bound tasks can still benefit from
+  threads because the GIL is released during I/O waits. For CPU-bound parallelism, multiprocessing or
+  C extensions that release the GIL (like NumPy) are preferred.
+acceptable_variants: []
+keywords: []
+required_concepts: []
+optional_concepts: []
+misconceptions: []
+depth_markers: []
+rubric_descriptors: {}
+followups: []
+calibration_examples: []
+source: imported_csv
+author: dataset:interview_dataset_v6.csv#curated_v3
+attribution:
+  source_file: data/interview_dataset_v6.csv
+  source_line: 8
+  dataset_source_label: curated_v3
+  dataset_sub_domain: python_core
+  dataset_skill_label: Python
+  dataset_difficulty_label: Hard
+  note: >-
+    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
+    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
+    version.
