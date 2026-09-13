@@ -67,6 +67,17 @@ def test_health_exposes_scoring_mode(client: TestClient) -> None:
     scoring = body["scoring"]
     assert scoring["mode"] in {SCORING_MODE_FULL, SCORING_MODE_DEGRADED}
     assert "semantic_scoring_available" in scoring
+    source = body["question_source"]
+    assert source["configured_mode"] in {"llm", "csv", "llm_csv_fallback"}
+    assert source["effective_mode"] in {
+        "llm",
+        "csv",
+        "llm_csv_fallback",
+        "csv_fallback",
+        "llm_gated_off",
+    }
+    assert "llm_live_fetch" in source
+    assert "outbound_allowed" in source
 
 
 def test_scoring_mode_unknown_for_legacy_rows() -> None:

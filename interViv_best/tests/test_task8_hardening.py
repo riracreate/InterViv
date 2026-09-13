@@ -27,6 +27,18 @@ def test_question_cache_key_uses_target_concepts_tuple() -> None:
     )
 
 
+def test_question_cache_key_includes_company_and_role() -> None:
+    amazon = qr.QuestionCacheContext("DSA", "general", "medium", (), company="Amazon", role="SDE")
+    google = qr.QuestionCacheContext("DSA", "general", "medium", (), company="Google", role="SDE")
+    none = qr.QuestionCacheContext("DSA", "general", "medium", ())
+    assert qr.question_cache_key(amazon).startswith("interviv:question:v2:")
+    assert qr.question_cache_key(amazon) != qr.question_cache_key(google)
+    assert qr.question_cache_key(amazon) != qr.question_cache_key(none)
+    assert qr.question_cache_key(amazon) == qr.question_cache_key(
+        qr.QuestionCacheContext("DSA", "general", "medium", (), company=" amazon ", role="SDE")
+    )
+
+
 def test_llm_retries_three_times_then_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"count": 0}
     monkeypatch.setenv("QUESTION_LLM_PROVIDER", "openrouter")
