@@ -25,7 +25,8 @@ type PriorityRound = {
 };
 
 type Props = {
-  overallScore: number;
+  /** Null when no measured round was scored; never shown as zero. */
+  overallScore: number | null;
   gradeLabel: string;
   completedRounds: number;
   totalRounds: number;
@@ -34,10 +35,12 @@ type Props = {
   scoreRange: number;
   prioritySkills: SkillSummary[];
   priorityRound?: PriorityRound | null;
+  unscored?: Array<{ round: number; label: string }>;
   nextStep: string;
 };
 
-function scoreTone(score: number) {
+function scoreTone(score: number | null) {
+  if (score == null) return "border-white/15 bg-white/5 text-white/70";
   if (score >= 75) return "border-emerald-300/25 bg-emerald-300/10 text-emerald-100";
   if (score >= 55) return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
   if (score >= 35) return "border-amber-300/25 bg-amber-300/10 text-amber-100";
@@ -51,7 +54,10 @@ function scoreBar(score: number) {
   return "from-rose-300 to-fuchsia-400";
 }
 
-function summaryText(score: number, guardCount: number, completedRounds: number) {
+function summaryText(score: number | null, guardCount: number, completedRounds: number) {
+  if (score == null) {
+    return "No round in this session produced a score, so there is no verdict or action plan. Unscored rounds are listed below and excluded from every average.";
+  }
   if (score >= 75) {
     return "Interview-ready fundamentals are visible. Preserve the strongest answer patterns and use targeted practice to close the remaining gaps.";
   }
@@ -83,6 +89,7 @@ function Metric({ icon, label, value, detail }: { icon: React.ReactNode; label: 
 }
 
 export function ReviewSummary(props: Props) {
+  const unscored = props.unscored || [];
   const completion = props.totalRounds > 0
     ? Math.round((props.completedRounds / props.totalRounds) * 100)
     : 0;
@@ -140,7 +147,9 @@ export function ReviewSummary(props: Props) {
             icon={<FileCheck2 className="h-4 w-4" />}
             label="Completion"
             value={`${props.completedRounds}/${props.totalRounds || props.completedRounds}`}
-            detail={`${completion}% of planned rounds completed.`}
+            detail={unscored.length
+              ? `${unscored.length} round${unscored.length === 1 ? "" : "s"} not evaluated (${[...new Set(unscored.map((u) => u.label))].join(", ")}); excluded from every average.`
+              : `${completion}% of planned rounds completed.`}
           />
           <Metric
             icon={<Layers3 className="h-4 w-4" />}
@@ -162,6 +171,18 @@ export function ReviewSummary(props: Props) {
           />
         </div>
 
+        {unscored.length > 0 && (
+          <ul className="mt-4 grid gap-2" data-testid="unscored-rounds">
+            {unscored.map((u) => (
+              <li key={u.round} className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-3.5 text-xs leading-5 text-amber-100/90">
+                <span className="font-semibold">Round {u.round} · Unscored ({u.label}).</span>{" "}
+                Not evaluated, so it is excluded from averages, skill scores and suggestions.
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {props.overallScore != null && (
         <div className="mt-6 grid gap-5 border-t border-white/10 pt-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div>
             <div className="flex items-center gap-2">
@@ -220,6 +241,7 @@ export function ReviewSummary(props: Props) {
             </Link>
           </div>
         </div>
+        )}
       </div>
     </section>
   );

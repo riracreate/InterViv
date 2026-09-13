@@ -17,6 +17,33 @@ export const BUILDER_DRAFT_VERSION = 1;
 export const VERBAL_SKILL = 'Verbal Ability';
 export const SYSTEM_DESIGN_SKILL = 'System Design';
 
+// Browser copy of the builder draft, one key per account (Phase AB). The
+// unnamespaced key predates this, may hold another account's draft, and is
+// never read; api.js removes it whenever the signed-in account changes.
+export const LEGACY_BUILDER_DRAFT_KEY = 'interviv-builder-draft-v1';
+
+export function builderDraftKey(userId) {
+  return userId ? `${LEGACY_BUILDER_DRAFT_KEY}:${userId}` : null;
+}
+
+export function loadLocalBuilderDraft(userId) {
+  try {
+    const key = builderDraftKey(userId);
+    const local = key && JSON.parse(localStorage.getItem(key) || 'null');
+    return local && !validateDraftPayload(local) && local.blocks?.length ? local.blocks : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalBuilderDraft(userId, blocks) {
+  const key = builderDraftKey(userId);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ version: BUILDER_DRAFT_VERSION, blocks }));
+  } catch { /* storage full or unavailable */ }
+}
+
 // Phase B standalone entries: one clear start per available block.
 // Phase C adds coding practice backed by the execution service.
 export const STANDALONE_MODES = [

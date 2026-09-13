@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import AccountPage, { useAccountOverview } from '../components/AccountPage';
-import { displayScore, sessionLabel } from '../lib/accountOverview';
+import { displayScore, sessionLabel, unscoredReasonLabel } from '../lib/accountOverview';
 
 function fraction(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Not available';
@@ -34,7 +34,7 @@ export function ProgressContent({ data }) {
       <div className="hub-section-heading"><span>02</span><h2 id="history-heading">Session history</h2><p>Open a report to review your answers and feedback.</p></div>
       {data.history.length === 0 ? <div className="hub-empty"><h3>No scored sessions yet.</h3><p>Once a round is scored, its session report will appear here.</p></div> : <div className="hub-table-scroll"><table className="hub-history"><caption className="sr-only">Most recent scored practice sessions</caption><thead><tr><th>Date</th><th>Session</th><th>Skill focus</th><th>Score</th><th><span className="sr-only">Report</span></th></tr></thead><tbody>{data.history.map(session => <tr key={session.session_id}>
         <td>{session.created_at ? new Date(session.created_at).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not available'}</td>
-        <td><strong>{sessionLabel(session.round_types)}</strong><small>{session.completed_rounds}/{session.total_rounds} rounds scored{session.status === 'completed' ? ' · Complete' : ' · In progress'}{(session.unscored_rounds || []).length > 0 ? ` · ${session.unscored_rounds.length} unscored (${[...new Set(session.unscored_rounds.map((u) => u.reason === 'execution_unavailable' ? (u.round_type === 'ml_primitives' ? 'ML scoring unavailable' : 'coding unavailable') : u.reason))].join(', ')})` : ''}</small></td>
+        <td><strong>{sessionLabel(session.round_types)}</strong><small>{session.completed_rounds}/{session.total_rounds} rounds scored{session.status === 'completed' ? ' · Complete' : ' · In progress'}{(session.unscored_rounds || []).length > 0 ? ` · ${session.unscored_rounds.length} unscored (${[...new Set(session.unscored_rounds.map(unscoredReasonLabel))].join(', ')})` : ''}</small></td>
         <td>{session.skills.join(', ')}</td><td className="hub-history-score">{displayScore(session.average_score)}</td><td><Link className="hub-button" to={`/dashboard/${encodeURIComponent(session.session_id)}`} aria-label={`View ${sessionLabel(session.round_types)} report from ${session.created_at ? new Date(session.created_at).toLocaleDateString() : 'this session'}`}>View report →</Link></td>
       </tr>)}</tbody></table></div>}
       {data.scored_session_count > data.history.length && <p className="hub-caption">Showing the latest {data.history.length} of {data.scored_session_count} scored sessions.</p>}
