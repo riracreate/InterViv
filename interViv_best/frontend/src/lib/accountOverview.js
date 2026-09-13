@@ -2,6 +2,12 @@ export function displayScore(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not measured';
 }
 
+/** Reason wording for a round that was never evaluated (Progress and the session report). */
+export function unscoredReasonLabel(item) {
+  if (item.reason !== 'execution_unavailable') return item.reason;
+  return item.round_type === 'ml_primitives' ? 'ML scoring unavailable' : 'coding unavailable';
+}
+
 export function sessionLabel(types = []) {
   const names = { technical_short_answer: 'Interview', mcq: 'OA', sql: 'SQL', coding: 'Coding', ml_primitives: 'ML primitives' };
   return [...new Set(types)].map(type => names[type] || 'Assessment').join(' + ') || 'Practice';

@@ -21,13 +21,13 @@ function StatPill(props: { icon: React.ReactNode; label: string; value: string }
 }
 
 function ScoreRing(props: {
-  score: number;
+  score: number | null;
   accentRingClass: string;
   accentTextClass: string;
 }) {
   const radius = 46;
   const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, Math.min(100, props.score));
+  const progress = props.score == null ? 0 : Math.max(0, Math.min(100, props.score));
   const offset = circumference - (progress / 100) * circumference;
 
   return (
@@ -65,7 +65,7 @@ function ScoreRing(props: {
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center">
           <div className={`text-4xl font-semibold ${props.accentTextClass}`} style={{ fontFamily: "var(--font-body)" }}>
-            {progress}
+            {props.score == null ? "—" : progress}
           </div>
           <div className="mt-0.5 text-[11px] uppercase tracking-[0.22em] text-white/55" style={{ fontFamily: "var(--font-body)" }}>
             Overall
@@ -77,7 +77,7 @@ function ScoreRing(props: {
 }
 
 export function ScoreHero(props: {
-  overallScore: number;
+  overallScore: number | null;
   gradeLabel: string;
   deltaLabel: string;
   sessionTitle: string;

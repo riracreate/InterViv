@@ -118,6 +118,18 @@ def _coerce_datetime(value: Any) -> datetime | None:
     return None
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Restore UTC on a SQLite read.
+
+    Every writer stores UTC; SQLite's DateTime keeps the wall time and
+    drops tzinfo. A naive deadline serializes without an offset and the
+    browser reads it as local time, so a fresh round shows 00:00.
+    """
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -536,11 +548,11 @@ class _SessionCollection:
                     ),
                     "guard_applied": round_row.guard_applied,
                     "question_context": round_row.question_context or {},
-                    "created_at": round_row.created_at,
-                    "started_at": round_row.started_at,
-                    "expires_at": round_row.expires_at,
+                    "created_at": _as_utc(round_row.created_at),
+                    "started_at": _as_utc(round_row.started_at),
+                    "expires_at": _as_utc(round_row.expires_at),
                     "status": round_row.status or "submitted",
-                    "submitted_at": round_row.submitted_at,
+                    "submitted_at": _as_utc(round_row.submitted_at),
                     "block_id": round_row.block_id,
                     "block_position": round_row.block_position,
                     "block_category": round_row.block_category,
@@ -557,9 +569,9 @@ class _SessionCollection:
             "candidate_id": row.candidate_id,
             "target_company_id": row.target_company_id,
             "target_role_id": row.target_role_id,
-            "started_at": row.started_at,
-            "created_at": row.started_at,
-            "completed_at": row.completed_at,
+            "started_at": _as_utc(row.started_at),
+            "created_at": _as_utc(row.started_at),
+            "completed_at": _as_utc(row.completed_at),
             "overall_readiness_score": row.overall_readiness_score,
             "skill": row.skill,
             "sub_domain": row.sub_domain,

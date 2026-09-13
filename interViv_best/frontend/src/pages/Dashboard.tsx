@@ -440,14 +440,16 @@ export default function Dashboard() {
             />
           </motion.div>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-12">
-            <motion.div variants={item} className="lg:col-span-5">
-              <LayerBreakdown layers={data.layers} />
-            </motion.div>
-            <motion.div variants={item} className="lg:col-span-7">
-              <SkillRadar data={data.radar} />
-            </motion.div>
-          </div>
+          {data.overall.score != null && (
+            <div className="mt-8 grid gap-6 lg:grid-cols-12">
+              <motion.div variants={item} className="lg:col-span-5">
+                <LayerBreakdown layers={data.layers} />
+              </motion.div>
+              <motion.div variants={item} className="lg:col-span-7">
+                <SkillRadar data={data.radar} />
+              </motion.div>
+            </div>
+          )}
 
           <div className="mt-8 grid gap-6 lg:grid-cols-12">
             <motion.div variants={item} className="lg:col-span-5">
@@ -466,9 +468,11 @@ export default function Dashboard() {
             <ScoringBreakdownPanel rounds={data.rounds} />
           </motion.div>
 
-          <motion.div variants={item} className="mt-8">
-            <StrengthsWeaknesses strengths={data.highlights.strengths} weaknesses={data.highlights.weaknesses} />
-          </motion.div>
+          {(data.highlights.strengths.length > 0 || data.highlights.weaknesses.length > 0) && (
+            <motion.div variants={item} className="mt-8">
+              <StrengthsWeaknesses strengths={data.highlights.strengths} weaknesses={data.highlights.weaknesses} />
+            </motion.div>
+          )}
 
           <motion.div variants={item} className="mt-8">
             <FeedbackCards cards={data.feedbackCards as Array<{ id: string; title: string; tag: "Signal" | "Structure" | "Delivery" | "Clarity"; body: string }>} />

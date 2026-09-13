@@ -78,7 +78,9 @@ test('scoreAccent returns shared tone classes by band', () => {
 
 test('empty session still yields a safe dashboard shape', () => {
   const mapped = mapRealDataToDashboard({ rounds: [], averages: {} });
-  assert.equal(mapped.overall.score, 0);
+  // Phase AB (Z-F02): no measured average is "not measured", never a zero.
+  assert.equal(mapped.overall.score, null);
+  assert.equal(mapped.overall.gradeLabel, 'Not measured');
   assert.equal(mapped.rounds.length, 0);
   assert.equal(mapped.reviewSummary.completedRounds, 0);
   assert.equal(mapped.reviewSummary.guardCount, 0);

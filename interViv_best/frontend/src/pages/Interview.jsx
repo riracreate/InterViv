@@ -958,7 +958,10 @@ export default function Interview({ sessionState = null }) {
             <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
               style={{ fontFamily: "'Inter', sans-serif" }}>{currentSkill || 'Live Session'}</span>
           </div>
-          <span className="text-sm font-mono text-[#6F6F6F]">{fmt(ROUND_SECONDS)}</span>
+          {/* Typed rounds show only their own deadline timer (Phase AB). */}
+          {roundType === 'technical_short_answer' && (
+            <span className="text-sm font-mono text-[#6F6F6F]">{fmt(ROUND_SECONDS)}</span>
+          )}
         </header>
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
@@ -1075,7 +1078,7 @@ export default function Interview({ sessionState = null }) {
             </div>
             <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>{round}/{totalRounds}</span>
           </div>
-          {usesInterviewMedia && (
+          {usesInterviewMedia && roundType === 'technical_short_answer' && (
             <span
               className={`text-sm font-mono ${timeLeft <= 15 ? 'text-red-500' : 'text-[#6F6F6F]'}`}
               title="Time left in this round"

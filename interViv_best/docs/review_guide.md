@@ -1,10 +1,20 @@
 # Review guide — chain A through Z
 
-**Audience:** reviewers of `codex/phase-b-block-practice`
+**Audience:** reviewers of `codex/phase-b-block-practice` (historical) and the
+Phase 0 unify-shell port on `phase0/cursor-ai-design`.
+
+**Phase 0 port:** Z-F01/Z-F02/Z-F03 from `cc905cfc7eb6da7b43b022ece213fc16be141b92`
+were merged into unify-shell. This branch has local Piston coding execution and
+stock Gemma coaching; the Phase Z “coding 503 seam” paragraph below is
+historical for `codex/phase-b-block-practice`, not this checkout.
 
 **Base (chain root):** Phase A tip `0442493`
 
 **Product tip (Phase Y):** `6ae830338ad9c3b5e2173ff75341ab397fb78b68` (parent `ed0701e`). Phase Z adds documentation only; see [browser verification](phase_z_browser_verification.md) for the incomplete backlog and stop condition.
+
+**Phase AA (docs only, not copied here):** commit `7498cdb` inventoried another
+checkout’s dirty Tree 2 and a GGUF rescue. That Tree-2 inventory would be
+misleading on unify-shell, so `phase_aa_preservation.md` was not ported.
 
 **Phase Q commit (confirmed):** `c58e106` (`c58e1064f21eedc16bed347be4469f07b80f89e1`) — message `fix(phase-q): default LLM_LIVE_FETCH off and enforce mode at LLM client`; adds `modules/llm_outbound_gate.py` and the `_generate_via_llm` gate in `question_bank.py`.
 
@@ -16,7 +26,7 @@
 
 ## Phase Z review warning
 
-[Phase Z](phase_z_browser_verification.md) found browser defects despite 539 backend and 56 frontend tests passing: immediate typed-round expiry, unscored Coding reports presented as 0%, cross-account builder drafts, repeated-round question/count state leaks, and missing stale-submit error feedback. No fixes were made. Further browser checks stopped at a source-confirmed engagement-label-to-scoring metadata path (Z-F00); a numeric score effect was not established. Do not treat the capability inventory below as a claim that these flows are defect-free.
+[Phase Z](phase_z_browser_verification.md) found browser defects despite 539 backend and 56 frontend tests passing: immediate typed-round expiry, unscored Coding reports presented as 0%, cross-account builder drafts, repeated-round question/count state leaks, and missing stale-submit error feedback. Phase Z itself made no fixes. [Phase AB](phase_ab_delivery.md) fixed Z-F01, Z-F02 and Z-F03 in code; their browser verification is still open (STILL BLOCKED). Further browser checks stopped at a source-confirmed engagement-label-to-scoring metadata path (Z-F00); a numeric score effect was not established. Do not treat the capability inventory below as a claim that these flows are defect-free.
 
 ## (a) Commit inventory
 
@@ -346,9 +356,12 @@ git show-ref | grep refs/rescue/
 | ADJACENT LLM question generation vs contract intent | Owner judgment (§a) |
 | Home target picker vs `/target-context/me` | Known gap |
 | AV label enters scoring interface/metadata | Z-F00, source-confirmed; verification stopped; no live numeric influence established |
-| Immediate typed-round 00:00 / ML Submit disabled | Z-F01, P1 — observed in browser |
-| Expired unscored Coding report shows 0% / Needs Work | Z-F02, P1 — Progress exclusion works; report presentation fails |
-| Cross-account builder draft | Z-F03, P1 — leaked draft after signout/signup and reload; presets isolated |
+| Immediate typed-round 00:00 / ML Submit disabled | Z-F01 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Cause: SQLite read dropped tzinfo, offset-less deadline parsed as browser-local time. See [Phase AB delivery](phase_ab_delivery.md) |
+| Expired unscored Coding report shows 0% / Needs Work | Z-F02 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Report client mapped a null average to 0. See [Phase AB delivery](phase_ab_delivery.md) |
+| Cross-account builder draft | Z-F03 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Local draft key per account; legacy key never read, cleared on signin/signup/signout. See [Phase AB delivery](phase_ab_delivery.md) |
+| Account-two server builder drafts that already hold account one's blocks from before the Z-F03 fix | Pre-existing rows; **owner decision** needed on repair. Not repaired (Phase AB) |
+| Coding rounds zeroed (`final_score` 0.0) before Phase Y still count as scored in averages, coverage and item outcomes | Pre-existing rows; **owner decision** needed on repair. Not repaired (Phase AB) |
+| Other SQLite-read timestamps cross the API without a UTC offset (drafts, presets, bookmarks, retry sets, review `due_at`, user and skill-graph times, system-design attempts) | Open — Phase AB scan; not fixed. Learn renders review `due_at` with `toLocaleString`, so it would display shifted by the viewer's UTC offset (source/API inference, not rendered). See [Phase AB delivery](phase_ab_delivery.md) |
 | Repeated OA wrong result question / answered count | Z-F04/05, P2 — observed across two real rounds |
 | Coding calibration / intermittent fetch failures / execution copy | Z-F07–09 — details and evidence limits in Phase Z |
 | Frozen reports `human_baseline_report.md` / `persona_validation_report.md` retain markdown hard-break trailing spaces | Left untouched to preserve committed MD5 / frozen research bytes (Phase S) |
@@ -365,3 +378,18 @@ Candidate ML submissions are stored and ungraded; pack oracles are proven in tes
 ## Phase Z delivery
 
 Canonical itemized backlog: [Phase Z browser verification](phase_z_browser_verification.md). Rows in E/F/G/I/K/M/N/X and D have attribution/status follow-ups. The backlog remains incomplete at the user-defined AV/scoring stop condition. Documentation only; no fixes, push, merge or blocked implementation. The unrelated untracked worktree-root workspace file is preserved and prevents an unqualified-clean claim.
+
+## Phase AA delivery
+
+Historical preservation record of another checkout (`7498cdb`). Not copied onto
+this unify-shell branch: the Tree 2 inventory and GGUF rescue notes describe a
+different worktree. Hint-coach was not ported.
+
+## Phase AB delivery
+
+[Phase AB delivery](phase_ab_delivery.md) fixes three Phase Z defects in code:
+- **Z-F03:** per-account builder draft key; the legacy key is cleared on signin, signup and signout.
+- **Z-F02:** the session report reads a null average as not measured and lists unscored rounds.
+- **Z-F01:** the SQLite read restores UTC on round and session timestamps.
+
+No migration; no scorer, guard or bank changes. All three browser checks are **STILL BLOCKED**: no browser tool was available and nothing was rendered. Manual steps are in the delivery doc. Deferred data repairs and the remaining naive API timestamps are in §i.
