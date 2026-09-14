@@ -313,18 +313,32 @@ def test_evaluation_overlap_rejects_exact_and_flags_paraphrase(tmp_path, memory_
 
 def test_repo_pilot_yaml_imports_as_drafts_with_no_overlap(memory_store):
     from scripts.import_question_bundles import import_directory
+    from modules.question_bundles import iter_bundle_files, validate_bundle_doc
+
     root = Path(__file__).resolve().parents[1] / "data" / "question_bundles"
     report = import_directory(root, actor_id="cli")
     assert report["failed"] == [] and report["flagged"] == []
-    assert len(report["created"]) == 12
+    # 12 bundles × 2 versions (v1 CSV import + v2 concept authorship drafts)
+    assert len(report["created"]) == 24
     inv = bundle_store.inventory()
-    assert inv["reviewed_total"] == 0 and inv["status_totals"]["draft"] == 12
+    assert inv["reviewed_total"] == 0 and inv["status_totals"]["draft"] == 24
+    # Two bundles per skill×difficulty at each version → 4 draft versions per cell.
     per = {(s, d): sum(1 for topic in inv["unreviewed"][s].values() for dd, n in topic.items() if dd == d for _ in range(n))
            for s in ("Python", "DBMS") for d in ("easy", "medium", "hard")}
-    assert all(n == 2 for n in per.values()), per
-    assert all(v["source"] == "imported_csv" and v["author_id"].startswith("dataset:")
-               for v in bundle_store.list_versions())
-    assert import_directory(root, actor_id="cli")["unchanged"].__len__() == 12
+    assert all(n == 4 for n in per.values()), per
+    ids = sorted({validate_bundle_doc(d)["content"]["bundle_id"] for _, d in iter_bundle_files()})
+    assert len(ids) == 12
+    for bid in ids:
+        vs = bundle_store.list_versions(bid)
+        assert {v["version"] for v in vs} == {1, 2}
+        v1 = next(v for v in vs if v["version"] == 1)
+        v2 = next(v for v in vs if v["version"] == 2)
+        assert v1["status"] == v2["status"] == "draft"
+        assert v1["source"] == "imported_csv" and v1["author_id"].startswith("dataset:")
+        assert v2["source"] == "human_authored"
+        assert not v1["content_json"]["required_concepts"]
+        assert v2["content_json"]["required_concepts"]
+    assert import_directory(root, actor_id="cli")["unchanged"].__len__() == 24
 
 
 # ─── inventory + selector ──────────────────────────────────────────────────

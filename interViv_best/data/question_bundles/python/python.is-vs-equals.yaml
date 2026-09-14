@@ -1,36 +1,135 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: python.is-vs-equals
-version: 1
-category: technical_short_answer
-skill: Python
-topic: Identity and equality
-difficulty: easy
-question: What is the difference between is and == in Python?
-reference_answer: >-
-  == tests value equality — whether two objects have the same content. is tests identity — whether two
-  variables point to the exact same object in memory. For example, two lists with equal contents will
-  pass == but fail is. The is operator is appropriate for comparing to singletons like None, True, and
-  False, which have guaranteed single instances in CPython.
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 26
-  dataset_source_label: curated_v3
-  dataset_sub_domain: python_core
-  dataset_skill_label: Python
-  dataset_difficulty_label: Easy
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.is-vs-equals
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Identity and equality
+  difficulty: easy
+  question: What is the difference between is and == in Python?
+  reference_answer: == tests value equality — whether two objects have the same content. is tests identity
+    — whether two variables point to the exact same object in memory. For example, two lists with equal
+    contents will pass == but fail is. The is operator is appropriate for comparing to singletons like
+    None, True, and False, which have guaranteed single instances in CPython.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 26
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Easy
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.is-vs-equals
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Identity and equality
+  difficulty: easy
+  question: What is the difference between is and == in Python?
+  reference_answer: == tests value equality — whether two objects have the same content. is tests identity
+    — whether two variables point to the exact same object in memory. For example, two lists with equal
+    contents will pass == but fail is. The is operator is appropriate for comparing to singletons like
+    None, True, and False, which have guaranteed single instances in CPython.
+  acceptable_variants:
+  - == compares values; is compares object identity.
+  keywords:
+  - is
+  - ==
+  - identity
+  - equality
+  - None
+  required_concepts:
+  - id: identity
+    descriptor: is compares object identity
+    aliases:
+    - is operator
+    - same object
+    - identity comparison
+    expected_propositions:
+    - is tests whether two names refer to the same object
+    positive_examples: []
+    negative_cases: []
+  - id: equality
+    descriptor: == compares value equality
+    aliases:
+    - value equality
+    - equals
+    - ==
+    expected_propositions:
+    - == tests whether objects have equal values
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: None
+    descriptor: Prefer is for singleton None
+    aliases:
+    - NoneType
+    expected_propositions:
+    - compare to None with is
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: is_means_equals
+    description: Using is as a synonym for == on values
+    candidate_patterns:
+    - is means equal values
+    - is checks content
+    - always use is instead of ==
+  depth_markers:
+  - singletons
+  - interning
+  - None
+  rubric_descriptors:
+    coverage: Distinguishes identity vs equality.
+    accuracy: Does not treat is as value equality.
+    depth: Mentions None/singletons or interning caveats.
+    clarity: Gives a concrete contrast example.
+  followups: []
+  calibration_examples:
+  - answer: == checks value equality; is checks whether two references are the same object. Use is for
+      None.
+    author_level: 3
+    note: strong
+  - answer: is and == are different.
+    author_level: 1
+    note: partial
+  - answer: is checks content equality just like ==.
+    author_level: 0
+    note: incorrect
+  - answer: is tests identity; == tests value equality.
+    author_level: 2
+    note: concise-correct
+  - answer: Sometimes is works on strings.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 26
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Easy
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.
