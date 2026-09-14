@@ -1,37 +1,147 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: python.gil
-version: 1
-category: technical_short_answer
-skill: Python
-topic: Concurrency and the GIL
-difficulty: hard
-question: What is the GIL in CPython and what are its implications?
-reference_answer: >-
-  The Global Interpreter Lock is a mutex in CPython that allows only one thread to execute Python bytecode
-  at a time. It simplifies memory management by protecting reference counts, but it means CPU-bound multi-threaded
-  Python programs cannot truly run in parallel on multiple cores. I/O-bound tasks can still benefit from
-  threads because the GIL is released during I/O waits. For CPU-bound parallelism, multiprocessing or
-  C extensions that release the GIL (like NumPy) are preferred.
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 8
-  dataset_source_label: curated_v3
-  dataset_sub_domain: python_core
-  dataset_skill_label: Python
-  dataset_difficulty_label: Hard
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.gil
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Concurrency and the GIL
+  difficulty: hard
+  question: What is the GIL in CPython and what are its implications?
+  reference_answer: The Global Interpreter Lock is a mutex in CPython that allows only one thread to execute
+    Python bytecode at a time. It simplifies memory management by protecting reference counts, but it
+    means CPU-bound multi-threaded Python programs cannot truly run in parallel on multiple cores. I/O-bound
+    tasks can still benefit from threads because the GIL is released during I/O waits. For CPU-bound parallelism,
+    multiprocessing or C extensions that release the GIL (like NumPy) are preferred.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 8
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Hard
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.gil
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Concurrency and the GIL
+  difficulty: hard
+  question: What is the GIL in CPython and what are its implications?
+  reference_answer: The Global Interpreter Lock is a mutex in CPython that allows only one thread to execute
+    Python bytecode at a time. It simplifies memory management by protecting reference counts, but it
+    means CPU-bound multi-threaded Python programs cannot truly run in parallel on multiple cores. I/O-bound
+    tasks can still benefit from threads because the GIL is released during I/O waits. For CPU-bound parallelism,
+    multiprocessing or C extensions that release the GIL (like NumPy) are preferred.
+  acceptable_variants:
+  - The GIL serialises bytecode execution; use multiprocessing for CPU parallelism.
+  keywords:
+  - GIL
+  - threading
+  - multiprocessing
+  - bytecode
+  - CPython
+  required_concepts:
+  - id: GIL
+    descriptor: Global Interpreter Lock in CPython
+    aliases:
+    - global interpreter lock
+    - gil
+    expected_propositions:
+    - GIL allows only one thread to execute Python bytecode
+    positive_examples:
+    - Only one thread runs Python bytecode at a time because of the GIL.
+    negative_cases:
+    - The GIL makes all Python threads truly parallel on multiple cores.
+  - id: threading
+    descriptor: OS threads limited by the GIL for CPU-bound Python
+    aliases:
+    - threads
+    - multi-threaded
+    - multithreading
+    expected_propositions:
+    - CPU-bound threads do not run Python bytecode in parallel
+    positive_examples: []
+    negative_cases: []
+  - id: multiprocessing
+    descriptor: Process-based parallelism workaround
+    aliases:
+    - multiple processes
+    - process pool
+    expected_propositions:
+    - multiprocessing bypasses the GIL with separate processes
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: memory_efficiency
+    descriptor: GIL simplifies reference counting
+    aliases:
+    - reference counting
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: gil_prevents_all_concurrency
+    description: Claiming threads never help under the GIL
+    candidate_patterns:
+    - threads never help
+    - no concurrency possible
+    - I/O cannot use threads
+  depth_markers:
+  - I/O-bound
+  - releases the GIL
+  - NumPy
+  - bytecode
+  rubric_descriptors:
+    coverage: Defines GIL and contrasts threading vs multiprocessing.
+    accuracy: Does not claim the GIL forbids all concurrency including I/O waits.
+    depth: Mentions I/O release or C-extension release of the GIL.
+    clarity: Separates CPU-bound vs I/O-bound implications.
+  followups: []
+  calibration_examples:
+  - answer: The GIL lets only one thread run Python bytecode; use multiprocessing for CPU-bound work.
+      Threads still help for I/O.
+    author_level: 3
+    note: strong
+  - answer: GIL is a lock.
+    author_level: 1
+    note: term-only
+  - answer: Because of the GIL, threads never help and no concurrency is possible.
+    author_level: 0
+    note: incorrect
+  - answer: Only one thread executes bytecode; multiprocessing uses separate processes.
+    author_level: 2
+    note: concise-correct
+  - answer: GIL relates to parallelism somehow.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 8
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Hard
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

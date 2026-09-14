@@ -1,36 +1,125 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: python.shallow-vs-deep-copy
-version: 1
-category: technical_short_answer
-skill: Python
-topic: Object copying
-difficulty: medium
-question: What is the difference between shallow copy and deep copy?
-reference_answer: >-
-  A shallow copy creates a new object but inserts references to the same child objects as the original.
-  Modifying a mutable child object affects both copies. A deep copy recursively copies all nested objects,
-  producing a fully independent clone. Use copy.copy() for shallow and copy.deepcopy() for deep copies.
-  Shallow copies are faster and sufficient when nested objects are immutable or won't be mutated.
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 20
-  dataset_source_label: curated_v3
-  dataset_sub_domain: python_core
-  dataset_skill_label: Python
-  dataset_difficulty_label: Medium
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.shallow-vs-deep-copy
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Object copying
+  difficulty: medium
+  question: What is the difference between shallow copy and deep copy?
+  reference_answer: A shallow copy creates a new object but inserts references to the same child objects
+    as the original. Modifying a mutable child object affects both copies. A deep copy recursively copies
+    all nested objects, producing a fully independent clone. Use copy.copy() for shallow and copy.deepcopy()
+    for deep copies. Shallow copies are faster and sufficient when nested objects are immutable or won't
+    be mutated.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 20
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Medium
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.shallow-vs-deep-copy
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Object copying
+  difficulty: medium
+  question: What is the difference between shallow copy and deep copy?
+  reference_answer: A shallow copy creates a new object but inserts references to the same child objects
+    as the original. Modifying a mutable child object affects both copies. A deep copy recursively copies
+    all nested objects, producing a fully independent clone. Use copy.copy() for shallow and copy.deepcopy()
+    for deep copies. Shallow copies are faster and sufficient when nested objects are immutable or won't
+    be mutated.
+  acceptable_variants:
+  - Shallow copy shares nested objects; deep copy recursively clones them.
+  keywords:
+  - shallow copy
+  - deep copy
+  - nested
+  - copy.deepcopy
+  required_concepts:
+  - id: shallow copy
+    descriptor: Copies the outer container; nested objects shared
+    aliases:
+    - shallow
+    - copy.copy
+    expected_propositions:
+    - shallow copy shares nested objects
+    positive_examples: []
+    negative_cases: []
+  - id: deep copy
+    descriptor: Recursively copies nested objects
+    aliases:
+    - deepcopy
+    - copy.deepcopy
+    expected_propositions:
+    - deep copy duplicates nested objects
+    positive_examples: []
+    negative_cases: []
+  optional_concepts: []
+  misconceptions:
+  - id: assignment_is_copy
+    description: Treating assignment as a copy
+    candidate_patterns:
+    - assignment copies the object
+    - b = a makes a copy
+  depth_markers:
+  - nested mutable
+  - copy module
+  - shared references
+  rubric_descriptors:
+    coverage: Contrasts shallow vs deep copying of nested structure.
+    accuracy: Does not confuse assignment with copying.
+    depth: Gives nested mutable example.
+    clarity: States what is shared vs duplicated.
+  followups: []
+  calibration_examples:
+  - answer: Shallow copy duplicates the outer container but shares nested mutables; deepcopy recursively
+      clones nested objects.
+    author_level: 3
+    note: strong
+  - answer: Deep copy copies everything.
+    author_level: 1
+    note: partial
+  - answer: b = a makes a deep copy of a.
+    author_level: 0
+    note: incorrect
+  - answer: Shallow shares nested objects; deep copies them recursively.
+    author_level: 2
+    note: concise-correct
+  - answer: Copies are different sometimes.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 20
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Medium
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.
