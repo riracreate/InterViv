@@ -62,8 +62,13 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
             round_document = sanitize_round_for_client(round_document)
         cleaned = dict(round_document)
         question_context = cleaned.get("question_context", {}) or {}
-        cleaned["ideal_answer"] = question_context.get("ideal_answer", "")
-        cleaned["ideal_keywords"] = question_context.get("ideal_keywords", "")
+        # Completed-session reports may show approved reference content. Resolve
+        # from the pinned bundle when present; never trust client-supplied keys.
+        from modules.bundle_scoring import report_ideal_fields
+
+        ideals = report_ideal_fields(question_context)
+        cleaned["ideal_answer"] = ideals["ideal_answer"]
+        cleaned["ideal_keywords"] = ideals["ideal_keywords"]
         cleaned["topic"] = question_context.get("topic") or question_context.get("sub_domain")
         cleaned["sub_domain"] = question_context.get("sub_domain") or cleaned.get("sub_domain")
         cleaned["question_type"] = question_context.get("question_type")

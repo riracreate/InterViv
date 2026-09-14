@@ -218,6 +218,27 @@ def _normalize_question_payload(payload: object, *, skill: str,
                          or payload.get("text") or payload.get("query"))
         if not question_text:
             raise IntegrationError("question_bank returned a payload with no question text.")
+        source = str(payload.get("source") or "unknown")
+        # Reviewed-bundle candidate payloads carry identity only. Persist the
+        # pin on the round; resolve reference material server-side at score time.
+        if source == "reviewed_bundle" or payload.get("bundle_id"):
+            return {
+                "question": str(question_text),
+                "skill": str(payload.get("skill") or skill),
+                "sub_domain": payload.get("sub_domain") or sub_domain,
+                "topic": payload.get("topic") or payload.get("sub_domain") or sub_domain,
+                "difficulty": str(payload.get("difficulty") or difficulty or ""),
+                "question_type": payload.get("question_type") or "conceptual",
+                "company": payload.get("company") or "",
+                "role": payload.get("role") or "",
+                "followups": list(payload.get("followups") or []),
+                "source": "reviewed_bundle",
+                "bundle_id": payload.get("bundle_id"),
+                "version": payload.get("version"),
+                "content_hash": payload.get("content_hash"),
+                "target_concepts": list(payload.get("target_concepts") or []),
+                "adaptive_selected": bool(payload.get("adaptive_selected") or False),
+            }
         raw_keywords = (
             payload.get("ideal_keywords")
             or payload.get("keywords")
@@ -230,6 +251,8 @@ def _normalize_question_payload(payload: object, *, skill: str,
         else:
             ideal_keywords = str(raw_keywords)
             ideal_keywords_list = [item.strip() for item in ideal_keywords.split(",") if item.strip()]
+        # Legacy / LLM path: keep authoritative reference on the server round
+        # document for scoring. Candidate serializers strip these before delivery.
         return {
             "question": str(question_text),
             "ideal_answer": str(payload.get("ideal_answer")
@@ -245,7 +268,7 @@ def _normalize_question_payload(payload: object, *, skill: str,
             "company": payload.get("company") or "",
             "role": payload.get("role") or "",
             "followups": list(payload.get("followups") or []),
-            "source": str(payload.get("source") or "unknown"),
+            "source": source,
             "llm_provider": payload.get("llm_provider"),
             "llm_model": payload.get("llm_model"),
             # Phase 2 Task 7 — adaptive selector metadata
@@ -270,13 +293,33 @@ def _get_next_question(
 ) -> dict:
     """Return the next question payload.
 
-    When ``user_id`` is provided we route through the Phase 2 adaptive
-    selector (``modules.adaptive_question_selector``), which prepends
-    targeting hints for the user's weakest concepts in the skill. The
-    selector itself falls back to ``question_bank.get_next_question``
-    when no target concepts are available or the LLM call fails, so
-    anonymous and first-session flows are unaffected.
+    When ``REVIEWED_BUNDLES_ONLY`` is on, select a genuinely reviewed pinned
+    version or raise assessment-unavailable (no draft/legacy scored fallback).
+    Default remains off so existing adaptive / bank behavior is unchanged.
+
+    When ``user_id`` is provided (and the gate is off) we route through the
+    Phase 2 adaptive selector. Anonymous and first-session flows are unaffected.
     """
+    from modules.bundle_selector import (
+        ReviewedInventoryUnavailable,
+        reviewed_bundles_only,
+        select_reviewed_question,
+    )
+
+    if reviewed_bundles_only():
+        try:
+            payload = select_reviewed_question(
+                skill=skill,
+                difficulty=difficulty,
+                asked=asked,
+                topic=sub_domain,
+            )
+        except ReviewedInventoryUnavailable as exc:
+            raise IntegrationError(str(exc)) from exc
+        return _normalize_question_payload(
+            payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
+        )
+
     if user_id:
         from modules import adaptive_question_selector
 
@@ -1444,6 +1487,9 @@ def start_session(
         response["question_context"] = sanitized["question_context"]
         response["starter_code"] = sanitized["question_context"].get("starter_code")
     elif round_document.round_type in ("system_design", "ml_primitives"):
+        sanitized = sanitize_round_for_client(round_document.model_dump())
+        response["question_context"] = sanitized["question_context"]
+    elif round_document.round_type == "technical_short_answer":
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
     return response
