@@ -20,18 +20,11 @@ def test_v1_baseline_artifacts_exist() -> None:
     assert len(fixture["items"]) == 8
 
 
-# pytest's test_change5_baseline rewrites this file in-process. Replay after
-# `git restore -- docs/human_baseline_report.md` still hashes the committed bytes.
-_SUITE_MUTATED = {"docs/human_baseline_report.md"}
-
-
 def test_v1_sha256sums_match_working_tree() -> None:
     manifest = json.loads(SUMS_PATH.read_text())
     assert manifest["algorithm"] == "sha256"
     mismatches = []
     for rel, meta in manifest["files"].items():
-        if rel in _SUITE_MUTATED:
-            continue
         path = ROOT / rel
         if not path.is_file():
             mismatches.append(f"missing {rel}")

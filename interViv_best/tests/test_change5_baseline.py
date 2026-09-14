@@ -50,12 +50,23 @@ def test_baseline_system_scores_in_range():
     assert len(bad) == 0, f"{len(bad)} rows have system_score out of [0,100]"
 
 
-def test_analysis_produces_report():
-    """baseline_analysis.py must run without error and write docs/human_baseline_report.md."""
-    report = ROOT / "docs" / "human_baseline_report.md"
+def test_analysis_produces_report(tmp_path):
+    """baseline_analysis.py must run without error and write a report.
+
+    Writes only to a temporary path so the frozen
+    ``docs/human_baseline_report.md`` is never rewritten by the suite.
+    """
+    report = tmp_path / "human_baseline_report.md"
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "baseline_analysis.py")],
-        capture_output=True, text=True
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "baseline_analysis.py"),
+            "--sheet", str(BASELINE_SHEET),
+            "--output", str(report),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
     )
     assert result.returncode == 0, f"baseline_analysis.py failed:\n{result.stderr}"
     assert report.exists(), "Report file was not created"
