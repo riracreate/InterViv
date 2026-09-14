@@ -220,4 +220,17 @@ def sanitize_round_for_client(
                 "final_score": artifact.get("final_score"),
             }
 
+    elif round_type == "technical_short_answer":
+        # Pre-answer / active-round: rebuild from an explicit allowlist.
+        # Reference answers, keywords, concepts, and rubrics stay server-side.
+        from modules.bundle_scoring import candidate_technical_context
+
+        cleaned["question_context"] = candidate_technical_context(q_ctx)
+        # Top-level copies of grading fields (if any) must not leak either.
+        for forbidden in (
+            "ideal_answer", "ideal_keywords", "ideal_keywords_list",
+            "reference_answer", "keywords",
+        ):
+            cleaned.pop(forbidden, None)
+
     return cleaned
