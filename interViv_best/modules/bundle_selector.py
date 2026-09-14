@@ -5,8 +5,10 @@ Only the latest ``reviewed`` version of a bundle is eligible. ``draft``,
 returned payload is candidate-facing: it carries no reference answer,
 keywords, concepts, misconceptions, or rubric.
 
-Gated by ``REVIEWED_BUNDLES_ONLY`` (default off). When off, nothing in the
-existing question flow calls this module.
+Gated by ``REVIEWED_BUNDLES_ONLY`` (default off). When the gate is off, callers
+must not invoke ``select_reviewed_question`` for production selection. When on,
+an empty/ineligible inventory raises ``ReviewedInventoryUnavailable`` — never
+silently fall back to draft or legacy scored content.
 """
 from __future__ import annotations
 
@@ -26,10 +28,18 @@ def reviewed_bundles_only() -> bool:
 def select_reviewed_question(
     *, skill: str, difficulty: str, asked: list[str] | None = None, topic: str | None = None,
 ) -> dict:
-    """Deterministic pick: first eligible bundle (by bundle_id) not already asked."""
+    """Deterministic pick: first eligible bundle (by bundle_id) not already asked.
+
+    Eligibility is latest ``reviewed`` only. Asked matching uses question text
+    and bundle identity strings so a client cannot force a different version.
+    """
     asked_norm = {" ".join(q.split()).casefold() for q in (asked or [])}
+    asked_ids = {str(q).strip() for q in (asked or []) if str(q).strip()}
     for v in bundle_store.reviewed_versions(skill, difficulty, topic):
         payload = candidate_payload(v)
+        identity = f"{payload['bundle_id']}@{payload['version']}"
+        if identity in asked_ids:
+            continue
         if " ".join(payload["question"].split()).casefold() in asked_norm:
             continue
         return payload

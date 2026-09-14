@@ -27,9 +27,12 @@ class Settings:
     # Phase 1A: authenticated users allowed to act on admin bundle-review routes.
     # Empty (default) means every review action is 403 even when the router is mounted.
     admin_user_emails: frozenset[str]
-    # Phase 1A: selector flag. Default off; nothing in the question flow reads
-    # reviewed bundles until the round contract change (Phase 1B) lands.
+    # Phase 1A/1B: selector flag. Default off. When on, technical interview
+    # selection uses reviewed bundles only (no draft/legacy scored fallback).
     reviewed_bundles_only: bool
+    # Phase 1B: experimental concept evaluator (research/admin). Default off;
+    # never feeds production scoring, mastery, Elo, or readiness.
+    experimental_concept_evaluator: bool
     length_ratio_multiplier_enabled: bool
     adzuna_app_id: str | None
     adzuna_app_key: str | None
@@ -126,6 +129,7 @@ def get_settings() -> Settings:
             item.lower() for item in _split_csv(os.getenv("ADMIN_USER_EMAILS", ""))
         ),
         reviewed_bundles_only=_env_bool("REVIEWED_BUNDLES_ONLY", False),
+        experimental_concept_evaluator=_env_bool("EXPERIMENTAL_CONCEPT_EVALUATOR", False),
         length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
         adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
         adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,

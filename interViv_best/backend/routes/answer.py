@@ -583,6 +583,20 @@ def submit_answer(
                     config=active_round.get("config_json", {}),
                 )
             else:
+                from modules.bundle_scoring import (
+                    BundleReferenceUnavailable,
+                    scoring_context_from_round,
+                )
+
+                try:
+                    scoring_question_context = scoring_context_from_round(
+                        active_round.get("question_context", {})
+                    )
+                except BundleReferenceUnavailable as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=str(exc),
+                    ) from exc
                 scoring_result = score_round(
                     round_type=round_type,
                     answer_text=request.answer_text,
@@ -590,7 +604,7 @@ def submit_answer(
                     engagement_label=request.engagement_label,
                     wpm=request.wpm,
                     pause_count=request.pause_count,
-                    question_context=active_round.get("question_context", {}),
+                    question_context=scoring_question_context,
                     difficulty=active_round.get("difficulty", "medium"),
                     candidate_baseline=candidate_baseline,
                 )
@@ -1159,7 +1173,8 @@ def submit_answer(
                         }
                         rounds.append(next_round_doc)
                         next_question = question_payload["question"]
-                        next_question_context = question_payload
+                        sanitized_next = sanitize_round_for_client(dict(next_round_doc))
+                        next_question_context = sanitized_next.get("question_context") or {}
                         next_config_json = next_config_value
                         next_block_id = (expanded_spec or {}).get("block_id")
                         next_block_position = (expanded_spec or {}).get("block_position")
