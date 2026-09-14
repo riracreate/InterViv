@@ -1,37 +1,150 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: dbms.normalisation-1nf-3nf
-version: 1
-category: technical_short_answer
-skill: DBMS
-topic: Normalisation
-difficulty: medium
-question: What is database normalisation? Explain 1NF, 2NF, 3NF.
-reference_answer: >-
-  Normalisation eliminates data redundancy and ensures integrity. 1NF: each column holds atomic (indivisible)
-  values and each row is unique. 2NF: in 1NF and every non-key column is fully functionally dependent
-  on the whole primary key (eliminates partial dependencies). 3NF: in 2NF and no non-key column depends
-  on another non-key column (eliminates transitive dependencies). BCNF is a stricter version of 3NF. Normalising
-  reduces update anomalies but may require more JOINs.
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 173
-  dataset_source_label: curated_v3
-  dataset_sub_domain: dbms_core
-  dataset_skill_label: DBMS
-  dataset_difficulty_label: Medium
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.normalisation-1nf-3nf
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: Normalisation
+  difficulty: medium
+  question: What is database normalisation? Explain 1NF, 2NF, 3NF.
+  reference_answer: 'Normalisation eliminates data redundancy and ensures integrity. 1NF: each column
+    holds atomic (indivisible) values and each row is unique. 2NF: in 1NF and every non-key column is
+    fully functionally dependent on the whole primary key (eliminates partial dependencies). 3NF: in 2NF
+    and no non-key column depends on another non-key column (eliminates transitive dependencies). BCNF
+    is a stricter version of 3NF. Normalising reduces update anomalies but may require more JOINs.'
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 173
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Medium
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.normalisation-1nf-3nf
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: Normalisation
+  difficulty: medium
+  question: What is database normalisation? Explain 1NF, 2NF, 3NF.
+  reference_answer: 'Normalisation eliminates data redundancy and ensures integrity. 1NF: each column
+    holds atomic (indivisible) values and each row is unique. 2NF: in 1NF and every non-key column is
+    fully functionally dependent on the whole primary key (eliminates partial dependencies). 3NF: in 2NF
+    and no non-key column depends on another non-key column (eliminates transitive dependencies). BCNF
+    is a stricter version of 3NF. Normalising reduces update anomalies but may require more JOINs.'
+  acceptable_variants:
+  - 'Normalisation reduces redundancy: 1NF atomic values, 2NF no partial key dependency, 3NF no transitive
+    dependency.'
+  keywords:
+  - normalization
+  - 1NF
+  - 2NF
+  - 3NF
+  - redundancy
+  required_concepts:
+  - id: normalization
+    descriptor: Organize relations to reduce redundancy
+    aliases:
+    - normalisation
+    - normalize
+    - normalise
+    expected_propositions:
+    - normalization reduces redundancy
+    positive_examples: []
+    negative_cases: []
+  - id: 1NF
+    descriptor: Atomic attribute values / no repeating groups
+    aliases:
+    - first normal form
+    expected_propositions:
+    - 1NF requires atomic values
+    positive_examples: []
+    negative_cases: []
+  - id: 2NF
+    descriptor: Full functional dependency on the whole key
+    aliases:
+    - second normal form
+    expected_propositions:
+    - 2NF removes partial dependency on a composite key
+    positive_examples: []
+    negative_cases: []
+  - id: 3NF
+    descriptor: No transitive dependency on non-key attributes
+    aliases:
+    - third normal form
+    expected_propositions:
+    - 3NF removes transitive dependencies
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: redundancy_reduction
+    descriptor: Normalisation goal
+    aliases:
+    - less redundancy
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: higher_nf_always_better
+    description: Claiming higher NF is always mandatory
+    candidate_patterns:
+    - always use the highest NF
+    - denormalisation is never valid
+  depth_markers:
+  - functional dependency
+  - composite key
+  - transitive
+  rubric_descriptors:
+    coverage: Defines normalisation and 1NF/2NF/3NF intent.
+    accuracy: Does not claim highest NF is always required.
+    depth: Mentions functional / partial / transitive dependency.
+    clarity: Keeps the three forms distinct.
+  followups: []
+  calibration_examples:
+  - answer: Normalisation reduces redundancy. 1NF atomic values; 2NF no partial dependency on composite
+      keys; 3NF no transitive dependency on non-keys.
+    author_level: 3
+    note: strong
+  - answer: Normal forms organise tables.
+    author_level: 1
+    note: partial
+  - answer: You must always use the highest normal form; denormalisation is never valid.
+    author_level: 0
+    note: incorrect
+  - answer: 1NF atomic, 2NF full key dependency, 3NF no transitive dependency.
+    author_level: 2
+    note: concise-correct
+  - answer: Related to keys somehow.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 173
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Medium
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

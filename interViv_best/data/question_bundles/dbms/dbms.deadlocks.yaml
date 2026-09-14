@@ -1,37 +1,134 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: dbms.deadlocks
-version: 1
-category: technical_short_answer
-skill: DBMS
-topic: Concurrency control
-difficulty: hard
-question: What is a deadlock and how do databases handle it?
-reference_answer: >-
-  A deadlock occurs when two or more transactions each hold a lock that the other needs, creating a circular
-  wait. Databases detect deadlocks using a wait-for graph (looking for cycles). Upon detection, the database
-  selects a victim transaction (usually the one with the least cost to roll back), aborts it, and allows
-  the others to proceed. Prevention strategies include acquiring locks in a consistent order and using
-  lock timeouts. Optimistic concurrency avoids locks entirely.
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 197
-  dataset_source_label: curated_v3
-  dataset_sub_domain: dbms_core
-  dataset_skill_label: DBMS
-  dataset_difficulty_label: Hard
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.deadlocks
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: Concurrency control
+  difficulty: hard
+  question: What is a deadlock and how do databases handle it?
+  reference_answer: A deadlock occurs when two or more transactions each hold a lock that the other needs,
+    creating a circular wait. Databases detect deadlocks using a wait-for graph (looking for cycles).
+    Upon detection, the database selects a victim transaction (usually the one with the least cost to
+    roll back), aborts it, and allows the others to proceed. Prevention strategies include acquiring locks
+    in a consistent order and using lock timeouts. Optimistic concurrency avoids locks entirely.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 197
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Hard
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.deadlocks
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: Concurrency control
+  difficulty: hard
+  question: What is a deadlock and how do databases handle it?
+  reference_answer: A deadlock occurs when two or more transactions each hold a lock that the other needs,
+    creating a circular wait. Databases detect deadlocks using a wait-for graph (looking for cycles).
+    Upon detection, the database selects a victim transaction (usually the one with the least cost to
+    roll back), aborts it, and allows the others to proceed. Prevention strategies include acquiring locks
+    in a consistent order and using lock timeouts. Optimistic concurrency avoids locks entirely.
+  acceptable_variants:
+  - A deadlock is a circular wait on locks; databases detect and abort a victim or use timeouts.
+  keywords:
+  - deadlock
+  - circular wait
+  - locks
+  - timeout
+  - detection
+  required_concepts:
+  - id: deadlock
+    descriptor: Circular wait among transactions holding locks
+    aliases:
+    - deadlocks
+    expected_propositions:
+    - deadlock is a circular wait on locks
+    positive_examples: []
+    negative_cases: []
+  - id: circular_wait
+    descriptor: Each transaction waits for a lock held by another in a cycle
+    aliases:
+    - circular wait
+    expected_propositions:
+    - circular wait is required for deadlock
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: timeout
+    descriptor: Lock timeout / victim abort as handling strategy
+    aliases:
+    - lock timeout
+    - deadlock victim
+    expected_propositions:
+    - databases detect deadlocks and abort a victim or use timeouts
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: deadlock_is_slow_query
+    description: Equating deadlock with a merely slow query
+    candidate_patterns:
+    - deadlock means slow query
+    - just wait longer to fix deadlock
+  depth_markers:
+  - wait-for graph
+  - victim selection
+  - prevention
+  - detection
+  rubric_descriptors:
+    coverage: Defines deadlock via circular wait / lock cycle.
+    accuracy: Does not treat deadlock as ordinary slowness.
+    depth: Mentions detection, victim abort, or prevention.
+    clarity: Separates prevention vs detection strategies if mentioned.
+  followups: []
+  calibration_examples:
+  - answer: Deadlock is a circular wait among transactions holding locks; the DBMS detects it and aborts
+      a victim or uses timeouts.
+    author_level: 3
+    note: strong
+  - answer: Deadlocks involve locks.
+    author_level: 1
+    note: partial
+  - answer: A deadlock is just a slow query; waiting longer fixes it.
+    author_level: 0
+    note: incorrect
+  - answer: Circular wait on locks; abort a victim when detected.
+    author_level: 2
+    note: concise-correct
+  - answer: Concurrency problem.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 197
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Hard
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

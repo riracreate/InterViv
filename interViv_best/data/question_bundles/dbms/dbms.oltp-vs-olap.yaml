@@ -1,38 +1,134 @@
 # Canonical bundle content. Review state is NOT stored here; see the DB.
-# Editing content = bump `version`. Same version with changed content is rejected on import.
-bundle_id: dbms.oltp-vs-olap
-version: 1
-category: technical_short_answer
-skill: DBMS
-topic: Workload types
-difficulty: medium
-question: What is the difference between OLTP and OLAP?
-reference_answer: >-
-  OLTP (Online Transaction Processing) handles many short, frequent read/write transactions typical of
-  operational systems (orders, payments). Tables are normalised to avoid redundancy. OLAP (Online Analytical
-  Processing) handles complex analytical queries over large historical datasets for reporting and BI.
-  Tables are often denormalised (star/snowflake schema). OLTP optimises for throughput and low latency
-  per transaction; OLAP optimises for query speed over large scans using columnar storage and data warehouses
-  (Redshift, BigQuery, Snowflake).
-acceptable_variants: []
-keywords: []
-required_concepts: []
-optional_concepts: []
-misconceptions: []
-depth_markers: []
-rubric_descriptors: {}
-followups: []
-calibration_examples: []
-source: imported_csv
-author: dataset:interview_dataset_v6.csv#curated_v3
-attribution:
-  source_file: data/interview_dataset_v6.csv
-  source_line: 200
-  dataset_source_label: curated_v3
-  dataset_sub_domain: dbms_core
-  dataset_skill_label: DBMS
-  dataset_difficulty_label: Medium
-  note: >-
-    Question and reference copied verbatim from the dataset row. Concept lists, misconceptions and rubric
-    descriptors are intentionally empty: nothing here has been reviewed, and authoring them is a new draft
-    version.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.oltp-vs-olap
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: Workload types
+  difficulty: medium
+  question: What is the difference between OLTP and OLAP?
+  reference_answer: OLTP (Online Transaction Processing) handles many short, frequent read/write transactions
+    typical of operational systems (orders, payments). Tables are normalised to avoid redundancy. OLAP
+    (Online Analytical Processing) handles complex analytical queries over large historical datasets for
+    reporting and BI. Tables are often denormalised (star/snowflake schema). OLTP optimises for throughput
+    and low latency per transaction; OLAP optimises for query speed over large scans using columnar storage
+    and data warehouses (Redshift, BigQuery, Snowflake).
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 200
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Medium
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.oltp-vs-olap
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: Workload types
+  difficulty: medium
+  question: What is the difference between OLTP and OLAP?
+  reference_answer: OLTP (Online Transaction Processing) handles many short, frequent read/write transactions
+    typical of operational systems (orders, payments). Tables are normalised to avoid redundancy. OLAP
+    (Online Analytical Processing) handles complex analytical queries over large historical datasets for
+    reporting and BI. Tables are often denormalised (star/snowflake schema). OLTP optimises for throughput
+    and low latency per transaction; OLAP optimises for query speed over large scans using columnar storage
+    and data warehouses (Redshift, BigQuery, Snowflake).
+  acceptable_variants:
+  - OLTP optimises short operational transactions; OLAP optimises analytical scans over historical data.
+  keywords:
+  - OLTP
+  - OLAP
+  - transactions
+  - analytical
+  - warehouse
+  required_concepts:
+  - id: OLTP
+    descriptor: Operational short read/write transactions
+    aliases:
+    - online transaction processing
+    expected_propositions:
+    - OLTP handles many short transactional operations
+    positive_examples: []
+    negative_cases: []
+  - id: OLAP
+    descriptor: Analytical queries over large historical data
+    aliases:
+    - online analytical processing
+    expected_propositions:
+    - OLAP handles analytical queries over large datasets
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: normalization
+    descriptor: OLTP schemas often normalised
+    aliases:
+    - normalised schema
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: olap_is_just_faster_oltp
+    description: Treating OLAP as merely faster OLTP
+    candidate_patterns:
+    - OLAP is just faster OLTP
+    - same workload different speed
+  depth_markers:
+  - star schema
+  - columnar
+  - data warehouse
+  - throughput
+  rubric_descriptors:
+    coverage: Contrasts operational vs analytical workloads.
+    accuracy: Does not reduce the difference to raw speed alone.
+    depth: Mentions schema style or warehouse/columnar storage.
+    clarity: Keeps the two workload types distinct.
+  followups: []
+  calibration_examples:
+  - answer: OLTP serves short frequent read/write transactions on normalised operational data; OLAP runs
+      analytical queries over large historical sets, often denormalised or columnar.
+    author_level: 3
+    note: strong
+  - answer: OLTP and OLAP are database modes.
+    author_level: 1
+    note: partial
+  - answer: OLAP is just faster OLTP for the same workload.
+    author_level: 0
+    note: incorrect
+  - answer: OLTP is transactional ops; OLAP is analytical queries on large data.
+    author_level: 2
+    note: concise-correct
+  - answer: Both process data online.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 200
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Medium
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.
