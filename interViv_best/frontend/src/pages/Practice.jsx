@@ -4,6 +4,7 @@ import {
   fetchMe,
   fetchCompanies,
   fetchPracticeBank,
+  fetchAvailability,
   startSession,
   saveInterviewState,
   fetchPresets,
@@ -40,6 +41,11 @@ import {
   mapBlocksToStartPayload,
   mapStandaloneToStartPayload,
   applyTargetPrefill,
+  isAvailabilityMessage,
+  payloadHasInterview,
+  reconcileTopic,
+  summarizeAvailability,
+  topicsForSkills,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
@@ -82,6 +88,7 @@ export default function Practice() {
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState(null);
   const [error, setError] = useState('');
+  const [availability, setAvailability] = useState(null);
   const [busy, setBusy] = useState(false);
   const [skills, setSkills] = useState(DEFAULT_SKILLS);
   const [skillsExplicit, setSkillsExplicit] = useState(false);
@@ -101,6 +108,9 @@ export default function Practice() {
   const [standaloneDuration, setStandaloneDuration] = useState(20);
   const [standaloneDifficulty, setStandaloneDifficulty] = useState('');
   const [standaloneTopics, setStandaloneTopics] = useState('DBMS');
+  const [standaloneTopic, setStandaloneTopic] = useState('');
+  const [topicNote, setTopicNote] = useState('');
+  const [topicMetadata, setTopicMetadata] = useState(null);
 
   // Phase B block builder
   const [blocks, setBlocks] = useState([]);
@@ -153,6 +163,23 @@ export default function Practice() {
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Could not load practice bank.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, mode]);
+
+  // Interview topic metadata (skill -> topics) for standalone + builder.
+  // A failed load degrades to unrestricted topics; starting still works.
+  useEffect(() => {
+    if (!authReady || (mode !== 'interview' && mode !== 'custom')) return undefined;
+    let cancelled = false;
+    fetchPracticeBank()
+      .then((data) => {
+        if (!cancelled) setTopicMetadata(data.interview_topics || {});
+      })
+      .catch(() => {
+        if (!cancelled) setTopicMetadata({});
       });
     return () => {
       cancelled = true;
@@ -257,6 +284,46 @@ export default function Practice() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
+  const standaloneSkillList = useMemo(
+    () => standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
+    [standaloneTopics]
+  );
+  const metadataReady = topicMetadata != null && Object.keys(topicMetadata).length > 0;
+  const standaloneTopicOptions = useMemo(
+    () => topicsForSkills(standaloneSkillList, topicMetadata),
+    [standaloneSkillList, topicMetadata]
+  );
+
+  // Standalone interview: clear a topic the (changed) skills no longer
+  // offer, and say so. Skipped until metadata loads so a slow or failed
+  // load never destroys a selection.
+  useEffect(() => {
+    if (mode !== 'interview' || !metadataReady || !standaloneTopic) return;
+    const { cleared } = reconcileTopic(standaloneTopic, standaloneSkillList, topicMetadata);
+    if (cleared) {
+      setStandaloneTopic('');
+      setTopicNote(`Topic '${standaloneTopic}' isn't offered for the selected skills, so it was cleared.`);
+    }
+  }, [mode, metadataReady, standaloneSkillList, topicMetadata, standaloneTopic]);
+
+  // Builder: one-shot sweep when metadata arrives, so stale saved topics
+  // (drafts/presets from changed banks) reconcile visibly.
+  useEffect(() => {
+    if (mode !== 'custom' || !builderLoaded || !metadataReady) return undefined;
+    const stale = blocks.filter(
+      (b) => b.category === 'interview' && b.topic
+        && !topicsForSkills(b.skills, topicMetadata).includes(b.topic)
+    );
+    if (stale.length === 0) return undefined;
+    const ids = new Set(stale.map((b) => b.id));
+    setBlocks((prev) => prev.map((b) => (ids.has(b.id) ? { ...b, topic: undefined } : b)));
+    setTopicNote(
+      `${stale.length} saved topic${stale.length === 1 ? ' was' : 's were'} no longer offered and ${stale.length === 1 ? 'was' : 'were'} cleared.`
+    );
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, builderLoaded, metadataReady]);
+
   const bankItems = useMemo(() => {
     let items = [];
     if (bankType === 'all' || bankType === 'mcq') {
@@ -291,7 +358,39 @@ export default function Practice() {
 
   const setMode = (id) => {
     setError('');
+    setAvailability(null);
+    setTopicNote('');
     setSearchParams(id ? { mode: id } : {});
+  };
+
+  const updateBlockSkills = (block, index, value) => {
+    const nextSkills = value.split(',').map((s) => s.trim()).filter(Boolean);
+    if (block.category === 'interview' && block.topic && metadataReady) {
+      const { cleared } = reconcileTopic(block.topic, nextSkills, topicMetadata);
+      if (cleared) {
+        setTopicNote(`Block ${index + 1}: topic '${block.topic}' isn't offered for these skills, so it was cleared.`);
+        setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, skills: nextSkills, topic: undefined } : b)));
+        return;
+      }
+    }
+    setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, skills: nextSkills } : b)));
+  };
+
+  // Start-time content failures (422/503 with availability wording) go
+  // to the availability panel; malformed-request 422s keep the error box.
+  const reportStartIssue = (err) => {
+    const message = err?.message || 'Could not start session.';
+    if ((err?.status === 422 || err?.status === 503) && isAvailabilityMessage(message)) {
+      setAvailability({
+        title: /reviewed/i.test(message)
+          ? 'Assessed practice is unavailable'
+          : 'Practice content is unavailable',
+        reasons: [message],
+        reviewedOnly: /reviewed/i.test(message),
+      });
+    } else {
+      setError(message);
+    }
   };
 
   const runStart = async (mapped) => {
@@ -301,12 +400,27 @@ export default function Practice() {
     }
     setBusy(true);
     setError('');
+    setAvailability(null);
     try {
       const body = stripClientOnly(mapped.payload);
+      if (payloadHasInterview(body)) {
+        // Pre-commit probe: interview content resolves per skill on the
+        // server. Unavailable inventory stops here, before any session.
+        // A probe failure falls through to start; the server re-validates.
+        try {
+          const summary = summarizeAvailability(await fetchAvailability(body));
+          if (summary) {
+            setAvailability(summary);
+            return;
+          }
+        } catch {
+          /* fall through to start */
+        }
+      }
       const resp = await startSession(body);
       navigateToInterview(navigate, resp);
     } catch (err) {
-      setError(err.message || 'Could not start session.');
+      reportStartIssue(err);
     } finally {
       setBusy(false);
     }
@@ -352,6 +466,24 @@ export default function Practice() {
         {error && (
           <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
+          </div>
+        )}
+
+        {availability && (
+          <div
+            data-testid="availability-notice"
+            role="alert"
+            className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3"
+          >
+            <h2 className="text-base font-semibold text-[var(--color-ink)]">{availability.title}</h2>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--color-ink-muted)]">
+              {availability.reasons.map((reason, index) => (
+                <li key={index}>{reason}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
+              No session was started and nothing was consumed. Adjust the topics or settings and try again.
+            </p>
           </div>
         )}
 
@@ -833,6 +965,30 @@ export default function Practice() {
                 onChange={(e) => setStandaloneTopics(e.target.value)}
               />
             </label>
+            {standaloneTopicOptions.length > 0 && (
+              <label className="mt-4 block text-sm">
+                Topic (optional)
+                <select
+                  aria-label="Interview topic"
+                  className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
+                  value={standaloneTopic}
+                  onChange={(e) => {
+                    setStandaloneTopic(e.target.value);
+                    setTopicNote('');
+                  }}
+                >
+                  <option value="">All topics</option>
+                  {standaloneTopicOptions.map((topic) => (
+                    <option key={topic} value={topic}>
+                      {topic}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {topicNote && (
+              <p className="mt-2 text-xs text-[var(--color-ink-muted)]" role="status">{topicNote}</p>
+            )}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">
                 Questions (1–10)
@@ -861,9 +1017,10 @@ export default function Practice() {
               type="button" disabled={busy}
               className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               onClick={() => runStart(mapStandaloneToStartPayload('interview', {
-                skills: standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
+                skills: standaloneSkillList,
                 count: standaloneCount,
                 difficulty: standaloneDifficulty || undefined,
+                topic: standaloneTopic || undefined,
                 targetCompanyId: target.companyId, targetRoleId: target.roleId,
               }))}
             >
@@ -934,6 +1091,7 @@ export default function Practice() {
                           </button>
                           <button
                             type="button"
+                            aria-label={`Repeat block ${index + 1}`}
                             onClick={() => setBlocks((prev) => duplicateBlock(prev, block.id))}
                             className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
                           >
@@ -941,6 +1099,7 @@ export default function Practice() {
                           </button>
                           <button
                             type="button"
+                            aria-label={`Remove block ${index + 1}`}
                             onClick={() => setBlocks((prev) => removeBlock(prev, block.id))}
                             className="rounded border border-[var(--color-danger)]/40 px-2 py-1 text-xs text-[var(--color-danger)]"
                           >
@@ -955,18 +1114,36 @@ export default function Practice() {
                             <input
                               className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
                               value={(block.skills || []).join(', ')}
-                              onChange={(e) =>
-                                setBlocks((prev) =>
-                                  prev.map((b) =>
-                                    b.id === block.id
-                                      ? { ...b, skills: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }
-                                      : b
-                                  )
-                                )
-                              }
+                              onChange={(e) => updateBlockSkills(block, index, e.target.value)}
                             />
                           </label>
                         )}
+                        {block.category === 'interview' && (() => {
+                          const options = topicsForSkills(block.skills, topicMetadata);
+                          if (options.length === 0) return null;
+                          return (
+                            <label className="text-xs text-[var(--color-ink-muted)]">
+                              Topic (optional)
+                              <select
+                                aria-label={`Topic for block ${index + 1}`}
+                                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                                value={block.topic || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value || undefined;
+                                  setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, topic: value } : b)));
+                                  setTopicNote('');
+                                }}
+                              >
+                                <option value="">All topics</option>
+                                {options.map((topic) => (
+                                  <option key={topic} value={topic}>
+                                    {topic}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        })()}
                         {block.category === 'verbal' && (
                           <p className="text-xs text-[var(--color-ink-muted)]">
                             Topics: Verbal Ability (fixed English MCQs)
@@ -1047,6 +1224,9 @@ export default function Practice() {
                 {draftStatus && (
                   <p className="mt-2 text-xs text-[var(--color-ink-muted)]" role="status">{draftStatus}</p>
                 )}
+                {topicNote && (
+                  <p className="mt-2 text-xs text-[var(--color-ink-muted)]" role="status">{topicNote}</p>
+                )}
 
                 <div className="mt-6 border-t border-[var(--color-border)] pt-4">
                   <h3 className="text-sm font-semibold text-[var(--color-ink)]">Saved presets</h3>
@@ -1094,6 +1274,7 @@ export default function Practice() {
                           <span className="flex gap-1.5">
                             <button
                               type="button"
+                              aria-label={`Load preset ${preset.name}`}
                               onClick={() => {
                                 const loaded = (preset.blocks || []).map((b) => ({ ...b, id: b.id || createBlockId() }));
                                 const validation = validateBuilderBlocks(loaded);
@@ -1110,6 +1291,7 @@ export default function Practice() {
                             </button>
                             <button
                               type="button"
+                              aria-label={`Delete preset ${preset.name}`}
                               onClick={async () => {
                                 try {
                                   await deletePreset(preset.id);

@@ -48,6 +48,84 @@ function unscoredRounds(session) {
   }));
 }
 
+const BLOCK_CATEGORY_LABELS = {
+  verbal: "Verbal",
+  oa: "OA",
+  sql: "SQL",
+  coding: "Coding",
+  system_design: "System design",
+  ml_primitives: "ML primitives",
+  interview: "Interview",
+};
+
+// Each block's own metric. Never blended across blocks: MCQ accuracy,
+// SQL correctness, interview scores, and self-ratings stay separate.
+export function blockMetricLabel(block) {
+  const category = String(block?.block_category || "").toLowerCase();
+  const types = block?.round_types || [];
+  if (category === "verbal" || category === "oa" || types.includes("mcq")) {
+    return "MCQ accuracy";
+  }
+  if (category === "sql" || types.includes("sql")) return "SQL correctness";
+  if (category === "coding" || types.includes("coding")) return "Coding score";
+  if (category === "system_design" || types.includes("system_design")) {
+    return "Self-reported score";
+  }
+  if (category === "ml_primitives" || types.includes("ml_primitives")) {
+    return "Ungraded practice";
+  }
+  return "Interview score";
+}
+
+export function blockDisplayLabel(block, index) {
+  const category = String(block?.block_category || "").toLowerCase();
+  const name = BLOCK_CATEGORY_LABELS[category] || "Practice";
+  const position = block?.block_position ?? index + 1;
+  return `Block ${position} · ${name}`;
+}
+
+// Multi-block sessions only (block_plan length > 1). Legacy sessions
+// without a block plan keep their historical single-overall rendering.
+export function isMultiBlockSession(session) {
+  return Array.isArray(session?.block_plan) && session.block_plan.length > 1;
+}
+
+function mapBlocks(session) {
+  const results = session?.block_results || [];
+  return results.map((b, index) => {
+    const average = typeof b?.average_score === "number" && Number.isFinite(b.average_score)
+      ? b.average_score
+      : null;
+    const selfAverage = typeof b?.self_reported_average === "number" && Number.isFinite(b.self_reported_average)
+      ? b.self_reported_average
+      : null;
+    return {
+      position: b?.block_position ?? index + 1,
+      title: blockDisplayLabel(b, index),
+      metric: blockMetricLabel(b),
+      average,
+      selfReportedAverage: selfAverage,
+      skills: b?.skills || [],
+      rounds: Number(b?.rounds) || 0,
+      attempted: Number(b?.attempted_rounds ?? b?.scored_rounds) || 0,
+      scored: Number(b?.scored_rounds) || 0,
+      unscored: Number(b?.unscored_rounds ?? 0) || 0,
+      scoringModes: b?.scoring_modes || [],
+      suggestion: b?.suggestion?.text || null,
+    };
+  });
+}
+
+// True when the server average blends measured rounds from more than one
+// block. Single-block and legacy sessions are never blended.
+function isBlendedSession(session) {
+  if (!isMultiBlockSession(session)) return false;
+  const measuredBlocks = (session?.block_results || []).filter(
+    (b) => Number(b?.measured_rounds) > 0
+  );
+  return measuredBlocks.length > 1;
+}
+
 /**
  * Build props for ReviewSummary from the same session object the dashboard fetches.
  * Uses only fields already present on the API / mapped rounds — no invented scores.
@@ -99,6 +177,7 @@ export function buildReviewSummaryProps(session, mapped) {
 
   return {
     overallScore,
+    blended: mapped?.blended === true,
     gradeLabel,
     completedRounds: completed.length,
     totalRounds,
@@ -129,20 +208,25 @@ export function mapRealDataToDashboard(session) {
   const elos = session.elo_progression || [];
   const finalElo = elos.length ? elos[elos.length - 1] : (session.elo_after || 1200);
   const topicScores = session.topic_scores || {};
+  const blocks = mapBlocks(session);
+  // A blended average mixes measured rounds from several blocks (e.g.
+  // MCQ accuracy with interview scores). It is never shown as one
+  // unexplained percentage; per-block cards carry the metrics instead.
+  const blended = isBlendedSession(session);
 
-  const gradeLabel = gradeFor(average);
+  const gradeLabel = blended ? "Mixed session" : gradeFor(average);
 
-  const layers = measured ? [
+  const layers = measured && !blended ? [
     { label: "Layer 1", subtitle: "Content & Relevance", score: session.averages?.nlp_score ?? avg },
     { label: "Layer 2", subtitle: "Quality & Depth", score: session.averages?.kg_score ?? avg * 0.9 },
     { label: "Layer 3", subtitle: "Classifier Signal", score: avg * 0.95 },
   ] : [];
 
-  const radarSkills = !measured ? [] : Object.keys(topicScores).length > 0
+  const radarSkills = !measured || blended ? [] : Object.keys(topicScores).length > 0
     ? Object.entries(topicScores).map(([skill, value]) => ({ skill, value }))
     : skills.map((s) => ({ skill: s, value: avg }));
 
-  if (measured && radarSkills.length < 3) {
+  if (measured && !blended && radarSkills.length < 3) {
     const extras = [
       { skill: "Clarity", value: avg * 0.9 },
       { skill: "Structure", value: avg * 0.85 },
@@ -210,14 +294,19 @@ export function mapRealDataToDashboard(session) {
   }
 
   const nextStepText = session.next_step || "Continue practising with harder questions to improve your Elo.";
+  const measuredBlockCount = (session?.block_results || []).filter(
+    (b) => Number(b?.measured_rounds) > 0
+  ).length;
   const feedbackCards = [
     {
       id: "c1",
       title: "C4 — Context",
       tag: "Structure",
-      body: measured
-        ? `Your overall session score was ${Math.round(avg)}%. ${nextStepText}`
-        : `No round in this session produced a score. ${unscored.length} unscored round${unscored.length === 1 ? " is" : "s are"} excluded from every average.`,
+      body: blended
+        ? `This session combined ${measuredBlockCount} measured blocks with different metrics. See per-block results below — scores are not blended into one percentage. ${nextStepText}`
+        : measured
+          ? `Your overall session score was ${Math.round(avg)}%. ${nextStepText}`
+          : `No round in this session produced a score. ${unscored.length} unscored round${unscored.length === 1 ? " is" : "s are"} excluded from every average.`,
     },
     {
       id: "c2",
@@ -253,9 +342,14 @@ export function mapRealDataToDashboard(session) {
       durationLabel: `${completed.length} rounds`,
       skillFocus: skills[0] || "General",
     },
-    overall: measured
-      ? { score: Math.round(avg), gradeLabel, deltaLabel: `${Math.round(avg)}% avg score` }
-      : { score: null, gradeLabel, deltaLabel: "No scored rounds" },
+    overall: blended
+      ? { score: null, gradeLabel, deltaLabel: "See per-block results below" }
+      : measured
+        ? { score: Math.round(avg), gradeLabel, deltaLabel: `${Math.round(avg)}% avg score` }
+        : { score: null, gradeLabel, deltaLabel: "No scored rounds" },
+    blended,
+    multiBlock: isMultiBlockSession(session),
+    blocks,
     layers,
     radar: radarSkills,
     performance: { finalRating: finalElo, difficulty: diffProgression, score: scoreProgression },

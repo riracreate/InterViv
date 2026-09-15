@@ -21,6 +21,7 @@ import AppNav from "../components/AppNav";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
 import { ReviewSummary } from "../components/dashboard/ReviewSummary";
+import { BlockResults } from "../components/dashboard/BlockResults";
 import { LayerBreakdown } from "../components/dashboard/LayerBreakdown";
 import { SkillRadar } from "../components/dashboard/SkillRadar";
 import { PerformanceChart } from "../components/dashboard/PerformanceChart";
@@ -426,6 +427,12 @@ export default function Dashboard() {
           {data.reviewSummary && (
             <motion.div variants={item} className="mt-8">
               <ReviewSummary {...data.reviewSummary} />
+            </motion.div>
+          )}
+
+          {data.multiBlock && data.blocks.length > 1 && (
+            <motion.div variants={item} className="mt-8">
+              <BlockResults blocks={data.blocks} />
             </motion.div>
           )}
 

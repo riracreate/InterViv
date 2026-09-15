@@ -27,6 +27,8 @@ type PriorityRound = {
 type Props = {
   /** Null when no measured round was scored; never shown as zero. */
   overallScore: number | null;
+  /** True when measured blocks use different metrics (no single overall). */
+  blended?: boolean;
   gradeLabel: string;
   completedRounds: number;
   totalRounds: number;
@@ -54,7 +56,10 @@ function scoreBar(score: number) {
   return "from-rose-300 to-fuchsia-400";
 }
 
-function summaryText(score: number | null, guardCount: number, completedRounds: number) {
+function summaryText(score: number | null, guardCount: number, completedRounds: number, blended = false) {
+  if (score == null && blended) {
+    return "This session combined blocks with different metrics, so there is no single overall score. Per-block results below carry each block's own metric; unscored rounds are listed and excluded from every average.";
+  }
   if (score == null) {
     return "No round in this session produced a score, so there is no verdict or action plan. Unscored rounds are listed below and excluded from every average.";
   }
@@ -132,7 +137,7 @@ export function ReviewSummary(props: Props) {
               What the review says—and what to do next.
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70" style={{ fontFamily: "var(--font-body)" }}>
-              {summaryText(props.overallScore, props.guardCount, props.completedRounds)}
+              {summaryText(props.overallScore, props.guardCount, props.completedRounds, props.blended === true)}
             </p>
           </div>
 
