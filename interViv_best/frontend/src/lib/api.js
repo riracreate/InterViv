@@ -312,6 +312,14 @@ export function startSession(payload) {
   });
 }
 
+export function fetchAvailability(payload) {
+  return request("/session/availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
 export function submitAnswer(payload) {
   const body = {
     ...payload,

@@ -194,6 +194,14 @@ export function validateBuilderBlocks(blocks) {
     if (b.category === 'interview' && (b.skills || []).length === 0) {
       return `${label}: select at least one skill.`;
     }
+    if (b.topic != null && b.topic !== '') {
+      if (b.category !== 'interview') {
+        return `${label}: topic is only supported for interview blocks.`;
+      }
+      if (typeof b.topic !== 'string' || !b.topic.trim() || b.topic.trim().length > 120) {
+        return `${label}: topic must be 1–120 characters.`;
+      }
+    }
     const count = Number(b.count);
     if (!Number.isFinite(count) || count < 1) return `${label}: count must be at least 1.`;
     if ((b.category === 'oa' || b.category === 'verbal') && count > 30) {
@@ -233,6 +241,8 @@ export function mapBlocksToStartPayload(blocks, form = {}) {
       if (b.id) item.id = b.id;
       if (b.duration_minutes != null) item.duration_minutes = Number(b.duration_minutes);
       if (b.difficulty) item.difficulty = String(b.difficulty).toLowerCase();
+      // Unrestricted topics are omitted, never sent as "general".
+      if (typeof b.topic === 'string' && b.topic.trim()) item.topic = b.topic.trim();
       if (b.question_ids?.length) item.question_ids = [...b.question_ids];
       if (b.problem_ids?.length) item.problem_ids = [...b.problem_ids];
       if (b.language) item.language = b.language;
@@ -308,6 +318,7 @@ export function mapStandaloneToStartPayload(kind, form = {}) {
     const block = { ...template, skills, count };
     if (form.durationMinutes) block.duration_minutes = Number(form.durationMinutes);
     if (form.difficulty) block.difficulty = String(form.difficulty).toLowerCase();
+    if (typeof form.topic === 'string' && form.topic.trim()) block.topic = form.topic.trim();
     return mapBlocksToStartPayload([block], form);
   }
   return { error: `Unsupported standalone practice "${kind}".` };
@@ -534,4 +545,82 @@ export function applyTargetPrefill(currentSkills, requiredSkills, explicit) {
     return { skills: current, applied: false };
   }
   return { skills: required.slice(0, 5), applied: true };
+}
+
+/**
+ * True when a start payload contains interview (free-text) rounds, whose
+ * content is resolved server-side per skill. MCQ/SQL/coding availability
+ * is already validated pre-commit by POST /session/start itself, so only
+ * interview payloads get a pre-start availability probe.
+ */
+export function payloadHasInterview(payload) {
+  const blocks = payload?.blocks;
+  if (Array.isArray(blocks)) {
+    return blocks.some((b) => b?.round_type === 'technical_short_answer' || b?.category === 'interview');
+  }
+  if (payload?.round_type === 'technical_short_answer') return true;
+  return Array.isArray(payload?.round_plan) && payload.round_plan.includes('technical_short_answer');
+}
+
+/**
+ * True when a start-failure message carries the server's availability
+ * wording (content shortage, not a malformed request). Pure for tests.
+ */
+export function isAvailabilityMessage(message) {
+  return /reviewed|availab|not enough|unknown/i.test(String(message || ''));
+}
+
+/**
+ * Interview topic options for the given skills, from the practice-bank
+ * `interview_topics` metadata ({skill: [topics]}). Union across skills,
+ * deduplicated and sorted; skills match case-insensitively. Pure.
+ */
+export function topicsForSkills(skills, metadata) {
+  if (!metadata || typeof metadata !== 'object') return [];
+  const wanted = (skills || []).map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  if (wanted.length === 0) return [];
+  const found = new Set();
+  for (const [skill, topics] of Object.entries(metadata)) {
+    if (!wanted.includes(String(skill).trim().toLowerCase())) continue;
+    for (const topic of topics || []) {
+      const name = String(topic || '').trim();
+      if (name) found.add(name);
+    }
+  }
+  return Array.from(found).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Reconcile a selected topic with (possibly changed) skills. Keeps the
+ * topic when it is still offered; otherwise clears it so the caller can
+ * say so visibly. Pure for tests.
+ */
+export function reconcileTopic(selected, skills, metadata) {
+  const current = typeof selected === 'string' ? selected.trim() : '';
+  if (!current) return { topic: '', cleared: false };
+  const options = topicsForSkills(skills, metadata);
+  if (options.includes(current)) return { topic: current, cleared: false };
+  return { topic: '', cleared: true };
+}
+
+/**
+ * Summarize a POST /session/availability response for the pre-start
+ * notice. Pure for tests. Returns null when everything is available.
+ */
+export function summarizeAvailability(resp) {
+  if (!resp || resp.available !== false) return null;
+  const reasons = (resp.blocks || [])
+    .filter((b) => b && b.available === false)
+    .map((b) => {
+      const where = b.position != null ? `Block ${b.position}` : 'This practice';
+      const what = (b.skills || []).length ? ` (${b.skills.join(', ')})` : '';
+      return `${where}${what}: ${b.reason || 'content unavailable.'}`;
+    });
+  return {
+    title: resp.reviewed_only
+      ? 'Assessed practice is unavailable'
+      : 'Practice content is unavailable',
+    reasons: reasons.length ? reasons : ['The requested content is unavailable.'],
+    reviewedOnly: Boolean(resp.reviewed_only),
+  };
 }
