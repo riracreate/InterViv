@@ -3,10 +3,18 @@ import test from 'node:test';
 
 import {
   PRACTICE_MODES,
+  mapBlocksToStartPayload,
   mapCustomBuilderToStartPayload,
   mapFullInterviewToStartPayload,
   mapOaSqlToStartPayload,
   mapProblemItemToStartPayload,
+  mapStandaloneToStartPayload,
+  isAvailabilityMessage,
+  payloadHasInterview,
+  reconcileTopic,
+  summarizeAvailability,
+  topicsForSkills,
+  validateBuilderBlocks,
 } from '../src/lib/practiceBuilder.js';
 
 test('Practice hub exposes four modes with honest OA+SQL labeling', () => {
@@ -100,4 +108,124 @@ test('problem item mapper pins question_ids / problem_id', () => {
   );
   assert.equal(sql.payload.round_type, 'sql');
   assert.equal(sql.payload.round_config.problem_id, 'sql_prob_001');
+});
+
+test('payloadHasInterview detects interview rounds in blocks and legacy payloads', () => {
+  assert.equal(payloadHasInterview({ blocks: [{ round_type: 'mcq', category: 'oa' }] }), false);
+  assert.equal(payloadHasInterview({ blocks: [{ round_type: 'sql', category: 'sql' }] }), false);
+  assert.equal(
+    payloadHasInterview({ blocks: [{ round_type: 'technical_short_answer', category: 'interview' }] }),
+    true
+  );
+  assert.equal(
+    payloadHasInterview({ blocks: [{ round_type: 'mcq' }, { round_type: 'technical_short_answer' }] }),
+    true
+  );
+  assert.equal(payloadHasInterview({ round_type: 'technical_short_answer' }), true);
+  assert.equal(payloadHasInterview({ round_type: 'mcq', round_plan: ['mcq', 'sql'] }), false);
+  assert.equal(
+    payloadHasInterview({ round_type: 'mcq', round_plan: ['mcq', 'technical_short_answer'] }),
+    true
+  );
+  assert.equal(payloadHasInterview(null), false);
+});
+
+test('summarizeAvailability returns null when everything is available', () => {
+  assert.equal(summarizeAvailability({ available: true, reviewed_only: false, blocks: [] }), null);
+  assert.equal(summarizeAvailability(null), null);
+});
+
+test('summarizeAvailability names the blocked block and skill', () => {
+  const summary = summarizeAvailability({
+    reviewed_only: true,
+    available: false,
+    blocks: [
+      { position: 1, category: 'interview', skills: ['DBMS'], available: true, reason: null },
+      {
+        position: 2, category: 'interview', skills: ['OOP'], available: false,
+        reason: "No reviewed question bundles are available for skill 'OOP'.",
+      },
+    ],
+  });
+  assert.equal(summary.title, 'Assessed practice is unavailable');
+  assert.equal(summary.reviewedOnly, true);
+  assert.equal(summary.reasons.length, 1);
+  assert.match(summary.reasons[0], /Block 2/);
+  assert.match(summary.reasons[0], /OOP/);
+});
+
+const TOPIC_METADATA = {
+  DBMS: ['indexes', 'normalization', 'transactions'],
+  OOP: ['pillars', 'solid'],
+};
+
+test('topicsForSkills unions per-skill topics case-insensitively', () => {
+  assert.deepEqual(topicsForSkills(['DBMS'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
+  assert.deepEqual(topicsForSkills(['dbms'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
+  assert.deepEqual(
+    topicsForSkills(['DBMS', 'OOP'], TOPIC_METADATA),
+    ['indexes', 'normalization', 'pillars', 'solid', 'transactions']
+  );
+  assert.deepEqual(topicsForSkills(['Unknown Skill'], TOPIC_METADATA), []);
+  assert.deepEqual(topicsForSkills([], TOPIC_METADATA), []);
+  assert.deepEqual(topicsForSkills(['DBMS'], null), []);
+  assert.deepEqual(topicsForSkills(['DBMS'], {}), []);
+});
+
+test('reconcileTopic keeps offered topics and clears the rest', () => {
+  assert.deepEqual(reconcileTopic('normalization', ['DBMS'], TOPIC_METADATA), { topic: 'normalization', cleared: false });
+  assert.deepEqual(reconcileTopic('normalization', ['OOP'], TOPIC_METADATA), { topic: '', cleared: true });
+  assert.deepEqual(reconcileTopic('', ['DBMS'], TOPIC_METADATA), { topic: '', cleared: false });
+  assert.deepEqual(reconcileTopic('  ', ['DBMS'], TOPIC_METADATA), { topic: '', cleared: false });
+  // Unknown skills offer nothing: a stale selection clears visibly.
+  assert.deepEqual(reconcileTopic('normalization', ['Unknown'], TOPIC_METADATA), { topic: '', cleared: true });
+});
+
+test('standalone interview maps an explicit topic and omits unrestricted', () => {
+  const { error, payload } = mapStandaloneToStartPayload('interview', {
+    skills: ['DBMS'], count: 2, topic: 'normalization',
+  });
+  assert.equal(error, undefined);
+  assert.equal(payload.blocks[0].topic, 'normalization');
+  const unrestricted = mapStandaloneToStartPayload('interview', { skills: ['DBMS'], count: 2 });
+  assert.equal(unrestricted.error, undefined);
+  assert.ok(!('topic' in unrestricted.payload.blocks[0]));
+  const blank = mapStandaloneToStartPayload('interview', { skills: ['DBMS'], count: 2, topic: '  ' });
+  assert.ok(!('topic' in blank.payload.blocks[0]));
+});
+
+test('repeated interview blocks keep independent topics', () => {
+  const { error, payload } = mapBlocksToStartPayload([
+    { id: 'b1', round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 1, topic: 'normalization' },
+    { id: 'b2', round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 1, topic: 'indexes' },
+  ]);
+  assert.equal(error, undefined);
+  assert.equal(payload.blocks[0].topic, 'normalization');
+  assert.equal(payload.blocks[1].topic, 'indexes');
+});
+
+test('isAvailabilityMessage separates content shortages from malformed requests', () => {
+  assert.equal(isAvailabilityMessage('No reviewed question bundles are available.'), true);
+  assert.equal(isAvailabilityMessage('Not enough OOP MCQ questions available: found 10, need 15.'), true);
+  assert.equal(isAvailabilityMessage('Unknown SQL problem: xyz.'), true);
+  assert.equal(isAvailabilityMessage('Block 1: count must be 1–30.'), false);
+  assert.equal(isAvailabilityMessage('At most 10 blocks are allowed.'), false);
+  assert.equal(isAvailabilityMessage(''), false);
+  assert.equal(isAvailabilityMessage(null), false);
+});
+
+test('builder validation scopes topics to interview blocks', () => {
+  const interview = { round_type: 'technical_short_answer', category: 'interview', skills: ['DBMS'], count: 1 };
+  assert.equal(validateBuilderBlocks([{ ...interview }]), null);
+  assert.equal(validateBuilderBlocks([{ ...interview, topic: 'normalization' }]), null);
+  assert.match(
+    validateBuilderBlocks([{ ...interview, topic: 'x'.repeat(121) }]),
+    /1–120/
+  );
+  assert.match(
+    validateBuilderBlocks([{
+      round_type: 'mcq', category: 'oa', skills: ['DBMS'], count: 2, duration_minutes: 10, topic: 'normalization',
+    }]),
+    /only supported for interview/
+  );
 });
