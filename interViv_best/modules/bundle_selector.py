@@ -25,6 +25,24 @@ def reviewed_bundles_only() -> bool:
     return bool(get_settings().reviewed_bundles_only)
 
 
+def reviewed_available_count(
+    *, skill: str, difficulty: str | None = None, topic: str | None = None,
+) -> int:
+    """Eligible reviewed bundles for a skill without selecting content.
+
+    Counts latest ``reviewed`` versions only (never drafts or unreviewed
+    work). ``difficulty``/``topic`` narrow the count when the caller pins
+    them; ``None`` counts across all values. Returns a count, never
+    content, so availability probes disclose no reference material.
+    """
+    if difficulty is not None:
+        return len(bundle_store.reviewed_versions(skill, difficulty, topic))
+    total = 0
+    for level in ("easy", "medium", "hard"):
+        total += len(bundle_store.reviewed_versions(skill, level, topic))
+    return total
+
+
 def select_reviewed_question(
     *, skill: str, difficulty: str, asked: list[str] | None = None, topic: str | None = None,
 ) -> dict:

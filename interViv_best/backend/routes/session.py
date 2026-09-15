@@ -204,6 +204,20 @@ def _sub_domain_for_skill(candidate: dict | None, skill: str,
     return (candidate.get("sub_domain_profile") or {}).get(skill)
 
 
+def _explicit_reviewed_topic(*values: str | None) -> str | None:
+    """First explicit topic pin, else None (unrestricted).
+
+    Precedence is caller-ordered (block topic, session override, stored
+    profile). The legacy ``general`` default is never a pin: it means the
+    user did not restrict the topic.
+    """
+    for value in values:
+        text = str(value or "").strip()
+        if text and text.lower() != "general":
+            return text
+    return None
+
+
 def _normalize_question_payload(payload: object, *, skill: str,
                                 sub_domain: str | None,
                                 difficulty: str | None = None) -> dict:
@@ -307,12 +321,15 @@ def _get_next_question(
     )
 
     if reviewed_bundles_only():
+        # Only an explicit non-default topic narrows selection; that pin
+        # is strict (never silently switched).
+        topic = _explicit_reviewed_topic(sub_domain)
         try:
             payload = select_reviewed_question(
                 skill=skill,
                 difficulty=difficulty,
                 asked=asked,
-                topic=sub_domain,
+                topic=topic,
             )
         except ReviewedInventoryUnavailable as exc:
             raise IntegrationError(str(exc)) from exc
@@ -755,6 +772,26 @@ def build_round_document(
     )
 
 
+def _interview_topic_metadata() -> dict[str, list[str]]:
+    """Skill → sorted interview topic names (metadata only).
+
+    Derived from the same cached structured-bank rows runtime selection
+    filters first, so the Practice topic picker always matches served
+    vocabulary. Names only — no questions, references, or grading
+    content. The reserved ``general`` default is never offered as a pin.
+    """
+    from modules import question_runtime
+
+    grouped: dict[str, set[str]] = {}
+    for row in question_runtime.structured_bank_rows():
+        skill = (row.get("skill") or "").strip()
+        topic = (row.get("sub_domain") or "").strip()
+        if not skill or not topic or topic.lower() == "general":
+            continue
+        grouped.setdefault(skill, set()).add(topic)
+    return {skill: sorted(topics) for skill, topics in sorted(grouped.items())}
+
+
 def list_practice_bank_items() -> dict[str, Any]:
     """Candidate-safe catalog: OA MCQs, Verbal MCQs, SQL and coding problems.
 
@@ -825,6 +862,7 @@ def list_practice_bank_items() -> dict[str, Any]:
         "coding": coding,
         "system_design": system_design,
         "ml_primitives": ml_primitives,
+        "interview_topics": _interview_topic_metadata(),
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),
@@ -1089,6 +1127,7 @@ def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
     allow_unknown_fallback: bool = False,
+    sub_domain: str | None = None,
 ) -> None:
     """Check every block's content limits upfront (no writes).
 
@@ -1179,6 +1218,33 @@ def _validate_block_content(
                 for spec, prompt in zip(specs, selected):
                     spec["problem_ids"] = [prompt["id"]]
                 block["problem_ids"] = [p["id"] for p in selected]
+        elif category == "interview":
+            # Reviewed-only gate: fail before any write when the pinned
+            # selection policy has no eligible inventory for a requested
+            # skill. Gate off → legacy/adaptive selection, unchanged.
+            from modules.bundle_selector import (
+                reviewed_available_count,
+                reviewed_bundles_only,
+            )
+
+            if reviewed_bundles_only():
+                difficulty = block.get("difficulty")
+                topic = _explicit_reviewed_topic(
+                    block.get("topic"), sub_domain)
+                for skill in block.get("skills") or []:
+                    found = reviewed_available_count(
+                        skill=str(skill), difficulty=difficulty, topic=topic,
+                    )
+                    if found <= 0:
+                        raise ValueError(
+                            f"No reviewed question bundles are available for "
+                            f"skill '{skill}'"
+                            + (f" at difficulty '{difficulty}'"
+                               if difficulty else "")
+                            + (f" topic '{topic}'" if topic else "")
+                            + ". Reviewed-only selection is on; draft or "
+                            "unreviewed content cannot be scored."
+                        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1250,7 +1316,8 @@ def start_session(
     # reductions, no mid-run failures after retries.
     try:
         _validate_block_content(block_plan, expanded,
-                                allow_unknown_fallback=allow_unknown_fallback)
+                                allow_unknown_fallback=allow_unknown_fallback,
+                                sub_domain=request.sub_domain)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1341,7 +1408,12 @@ def start_session(
     elo_before = float(candidate.get("elo_ratings", {}).get(first_skill, settings.initial_elo))
     difficulty = (opening_spec.get("difficulty")
                   or _elo_to_difficulty(elo_before))
-    sub_domain = _sub_domain_for_skill(candidate, first_skill, request.sub_domain)
+    # An explicit interview-block topic wins for the opening round: it is
+    # recorded on the round and guides both legacy selection and the
+    # reviewed pin. Unset topics keep today's session/profile behavior.
+    sub_domain = (opening_spec.get("topic")
+                  or _sub_domain_for_skill(candidate, first_skill,
+                                           request.sub_domain))
     opening_config: dict[str, Any] = {
         "count": opening_spec.get("count", 15),
         "duration_minutes": opening_spec.get("duration_minutes"),
@@ -1388,6 +1460,16 @@ def start_session(
             detail=str(exc),
         ) from exc
     except IntegrationError as exc:
+        # Reviewed-inventory exhaustion is unsatisfiable content under the
+        # pinned policy, not a transient infra failure: 422 with the
+        # selector's message (no silent switch), still before any session.
+        from modules.bundle_selector import ReviewedInventoryUnavailable
+
+        if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
 
@@ -1493,6 +1575,110 @@ def start_session(
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
     return response
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /session/availability (pre-commit content probe; no writes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/availability")
+def check_availability(
+    request: StartSessionRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Report whether a start payload can be satisfied, without creating anything.
+
+    Runs the same block normalization and upfront content checks as
+    ``POST /session/start`` (including the reviewed-only interview check),
+    but returns per-block availability instead of writing a session.
+    Invalid shapes are still 422; unsatisfiable content is 200 with
+    ``available: false`` and per-block reasons. No session, candidate,
+    draft, or preset is created here.
+    """
+    from modules.bundle_selector import reviewed_bundles_only
+
+    if request.blocks is not None:
+        try:
+            block_plan = normalize_blocks(request.blocks)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+    else:
+        try:
+            block_plan = legacy_to_blocks(
+                skills=list(request.skills),
+                rounds_per_skill=request.rounds_per_skill,
+                round_type=request.round_type,
+                round_config=request.round_config,
+                round_plan=list(request.round_plan) if request.round_plan else None,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+    expanded = expand_blocks(block_plan)
+    plan = [spec["round_type"] for spec in expanded]
+
+    # Same auth rule as start: Phase 2 round types require a user;
+    # anonymous legacy-technical probes stay allowed.
+    needs_phase2_auth = any(
+        t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
+    )
+    if needs_phase2_auth:
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication is required for this session.",
+            )
+        require_user(authorization)
+
+    allow_unknown_fallback = request.blocks is None
+    by_block: dict[str, list[dict[str, Any]]] = {}
+    for spec in expanded:
+        by_block.setdefault(str(spec.get("block_id")), []).append(spec)
+
+    gate_on = reviewed_bundles_only()
+    results: list[dict[str, object]] = []
+    for block in block_plan:
+        specs = by_block.get(str(block.get("id")), [])
+        try:
+            _validate_block_content(
+                [block], specs,
+                allow_unknown_fallback=allow_unknown_fallback,
+                sub_domain=request.sub_domain,
+            )
+        except ValueError as exc:
+            results.append({
+                "position": block.get("position"),
+                "category": block.get("category"),
+                "skills": list(block.get("skills") or []),
+                "topic": block.get("topic"),
+                "available": False,
+                "reason": str(exc),
+            })
+            continue
+        detail: dict[str, object] = {}
+        if block.get("category") == "interview":
+            detail["selection_policy"] = (
+                "reviewed_only" if gate_on else "legacy_or_adaptive"
+            )
+        results.append({
+            "position": block.get("position"),
+            "category": block.get("category"),
+            "skills": list(block.get("skills") or []),
+            "topic": block.get("topic"),
+            "available": True,
+            "reason": None,
+            "detail": detail,
+        })
+    return {
+        "reviewed_only": gate_on,
+        "available": all(r["available"] for r in results),
+        "blocks": results,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

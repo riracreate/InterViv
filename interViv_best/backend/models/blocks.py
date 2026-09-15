@@ -62,6 +62,7 @@ class BlockSpec(BaseModel):
     category: str | None = None
     skills: list[str] | None = None
     topics: list[str] | None = None
+    topic: str | None = None
     count: int | None = None
     duration_minutes: int | None = None
     difficulty: str | None = None
@@ -76,7 +77,7 @@ class BlockSpec(BaseModel):
     @classmethod
     def _strip_strings(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            for key in ("id", "round_type", "category", "difficulty",
+            for key in ("id", "round_type", "category", "difficulty", "topic",
                         "problem_id", "language", "review_policy"):
                 if isinstance(data.get(key), str):
                     data[key] = data[key].strip()
@@ -194,6 +195,16 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if difficulty is not None and difficulty not in ALLOWED_DIFFICULTIES:
             raise ValueError(
                 f"Block {index + 1}: unsupported difficulty '{spec.difficulty}'."
+            )
+        topic = (spec.topic or "").strip() or None
+        if topic is not None and category != "interview":
+            raise ValueError(
+                f"Block {index + 1}: topic is only supported for "
+                f"interview blocks."
+            )
+        if topic is not None and len(topic) > 120:
+            raise ValueError(
+                f"Block {index + 1}: topic must be at most 120 characters."
             )
         review_policy = (spec.review_policy or "").strip() or "none"
         if review_policy not in ALLOWED_REVIEW_POLICIES:
@@ -348,6 +359,7 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "round_type": round_type,
             "category": category,
             "skills": skills,
+            "topic": topic,
             "count": count_value,
             "duration_minutes": duration_value,
             "difficulty": difficulty,
@@ -501,6 +513,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "round_type": block["round_type"],
                 "category": category,
                 "skills": list(block.get("skills") or []),
+                "topic": block.get("topic"),
                 "count": int(block.get("count") or 15),
                 "duration_minutes": block.get("duration_minutes"),
                 "difficulty": block.get("difficulty"),
@@ -528,6 +541,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "round_type": block["round_type"],
                     "category": category,
                     "skills": list(block.get("skills") or default_skills),
+                    "topic": block.get("topic"),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),
                     "difficulty": block.get("difficulty"),
@@ -553,6 +567,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "round_type": "system_design",
                     "category": "system_design",
                     "skills": list(block.get("skills") or [SYSTEM_DESIGN_SKILL]),
+                    "topic": block.get("topic"),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),
                     "difficulty": block.get("difficulty"),
@@ -575,6 +590,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "round_type": "technical_short_answer",
                     "category": "interview",
                     "skills": list(block.get("skills") or []),
+                    "topic": block.get("topic"),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),
                     "difficulty": block.get("difficulty"),

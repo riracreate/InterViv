@@ -525,6 +525,11 @@ def _load_structured_bank() -> list[dict[str, str]]:
     return _STRUCTURED_BANK
 
 
+def structured_bank_rows() -> list[dict[str, str]]:
+    """Cached structured-bank rows selection filters (read-only shared rows)."""
+    return _load_structured_bank()
+
+
 def _normalised_match(row_value: str | None, target: str | None) -> bool:
     if not target:
         return True
