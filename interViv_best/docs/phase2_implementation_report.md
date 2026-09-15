@@ -177,7 +177,9 @@ claimed.
 
 ## 8. Completion addendum — interview topic selection (checkpoint)
 
-Final checkpoint commit: `CHECKPOINT_HASH` (filled at commit time).
+Content checkpoint: `cc77372c4d3ee1d544b302cd2f662a99e0df96b1`
+(backend, frontend, tests, and docs complete at this commit; this
+record added by the tip commit).
 
 ### Topic-picker behavior
 
