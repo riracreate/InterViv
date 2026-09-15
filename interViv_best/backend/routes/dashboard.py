@@ -123,8 +123,15 @@ def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unscored
 
 
-def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _block_results(
+    rounds: list[dict[str, Any]],
+    block_plan: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Per-block results with evidence-backed next-practice suggestions."""
+    planned_skills = {
+        str(b.get("id")): [str(s) for s in (b.get("skills") or []) if s]
+        for b in (block_plan or [])
+    }
     groups: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
     for item in rounds:
@@ -137,9 +144,24 @@ def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for key in order:
         group = groups[key]
         scored = [r for r in group if r.get("final_score") is not None]
+        # Attempted means an answer was persisted (submitted text or MCQ
+        # selections). An expired-then-zeroed round is scored but never
+        # attempted; an open round is neither.
+        attempted = [
+            r for r in group
+            if r.get("answer_text") is not None
+            or (r.get("final_score") is not None and r.get("status") == "submitted")
+        ]
         measured = [r for r in scored if not is_self_reported_round(r)]
         self_reported = [r for r in scored if is_self_reported_round(r)]
-        skills = sorted({str(r.get("skill") or "General") for r in group})
+        round_skills = sorted({str(r.get("skill")) for r in group
+                               if r.get("skill")})
+        # Unstarted rounds carry no skill yet (assigned at submit); fall
+        # back to the block's planned skills so an upcoming OOP block is
+        # not mislabeled "General".
+        skills = (round_skills or
+                  sorted(planned_skills.get(str(group[0].get("block_id")), []))
+                  or ["General"])
         avg = (
             round(sum(float(r["final_score"]) for r in measured) / len(measured), 2)
             if measured
@@ -166,15 +188,20 @@ def _block_results(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     ),
                     "action": {"type": "retry_set", "skills": [skill]},
                 }
+        positions = [r.get("block_position") for r in group
+                     if r.get("block_position") is not None]
         results.append({
             "block_id": group[0].get("block_id"),
+            "block_position": min(positions) if positions else None,
             "block_category": group[0].get("block_category"),
             "round_types": list(dict.fromkeys(
                 r.get("round_type", "technical_short_answer") for r in group
             )),
             "skills": skills,
             "rounds": len(group),
+            "attempted_rounds": len(attempted),
             "scored_rounds": len(scored),
+            "unscored_rounds": len(group) - len(scored),
             "measured_rounds": len(measured),
             "self_reported_rounds": len(self_reported),
             "average_score": avg,
@@ -484,5 +511,6 @@ def get_dashboard(
             )
         ),
     }
-    session["block_results"] = _block_results(rounds)
+    session["block_results"] = _block_results(
+        rounds, session.get("block_plan"))
     return session

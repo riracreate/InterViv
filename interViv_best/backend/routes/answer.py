@@ -1043,6 +1043,15 @@ def submit_answer(
                                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
                             ) from exc
                         except IntegrationError as exc:
+                            from modules.bundle_selector import (
+                                ReviewedInventoryUnavailable,
+                            )
+
+                            if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
+                                raise HTTPException(
+                                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail=str(exc),
+                                ) from exc
                             raise HTTPException(
                                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
                             ) from exc
@@ -1104,7 +1113,11 @@ def submit_answer(
                             else target.difficulty
                         )
                         response_next_difficulty = next_round_difficulty
-                        sub = _sub_domain_for_skill(candidate_doc, next_skill)
+                        # The block's explicit topic (if any) stays pinned
+                        # for every round of the block, like the opening
+                        # round at start.
+                        sub = ((expanded_spec or {}).get("topic")
+                               or _sub_domain_for_skill(candidate_doc, next_skill))
                         asked = [item.get("question", "") for item in rounds]
                         weak_context = list(target.target_concepts or [])
                         if target.source != "rotation" and target.skill:
@@ -1124,6 +1137,15 @@ def submit_answer(
                                 weak_skills=weak_context,
                             )
                         except IntegrationError as exc:
+                            from modules.bundle_selector import (
+                                ReviewedInventoryUnavailable,
+                            )
+
+                            if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
+                                raise HTTPException(
+                                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail=str(exc),
+                                ) from exc
                             raise HTTPException(
                                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
                             ) from exc
