@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  blockDisplayLabel,
+  blockMetricLabel,
   buildReviewSummaryProps,
+  isMultiBlockSession,
   mapRealDataToDashboard,
   scoreAccent,
 } from '../src/lib/dashboardMapping.js';
@@ -84,4 +87,142 @@ test('empty session still yields a safe dashboard shape', () => {
   assert.equal(mapped.rounds.length, 0);
   assert.equal(mapped.reviewSummary.completedRounds, 0);
   assert.equal(mapped.reviewSummary.guardCount, 0);
+});
+
+const MIXED_SESSION = {
+  started_at: '2026-09-01T10:00:00Z',
+  skills: ['DBMS'],
+  total_rounds: 3,
+  averages: { final_score: 66.67, nlp_score: 0, kg_score: 0 },
+  block_plan: [
+    { id: 'b1', position: 1, category: 'oa' },
+    { id: 'b2', position: 2, category: 'sql' },
+    { id: 'b3', position: 3, category: 'interview' },
+  ],
+  block_results: [
+    {
+      block_id: 'b1', block_position: 1, block_category: 'oa', round_types: ['mcq'],
+      skills: ['DBMS'], rounds: 1, attempted_rounds: 1, scored_rounds: 1,
+      unscored_rounds: 0, measured_rounds: 1, self_reported_rounds: 0,
+      average_score: 80.0, self_reported_average: null, scoring_modes: ['mcq'],
+      suggestion: null,
+    },
+    {
+      block_id: 'b2', block_position: 2, block_category: 'sql', round_types: ['sql'],
+      skills: ['SQL'], rounds: 1, attempted_rounds: 1, scored_rounds: 1,
+      unscored_rounds: 0, measured_rounds: 1, self_reported_rounds: 0,
+      average_score: 100.0, self_reported_average: null, scoring_modes: ['sql_execution'],
+      suggestion: null,
+    },
+    {
+      block_id: 'b3', block_position: 3, block_category: 'interview', round_types: ['technical_short_answer'],
+      skills: ['DBMS'], rounds: 1, attempted_rounds: 1, scored_rounds: 1,
+      unscored_rounds: 0, measured_rounds: 1, self_reported_rounds: 0,
+      average_score: 20.0, self_reported_average: null, scoring_modes: ['nlp_scorer'],
+      suggestion: { text: 'Round 3 scored 20.0 on DBMS; retry DBMS misses next.' },
+    },
+  ],
+  rounds: [
+    { final_score: 80, answer_text: '[{"question_id":"q1"}]', question: 'Multiple Choice Assessment' },
+    { final_score: 100, answer_text: 'SELECT 1', question: 'SQL problem' },
+    { final_score: 20, answer_text: 'A short answer.', question: 'Explain X.' },
+  ],
+  coverage: { scored_rounds: 3, unscored_rounds: [] },
+  breakdown: { Good: 2, Average: 0, Poor: 1 },
+};
+
+test('block metric labels stay per-category, never blended', () => {
+  assert.equal(blockMetricLabel({ block_category: 'oa', round_types: ['mcq'] }), 'MCQ accuracy');
+  assert.equal(blockMetricLabel({ block_category: 'verbal', round_types: ['mcq'] }), 'MCQ accuracy');
+  assert.equal(blockMetricLabel({ block_category: 'sql', round_types: ['sql'] }), 'SQL correctness');
+  assert.equal(blockMetricLabel({ block_category: 'interview', round_types: ['technical_short_answer'] }), 'Interview score');
+  assert.equal(blockMetricLabel({ block_category: 'system_design', round_types: ['system_design'] }), 'Self-reported score');
+  assert.equal(blockDisplayLabel({ block_category: 'sql', block_position: 2 }, 1), 'Block 2 · SQL');
+});
+
+test('legacy sessions without a block plan are never multi-block', () => {
+  assert.equal(isMultiBlockSession(SAMPLE_SESSION), false);
+  assert.equal(isMultiBlockSession({ block_plan: [{ id: 'b1' }] }), false);
+  assert.equal(isMultiBlockSession(MIXED_SESSION), true);
+});
+
+test('mixed session shows no blended overall percentage', () => {
+  const mapped = mapRealDataToDashboard(MIXED_SESSION);
+  assert.equal(mapped.blended, true);
+  assert.equal(mapped.multiBlock, true);
+  assert.equal(mapped.overall.score, null);
+  assert.equal(mapped.overall.gradeLabel, 'Mixed session');
+  assert.match(mapped.overall.deltaLabel, /per-block/i);
+  // Average-derived visuals are suppressed; per-round evidence stays.
+  assert.deepEqual(mapped.layers, []);
+  assert.deepEqual(mapped.radar, []);
+  assert.equal(mapped.rounds.length, 3);
+  assert.match(mapped.feedbackCards[0].body, /not blended/i);
+  assert.equal(mapped.reviewSummary.overallScore, null);
+  assert.equal(mapped.reviewSummary.blended, true);
+});
+
+test('mixed session maps each block with its own metric and counts', () => {
+  const mapped = mapRealDataToDashboard(MIXED_SESSION);
+  assert.equal(mapped.blocks.length, 3);
+  const [oa, sql, interview] = mapped.blocks;
+  assert.equal(oa.title, 'Block 1 · OA');
+  assert.equal(oa.metric, 'MCQ accuracy');
+  assert.equal(oa.average, 80);
+  assert.equal(sql.metric, 'SQL correctness');
+  assert.equal(sql.average, 100);
+  assert.equal(interview.metric, 'Interview score');
+  assert.equal(interview.average, 20);
+  assert.match(interview.suggestion, /Round 3/);
+  for (const block of mapped.blocks) {
+    assert.equal(block.attempted, 1);
+    assert.equal(block.scored, 1);
+    assert.equal(block.unscored, 0);
+  }
+});
+
+test('single-block session keeps its historical overall rendering', () => {
+  const session = {
+    ...SAMPLE_SESSION,
+    block_plan: [{ id: 'b1', position: 1, category: 'interview' }],
+    block_results: [
+      {
+        block_id: 'b1', block_position: 1, block_category: 'interview',
+        round_types: ['technical_short_answer'], skills: ['DBMS', 'Python'],
+        rounds: 3, attempted_rounds: 3, scored_rounds: 3, unscored_rounds: 0,
+        measured_rounds: 3, self_reported_rounds: 0, average_score: 62.4,
+        self_reported_average: null, scoring_modes: ['nlp_scorer'], suggestion: null,
+      },
+    ],
+  };
+  const mapped = mapRealDataToDashboard(session);
+  assert.equal(mapped.blended, false);
+  assert.equal(mapped.multiBlock, false);
+  assert.equal(mapped.overall.score, 62);
+  assert.equal(mapped.overall.gradeLabel, 'Good');
+  assert.equal(mapped.layers.length, 3);
+  assert.ok(mapped.radar.length >= 3);
+  assert.equal(mapped.blocks.length, 1);
+  assert.equal(mapped.blocks[0].average, 62.4);
+});
+
+test('per-block zero is a score and null is no measurement', () => {
+  const session = {
+    ...MIXED_SESSION,
+    block_results: MIXED_SESSION.block_results.map((b, i) => ({
+      ...b,
+      average_score: i === 0 ? 0.0 : null,
+      measured_rounds: i === 0 ? 1 : 0,
+      scored_rounds: i === 0 ? 1 : 0,
+      unscored_rounds: i === 0 ? 0 : 1,
+      attempted_rounds: i === 0 ? 1 : 0,
+    })),
+  };
+  const mapped = mapRealDataToDashboard(session);
+  // Only one measured block: the average is pure, not blended.
+  assert.equal(mapped.blended, false);
+  assert.equal(mapped.blocks[0].average, 0.0);
+  assert.equal(mapped.blocks[1].average, null);
+  assert.equal(mapped.blocks[1].unscored, 1);
+  assert.equal(mapped.blocks[1].attempted, 0);
 });
