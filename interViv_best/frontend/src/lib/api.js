@@ -143,10 +143,11 @@ export function fetchAtsRuns(limit = 20) {
   return request(`/ats/runs?limit=${encodeURIComponent(limit)}`);
 }
 
-export function fetchJobs({ q = "", where = "", page = 1 } = {}) {
+export function fetchJobs({ q = "", where = "", page = 1, country = "in" } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (where) params.set("where", where);
+  if (country) params.set("country", country);
   params.set("page", String(page));
   return request(`/jobs?${params.toString()}`);
 }
@@ -155,9 +156,19 @@ export function fetchJob(jobId) {
   return request(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
-export function fetchJobPractice(jobId) {
+export function fetchJobPrepare(jobId, payload = {}) {
+  return request(`/jobs/${encodeURIComponent(jobId)}/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchJobPractice(jobId, payload = {}) {
   return request(`/jobs/${encodeURIComponent(jobId)}/practice`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 
