@@ -5,14 +5,15 @@ round (inside the same atomic commit, so jobs are never orphaned and never
 missing). A worker later claims each job under a lease and renders a
 narration artifact.
 
-No live generation happens in Phase 3A: the artifact is a deterministic
-template render over the stored rules feedback — pure string work, no
-models, no network, no clock inside the artifact. With generation
-disabled, the worker still runs this deterministic path; live providers
-are never called here.
+Phase 3B: when ``llm_live_fetch_enabled()`` is on, the worker may call a
+narration provider **outside** any scoring transaction, then validate the
+payload against the attempt snapshot. Invalid/unavailable generation keeps
+the deterministic rules artifact. With the live gate off (Phase 3B default),
+jobs finish as ``skipped`` with rules feedback — never labeled AI-written.
 
 Job lifecycle: queued -> processing -> done, or -> failed (retried up to
-MAX_ATTEMPTS by later worker passes, then left for inspection). Leases
+MAX_ATTEMPTS by later worker passes, then left for inspection), or
+-> skipped when generation is disabled / provider unavailable. Leases
 expire so a crashed worker can be reclaimed; a stale worker whose lease
 was taken cannot overwrite a newer claim's result (claim_token fence).
 """
@@ -146,12 +147,8 @@ def render_narration_artifact(
     }
 
 
-def _verify_job_snapshot(db: Any, job: dict[str, Any]) -> None:
-    """Refuse to narrate a round whose snapshot changed after enqueue.
-
-    Raises ``ValueError`` on mismatch or a missing session/round. Rounds
-    that predate snapshots carry no digest and are narrated as-is.
-    """
+def _load_round_snapshot(db: Any, job: dict[str, Any]) -> dict[str, Any]:
+    """Load the scored round's snapshot; raise if session/round is missing."""
     session = db["sessions"].find_one({"session_id": job["session_id"]})
     if not session:
         raise ValueError(f"Session {job['session_id']} not found.")
@@ -164,10 +161,9 @@ def _verify_job_snapshot(db: Any, job: dict[str, Any]) -> None:
         raise ValueError(f"Round {job['round']} not found in session.")
     snapshot = active.get("attempt_snapshot") or {}
     expected = job.get("snapshot_digest")
-    if not expected or not snapshot:
-        return
-    if snapshot.get("digest") != expected:
+    if expected and snapshot and snapshot.get("digest") != expected:
         raise ValueError("Snapshot verification failed: round changed after enqueue.")
+    return snapshot if isinstance(snapshot, dict) else {}
 
 
 def _lease_expired(job: dict[str, Any], now: datetime) -> bool:
@@ -184,11 +180,17 @@ def process_narration_job(db: Any, job_id: str) -> dict[str, Any]:
 
     Done / skipped / exhausted failures return unchanged (re-entrant).
     A worker that lost its lease cannot overwrite a newer claim's result.
-    With live generation disabled, the job finishes as ``skipped`` with the
-    deterministic rules artifact attached — never left permanently pending.
+    Always builds the deterministic rules artifact first. Provider calls
+    (when the live gate is on) run outside scoring transactions — this
+    worker path only — and validated payloads replace the rules script
+    while retaining ``rules_artifact`` / job ``feedback``. With live
+    generation disabled, the job finishes as ``skipped`` with rules
+    feedback — never labeled AI-written.
     Raises ``KeyError`` for an unknown id.
     """
     from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.narration_provider import get_narration_provider
+    from modules.narration_validator import validate_narration_artifact
 
     job = db["narration_jobs"].find_one({"id": job_id})
     if job is None:
@@ -215,8 +217,8 @@ def process_narration_job(db: Any, job_id: str) -> dict[str, Any]:
         }},
     )
     try:
-        _verify_job_snapshot(db, job)
-        artifact = render_narration_artifact(
+        snapshot = _load_round_snapshot(db, job)
+        rules_artifact = render_narration_artifact(
             round_number=job["round"],
             skill=job.get("skill"),
             final_score=job.get("final_score"),
@@ -243,18 +245,84 @@ def process_narration_job(db: Any, job_id: str) -> dict[str, Any]:
     if current.get("claim_token") != claim_token:
         # Stale worker: a newer claim owns the job; do not overwrite.
         return current
-    # Phase 3A: live generation stays off. Persist the deterministic rules
-    # artifact under ``skipped`` so clients get feedback without a pending job.
-    final_status = STATUS_DONE if llm_live_fetch_enabled() else STATUS_SKIPPED
+
+    artifact = dict(rules_artifact)
+    final_status = STATUS_SKIPPED
+    last_error: str | None = (
+        "Live narration generation disabled; deterministic rules feedback saved."
+    )
+    metadata = {
+        "snapshot_digest": job.get("snapshot_digest") or snapshot.get("digest"),
+        "source": "rules_feedback",
+        "model": None,
+        "prompt_version": None,
+        "schema_version": NARRATION_JOB_VERSION,
+        "validation": "generation_disabled",
+    }
+
+    if llm_live_fetch_enabled():
+        # Provider boundary: outside scoring transactions (worker only).
+        last_error = None
+        try:
+            proposed = get_narration_provider().generate_narration(
+                snapshot=snapshot,
+                rules_feedback=job.get("feedback"),
+                job=job,
+            )
+        except Exception as exc:
+            logger.warning("Narration provider failed for %s: %s", job_id, exc)
+            proposed = None
+            last_error = str(exc)
+            final_status = STATUS_FAILED
+            metadata["validation"] = "provider_error"
+        else:
+            if proposed is None:
+                final_status = STATUS_SKIPPED
+                last_error = "Narration provider returned no payload; rules feedback saved."
+                metadata["validation"] = "provider_unavailable"
+            else:
+                ok, result = validate_narration_artifact(proposed, snapshot)
+                if ok and isinstance(result, dict):
+                    model_name = (
+                        (result.get("metadata") or {}).get("model")
+                        if isinstance(result.get("metadata"), dict)
+                        else None
+                    ) or result.get("source") or "provider"
+                    artifact = dict(result)
+                    artifact["source"] = (
+                        "provider" if model_name in (None, "", "provider") else str(model_name)
+                    )
+                    artifact["rules_artifact"] = rules_artifact
+                    metadata.update({
+                        "source": artifact["source"],
+                        "model": model_name if model_name != "provider" else None,
+                        "prompt_version": (
+                            (result.get("metadata") or {}).get("prompt_version")
+                            if isinstance(result.get("metadata"), dict)
+                            else None
+                        ),
+                        "schema_version": result.get("version") or NARRATION_JOB_VERSION,
+                        "validation": "passed",
+                    })
+                    final_status = STATUS_DONE
+                    last_error = None
+                else:
+                    final_status = STATUS_SKIPPED
+                    last_error = f"Narration validation failed: {result}"
+                    metadata["validation"] = "failed"
+                    metadata["validation_error"] = str(result)
+
+    artifact["metadata"] = metadata
+    if "rules_artifact" not in artifact:
+        # Rules path is the sole artifact; keep source explicit.
+        artifact["source"] = "rules_feedback"
+
     db["narration_jobs"].update_one(
         {"id": job_id},
         {"$set": {
             "status": final_status,
             "artifact": artifact,
-            "last_error": (
-                None if final_status == STATUS_DONE
-                else "Live narration generation disabled; deterministic rules feedback saved."
-            ),
+            "last_error": last_error,
             "claim_token": claim_token,
             "lease_until": None,
             "updated_at": _now(),
