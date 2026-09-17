@@ -229,11 +229,13 @@ def sanitize_round_for_client(
         from modules.bundle_scoring import candidate_technical_context
 
         cleaned["question_context"] = candidate_technical_context(q_ctx)
-        # Top-level copies of grading fields (if any) must not leak either.
-        for forbidden in (
-            "ideal_answer", "ideal_keywords", "ideal_keywords_list",
-            "reference_answer", "keywords",
-        ):
-            cleaned.pop(forbidden, None)
+
+    # Top-level reference material never rides on candidate round payloads.
+    # Dashboard may attach ideals only after a completed assessment.
+    for forbidden in (
+        "ideal_answer", "ideal_keywords", "ideal_keywords_list",
+        "reference_answer", "keywords",
+    ):
+        cleaned.pop(forbidden, None)
 
     return cleaned
