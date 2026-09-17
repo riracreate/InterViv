@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback } from '../lib/api';
+import { applyFeedbackPollResult, shouldKeepPollingNarration } from '../lib/feedbackPoll';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
@@ -116,6 +117,13 @@ export default function Interview({ sessionState = null }) {
 
   const [currentScore, setCurrentScore] = useState(null);
   const [currentFeedback, setCurrentFeedback] = useState('');
+  const [feedbackSourceLabel, setFeedbackSourceLabel] = useState('');
+  const [feedbackDetails, setFeedbackDetails] = useState(null);
+  const [progressionBlocked, setProgressionBlocked] = useState(false);
+  const [progressionBlockedReason, setProgressionBlockedReason] = useState('');
+  const [continueBusy, setContinueBusy] = useState(false);
+  const feedbackPollRef = useRef(null);
+  const feedbackRoundRef = useRef(null);
   const [currentRubric, setCurrentRubric] = useState(null);
   const [currentConcepts, setCurrentConcepts] = useState(null);
   const [scores, setScores] = useState([]);
@@ -252,6 +260,11 @@ export default function Interview({ sessionState = null }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => () => {
+    if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+    feedbackRoundRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -814,6 +827,10 @@ export default function Interview({ sessionState = null }) {
         );
       }
       setCurrentFeedback(feedbackWithMode);
+      setFeedbackSourceLabel('Rules feedback');
+      setFeedbackDetails(null);
+      setProgressionBlocked(Boolean(resp.progression_blocked));
+      setProgressionBlockedReason(resp.progression_blocked_reason || '');
       setCurrentRubric(rubric && typeof rubric === 'object' ? rubric : null);
       setCurrentConcepts(concepts && typeof concepts === 'object' ? concepts : null);
       setCurrentArtifact(resp.artifact_json || resp);
@@ -836,6 +853,9 @@ export default function Interview({ sessionState = null }) {
 
       if (resp.session_complete) {
         setSessionComplete(true);
+      } else if (resp.progression_blocked) {
+        // Keep score/feedback visible; wait for continue.
+        setSessionComplete(false);
       } else if (resp.next_question || resp.next_round_type) {
         // Prefetch next round fields; UI keeps currentScore until Next.
         const nextCategory = resp.next_block_category ?? null;
@@ -863,6 +883,40 @@ export default function Interview({ sessionState = null }) {
         } else {
           setCalibrationComplete(true);
         }
+      }
+
+      // Poll narration only while eligible and pending for this round.
+      if (score !== null && sessionId) {
+        const pollRound = round;
+        feedbackRoundRef.current = pollRound;
+        if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+        let pollState = {
+          displayFeedback: feedbackWithMode,
+          displaySource: 'Rules feedback',
+          narrationStatus: 'queued',
+          polling: true,
+        };
+        const tick = async () => {
+          if (feedbackRoundRef.current !== pollRound) return;
+          try {
+            const payload = await fetchRoundFeedback(sessionId, pollRound);
+            pollState = applyFeedbackPollResult(pollState, payload, pollRound);
+            if (pollState.ignoredStale) return;
+            if (pollState.displayFeedback) setCurrentFeedback(pollState.displayFeedback);
+            if (pollState.displaySource) setFeedbackSourceLabel(pollState.displaySource);
+            setFeedbackDetails(pollState.narrationDetails || null);
+            if (!shouldKeepPollingNarration(pollState.narrationStatus)) {
+              if (feedbackPollRef.current) {
+                clearInterval(feedbackPollRef.current);
+                feedbackPollRef.current = null;
+              }
+            }
+          } catch {
+            /* keep rules feedback visible */
+          }
+        };
+        tick();
+        feedbackPollRef.current = setInterval(tick, 2500);
       }
     } catch (err) {
       setCurrentFeedback('Scoring failed — ' + err.message);
@@ -903,13 +957,51 @@ export default function Interview({ sessionState = null }) {
       navigate(`/dashboard/${sessionId}`);
       return;
     }
+    if (feedbackPollRef.current) {
+      clearInterval(feedbackPollRef.current);
+      feedbackPollRef.current = null;
+    }
+    feedbackRoundRef.current = null;
     setTranscript(''); setInterimText('');
     setCurrentScore(null); setCurrentFeedback('');
+    setFeedbackSourceLabel(''); setFeedbackDetails(null);
+    setProgressionBlocked(false); setProgressionBlockedReason('');
     setCurrentRubric(null); setCurrentConcepts(null);
     setCurrentArtifact(null);
     stopRecording();
     stopServerRecording(true);
     clearEngagementSamples();
+  };
+
+  const handleContinueBlocked = async () => {
+    if (!sessionId || continueBusy) return;
+    setContinueBusy(true);
+    try {
+      const resp = await continueSession(sessionId);
+      if (!resp.continued) {
+        setProgressionBlocked(true);
+        setProgressionBlockedReason(
+          resp.progression_blocked_reason || progressionBlockedReason || 'Content still unavailable.'
+        );
+        return;
+      }
+      setProgressionBlocked(false);
+      setProgressionBlockedReason('');
+      setQuestion(resp.question || '');
+      setRoundType(resp.round_type || 'technical_short_answer');
+      if (resp.block_category != null) setBlockCategory(resp.block_category);
+      if (resp.difficulty) setDifficulty(resp.difficulty);
+      if (resp.current_skill) setCurrentSkill(resp.current_skill);
+      setQuestionContext(resp.question_context || {});
+      setConfigJson(resp.config_json || {});
+      setExpiresAt(resp.expires_at || null);
+      if (resp.round) setRound(resp.round);
+      handleNext();
+    } catch (err) {
+      setProgressionBlockedReason(err.message || 'Could not continue session.');
+    } finally {
+      setContinueBusy(false);
+    }
   };
 
   const resetAnswer = () => {
@@ -1371,6 +1463,33 @@ export default function Interview({ sessionState = null }) {
                   {currentFeedback}
                 </p>
               )}
+              {feedbackSourceLabel && (
+                <p className="mt-2 text-[10px] uppercase tracking-wider text-center text-[#6F6F6F]"
+                  style={{ fontFamily: "var(--font-body)" }}>
+                  Source: {feedbackSourceLabel}
+                </p>
+              )}
+              {feedbackDetails && (
+                <details className="mt-2 text-[11px] text-[#6F6F6F]">
+                  <summary className="cursor-pointer text-center">Feedback details</summary>
+                  <ul className="mt-1 space-y-0.5 text-left px-2">
+                    {feedbackDetails.validation && <li>Validation: {feedbackDetails.validation}</li>}
+                    {feedbackDetails.model && <li>Model: {feedbackDetails.model}</li>}
+                    {feedbackDetails.schema_version != null && (
+                      <li>Schema: {feedbackDetails.schema_version}</li>
+                    )}
+                    {feedbackDetails.snapshot_digest && (
+                      <li className="break-all">Snapshot: {String(feedbackDetails.snapshot_digest).slice(0, 16)}…</li>
+                    )}
+                  </ul>
+                </details>
+              )}
+              {progressionBlocked && (
+                <p className="mt-3 text-[11px] text-[#B45309] text-center leading-relaxed"
+                  style={{ fontFamily: "var(--font-body)" }} role="status">
+                  {progressionBlockedReason || 'Next question is temporarily unavailable. Your score is saved.'}
+                </p>
+              )}
               {currentRubric && (
                 <div className="mt-4 space-y-2">
                   {['correctness', 'coverage', 'depth', 'clarity'].map((dim) => {
@@ -1448,10 +1567,16 @@ export default function Interview({ sessionState = null }) {
             )}
 
             {currentScore !== null && (
-              <button onClick={handleNext}
-                className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform"
+              <button
+                onClick={progressionBlocked ? handleContinueBlocked : handleNext}
+                disabled={continueBusy}
+                className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:opacity-50"
                 style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
-                {sessionComplete ? 'View Dashboard →' : 'Next Question →'}
+                {sessionComplete
+                  ? 'View Dashboard →'
+                  : progressionBlocked
+                    ? (continueBusy ? 'Checking…' : 'Retry next question')
+                    : 'Next Question →'}
               </button>
             )}
 
