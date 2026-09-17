@@ -61,10 +61,15 @@ def _sanitize_rounds(
 ) -> list[dict[str, Any]]:
     sanitized = []
     for round_document in rounds:
-        if round_document.get("round_type") == "ml_primitives":
+        round_type = round_document.get("round_type")
+        if round_type in ("ml_primitives", "mcq"):
             from backend.serializers.round_serializer import sanitize_round_for_client
+
+            policy = (round_document.get("config_json") or {}).get("review_policy") or "none"
             round_document = sanitize_round_for_client(
-                round_document, is_session_completed=assessment_completed
+                round_document,
+                is_session_completed=assessment_completed,
+                review_policy=policy,
             )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
@@ -86,6 +91,13 @@ def _sanitize_rounds(
         cleaned["company"] = question_context.get("company")
         cleaned["role"] = question_context.get("role")
         cleaned["followups"] = question_context.get("followups") or []
+        # Phase 3C: preserve sanitized MCQ review questions when policy allows.
+        # Keys/explanations are already gated inside sanitize_round_for_client.
+        if cleaned.get("round_type") == "mcq":
+            cleaned["mcq_questions"] = list(question_context.get("questions") or [])
+            cleaned["review_policy"] = (cleaned.get("config_json") or {}).get(
+                "review_policy", "none"
+            )
         cleaned.pop("question_context", None)
         # Persisted SQL artifacts carry per-case grading detail (hidden-case
         # descriptions, expected row counts). Reduce to safe aggregates.
