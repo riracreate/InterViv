@@ -1,6 +1,8 @@
-"""Job explorer — Adzuna (IN) + cache + lexicon skill overlay.
+"""Job explorer — Adzuna search + cache + lexicon skill overlay.
 
-No scrapers. No LLM JD parse. Apply = outbound redirect_url only.
+No scrapers. No LLM JD parse. View job = validated redirect_url only.
+Practice handoff proposes a builder draft; it does not invent company
+questions or bypass inventory validation.
 """
 
 from __future__ import annotations
@@ -13,9 +15,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-import httpx
-
 from backend.config import get_settings
+from modules.adzuna_client import (
+    DEFAULT_COUNTRY,
+    AdzunaClientError,
+    credentials_configured,
+    fetch_search,
+    normalize_country,
+    safe_redirect_url,
+    _sanitize_text,
+)
 from modules.resume_parser import extract_skills_from_text
 
 LOGGER = logging.getLogger(__name__)
@@ -51,6 +60,7 @@ _RATE: dict[str, list[float]] = {}
 
 # Injected for tests
 _FETCH_OVERRIDE: Callable[..., list[dict[str, Any]]] | None = None
+_FETCH_ERROR_OVERRIDE: AdzunaClientError | None = None
 
 
 def reset_memory_store() -> None:
@@ -60,8 +70,17 @@ def reset_memory_store() -> None:
 
 
 def set_fetch_override(fn: Callable[..., list[dict[str, Any]]] | None) -> None:
-    global _FETCH_OVERRIDE
+    global _FETCH_OVERRIDE, _FETCH_ERROR_OVERRIDE
     _FETCH_OVERRIDE = fn
+    if fn is not None:
+        _FETCH_ERROR_OVERRIDE = None
+
+
+def set_fetch_error_override(err: AdzunaClientError | None) -> None:
+    global _FETCH_ERROR_OVERRIDE, _FETCH_OVERRIDE
+    _FETCH_ERROR_OVERRIDE = err
+    if err is not None:
+        _FETCH_OVERRIDE = None
 
 
 def _now() -> datetime:
@@ -79,8 +98,11 @@ def _using_sql() -> bool:
     return bool(get_settings().database_url)
 
 
-def query_hash(q: str, where: str, page: int) -> str:
-    raw = f"{(q or '').strip().lower()}|{(where or '').strip().lower()}|{int(page)}"
+def query_hash(q: str, where: str, page: int, country: str = DEFAULT_COUNTRY) -> str:
+    raw = (
+        f"{(country or DEFAULT_COUNTRY).strip().lower()}|"
+        f"{(q or '').strip().lower()}|{(where or '').strip().lower()}|{int(page)}"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -102,27 +124,39 @@ def load_fixture_jobs() -> list[dict[str, Any]]:
 
 
 def _normalize_adzuna_item(raw: dict[str, Any], *, from_fixture: bool = False) -> dict[str, Any]:
-    if from_fixture or "redirect_url" in raw and "company" in raw and isinstance(raw.get("company"), str):
+    salary_is_predicted = raw.get("salary_is_predicted")
+    if from_fixture or (
+        "redirect_url" in raw and "company" in raw and isinstance(raw.get("company"), str)
+    ):
         company = raw.get("company") or ""
         location = raw.get("location") or ""
         external_id = str(raw.get("id") or "")
         title = str(raw.get("title") or "")
-        snippet = str(raw.get("description") or "")[:2000]
-        redirect = str(raw.get("redirect_url") or "")
+        snippet = _sanitize_text(raw.get("description") or "")
+        redirect = safe_redirect_url(str(raw.get("redirect_url") or "")) or ""
         created = raw.get("created")
         salary_min = raw.get("salary_min")
         salary_max = raw.get("salary_max")
+        if salary_is_predicted is None:
+            salary_is_predicted = raw.get("salary_predicted")
     else:
         # Live Adzuna shape
         external_id = str(raw.get("id") or "")
         title = str(raw.get("title") or "")
         company = str((raw.get("company") or {}).get("display_name") or "")
         location = str((raw.get("location") or {}).get("display_name") or "")
-        snippet = str(raw.get("description") or "")[:2000]
-        redirect = str(raw.get("redirect_url") or "")
+        snippet = _sanitize_text(raw.get("description") or "")
+        redirect = safe_redirect_url(str(raw.get("redirect_url") or "")) or ""
         created = raw.get("created")
         salary_min = raw.get("salary_min")
         salary_max = raw.get("salary_max")
+
+    if salary_is_predicted in (0, "0", False):
+        salary_is_predicted = False
+    elif salary_is_predicted in (1, "1", True):
+        salary_is_predicted = True
+    else:
+        salary_is_predicted = None
 
     text_for_skills = f"{title}\n{snippet}"
     skills = extract_skills_from_text(text_for_skills)
@@ -136,6 +170,8 @@ def _normalize_adzuna_item(raw: dict[str, Any], *, from_fixture: bool = False) -
         "created": created,
         "salary_min": salary_min,
         "salary_max": salary_max,
+        "salary_is_predicted": salary_is_predicted,
+        "salary_currency": raw.get("salary_currency") or None,
         "snippet": snippet,
         "redirect_url": redirect,
         "skills": skills,
@@ -146,6 +182,7 @@ def _normalize_adzuna_item(raw: dict[str, Any], *, from_fixture: bool = False) -
             "created": created,
             "salary_min": salary_min,
             "salary_max": salary_max,
+            "salary_is_predicted": salary_is_predicted,
             "description": snippet,
             "redirect_url": redirect,
             "id": external_id,
@@ -158,49 +195,46 @@ def fetch_adzuna(
     q: str,
     where: str,
     page: int,
+    country: str | None = None,
     results_per_page: int = MAX_RESULTS,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Return (jobs, provenance) where provenance is live|fixture|fixture_fallback|override.
+    """Return (jobs, provenance). Raises AdzunaClientError on live failures.
 
-    Live HTTP runs only when JOBS_LIVE_FETCH is enabled *and* credentials exist.
-    The code path is retained for a future authorized integration; default is offline.
+    Empty live results are ``([], \"live\")``, not an error. Offline default
+    serves fixtures with provenance ``fixture``.
     """
+    if _FETCH_ERROR_OVERRIDE is not None:
+        raise _FETCH_ERROR_OVERRIDE
     if _FETCH_OVERRIDE is not None:
-        return _FETCH_OVERRIDE(q=q, where=where, page=page), "override"
+        raw_jobs = _FETCH_OVERRIDE(q=q, where=where, page=page, country=country)
+        normalized = []
+        for item in raw_jobs or []:
+            if isinstance(item, dict) and item.get("provider") == PROVIDER_ADZUNA:
+                normalized.append(item)
+            else:
+                normalized.append(_normalize_adzuna_item(item, from_fixture=True))
+        return normalized, "override"
 
     settings = get_settings()
+    country_code = normalize_country(country)
+
     if not settings.jobs_live_fetch:
-        # Phase O gate: no outbound attempt under the default configuration.
         return load_fixture_jobs()[:results_per_page], "fixture"
 
-    app_id = settings.adzuna_app_id
-    app_key = settings.adzuna_app_key
-    if not app_id or not app_key:
-        # Documented empty credentials → fixture for demos/tests
-        return load_fixture_jobs()[:results_per_page], "fixture"
+    if not credentials_configured():
+        raise AdzunaClientError(
+            "config",
+            "Live job search is not configured (ADZUNA_APP_ID / ADZUNA_APP_KEY).",
+        )
 
-    page = max(1, int(page))
-    url = f"https://api.adzuna.com/v1/api/jobs/in/search/{page}"
-    params = {
-        "app_id": app_id,
-        "app_key": app_key,
-        "results_per_page": min(MAX_RESULTS, max(1, int(results_per_page))),
-        "what": q or "software intern",
-    }
-    if where:
-        params["where"] = where
-
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception:
-        # Silent degrade to fixtures (SemanticScorer-like), not fail-loud.
-        return load_fixture_jobs()[:results_per_page], "fixture_fallback"
-
-    results = data.get("results") or []
-    jobs = [_normalize_adzuna_item(item) for item in results[:MAX_RESULTS]]
+    payload = fetch_search(
+        q=q,
+        where=where,
+        page=page,
+        country=country_code,
+        results_per_page=results_per_page,
+    )
+    jobs = [_normalize_adzuna_item(item) for item in payload.get("jobs") or []]
     return jobs, "live"
 
 
@@ -227,15 +261,10 @@ def _stamp_provenance(
 
 
 def _sample_empty_reason(provenance: str) -> str | None:
-    if provenance not in {"fixture", "fixture_fallback"}:
+    if provenance != "fixture":
         return None
     settings = get_settings()
-    if provenance == "fixture_fallback":
-        return (
-            "Live Adzuna fetch failed — showing fixture listings (not live market data)."
-        )
     if not settings.jobs_live_fetch:
-        # Flag name for operators only — not shown in the user-facing string.
         LOGGER.info(
             "Jobs serving sample listings because live fetch is gated off "
             "(JOBS_LIVE_FETCH=%s)",
@@ -246,8 +275,7 @@ def _sample_empty_reason(provenance: str) -> str | None:
             "for practice, not live openings."
         )
     LOGGER.info(
-        "Jobs serving sample listings because Adzuna credentials are unset "
-        "(ADZUNA_APP_ID / ADZUNA_APP_KEY)"
+        "Jobs serving sample listings because Adzuna credentials are unset"
     )
     return (
         "Live job search is not configured. The listings below are sample data "
@@ -255,9 +283,11 @@ def _sample_empty_reason(provenance: str) -> str | None:
     )
 
 
-def get_cached_search(q: str, where: str, page: int) -> dict[str, Any] | None:
+def get_cached_search(
+    q: str, where: str, page: int, country: str = DEFAULT_COUNTRY
+) -> dict[str, Any] | None:
     """Return ``{jobs, fetched_at, provenance}`` or None on miss/expiry."""
-    key = query_hash(q, where, page)
+    key = query_hash(q, where, page, country)
     if _using_sql():
         return _get_search_sql(key)
     entry = _SEARCH_MEMORY.get(key)
@@ -289,8 +319,9 @@ def put_cached_search(
     jobs: list[dict[str, Any]],
     *,
     provenance: str,
+    country: str = DEFAULT_COUNTRY,
 ) -> None:
-    key = query_hash(q, where, page)
+    key = query_hash(q, where, page, country)
     fetched = _now()
     stamped = _stamp_provenance(jobs, provenance=provenance, fetched_at=fetched)
     for job in stamped:
@@ -377,18 +408,23 @@ def search_jobs(
     where: str,
     page: int,
     user_id: str,
+    country: str | None = None,
 ) -> dict[str, Any]:
     page = max(1, int(page or 1))
     q = (q or "software intern OR backend OR data").strip()
     where = (where or "").strip()
+    country_code = normalize_country(country)
 
-    cached = get_cached_search(q, where, page)
+    cached = get_cached_search(q, where, page, country_code)
     cache_hit = cached is not None
     if cached is None:
-        jobs, provenance = fetch_adzuna(q=q, where=where, page=page)
-        put_cached_search(q, where, page, jobs, provenance=provenance)
-        # Re-read so fetched_at / stamps match what cache stores.
-        cached = get_cached_search(q, where, page)
+        jobs, provenance = fetch_adzuna(
+            q=q, where=where, page=page, country=country_code
+        )
+        put_cached_search(
+            q, where, page, jobs, provenance=provenance, country=country_code
+        )
+        cached = get_cached_search(q, where, page, country_code)
         assert cached is not None
         jobs = cached["jobs"]
         fetched_at = cached["fetched_at"]
@@ -408,12 +444,19 @@ def search_jobs(
             "location": job["location"],
             "salary_min": job.get("salary_min"),
             "salary_max": job.get("salary_max"),
+            "salary_is_predicted": job.get("salary_is_predicted"),
+            "salary_currency": job.get("salary_currency"),
             "created": job.get("created"),
             "skills": job.get("skills") or [],
             "match_pct": match_pct(job.get("skills") or [], user_skills),
             "redirect_url": job.get("redirect_url"),
             "snippet": job.get("snippet"),
             "provenance": job.get("provenance") or provenance,
+            "attribution": {
+                "label": "Jobs by Adzuna",
+                "jobs_href": _adzuna_home(country_code),
+                "logo_href": _adzuna_home(country_code),
+            },
         }
         cards.append(card)
 
@@ -423,30 +466,54 @@ def search_jobs(
         else str(fetched_at)
     )
 
+    empty_reason = None
+    if not cards:
+        if provenance == "live":
+            empty_reason = "No openings matched this search."
+        else:
+            empty_reason = _sample_empty_reason(provenance)
+
     return {
         "jobs": cards,
         "count": len(cards),
         "page": page,
         "q": q,
         "where": where,
-        # provenance travels with the data; cache_hit is a separate axis.
+        "country": country_code,
         "source": provenance,
         "provenance": provenance,
         "cache_hit": cache_hit,
         "fetched_at": fetched_iso,
-        "empty_reason": _sample_empty_reason(provenance),
+        "empty_reason": empty_reason or _sample_empty_reason(provenance),
         "disclaimer": (
-            "Listings from Adzuna (India). Apply opens the original site in a new tab. "
+            f"Listings from Adzuna ({country_code.upper()}). "
+            "View job opens the original Adzuna redirect in a new tab. "
             "interViv is not affiliated with LinkedIn or Naukri."
         ),
     }
+
+
+def _adzuna_home(country: str) -> str:
+    # Local domains per Adzuna ToS branding guidance.
+    mapping = {
+        "gb": "https://www.adzuna.co.uk/",
+        "in": "https://www.adzuna.co.in/",
+        "au": "https://www.adzuna.com.au/",
+        "us": "https://www.adzuna.com/",
+        "ca": "https://www.adzuna.ca/",
+        "de": "https://www.adzuna.de/",
+        "fr": "https://www.adzuna.fr/",
+        "nl": "https://www.adzuna.nl/",
+        "br": "https://www.adzuna.com.br/",
+        "za": "https://www.adzuna.co.za/",
+    }
+    return mapping.get(country, "https://www.adzuna.com/")
 
 
 def missing_skills_for_job(job: dict[str, Any], user_skills: list[str] | None) -> list[str]:
     job_skills = list(job.get("skills") or [])
     user = {s.lower() for s in (user_skills or [])}
     missing = [s for s in job_skills if s.lower() not in user]
-    # Prefer unique order preserved
     seen = set()
     out = []
     for s in missing:
@@ -456,22 +523,95 @@ def missing_skills_for_job(job: dict[str, Any], user_skills: list[str] | None) -
     return out[:MAX_PRACTICE_SKILLS] or job_skills[:MAX_PRACTICE_SKILLS] or ["DSA"]
 
 
+def build_practice_prepare_payload(
+    *,
+    job: dict[str, Any],
+    user_skills: list[str] | None,
+    full_jd: str | None = None,
+) -> dict[str, Any]:
+    """Draft practice handoff — no session started.
+
+    Snippet-derived skills are proposals only. Optional full_jd may refine
+    lexicon skills; neither invents company-specific interview questions.
+    """
+    base_skills = missing_skills_for_job(job, user_skills)
+    jd_note = (
+        "Listing snippet is not a complete requirements specification. "
+        "Confirm skills and blocks before starting. Ordinary Practice remains available."
+    )
+    refined = list(base_skills)
+    if full_jd and full_jd.strip():
+        # Lexicon extraction only — never treated as scored content or bundle promotion.
+        extra = extract_skills_from_text(full_jd.strip()[:8000])
+        for skill in extra:
+            if skill not in refined:
+                refined.append(skill)
+        refined = refined[:MAX_PRACTICE_SKILLS] or base_skills
+        jd_note = (
+            "Skills were refined from your pasted full job description (lexicon only). "
+            "Confirm before starting. This does not change scoring or invent questions."
+        )
+
+    blocks = [
+        {
+            "round_type": "technical_short_answer",
+            "category": "interview",
+            "skills": [skill],
+            "count": 1,
+        }
+        for skill in refined[:3]
+    ]
+    if any(s in MCQ_ABLE for s in refined):
+        blocks.append({
+            "round_type": "mcq",
+            "category": "oa",
+            "skills": [s for s in refined if s in MCQ_ABLE][:1] or ["DSA"],
+            "count": 8,
+            "duration_minutes": 30,
+        })
+
+    return {
+        "job_id": job.get("id"),
+        "title": job.get("title"),
+        "company": job.get("company") or "",
+        "role": job.get("title") or "",
+        "location": job.get("location") or "",
+        "proposed_skills": refined,
+        "proposed_blocks": blocks,
+        "snippet_is_incomplete": True,
+        "confirmation_required": True,
+        "note": jd_note,
+        "practice_href": "/practice",
+        "navigate_confirm": f"/jobs/{job.get('id')}/prepare",
+    }
+
+
 def build_practice_start_payload(
     *,
     skills: list[str],
     candidate_id: str | None = None,
+    blocks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     skills = [s for s in skills if s][:MAX_PRACTICE_SKILLS] or ["DSA"]
+    if blocks:
+        payload: dict[str, Any] = {"blocks": blocks}
+        if candidate_id:
+            payload["candidate_id"] = candidate_id
+        return payload
     include_mcq = any(s in MCQ_ABLE for s in skills)
     round_plan = ["technical_short_answer"] * min(3, max(1, len(skills)))
     if include_mcq:
         round_plan.append("mcq")
-    payload: dict[str, Any] = {
+    payload = {
         "skills": skills,
         "rounds_per_skill": 1,
         "round_plan": round_plan,
         "round_type": round_plan[0],
-        "round_config": {"duration_minutes": 30, "count": 8} if include_mcq else {"duration_minutes": 30},
+        "round_config": (
+            {"duration_minutes": 30, "count": 8}
+            if include_mcq
+            else {"duration_minutes": 30}
+        ),
     }
     if candidate_id:
         payload["candidate_id"] = candidate_id
