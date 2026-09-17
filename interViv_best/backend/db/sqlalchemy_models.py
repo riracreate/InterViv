@@ -147,6 +147,8 @@ class SessionRow(Base):
     block_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     expanded_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     allow_unknown_topic_fallback: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Phase 3B: why next-question progression stopped (content_blocked sessions).
+    progression_blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",

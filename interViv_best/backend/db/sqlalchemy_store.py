@@ -487,6 +487,7 @@ class _SessionCollection:
         row.block_plan_json = data.get("block_plan")
         row.expanded_plan_json = data.get("expanded_plan")
         row.allow_unknown_topic_fallback = data.get("allow_unknown_topic_fallback")
+        row.progression_blocked_reason = data.get("progression_blocked_reason")
 
     @staticmethod
     def _replace_rounds(session, row: SessionRow, rounds: list[dict[str, Any]]) -> None:
@@ -630,6 +631,7 @@ class _SessionCollection:
                 if row.allow_unknown_topic_fallback is not None
                 else True
             ),
+            "progression_blocked_reason": row.progression_blocked_reason,
             "rounds": rounds,
         }
 
