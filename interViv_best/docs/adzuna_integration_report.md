@@ -2,7 +2,7 @@
 
 **Branch:** `jobs/adzuna-integration`  
 **Worktree:** `.worktrees/cursor-adzuna-integration`  
-**Base (Phase 3B tip):** `1ff018dee91d6ef1f2f6551d1f711613166030c3`  
+**Base (Phase 3B tip):** `37900731439a272879309466e171c341b829790a`  
 **Date:** 2026-09-17
 
 ## Reused infrastructure
@@ -21,6 +21,8 @@
 - Salary display with Jobsworth predicted label when `salary_is_predicted`
 - Prepare → confirm practice handoff (optional full JD); does not auto-start; Practice remains available standalone
 - Country query param; unsupported country → 422 (no silent substitute)
+- Merged final Phase 3B tip `3790073` onto this branch (ort merge; Adzuna commits preserved)
+- Test hardening: `test_live_fetch_enabled_without_credentials_is_config_failure` sets empty `ADZUNA_*` (not `delenv`) so local `.env` cannot refill credentials mid-test
 
 ## Configuration
 
@@ -35,12 +37,11 @@
 
 | Check | Result |
 | --- | --- |
-| `pytest tests/test_jobs_explorer.py tests/test_adzuna_integration.py` | 17 passed |
-| `pytest tests/test_demo_path_contracts.py` | 1 passed |
-| Frontend `npm test` | 106 passed |
+| `pytest tests/test_jobs_explorer.py tests/test_adzuna_integration.py tests/test_demo_path_contracts.py` | **17 passed** |
+| Frontend `npm test` | **113 passed** |
 | `tsc --noEmit` | exit 0 |
 | `npm run build` | success |
-| Live Adzuna smoke | **skipped** — no local `ADZUNA_*` credentials configured |
+| Live Adzuna smoke | **connected** — country=`in`, query=`software engineer`, outcome=success, result_count=5 (bounded page); credentials only from gitignored `.env` |
 | Scoring / AI gates | unchanged (`LLM_LIVE_FETCH=0`, reviewed-only off) |
 
 ## Terms note
@@ -49,7 +50,7 @@ Publishing listings only (permissible use). Per-ad “Jobs by Adzuna” branding
 
 ## Final SHA
 
-`ffa003fae4049cb08faa12d08a7ca6fc60ffe270`
+Recorded in follow-up docs pin after verification commit.
 
 ## Remaining limitations
 
