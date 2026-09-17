@@ -366,6 +366,23 @@ export function fetchSession(sessionId) {
   return request(`/session/${encodeURIComponent(sessionId)}`).then(normalizeSessionData);
 }
 
+export function continueSession(sessionId) {
+  return request(`/session/${encodeURIComponent(sessionId)}/continue`, {
+    method: "POST",
+  });
+}
+
+export function fetchRoundFeedback(sessionId, roundNumber) {
+  return request(
+    `/session/${encodeURIComponent(sessionId)}/rounds/${encodeURIComponent(roundNumber)}/feedback`
+  );
+}
+
+/** Poll while narration is queued/processing; stop on terminal or abort. */
+export function narrationIsPending(status) {
+  return status === "queued" || status === "processing";
+}
+
 export function transcribeAudio(blob, filename = "answer.webm") {
   const formData = new FormData();
   formData.append("audio", blob, filename);
