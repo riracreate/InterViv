@@ -51,4 +51,14 @@
 
 ## Final SHA
 
-`ef60d10365b0b7eb428ecf956c38fc4f9a9a38c7`
+`39c460e` (full: see `git rev-parse HEAD` on `phase3b/feedback-delivery`)
+
+## Post-audit follow-up
+
+[Phase 3B checkpoint audit](eed4b451-4c1e-4f83-898f-b64a134c6aa2) targeted older tip `679f5e5`. Since then:
+
+- Guest / concurrent / v1 snapshot tests landed in the integration checkpoint
+- Interview resumes `content_blocked` via `GET /session` + saved state (`blockedResume.js`)
+- SQL continue-after-reopen covered in `test_sql_continue_after_reopen`
+
+Still deferred: after_session keys on answer JSON; dashboard MCQ key re-emit; browser QA.
