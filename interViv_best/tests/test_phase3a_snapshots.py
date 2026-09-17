@@ -110,7 +110,9 @@ def test_interview_submit_freezes_verifiable_snapshot() -> None:
     snapshot = stored.get("attempt_snapshot")
     assert isinstance(snapshot, dict)
     assert verify_attempt_snapshot(snapshot) is True
-    assert snapshot["snapshot_version"] == 1
+    assert snapshot["snapshot_version"] == 2
+    assert isinstance(snapshot.get("reference"), dict)
+    assert isinstance(snapshot.get("scorer_provenance"), dict)
     assert snapshot["round"] == 1
     assert snapshot["round_type"] == "technical_short_answer"
     assert snapshot["question"] == served_question

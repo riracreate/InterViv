@@ -7,6 +7,11 @@ Later writes (progression appends, expiry marks, future endpoints) carry
 submitted rounds forward untouched; the snapshot's ``digest`` makes any
 later mutation tamper-evident via :func:`verify_attempt_snapshot`.
 
+Phase 3B: new freezes (``SNAPSHOT_VERSION`` 2) also record server-only
+``reference`` identity/provenance and ``scorer_provenance``. Old v1
+snapshots remain verifiable — digests cover only keys present in the
+core, and historical rows are never rewritten.
+
 :func:`regenerate_rules_feedback` replays the deterministic rules feedback
 (``modules.c4_feedback`` plus the pipeline's fixed post-processing) purely
 from snapshot inputs. It is byte-identical to the feedback stored at score
@@ -25,7 +30,7 @@ import hashlib
 import json
 from typing import Any
 
-SNAPSHOT_VERSION = 1
+SNAPSHOT_VERSION = 2
 
 # Only the pipeline/c4 path (technical short answer) feeds the rules
 # feedback; every other round type is scored by its own module.
@@ -60,6 +65,71 @@ def snapshot_digest(core: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(core).encode("utf-8")).hexdigest()
 
 
+def _reference_from_context(question_context: dict[str, Any] | None) -> dict[str, Any]:
+    """Server-only reference identity / provenance from the scored round context.
+
+    Reviewed bundles: exact pin only (no invented fields).
+    Legacy: source + optional LLM attribution, with ideal answer/keywords
+    retained under ``reference`` so provenance is complete while serializers
+    continue to strip snapshots from client payloads.
+    """
+    ctx = dict(question_context or {})
+    source = str(ctx.get("source") or "").strip() or "unknown"
+    if source == "reviewed_bundle" or (
+        ctx.get("bundle_id") is not None and ctx.get("version") is not None
+    ):
+        ref: dict[str, Any] = {"source": "reviewed_bundle"}
+        for key in ("bundle_id", "version", "content_hash"):
+            if ctx.get(key) is not None:
+                ref[key] = ctx[key]
+        return ref
+    ref = {"source": source}
+    if ctx.get("llm_provider") is not None:
+        ref["llm_provider"] = ctx.get("llm_provider")
+    if ctx.get("llm_model") is not None:
+        ref["llm_model"] = ctx.get("llm_model")
+    if "ideal_answer" in ctx:
+        ref["ideal_answer"] = ctx.get("ideal_answer")
+    if "ideal_keywords" in ctx:
+        ref["ideal_keywords"] = ctx.get("ideal_keywords")
+    elif "ideal_keywords_list" in ctx:
+        keywords = ctx.get("ideal_keywords_list")
+        if isinstance(keywords, list):
+            ref["ideal_keywords"] = ", ".join(str(item) for item in keywords if str(item).strip())
+        else:
+            ref["ideal_keywords"] = keywords
+    return ref
+
+
+def _scorer_provenance(
+    scored_round: dict[str, Any],
+    scoring_result: dict[str, Any],
+    breakdown: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "scoring_schema_version": (
+            scoring_result.get("scoring_schema_version")
+            or breakdown.get("scoring_schema_version")
+            or scored_round.get("scoring_schema_version")
+        ),
+        "evaluation_mode": (
+            scored_round.get("evaluation_mode")
+            or scoring_result.get("evaluation_mode")
+            or breakdown.get("evaluation_mode")
+        ),
+        "scoring_mode": (
+            scored_round.get("scoring_mode")
+            or scoring_result.get("scoring_mode")
+            or breakdown.get("scoring_mode")
+        ),
+        "evidence_kind": (
+            scored_round.get("evidence_kind")
+            or scoring_result.get("evidence_kind")
+            or breakdown.get("evidence_kind")
+        ),
+    }
+
+
 def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[str, Any]) -> dict[str, Any]:
     """Freeze the scored round's inputs and outputs into an immutable snapshot.
 
@@ -73,6 +143,7 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
     if hasattr(submitted_at, "isoformat"):
         submitted_at = submitted_at.isoformat()
     round_type = scored_round.get("round_type") or "technical_short_answer"
+    question_context = scored_round.get("question_context") or {}
     core = {
         "snapshot_version": SNAPSHOT_VERSION,
         "round": scored_round.get("round"),
@@ -108,6 +179,8 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
         },
         "submitted_at": submitted_at,
         "rules_replayable": round_type in RULES_REPLAYABLE_ROUND_TYPES,
+        "reference": _reference_from_context(question_context),
+        "scorer_provenance": _scorer_provenance(scored_round, scoring_result, breakdown),
     }
     return {**core, "digest": snapshot_digest(core)}
 
@@ -121,6 +194,57 @@ def verify_attempt_snapshot(snapshot: dict[str, Any] | None) -> bool:
         return False
     core = {key: value for key, value in snapshot.items() if key != "digest"}
     return snapshot_digest(core) == digest
+
+
+def narration_allowed_claims(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Production-established claims suitable for narration grounding.
+
+    Returns only signals the active scorer actually committed on the
+    snapshot: ``final_score``, ``guard_applied``, feedback fields, and
+    covered/missing concepts when present as evaluated breakdown signals.
+
+    Semantic similarity / ``semantic_score`` is intentionally excluded —
+    similarity is not a correctness claim and must not be narrated as proof
+    that an answer is correct.
+    """
+    if not isinstance(snapshot, dict):
+        return {}
+    scores = snapshot.get("scores") or {}
+    feedback = snapshot.get("feedback") or {}
+    breakdown = snapshot.get("scoring_breakdown") or {}
+    concepts = breakdown.get("concepts") if isinstance(breakdown.get("concepts"), dict) else {}
+    covered = (
+        breakdown.get("covered_concepts")
+        or concepts.get("covered")
+        or []
+    )
+    missing = (
+        breakdown.get("missing_concepts")
+        or concepts.get("missing")
+        or []
+    )
+    return {
+        "final_score": scores.get("final_score", snapshot.get("final_score")),
+        "guard_applied": snapshot.get("guard_applied"),
+        "feedback": {
+            "content": list(feedback.get("content") or []),
+            "strengths": list(feedback.get("strengths") or []),
+            "weakness": list(
+                feedback.get("weakness") or feedback.get("weaknesses") or []
+            ),
+            "next_step": feedback.get("next_step") or feedback.get("recommendation") or "",
+        },
+        "strengths": list(feedback.get("strengths") or []),
+        "covered_concepts": [str(item) for item in covered if str(item).strip()],
+        "missing_concepts": [str(item) for item in missing if str(item).strip()],
+        # Empty unless the scorer recorded explicit evidence/criterion ids.
+        "evidence_ids": [
+            str(item) for item in (breakdown.get("evidence_ids") or []) if str(item).strip()
+        ],
+        "criterion_ids": [
+            str(item) for item in (breakdown.get("criterion_ids") or []) if str(item).strip()
+        ],
+    }
 
 
 def regenerate_rules_feedback(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
