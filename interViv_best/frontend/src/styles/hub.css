@@ -104,3 +104,73 @@
   .hub-page .hub-section-heading p { flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .hub-page .hub-button { transition: none; } }
+
+/* Shared app-surface primitives (Jobs, Gap, Roadmap, Practice-adjacent). */
+.hub-page .hub-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+  padding: var(--space-5);
+}
+.hub-page .hub-field {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+.hub-page .hub-field:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.hub-page .hub-field:disabled { opacity: .5; }
+.hub-page .hub-notice {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.hub-page .hub-notice-info {
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+}
+.hub-page .hub-notice-warn {
+  border-color: var(--color-warn);
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+}
+.hub-page .hub-notice-danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.hub-page .hub-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgba(2, 6, 23, .45);
+}
+.hub-page .hub-modal {
+  width: min(100%, 32rem);
+  max-height: min(90vh, 40rem);
+  overflow: auto;
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  padding: var(--space-5);
+  box-shadow: 0 24px 60px rgba(2, 6, 23, .18);
+}
+.hub-page .hub-page-hero { padding: var(--space-8) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
+.hub-page .hub-page-hero h1 { margin: var(--space-2) 0; font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.1; }
+.hub-page .hub-page-hero p { max-width: 42rem; }
+.hub-page .hub-toolbar { display: flex; flex-wrap: wrap; gap: 12px; margin: var(--space-5) 0; }
+.hub-page .hub-list { display: grid; gap: var(--space-4); margin: var(--space-5) 0; }
+.hub-page .hub-empty-inline { border-top: 1px solid var(--color-border); padding: var(--space-6) 0; color: var(--color-ink-muted); }
