@@ -111,8 +111,10 @@ def test_live_fetch_enabled_without_credentials_is_config_failure(monkeypatch) -
     """Gate on + no credentials: explicit config failure (not silent fixtures)."""
     reset_memory_store()
     monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
-    monkeypatch.delenv("ADZUNA_APP_ID", raising=False)
-    monkeypatch.delenv("ADZUNA_APP_KEY", raising=False)
+    # Empty strings (not delenv): load_dotenv(override=False) would otherwise
+    # refill ADZUNA_* from a local .env and turn this into a live network call.
+    monkeypatch.setenv("ADZUNA_APP_ID", "")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "")
     get_settings.cache_clear()
     try:
         user = _make_user()
