@@ -318,3 +318,134 @@ def test_snapshot_v2_records_reference_identity() -> None:
     assert snap["reference"]["content_hash"] == "abc"
     assert snap["scorer_provenance"]["scoring_schema_version"] == "v-test"
     assert verify_attempt_snapshot(snap)
+
+
+def test_legacy_snapshot_v1_still_verifies() -> None:
+    """Historical Phase 3A digests must remain valid without rewrite."""
+    from modules.attempt_snapshot import snapshot_digest
+
+    core = {
+        "snapshot_version": 1,
+        "round": 1,
+        "round_type": "technical_short_answer",
+        "skill": "DBMS",
+        "question": "What is ACID?",
+        "answer": "Atomicity Consistency Isolation Durability.",
+        "scores": {
+            "nlp_score": 50.0,
+            "svm_label": None,
+            "kg_score": None,
+            "ner_entities": [],
+            "final_score": 50.0,
+        },
+        "guard_applied": None,
+        "guard_softened": None,
+        "scoring_breakdown": {},
+        "scoring_schema_version": "legacy",
+        "feedback": {"content": [], "strengths": [], "weakness": [], "next_step": ""},
+        "elo_before": 1500.0,
+        "elo_after": 1501.0,
+        "difficulty": "medium",
+        "difficulty_change": None,
+        "evidence_kind": "measured",
+        "scoring_mode": "full",
+        "evaluation_mode": "rules",
+        "config": {"attempt_policy": None, "review_policy": "none"},
+        "submitted_at": "2026-09-14T00:00:00+00:00",
+        "rules_replayable": True,
+    }
+    snap = {**core, "digest": snapshot_digest(core)}
+    assert snap["snapshot_version"] == 1
+    assert "reference" not in snap
+    assert verify_attempt_snapshot(snap) is True
+
+
+def test_guest_legacy_technical_answer_without_token() -> None:
+    client = TestClient(app)
+    start = client.post("/session/start", json={
+        "skills": ["DBMS"],
+        "rounds_per_skill": 1,
+    })
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+    stored = get_database()["sessions"].find_one({"session_id": session_id})
+    assert not stored.get("user_id")
+    answer = client.post("/session/answer", json={
+        "session_id": session_id,
+        "round": 1,
+        "answer_text": "ACID keeps related writes atomic across a transaction.",
+    })
+    assert answer.status_code == 200, answer.text
+    feedback = client.get(f"/session/{session_id}/rounds/1/feedback")
+    assert feedback.status_code == 200, feedback.text
+
+
+def test_concurrent_continue_appends_at_most_one_round(monkeypatch) -> None:
+    """Submit lock serializes continue; only one next round is appended."""
+    import threading
+    from backend.routes import session_continue as sc
+
+    client = TestClient(app)
+    user = _make_user("t3b-conc")
+    headers = _headers(user)
+    start = client.post("/session/start", headers=headers, json={
+        "blocks": [_interview_block(["DBMS"], topic="transactions",
+                                    difficulty="medium", count=2)],
+    })
+    session_id = start.json()["session_id"]
+    client.post("/session/answer", headers=headers, json={
+        "session_id": session_id, "round": 1,
+        "answer_text": "ACID transactions keep related writes atomic.",
+    })
+    assert get_database()["sessions"].find_one(
+        {"session_id": session_id}
+    )["status"] == "content_blocked"
+
+    calls = {"n": 0}
+    building = threading.Event()
+    release = threading.Event()
+
+    def slow_next(**kwargs):
+        calls["n"] += 1
+        building.set()
+        # Hold the submit lock until the second request is queued behind it.
+        assert release.wait(timeout=5)
+        return {
+            "question": "What does atomicity guarantee in a transaction?",
+            "ideal_answer": "All or nothing.",
+            "ideal_keywords": "atomicity",
+            "skill": "DBMS",
+            "sub_domain": "transactions",
+            "source": "legacy",
+        }
+
+    monkeypatch.setattr(sc, "_get_next_question", slow_next)
+    monkeypatch.setattr(
+        "backend.routes.session_continue._verify_served_topic",
+        lambda **kwargs: None,
+    )
+
+    results: list[tuple[int, bool | None]] = []
+
+    def worker():
+        resp = client.post(f"/session/{session_id}/continue", headers=headers)
+        body = resp.json() if resp.status_code == 200 else {}
+        results.append((resp.status_code, body.get("continued")))
+
+    t1 = threading.Thread(target=worker)
+    t1.start()
+    assert building.wait(timeout=5)
+    t2 = threading.Thread(target=worker)
+    t2.start()
+    # Give t2 time to block on the submit lock, then finish t1's build.
+    threading.Event().wait(0.2)
+    release.set()
+    t1.join(timeout=15)
+    t2.join(timeout=15)
+
+    assert sorted(code for code, _ in results) == [200, 200]
+    assert calls["n"] == 1
+    stored = get_database()["sessions"].find_one({"session_id": session_id})
+    assert stored["status"] == "active"
+    assert len(stored["rounds"]) == 2
+    assert sum(1 for r in stored["rounds"] if r.get("status") == "in_progress") == 1
