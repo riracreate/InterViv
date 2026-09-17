@@ -10,6 +10,7 @@ Core changes vs. the current version:
 """
 from __future__ import annotations
 
+import copy
 import re
 import logging
 import threading
@@ -24,6 +25,7 @@ from pydantic import BaseModel, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.transactions import atomic
 from backend.execution import (
     CodingRateLimitedError,
     ExecutionUnavailableError,
@@ -36,6 +38,7 @@ from backend.routes.session import (
     _get_next_question,
     _skill_for_round,
     _sub_domain_for_skill,
+    _verify_served_topic,
     build_round_document,
 )
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
@@ -49,6 +52,8 @@ from backend.evidence_kind import (
     measured_scores,
 )
 from modules import adaptive_question_selector
+from modules.attempt_snapshot import freeze_attempt_snapshot
+from modules.narration_jobs import enqueue_narration_job
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
 from modules.skill_graph import StudentSkillGraph
@@ -304,6 +309,32 @@ def _assistance_for_round(
         return False, []
 
 
+def _release_claim_to_pre_submit(
+    db: Any,
+    session_id: str,
+    rounds: list[dict[str, Any]],
+    round_number: int,
+    pre_submit_round: dict[str, Any],
+) -> None:
+    """Best-effort rollback of the finalizing claim to the pre-submit round.
+
+    Used only when scoring itself failed before an attempt commit. When the
+    next question cannot be supplied after a successful evaluation, the
+    scored result is preserved instead (session ``content_blocked``) — do
+    not call this helper for that path. Never raises: if the store is down
+    the caller is already raising, and stale-claim takeover covers retry.
+    """
+    try:
+        restored = [copy.deepcopy(pre_submit_round) if doc.get("round") == round_number else doc
+                    for doc in rounds]
+        db["sessions"].update_one(
+            {"session_id": session_id},
+            {"$set": {"rounds": restored}},
+        )
+    except Exception:
+        logger.warning("Failed to release finalizing claim.", exc_info=True)
+
+
 def _clear_answer_draft(db: Any, session_id: str, round_number: int) -> None:
     """Remove the saved draft for a submitted round (best effort)."""
     try:
@@ -512,10 +543,19 @@ def submit_answer(
 
         # Concurrency guard: atomic finalization check
         round_status = active_round.get("status")
-        if (
+        scored = bool(active_round.get("answer_text")) or active_round.get("final_score") is not None
+        if round_status == "finalizing" and not scored:
+            # Stale claim: a previous holder died between claim and commit
+            # without persisting a score. The per-session lock guarantees
+            # nobody else is in flight (single-process contract), so the
+            # retry takes the claim over instead of 409ing forever.
+            logger.warning(
+                "Taking over stale finalizing claim for session %s round %s.",
+                request.session_id, request.round,
+            )
+        elif (
             round_status in ("submitted", "finalizing", "expired")
-            or active_round.get("answer_text")
-            or active_round.get("final_score") is not None
+            or scored
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -531,6 +571,13 @@ def submit_answer(
             detail = store_unavailable_attempt(db, session, active_round, request.answer_text)
             raise HTTPException(status_code=503, detail=detail)
 
+        # Pristine pre-submit copy: a failure before the attempt commit
+        # (content errors building the next round) restores this, so the
+        # retry is a clean resubmit rather than a 409 over half-scored data.
+        pre_submit_round = copy.deepcopy(active_round)
+        if pre_submit_round.get("status") == "finalizing":
+            # Takeover path: release must undo the claim, not re-persist it.
+            pre_submit_round["status"] = "in_progress"
         # Claim finalization
         active_round["status"] = "finalizing"
         db["sessions"].update_one(
@@ -821,6 +868,11 @@ def submit_answer(
                     scoring_result.get("semantic_fallback_reason"),
                 ),
             }
+            # Freeze the immutable attempt snapshot with the scored round:
+            # everything the score depended on, digested, committed once.
+            rounds[index]["attempt_snapshot"] = freeze_attempt_snapshot(
+                rounds[index], scoring_result
+            )
             break
 
         total_rounds = _total_rounds(session, settings)
@@ -836,6 +888,10 @@ def submit_answer(
         next_block_id: str | None = None
         next_block_position: int | None = None
         next_block_category: str | None = None
+        # When the next question cannot be supplied after a successful
+        # evaluation, keep the scored result and mark the session blocked
+        # instead of rolling the answer back.
+        progression_blocked_reason: str | None = None
 
         session_status = "completed" if request.round >= total_rounds else "active"
         is_spaced_review = (
@@ -844,74 +900,14 @@ def submit_answer(
         # Measured readiness only — self-reported and spaced-review practice
         # stay out of the mean.
         completed_scores = [] if is_spaced_review else measured_scores(rounds)
-        session_update = {
-            "rounds": rounds,
-            "last_round": request.round,
-            "current_difficulty": next_difficulty,
-            "current_skill": next_skill or current_skill,
-            "status": session_status,
-        }
-        if session_status == "completed":
-            session_update["completed_at"] = datetime.now(timezone.utc)
-            session_update["overall_readiness_score"] = (
-                round(sum(completed_scores) / len(completed_scores), 2)
-                if completed_scores
-                else None
-            )
-            session_update["overall_readiness_population"] = "measured"
-
         try:
-            # First persist the completed round. Measured rounds update Elo and
-            # learning state; self-reported and spaced-review practice do not.
-            db["sessions"].update_one(
-                {"session_id": request.session_id},
-                {"$set": session_update},
-            )
-            if not self_reported and not is_spaced_review:
-                db["candidates"].update_one(
-                    {"candidate_id": session["candidate_id"]},
-                    {"$set": {f"elo_ratings.{current_skill}": elo_after}},
-                )
-                _update_learning_state(
-                    session=session,
-                    skill=current_skill,
-                    final_score=float(scoring_result["final_score"]),
-                    difficulty=active_round.get("difficulty", "medium"),
-                    scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
-                    elo_before=elo_before,
-                    elo_after=elo_after,
-                    session_id=request.session_id,
-                )
-            elif is_spaced_review:
-                try:
-                    from backend.routes.learning_hub import (
-                        apply_review_outcome_for_session_round,
-                    )
-
-                    submitted = next(
-                        (r for r in rounds if r.get("round") == request.round),
-                        None,
-                    )
-                    if submitted is not None:
-                        apply_review_outcome_for_session_round(
-                            db,
-                            session,
-                            submitted,
-                            assisted=bool(submitted.get("assisted")),
-                        )
-                except Exception:
-                    logger.warning(
-                        "Failed to apply spaced-review schedule update.",
-                        exc_info=True,
-                    )
-
-            # Clear the saved draft for the submitted round: submitted attempts
-            # are immutable and drafts must not survive submission.
-            try:
-                _clear_answer_draft(db, request.session_id, request.round)
-            except Exception:
-                logger.warning("Failed to clear answer draft.", exc_info=True)
-
+            # The next round is built in memory first. Expected inventory /
+            # topic exhaustion sets progression_blocked and still commits the
+            # scored answer (content_blocked). Unrelated DatabaseConnectionError
+            # during the attempt commit rolls the score back so retry can
+            # resubmit via stale-claim takeover. Derived skill-graph / concept
+            # mastery updates follow the successful commit best-effort; Elo and
+            # the narration job join the attempt transaction.
             # Queue the next round after recomputing the user's weakest skill
             # and concept from fresh learning state. Anonymous sessions keep the
             # existing rotation behavior. Block sessions honor the expanded plan
@@ -941,16 +937,8 @@ def submit_answer(
                     next_block_id = existing_next.get("block_id")
                     next_block_position = existing_next.get("block_position")
                     next_block_category = existing_next.get("block_category")
-                    db["sessions"].update_one(
-                        {"session_id": request.session_id},
-                        {
-                            "$set": {
-                                "current_difficulty": response_next_difficulty,
-                                "current_skill": next_skill,
-                                "status": session_status,
-                            }
-                        },
-                    )
+                    # No write here: the reused round is already persisted and
+                    # the session-level next values join the commit below.
                 else:
                     plan = session.get("round_plan") or []
                     planned_type = None
@@ -962,7 +950,11 @@ def submit_answer(
 
                     rotation_skill = _skill_for_round(session, next_round)
                     candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
-                    candidate_elos = (candidate_doc or {}).get("elo_ratings", {}) or {}
+                    candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
+                    if not self_reported and not is_spaced_review:
+                        # The Elo commit below hasn't run yet; rotation must
+                        # see this round's update exactly as if it had.
+                        candidate_elos[current_skill] = elo_after
                     rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
                     rotation_difficulty = _difficulty_from_elo(rotation_elo)
                     session_user_id = session.get("user_id")
@@ -1039,48 +1031,39 @@ def submit_answer(
                                 allow_unknown_fallback=bool(session.get("allow_unknown_topic_fallback")),
                             )
                         except ValueError as exc:
-                            raise HTTPException(
-                                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-                            ) from exc
+                            progression_blocked_reason = str(exc)
+                            next_doc = None
                         except IntegrationError as exc:
                             from modules.bundle_selector import (
                                 ReviewedInventoryUnavailable,
                             )
 
                             if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
-                                raise HTTPException(
-                                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                    detail=str(exc),
-                                ) from exc
-                            raise HTTPException(
-                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-                            ) from exc
-                        next_payload = next_doc.model_dump()
-                        rounds.append(next_payload)
-                        next_question = next_doc.question
-                        next_skill = rotation_skill
-                        next_round_type = planned_type
-                        response_next_difficulty = next_doc.difficulty
-                        sanitized = sanitize_round_for_client(next_payload)
-                        next_question_context = sanitized.get("question_context") or {}
-                        next_config_json = next_doc.config_json or {}
-                        next_expires_at = (
-                            next_doc.expires_at.isoformat() if next_doc.expires_at else None
-                        )
-                        next_block_id = next_doc.block_id
-                        next_block_position = next_doc.block_position
-                        next_block_category = next_doc.block_category
-                        db["sessions"].update_one(
-                            {"session_id": request.session_id},
-                            {
-                                "$set": {
-                                    "rounds": rounds,
-                                    "current_difficulty": response_next_difficulty,
-                                    "current_skill": next_skill,
-                                    "status": session_status,
-                                }
-                            },
-                        )
+                                progression_blocked_reason = str(exc)
+                                next_doc = None
+                            else:
+                                progression_blocked_reason = str(exc)
+                                next_doc = None
+                        if next_doc is None:
+                            pass
+                        else:
+                            next_payload = next_doc.model_dump()
+                            rounds.append(next_payload)
+                            next_question = next_doc.question
+                            next_skill = rotation_skill
+                            next_round_type = planned_type
+                            response_next_difficulty = next_doc.difficulty
+                            sanitized = sanitize_round_for_client(next_payload)
+                            next_question_context = sanitized.get("question_context") or {}
+                            next_config_json = next_doc.config_json or {}
+                            next_expires_at = (
+                                next_doc.expires_at.isoformat() if next_doc.expires_at else None
+                            )
+                            next_block_id = next_doc.block_id
+                            next_block_position = next_doc.block_position
+                            next_block_category = next_doc.block_category
+                            # No write here: the appended round joins the single
+                            # commit below with the scored round and Elo.
                     else:
                         # Block sessions constrain adaptation to the block's own
                         # skills; legacy sessions adapt across all session skills.
@@ -1137,81 +1120,130 @@ def submit_answer(
                                 weak_skills=weak_context,
                             )
                         except IntegrationError as exc:
-                            from modules.bundle_selector import (
-                                ReviewedInventoryUnavailable,
-                            )
+                            progression_blocked_reason = str(exc)
+                            question_payload = None
+                        if question_payload is not None:
+                            try:
+                                _verify_served_topic(
+                                    requested=(expanded_spec or {}).get("topic"),
+                                    served=question_payload.get("sub_domain"),
+                                    skill=next_skill,
+                                    difficulty=next_round_difficulty,
+                                )
+                            except ValueError as exc:
+                                progression_blocked_reason = str(exc)
+                                question_payload = None
+                        if question_payload is None:
+                            pass
+                        else:
+                            question_payload["adaptive_target"] = target.to_dict()
+                            next_target = target.to_dict()
+                            next_round_type = "technical_short_answer"
 
-                            if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
-                                raise HTTPException(
-                                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                    detail=str(exc),
-                                ) from exc
-                            raise HTTPException(
-                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-                            ) from exc
-                        question_payload["adaptive_target"] = target.to_dict()
-                        next_target = target.to_dict()
-                        next_round_type = "technical_short_answer"
-
-                        next_expires_value = None
-                        next_config_value: dict[str, Any] = {}
-                        if expanded_spec and expanded_spec.get("duration_minutes"):
-                            from datetime import timedelta as _timedelta
-                            activated = datetime.now(timezone.utc)
-                            next_expires_value = activated + _timedelta(
-                                minutes=int(expanded_spec["duration_minutes"])
-                            )
-                            next_config_value = {
-                                "duration_minutes": int(expanded_spec["duration_minutes"])
-                            }
-                            next_expires_at = next_expires_value.isoformat()
-                        next_round_doc = {
-                            "round": next_round,
-                            "skill": next_skill,
-                            "round_type": "technical_short_answer",
-                            "artifact_json": {},
-                            "config_json": next_config_value,
-                            "question": question_payload["question"],
-                            "answer_text": None,
-                            "nlp_score": None,
-                            "svm_label": None,
-                            "kg_score": None,
-                            "ner_entities": [],
-                            "final_score": None,
-                            "difficulty": next_round_difficulty,
-                            "difficulty_change": None,
-                            "feedback": {"content": [], "strengths": [], "next_step": ""},
-                            "elo_before": next_skill_elo,
-                            "elo_after": None,
-                            "question_context": question_payload,
-                            "started_at": datetime.now(timezone.utc),
-                            "expires_at": next_expires_value,
-                            "status": "in_progress",
-                            "block_id": (expanded_spec or {}).get("block_id"),
-                            "block_position": (expanded_spec or {}).get("block_position"),
-                            "block_category": (expanded_spec or {}).get("category"),
-                            "block_index": (expanded_spec or {}).get("block_index"),
-                            "block_total": (expanded_spec or {}).get("block_total"),
-                        }
-                        rounds.append(next_round_doc)
-                        next_question = question_payload["question"]
-                        sanitized_next = sanitize_round_for_client(dict(next_round_doc))
-                        next_question_context = sanitized_next.get("question_context") or {}
-                        next_config_json = next_config_value
-                        next_block_id = (expanded_spec or {}).get("block_id")
-                        next_block_position = (expanded_spec or {}).get("block_position")
-                        next_block_category = (expanded_spec or {}).get("category")
-                        db["sessions"].update_one(
-                            {"session_id": request.session_id},
-                            {
-                                "$set": {
-                                    "rounds": rounds,
-                                    "current_difficulty": next_round_difficulty,
-                                    "current_skill": next_skill,
-                                    "status": session_status,
+                            next_expires_value = None
+                            next_config_value: dict[str, Any] = {}
+                            if expanded_spec and expanded_spec.get("duration_minutes"):
+                                from datetime import timedelta as _timedelta
+                                activated = datetime.now(timezone.utc)
+                                next_expires_value = activated + _timedelta(
+                                    minutes=int(expanded_spec["duration_minutes"])
+                                )
+                                next_config_value = {
+                                    "duration_minutes": int(expanded_spec["duration_minutes"])
                                 }
-                            },
-                        )
+                                next_expires_at = next_expires_value.isoformat()
+                            next_round_doc = {
+                                "round": next_round,
+                                "skill": next_skill,
+                                "round_type": "technical_short_answer",
+                                "artifact_json": {},
+                                "config_json": next_config_value,
+                                "question": question_payload["question"],
+                                "answer_text": None,
+                                "nlp_score": None,
+                                "svm_label": None,
+                                "kg_score": None,
+                                "ner_entities": [],
+                                "final_score": None,
+                                "difficulty": next_round_difficulty,
+                                "difficulty_change": None,
+                                "feedback": {"content": [], "strengths": [], "next_step": ""},
+                                "elo_before": next_skill_elo,
+                                "elo_after": None,
+                                "question_context": question_payload,
+                                "started_at": datetime.now(timezone.utc),
+                                "expires_at": next_expires_value,
+                                "status": "in_progress",
+                                "block_id": (expanded_spec or {}).get("block_id"),
+                                "block_position": (expanded_spec or {}).get("block_position"),
+                                "block_category": (expanded_spec or {}).get("category"),
+                                "block_index": (expanded_spec or {}).get("block_index"),
+                                "block_total": (expanded_spec or {}).get("block_total"),
+                            }
+                            rounds.append(next_round_doc)
+                            next_question = question_payload["question"]
+                            sanitized_next = sanitize_round_for_client(dict(next_round_doc))
+                            next_question_context = sanitized_next.get("question_context") or {}
+                            next_config_json = next_config_value
+                            next_block_id = (expanded_spec or {}).get("block_id")
+                            next_block_position = (expanded_spec or {}).get("block_position")
+                            next_block_category = (expanded_spec or {}).get("category")
+                            # No write here: the appended round joins the single
+                            # commit below with the scored round and Elo.
+
+            if progression_blocked_reason and session_status == "active":
+                session_status = "content_blocked"
+
+            # The single attempt commit: scored round (+ queued next round)
+            # and measured Elo update succeed or fail together. A 503 here
+            # leaves the claimed-but-unscored round behind, and the guard's
+            # stale-claim takeover makes the retry a clean resubmit.
+            # When progression is blocked, the scored answer is still committed
+            # and the session becomes content_blocked (no false next round).
+            session_update = {
+                "rounds": rounds,
+                "last_round": request.round,
+                "current_difficulty": response_next_difficulty,
+                "current_skill": next_skill or current_skill,
+                "status": session_status,
+            }
+            if progression_blocked_reason:
+                session_update["progression_blocked_reason"] = progression_blocked_reason
+            if session_status == "completed":
+                session_update["completed_at"] = datetime.now(timezone.utc)
+                session_update["overall_readiness_score"] = (
+                    round(sum(completed_scores) / len(completed_scores), 2)
+                    if completed_scores
+                    else None
+                )
+                session_update["overall_readiness_population"] = "measured"
+            with atomic(db):
+                db["sessions"].update_one(
+                    {"session_id": request.session_id},
+                    {"$set": session_update},
+                )
+                if not self_reported and not is_spaced_review:
+                    db["candidates"].update_one(
+                        {"candidate_id": session["candidate_id"]},
+                        {"$set": {f"elo_ratings.{current_skill}": elo_after}},
+                    )
+                # The narration job joins the same commit: a scored round
+                # always has exactly one job, never zero, never two.
+                scored_snapshot = next(
+                    (item.get("attempt_snapshot") or {}
+                     for item in rounds if item.get("round") == request.round),
+                    {},
+                )
+                enqueue_narration_job(
+                    db,
+                    session_id=request.session_id,
+                    round_number=request.round,
+                    user_id=session.get("user_id"),
+                    skill=current_skill,
+                    final_score=scoring_result["final_score"],
+                    feedback=scoring_result["feedback"],
+                    snapshot_digest=scored_snapshot.get("digest"),
+                )
         except DatabaseConnectionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -1223,6 +1255,51 @@ def submit_answer(
                     detail=f"MongoDB operation failed: {exc}",
                 ) from exc
             raise
+
+        # Post-commit derived state (best-effort, unchanged semantics):
+        # measured rounds update learning state, spaced-review rounds update
+        # the review schedule, and the saved draft for a submitted round is
+        # cleared. None of these can fail the already-committed submit.
+        if not self_reported and not is_spaced_review:
+            _update_learning_state(
+                session=session,
+                skill=current_skill,
+                final_score=float(scoring_result["final_score"]),
+                difficulty=active_round.get("difficulty", "medium"),
+                scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
+                elo_before=elo_before,
+                elo_after=elo_after,
+                session_id=request.session_id,
+            )
+        elif is_spaced_review:
+            try:
+                from backend.routes.learning_hub import (
+                    apply_review_outcome_for_session_round,
+                )
+
+                submitted = next(
+                    (r for r in rounds if r.get("round") == request.round),
+                    None,
+                )
+                if submitted is not None:
+                    apply_review_outcome_for_session_round(
+                        db,
+                        session,
+                        submitted,
+                        assisted=bool(submitted.get("assisted")),
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to apply spaced-review schedule update.",
+                    exc_info=True,
+                )
+
+        # Clear the saved draft for the submitted round: submitted attempts
+        # are immutable and drafts must not survive submission.
+        try:
+            _clear_answer_draft(db, request.session_id, request.round)
+        except Exception:
+            logger.warning("Failed to clear answer draft.", exc_info=True)
 
         resp_artifact = scoring_result.get("artifact_json")
         if round_type == "sql" and resp_artifact:
@@ -1271,7 +1348,10 @@ def submit_answer(
             "elo_after": elo_after,
             "difficulty_change": difficulty_change,
             "total_rounds": total_rounds,
-            "session_complete": request.round >= total_rounds,
+            "session_complete": request.round >= total_rounds and not progression_blocked_reason,
+            "session_status": session_status,
+            "progression_blocked": bool(progression_blocked_reason),
+            "progression_blocked_reason": progression_blocked_reason,
             "assisted": assisted,
             "assistance_kinds": assistance_kinds,
         }

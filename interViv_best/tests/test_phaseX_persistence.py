@@ -54,7 +54,7 @@ def test_every_attempt_field_survives_migrated_store_reopen(migrated_store):
 
 def test_upgrade_store_downgrade_one_revision_reupgrade_store(migrated_store):
     script = _script_directory()
-    assert script.get_heads() == ["20260913_0010"]  # Phase 1A head
+    assert script.get_heads() == ["20260914_0012"]  # Phase 3A narration head
     assert_roundtrip(attempt_document())
     get_engine().dispose()
     _clear_db_caches()
@@ -66,7 +66,7 @@ def test_upgrade_store_downgrade_one_revision_reupgrade_store(migrated_store):
     _clear_db_caches()
     _run_alembic(migrated_store, "upgrade", "head")
     assert_roundtrip(attempt_document())
-    assert script.get_heads() == ["20260913_0010"]  # Phase 1A head
+    assert script.get_heads() == ["20260914_0012"]  # Phase 3A narration head
 
 
 def test_unavailable_submission_and_ownership_on_durable_adapter(migrated_store, monkeypatch, tmp_path):
