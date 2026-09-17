@@ -33,6 +33,7 @@ from backend.execution import (
 )
 from backend.integrations import IntegrationError
 from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
+from backend.routes.session_access import assert_session_access
 from backend.routes.session import (
     _expanded_spec_for_round,
     _get_next_question,
@@ -465,27 +466,14 @@ def submit_answer(
 
         round_type = active_round.get("round_type", "technical_short_answer")
 
-        # Phase 2 MCQ, SQL, coding & system-design require a valid JWT
-        if round_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
-            if not authorization:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication is required for this session.",
-                )
-            user = require_user(authorization)
-            if session.get("user_id"):
-                if str(session["user_id"]) != str(user["id"]):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="You cannot access another user's data.",
-                    )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Anonymous sessions are not permitted for this round type.",
-                )
-        elif session.get("user_id") and authorization:
-            require_matching_user(str(session["user_id"]), authorization)
+        # Same ownership gate as GET /session: owned or Phase-2 sessions
+        # require the owning JWT. Legacy anonymous technical sessions stay
+        # guest-submittable. Missing token on an owned session is 401, not a bypass.
+        user = assert_session_access(
+            session,
+            authorization,
+            foreign_detail="You cannot access another user's data.",
+        )
 
         # Strict round-type validation
         normalized_answers = None
@@ -613,6 +601,11 @@ def submit_answer(
                 language = normalize_language(request.language)
                 coding_config = dict(active_round.get("config_json") or {})
                 problem = get_coding_problem(coding_config.get("problem_id"))
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Authentication is required for coding rounds.",
+                    )
                 assert_coding_exec_allowed(str(user["id"]), active_round)
                 scoring_result = score_round(
                     round_type="coding", answer_text=request.answer_text,
