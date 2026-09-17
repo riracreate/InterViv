@@ -68,7 +68,7 @@ Skill-graph / concept-mastery updates remain post-commit best-effort (unchanged 
 | `20260914_0011` | `attempt_snapshot_json` on session rounds |
 | `20260914_0012` | `narration_jobs` table (incl. `claim_token`, `lease_until`, `skipped`) |
 
-Rollback: `alembic downgrade 20260914_0010` (or parent of 0011) drops both Phase 3A objects. Application code on this branch expects those columns/tables when using SQLAlchemy; memory mode needs no migration.
+Rollback: `alembic downgrade 20260913_0010` (pre-Phase-3A head) drops both Phase 3A objects — `attempt_snapshot_json` on rounds and the `narration_jobs` table (data loss). Application code on this branch expects those columns/tables when using SQLAlchemy; memory mode needs no migration.
 
 ## 4. Gates kept off
 
