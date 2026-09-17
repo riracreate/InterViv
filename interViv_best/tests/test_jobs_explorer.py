@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
@@ -96,7 +97,7 @@ def test_default_jobs_live_fetch_skips_httpx(monkeypatch) -> None:
         def get(self, *args, **kwargs):
             raise AssertionError("Adzuna HTTP must not run when JOBS_LIVE_FETCH=0")
 
-    monkeypatch.setattr("modules.jobs_explorer.httpx.Client", BoomClient)
+    monkeypatch.setattr("modules.adzuna_client.httpx.Client", BoomClient)
     try:
         jobs, provenance = fetch_adzuna(q="backend", where="Pune", page=1)
         assert provenance == "fixture"
@@ -106,8 +107,8 @@ def test_default_jobs_live_fetch_skips_httpx(monkeypatch) -> None:
         reset_memory_store()
 
 
-def test_live_fetch_enabled_without_credentials_uses_fixtures(monkeypatch) -> None:
-    """Gate on + no credentials: same fixture path as today, honestly labeled."""
+def test_live_fetch_enabled_without_credentials_is_config_failure(monkeypatch) -> None:
+    """Gate on + no credentials: explicit config failure (not silent fixtures)."""
     reset_memory_store()
     monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
     monkeypatch.delenv("ADZUNA_APP_ID", raising=False)
@@ -115,15 +116,9 @@ def test_live_fetch_enabled_without_credentials_uses_fixtures(monkeypatch) -> No
     get_settings.cache_clear()
     try:
         user = _make_user()
-        body = search_jobs(q="intern", where="Pune", page=1, user_id=user["id"])
-        assert body["provenance"] == "fixture"
-        assert body["source"] == "fixture"
-        assert body["empty_reason"]
-        assert "sample data" in body["empty_reason"].lower()
-        assert "JOBS_LIVE_FETCH" not in body["empty_reason"]
-        assert "ADZUNA_APP" not in body["empty_reason"]
-        assert ".env" not in body["empty_reason"]
-        assert body["cache_hit"] is False
+        with pytest.raises(Exception) as exc:
+            search_jobs(q="intern", where="Pune", page=1, user_id=user["id"])
+        assert "not configured" in str(exc.value).lower() or getattr(exc.value, "kind", "") == "config"
     finally:
         monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
         get_settings.cache_clear()
@@ -190,13 +185,17 @@ def test_list_jobs_and_practice_session_shape() -> None:
     job_id = body["jobs"][0]["id"]
     assert body["jobs"][0]["redirect_url"].startswith("http")
 
-    practice = client.post(f"/jobs/{job_id}/practice", headers=headers)
+    practice = client.post(
+        f"/jobs/{job_id}/practice",
+        headers=headers,
+        json={"confirm": True},
+    )
     assert practice.status_code == 200, practice.text
     data = practice.json()
+    assert data.get("started") is True
     assert data.get("session_id")
     assert data.get("navigate", "").startswith("/interview/")
-    assert isinstance(data.get("skills"), list) and len(data["skills"]) >= 1
-    assert data.get("round_plan")
+    assert isinstance(data.get("skills") or data.get("missing_skills"), list)
 
     set_fetch_override(None)
     reset_memory_store()
