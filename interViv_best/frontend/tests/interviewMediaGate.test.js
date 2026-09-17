@@ -143,6 +143,18 @@ test('mixed Verbal→Interview: interview block still presents calibration after
 });
 
 
+test('SQL round skips camera calibration (media gate)', () => {
+  const html = render({ roundType: 'sql', blockCategory: 'sql' });
+  assert.match(html, /data-testid="sql-round-container"/);
+  assert.doesNotMatch(html, /Calibration|<video|Time left in this round/);
+});
+
+test('MCQ round_type alone skips camera even without verbal/oa category', () => {
+  const html = render({ roundType: 'mcq', blockCategory: null });
+  assert.match(html, /data-testid="mcq-round-container"/);
+  assert.doesNotMatch(html, /Calibration|<video/);
+});
+
 test('ML primitives renders its ungraded editor without calibration or a score', () => {
   const html = render({ roundType: 'ml_primitives', blockCategory: 'ml_primitives' });
   assert.match(html, /data-testid="ml-primitives-round"/);

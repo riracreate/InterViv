@@ -9,6 +9,7 @@ import {
 } from '../lib/feedbackPoll';
 import { blockedResumeFromSession } from '../lib/blockedResume';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
+import { blockUsesInterviewMedia, stopMediaStream, mediaErrorMessage } from '../lib/interviewMedia';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
 import CodingRound from '../components/CodingRound';
@@ -18,40 +19,8 @@ import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
 
 const ROUND_SECONDS = 120;
-
-/** Phase L: Verbal/OA blocks never use interview camera/mic/calibration.
- *  When category is not yet known, only treat non-mcq round types as media rounds
- *  so a late-arriving verbal/oa category cannot race a getUserMedia call. */
-function blockUsesInterviewMedia(category, roundType) {
-  const c = String(category || '').toLowerCase();
-  if (roundType === 'coding' || c === 'coding' || c === 'verbal' || c === 'oa' || c === 'ml_primitives') return false;
-  if (c) return true;
-  const t = String(roundType || '');
-  return t === 'technical_short_answer' || t === 'sql' || t === 'system_design';
-}
-
-function stopMediaStream(stream) {
-  stream?.getTracks?.().forEach(track => track.stop());
-}
-
-function mediaErrorMessage(error, device) {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    return `${device} access is not supported in this browser.`;
-  }
-  if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-    return `${device} access requires HTTPS or localhost.`;
-  }
-  if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
-    return `${device} permission was blocked. Allow access in the browser and try again.`;
-  }
-  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-    return `No ${device.toLowerCase()} device was found.`;
-  }
-  if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
-    return `${device} is already in use by another app.`;
-  }
-  return `${device} could not be started.`;
-}
+const DEADLINE_TRANSCRIPTION_NOTICE =
+  'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
 
 export default function Interview({ sessionState = null }) {
   const { sessionId } = useParams();
@@ -153,6 +122,8 @@ export default function Interview({ sessionState = null }) {
   const [engagementLoadFailed, setEngagementLoadFailed] = useState(false);
   const [liveEngagement, setLiveEngagement] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraCollapsed, setCameraCollapsed] = useState(false);
+  const [deadlineNotice, setDeadlineNotice] = useState('');
   const [baselineSamples, setBaselineSamples] = useState([]);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [engagementBaseline, setEngagementBaseline] = useState(
@@ -813,8 +784,16 @@ export default function Interview({ sessionState = null }) {
     const answers = options.answers;
     const rubricRatings = options.rubric_ratings;
     if (!isMcq && (!answerText && !force) || isScoring) return;
-    if (isRecording) stopRecording();
-    if (serverRecording) stopServerRecording(false);
+    if (force) {
+      // Discard in-flight STT — deadline is authoritative; do not wait/extend.
+      if (serverRecording || serverTranscribing) stopServerRecording(true);
+      if (isRecording) stopRecording();
+      setDeadlineNotice(DEADLINE_TRANSCRIPTION_NOTICE);
+    } else {
+      setDeadlineNotice('');
+      if (isRecording) stopRecording();
+      if (serverRecording) stopServerRecording(false);
+    }
     setIsScoring(true);
     try {
       const metrics = (!isMcq && !isSystemDesign) ? buildAnswerMetrics(answerText) : {};
@@ -1002,6 +981,7 @@ export default function Interview({ sessionState = null }) {
     setCurrentScore(null); setCurrentFeedback('');
     setFeedbackSourceLabel(''); setFeedbackDetails(null);
     setProgressionBlocked(false); setProgressionBlockedReason('');
+    setDeadlineNotice('');
     setCurrentRubric(null); setCurrentConcepts(null);
     setCurrentArtifact(null);
     stopRecording();
@@ -1204,8 +1184,8 @@ export default function Interview({ sessionState = null }) {
   }
 
   return (
-    <div className="h-screen bg-white flex flex-col overflow-hidden">
-      <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0">
+    <div className="h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden">
+      <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
           <button onClick={() => { if (confirm('Exit? Progress will be lost.')) { clearInterviewState(); navigate('/'); } }}
             className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
@@ -1394,26 +1374,65 @@ export default function Interview({ sessionState = null }) {
             </p>
           </div>
 
-          {/* Compact self-view — small and out of the way so it isn't distracting */}
-          <div className="absolute bottom-4 right-4 w-36 lg:w-48 aspect-video rounded-xl overflow-hidden border border-black/10 bg-black/[0.04] shadow-md">
-            {isVideoOn
-              ? <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
-              : (
-                <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-2 text-center">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.2">
-                    <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
-                  </svg>
-                  <span className="text-[9px] text-[#6F6F6F] leading-tight" style={{ fontFamily: "var(--font-body)" }}>
-                    {cameraError || 'Camera Off'}
-                  </span>
-                </div>
-              )
-            }
+          {/* Collapsible self-view — never covers question/answer on mobile */}
+          <div
+            className={`absolute bottom-4 right-4 rounded-xl overflow-hidden border border-black/10 bg-black/[0.04] shadow-md transition-all ${
+              cameraCollapsed ? 'w-auto' : 'w-36 lg:w-48 aspect-video'
+            }`}
+            data-testid="interview-camera-panel"
+          >
+            {cameraCollapsed ? (
+              <button
+                type="button"
+                className="px-3 py-2 text-[10px] uppercase tracking-wider text-[#6F6F6F]"
+                style={{ fontFamily: 'var(--font-body)' }}
+                onClick={() => setCameraCollapsed(false)}
+                aria-expanded="false"
+                aria-label="Show camera preview"
+              >
+                Show camera
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="absolute top-1 left-1 z-10 rounded bg-black/50 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white"
+                  onClick={() => setCameraCollapsed(true)}
+                  aria-expanded="true"
+                  aria-label="Hide camera preview"
+                >
+                  Hide
+                </button>
+                {isVideoOn
+                  ? <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-2 text-center aspect-video">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.2">
+                        <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                      <span className="text-[9px] text-[#6F6F6F] leading-tight" style={{ fontFamily: "var(--font-body)" }}>
+                        {cameraError || 'Camera Off'}
+                      </span>
+                    </div>
+                  )
+                }
+              </>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 overflow-hidden min-h-0">
+        <div className="flex flex-col gap-3 overflow-y-auto min-h-0 lg:overflow-hidden">
+          {deadlineNotice && (
+            <div
+              role="status"
+              data-testid="deadline-transcription-notice"
+              className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900 leading-relaxed"
+              style={{ fontFamily: 'var(--font-body)' }}
+            >
+              {deadlineNotice}
+            </div>
+          )}
           {!isSupportedRoundType(roundType) ? (
             <div role="alert" data-testid="unsupported-round-type"
               className="rounded-2xl border border-red-300 bg-red-50 p-5 flex-1 flex flex-col justify-center">
