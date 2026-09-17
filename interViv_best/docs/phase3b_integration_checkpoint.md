@@ -52,7 +52,7 @@
 
 ## Final SHA
 
-`PLACEHOLDER_AFTER_COMMIT` — replaced in follow-up docs commit with tip after verification.
+`89f22bb201ab7eade2d110d8710dbed37173bb56` (verification tip; docs-only SHA pin may follow)
 
 ## Deferred / remaining limitations
 
