@@ -293,7 +293,7 @@ def test_availability_and_start_agree_on_topic_payloads(
     headers = _headers(_make_user("topics-agree"))
 
     # Gate off: the same body probes available and starts.
-    legacy = {"blocks": [_interview_block(["DBMS"], topic="normalization")]}
+    legacy = {"blocks": [_interview_block(["DBMS"], topic="transactions")]}
     assert client.post("/session/availability", headers=headers,
                        json=legacy).json()["available"] is True
     started = client.post("/session/start", headers=headers, json=legacy)

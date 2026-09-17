@@ -336,7 +336,7 @@ def test_gate_on_explicit_topic_pin_is_strict(
     assert denied.status_code == 422, denied.text
 
 
-def test_gate_on_mid_run_exhaustion_is_clear_without_losing_scored_round(
+def test_gate_on_mid_run_exhaustion_preserves_scored_answer(
     isolated_inventory, monkeypatch
 ) -> None:
     monkeypatch.setenv("REVIEWED_BUNDLES_ONLY", "true")
@@ -353,16 +353,29 @@ def test_gate_on_mid_run_exhaustion_is_clear_without_losing_scored_round(
     session_id = start.json()["session_id"]
 
     # The single reviewed bundle is consumed by round 1; round 2 has
-    # nothing eligible. Progression reports 422 (not 503, not a switch).
+    # nothing eligible. The answer is still committed; progression blocks.
     answer = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 1,
         "answer_text": "A with statement releases the lock automatically.",
     })
-    assert answer.status_code == 422, answer.text
-    assert "reviewed" in answer.text.lower()
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["final_score"] is not None
+    assert body["progression_blocked"] is True
+    assert "reviewed" in (body.get("progression_blocked_reason") or "").lower()
+    assert body["next_question"] is None
+    assert body["session_status"] == "content_blocked"
 
     stored = get_database()["sessions"].find_one({"session_id": session_id})
     assert stored["rounds"][0]["status"] == "submitted"
     assert stored["rounds"][0]["final_score"] is not None
+    assert stored["rounds"][0].get("answer_text")
     assert len(stored["rounds"]) == 1
-    assert stored["status"] == "active"
+    assert stored["status"] == "content_blocked"
+
+    # Duplicate submit of the preserved answer is a 409, not a rewrite.
+    retry = client.post("/session/answer", headers=headers, json={
+        "session_id": session_id, "round": 1,
+        "answer_text": "Different text must not overwrite the committed attempt.",
+    })
+    assert retry.status_code == 409, retry.text

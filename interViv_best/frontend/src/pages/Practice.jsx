@@ -42,10 +42,11 @@ import {
   mapStandaloneToStartPayload,
   applyTargetPrefill,
   isAvailabilityMessage,
+  multiSkillTopicNote,
   payloadHasInterview,
   reconcileTopic,
+  sharedTopicsForSkills,
   summarizeAvailability,
-  topicsForSkills,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
@@ -111,6 +112,7 @@ export default function Practice() {
   const [standaloneTopic, setStandaloneTopic] = useState('');
   const [topicNote, setTopicNote] = useState('');
   const [topicMetadata, setTopicMetadata] = useState(null);
+  const [topicMetadataError, setTopicMetadataError] = useState(false);
 
   // Phase B block builder
   const [blocks, setBlocks] = useState([]);
@@ -170,21 +172,41 @@ export default function Practice() {
   }, [authReady, mode]);
 
   // Interview topic metadata (skill -> topics) for standalone + builder.
-  // A failed load degrades to unrestricted topics; starting still works.
+  // A failed load degrades to unrestricted topics (starting still works)
+  // but says so, with a retry: per the explicit-topic contract, topics
+  // are only offered when their per-skill scope is actually known.
   useEffect(() => {
     if (!authReady || (mode !== 'interview' && mode !== 'custom')) return undefined;
     let cancelled = false;
+    setTopicMetadataError(false);
     fetchPracticeBank()
       .then((data) => {
-        if (!cancelled) setTopicMetadata(data.interview_topics || {});
+        if (cancelled) return;
+        setTopicMetadataError(false);
+        setTopicMetadata(data.interview_topics || {});
       })
       .catch(() => {
-        if (!cancelled) setTopicMetadata({});
+        if (cancelled) return;
+        setTopicMetadata({});
+        setTopicMetadataError(true);
       });
     return () => {
       cancelled = true;
     };
   }, [authReady, mode]);
+
+  const retryTopicMetadata = () => {
+    setTopicMetadataError(false);
+    fetchPracticeBank()
+      .then((data) => {
+        setTopicMetadataError(false);
+        setTopicMetadata(data.interview_topics || {});
+      })
+      .catch(() => {
+        setTopicMetadata({});
+        setTopicMetadataError(true);
+      });
+  };
 
   // Phase B: load builder draft (server first, local fallback) + presets.
   useEffect(() => {
@@ -290,8 +312,21 @@ export default function Practice() {
   );
   const metadataReady = topicMetadata != null && Object.keys(topicMetadata).length > 0;
   const standaloneTopicOptions = useMemo(
-    () => topicsForSkills(standaloneSkillList, topicMetadata),
+    () => sharedTopicsForSkills(standaloneSkillList, topicMetadata),
     [standaloneSkillList, topicMetadata]
+  );
+  const standaloneSharedTopicNote = useMemo(
+    () => multiSkillTopicNote(standaloneSkillList, topicMetadata, metadataReady),
+    [standaloneSkillList, topicMetadata, metadataReady]
+  );
+  // Metadata failure must never look selected while starting unrestricted.
+  // Held explicit topics block start until retry or the user clears them.
+  const interviewTopicHeldOnMetadataError = Boolean(
+    topicMetadataError && standaloneTopic
+  );
+  const customTopicsHeldOnMetadataError = Boolean(
+    topicMetadataError
+    && blocks.some((b) => b.category === 'interview' && Boolean(b.topic))
   );
 
   // Standalone interview: clear a topic the (changed) skills no longer
@@ -312,7 +347,7 @@ export default function Practice() {
     if (mode !== 'custom' || !builderLoaded || !metadataReady) return undefined;
     const stale = blocks.filter(
       (b) => b.category === 'interview' && b.topic
-        && !topicsForSkills(b.skills, topicMetadata).includes(b.topic)
+        && !sharedTopicsForSkills(b.skills, topicMetadata).includes(b.topic)
     );
     if (stale.length === 0) return undefined;
     const ids = new Set(stale.map((b) => b.id));
@@ -396,6 +431,13 @@ export default function Practice() {
   const runStart = async (mapped) => {
     if (mapped.error) {
       setError(mapped.error);
+      return;
+    }
+    // Never submit unrestricted while the UI still implies a selected topic.
+    if (interviewTopicHeldOnMetadataError || customTopicsHeldOnMetadataError) {
+      setError(
+        'Interview topics could not be loaded. Retry topic loading, or clear the selected topic before starting unrestricted.'
+      );
       return;
     }
     setBusy(true);
@@ -965,13 +1007,45 @@ export default function Practice() {
                 onChange={(e) => setStandaloneTopics(e.target.value)}
               />
             </label>
-            {standaloneTopicOptions.length > 0 && (
+            {topicMetadataError && (
+              <p className="mt-4 text-xs text-[var(--color-danger)]" role="alert">
+                {interviewTopicHeldOnMetadataError
+                  ? `Interview topics could not be loaded. Topic “${standaloneTopic}” is still selected — retry loading, or clear the topic before starting unrestricted.`
+                  : 'Interview topics could not be loaded. Starting without a topic filter is allowed.'}
+                {' '}
+                <button type="button" className="underline" onClick={retryTopicMetadata}>
+                  Retry
+                </button>
+                {interviewTopicHeldOnMetadataError && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        setStandaloneTopic('');
+                        setTopicNote('');
+                      }}
+                    >
+                      Clear topic
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+            {!topicMetadataError && standaloneSharedTopicNote && (
+              <p className="mt-4 text-xs text-[var(--color-ink-muted)]" role="status">
+                {standaloneSharedTopicNote}
+              </p>
+            )}
+            {(standaloneTopicOptions.length > 0 || interviewTopicHeldOnMetadataError) && (
               <label className="mt-4 block text-sm">
                 Topic (optional)
                 <select
                   aria-label="Interview topic"
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneTopic}
+                  disabled={topicMetadataError}
                   onChange={(e) => {
                     setStandaloneTopic(e.target.value);
                     setTopicNote('');
@@ -983,6 +1057,10 @@ export default function Practice() {
                       {topic}
                     </option>
                   ))}
+                  {interviewTopicHeldOnMetadataError
+                    && !standaloneTopicOptions.includes(standaloneTopic) && (
+                    <option value={standaloneTopic}>{standaloneTopic}</option>
+                  )}
                 </select>
               </label>
             )}
@@ -1014,7 +1092,7 @@ export default function Practice() {
               </label>
             </div>
             <button
-              type="button" disabled={busy}
+              type="button" disabled={busy || interviewTopicHeldOnMetadataError}
               className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               onClick={() => runStart(mapStandaloneToStartPayload('interview', {
                 skills: standaloneSkillList,
@@ -1119,8 +1197,48 @@ export default function Practice() {
                           </label>
                         )}
                         {block.category === 'interview' && (() => {
-                          const options = topicsForSkills(block.skills, topicMetadata);
-                          if (options.length === 0) return null;
+                          if (topicMetadataError) {
+                            return (
+                              <div className="text-xs text-[var(--color-danger)]" role="alert">
+                                <p>
+                                  Topics unavailable.
+                                  {block.topic
+                                    ? ` Topic “${block.topic}” is still selected — retry, or clear it before starting unrestricted.`
+                                    : ' Starting without a topic filter is allowed.'}
+                                  {' '}
+                                  <button type="button" className="underline" onClick={retryTopicMetadata}>
+                                    Retry
+                                  </button>
+                                  {block.topic && (
+                                    <>
+                                      {' '}
+                                      <button
+                                        type="button"
+                                        className="underline"
+                                        onClick={() => {
+                                          setBlocks((prev) => prev.map((b) => (
+                                            b.id === block.id ? { ...b, topic: undefined } : b
+                                          )));
+                                        }}
+                                      >
+                                        Clear topic
+                                      </button>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
+                            );
+                          }
+                          const options = sharedTopicsForSkills(block.skills, topicMetadata);
+                          if (options.length === 0) {
+                            const note = multiSkillTopicNote(block.skills, topicMetadata, metadataReady);
+                            if (!note) return null;
+                            return (
+                              <p className="text-xs text-[var(--color-ink-muted)]" role="status">
+                                {note}
+                              </p>
+                            );
+                          }
                           return (
                             <label className="text-xs text-[var(--color-ink-muted)]">
                               Topic (optional)
@@ -1315,9 +1433,18 @@ export default function Practice() {
                   Mode: text (default). Voice input remains available inside the interview UI — the session API does not
                   distinguish text/voice/mixed starts.
                 </p>
+                {customTopicsHeldOnMetadataError && (
+                  <p className="mt-4 text-xs text-[var(--color-danger)]" role="alert">
+                    Interview topics could not be loaded while a block still has a selected topic.
+                    Retry topic loading, or clear those topics before starting unrestricted.{' '}
+                    <button type="button" className="underline" onClick={retryTopicMetadata}>
+                      Retry
+                    </button>
+                  </p>
+                )}
                 <button
                   type="button"
-                  disabled={busy || blocks.length === 0}
+                  disabled={busy || blocks.length === 0 || customTopicsHeldOnMetadataError}
                   className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
                   onClick={() =>
                     runStart(

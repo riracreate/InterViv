@@ -10,10 +10,11 @@ import {
   mapProblemItemToStartPayload,
   mapStandaloneToStartPayload,
   isAvailabilityMessage,
+  multiSkillTopicNote,
   payloadHasInterview,
   reconcileTopic,
+  sharedTopicsForSkills,
   summarizeAvailability,
-  topicsForSkills,
   validateBuilderBlocks,
 } from '../src/lib/practiceBuilder.js';
 
@@ -159,17 +160,38 @@ const TOPIC_METADATA = {
   OOP: ['pillars', 'solid'],
 };
 
-test('topicsForSkills unions per-skill topics case-insensitively', () => {
-  assert.deepEqual(topicsForSkills(['DBMS'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
-  assert.deepEqual(topicsForSkills(['dbms'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
+test('sharedTopicsForSkills intersects per-skill topics case-insensitively', () => {
+  assert.deepEqual(sharedTopicsForSkills(['DBMS'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
+  assert.deepEqual(sharedTopicsForSkills(['dbms'], TOPIC_METADATA), ['indexes', 'normalization', 'transactions']);
+  // One block-level topic must suit every skill: no shared topic means
+  // no options. A union here would over-promise and fail strict start.
+  assert.deepEqual(sharedTopicsForSkills(['DBMS', 'OOP'], TOPIC_METADATA), []);
+  assert.deepEqual(sharedTopicsForSkills(['Unknown Skill'], TOPIC_METADATA), []);
+  assert.deepEqual(sharedTopicsForSkills([], TOPIC_METADATA), []);
+  assert.deepEqual(sharedTopicsForSkills(['DBMS'], null), []);
+  assert.deepEqual(sharedTopicsForSkills(['DBMS'], {}), []);
+});
+
+test('sharedTopicsForSkills offers topics shared by every skill', () => {
+  const metadata = {
+    DBMS: ['design', 'indexes', 'normalization'],
+    OOP: ['design', 'solid'],
+  };
+  assert.deepEqual(sharedTopicsForSkills(['DBMS', 'OOP'], metadata), ['design']);
   assert.deepEqual(
-    topicsForSkills(['DBMS', 'OOP'], TOPIC_METADATA),
-    ['indexes', 'normalization', 'pillars', 'solid', 'transactions']
+    sharedTopicsForSkills(['DBMS'], metadata),
+    ['design', 'indexes', 'normalization']
   );
-  assert.deepEqual(topicsForSkills(['Unknown Skill'], TOPIC_METADATA), []);
-  assert.deepEqual(topicsForSkills([], TOPIC_METADATA), []);
-  assert.deepEqual(topicsForSkills(['DBMS'], null), []);
-  assert.deepEqual(topicsForSkills(['DBMS'], {}), []);
+});
+
+test('multiSkillTopicNote explains empty shared offers for multi-skill blocks', () => {
+  assert.equal(multiSkillTopicNote(['DBMS'], TOPIC_METADATA, true), null);
+  assert.equal(multiSkillTopicNote(['DBMS', 'OOP'], TOPIC_METADATA, false), null);
+  const shared = { DBMS: ['design'], OOP: ['design'] };
+  assert.equal(multiSkillTopicNote(['DBMS', 'OOP'], shared, true), null);
+  const note = multiSkillTopicNote(['DBMS', 'OOP'], TOPIC_METADATA, true);
+  assert.match(note, /DBMS and OOP/);
+  assert.match(note, /Split into separate blocks/);
 });
 
 test('reconcileTopic keeps offered topics and clears the rest', () => {
