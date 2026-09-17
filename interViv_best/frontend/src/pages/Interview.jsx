@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback } from '../lib/api';
-import { applyFeedbackPollResult, shouldKeepPollingNarration } from '../lib/feedbackPoll';
+import {
+  applyFeedbackPollResult,
+  clearFeedbackPollInterval,
+  isFeedbackPollTickCurrent,
+  shouldKeepPollingNarration,
+} from '../lib/feedbackPoll';
+import { blockedResumeFromSession } from '../lib/blockedResume';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
@@ -115,12 +121,24 @@ export default function Interview({ sessionState = null }) {
   const [cameraError, setCameraError] = useState('');
   const [micError, setMicError] = useState('');
 
-  const [currentScore, setCurrentScore] = useState(null);
-  const [currentFeedback, setCurrentFeedback] = useState('');
+  const [currentScore, setCurrentScore] = useState(
+    initState.progressionBlocked || initState.status === 'content_blocked'
+      ? (initState.currentScore ?? null)
+      : null
+  );
+  const [currentFeedback, setCurrentFeedback] = useState(
+    (initState.progressionBlocked || initState.status === 'content_blocked')
+      ? (initState.currentFeedback || '')
+      : ''
+  );
   const [feedbackSourceLabel, setFeedbackSourceLabel] = useState('');
   const [feedbackDetails, setFeedbackDetails] = useState(null);
-  const [progressionBlocked, setProgressionBlocked] = useState(false);
-  const [progressionBlockedReason, setProgressionBlockedReason] = useState('');
+  const [progressionBlocked, setProgressionBlocked] = useState(
+    Boolean(initState.progressionBlocked || initState.status === 'content_blocked')
+  );
+  const [progressionBlockedReason, setProgressionBlockedReason] = useState(
+    initState.progressionBlockedReason || initState.progression_blocked_reason || ''
+  );
   const [continueBusy, setContinueBusy] = useState(false);
   const feedbackPollRef = useRef(null);
   const feedbackRoundRef = useRef(null);
@@ -263,7 +281,7 @@ export default function Interview({ sessionState = null }) {
   }, []);
 
   useEffect(() => () => {
-    if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+    feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
   }, []);
 
@@ -547,7 +565,9 @@ export default function Interview({ sessionState = null }) {
   }, [stopCamera, stopMicrophone, stopServerRecording]);
 
   useEffect(() => {
-    if (!sessionId || sessionComplete || currentScore !== null) return;
+    if (!sessionId || sessionComplete) return;
+    // Persist blocked resume hints even while the score card is visible.
+    if (currentScore !== null && !progressionBlocked) return;
     saveInterviewState({
       candidateId,
       skill: currentSkill || allSkills[0] || 'General',
@@ -565,6 +585,11 @@ export default function Interview({ sessionState = null }) {
       totalRounds,
       engagementBaseline,
       engagementCalibrationSkipped: calibrationSkipped,
+      progressionBlocked,
+      progressionBlockedReason,
+      status: progressionBlocked ? 'content_blocked' : undefined,
+      currentScore: progressionBlocked ? currentScore : undefined,
+      currentFeedback: progressionBlocked ? currentFeedback : undefined,
     });
   }, [
     allSkills,
@@ -572,12 +597,15 @@ export default function Interview({ sessionState = null }) {
     calibrationSkipped,
     candidateId,
     configJson,
+    currentFeedback,
     currentScore,
     currentSkill,
     difficulty,
     elo,
     engagementBaseline,
     expiresAt,
+    progressionBlocked,
+    progressionBlockedReason,
     question,
     questionContext,
     round,
@@ -588,17 +616,31 @@ export default function Interview({ sessionState = null }) {
   ]);
 
   useEffect(() => {
-    if (!sessionId || blockCategory) return undefined;
+    if (!sessionId) return undefined;
     let cancelled = false;
     fetchSession(sessionId)
       .then((data) => {
-        if (cancelled) return;
-        const cr = data?.active_round || data?.current_round;
+        if (cancelled || !data) return;
+        const cr = data.active_round || data.current_round;
         if (cr?.block_category) setBlockCategory(cr.block_category);
+        const resume = blockedResumeFromSession(data);
+        if (resume.progressionBlocked) {
+          setProgressionBlocked(true);
+          setProgressionBlockedReason(resume.progressionBlockedReason || '');
+          if (resume.currentScore != null) setCurrentScore(resume.currentScore);
+          if (resume.currentFeedback) {
+            setCurrentFeedback(resume.currentFeedback);
+            setFeedbackSourceLabel('Rules feedback');
+          }
+          if (resume.round != null) setRound(resume.round);
+        } else if (data.status === 'active' && cr?.status === 'in_progress') {
+          setProgressionBlocked(false);
+          setProgressionBlockedReason('');
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [sessionId, blockCategory]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -889,7 +931,7 @@ export default function Interview({ sessionState = null }) {
       if (score !== null && sessionId) {
         const pollRound = round;
         feedbackRoundRef.current = pollRound;
-        if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+        feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
         let pollState = {
           displayFeedback: feedbackWithMode,
           displaySource: 'Rules feedback',
@@ -897,7 +939,7 @@ export default function Interview({ sessionState = null }) {
           polling: true,
         };
         const tick = async () => {
-          if (feedbackRoundRef.current !== pollRound) return;
+          if (!isFeedbackPollTickCurrent(feedbackRoundRef.current, pollRound)) return;
           try {
             const payload = await fetchRoundFeedback(sessionId, pollRound);
             pollState = applyFeedbackPollResult(pollState, payload, pollRound);
@@ -906,10 +948,7 @@ export default function Interview({ sessionState = null }) {
             if (pollState.displaySource) setFeedbackSourceLabel(pollState.displaySource);
             setFeedbackDetails(pollState.narrationDetails || null);
             if (!shouldKeepPollingNarration(pollState.narrationStatus)) {
-              if (feedbackPollRef.current) {
-                clearInterval(feedbackPollRef.current);
-                feedbackPollRef.current = null;
-              }
+              feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
             }
           } catch {
             /* keep rules feedback visible */
@@ -957,10 +996,7 @@ export default function Interview({ sessionState = null }) {
       navigate(`/dashboard/${sessionId}`);
       return;
     }
-    if (feedbackPollRef.current) {
-      clearInterval(feedbackPollRef.current);
-      feedbackPollRef.current = null;
-    }
+    feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
     setTranscript(''); setInterimText('');
     setCurrentScore(null); setCurrentFeedback('');
