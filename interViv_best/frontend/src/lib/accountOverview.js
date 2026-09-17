@@ -1,3 +1,5 @@
+import { blockedResumeFromSession } from './blockedResume.js';
+
 export function displayScore(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not measured';
 }
@@ -16,6 +18,7 @@ export function sessionLabel(types = []) {
 export function interviewStateFromSession(session) {
   const round = session.active_round || session.current_round;
   if (!round || !session.session_id) throw new Error('This session has no available question.');
+  const blocked = blockedResumeFromSession(session);
   return {
     sessionId: session.session_id,
     candidateId: session.candidate_id,
@@ -30,5 +33,12 @@ export function interviewStateFromSession(session) {
     round: round.round || session.last_round,
     totalRounds: session.total_rounds,
     elo: round.elo_before ?? 1200,
+    status: session.status,
+    progressionBlocked: blocked.progressionBlocked,
+    progressionBlockedReason: blocked.progressionBlockedReason,
+    progression_blocked_reason: blocked.progressionBlockedReason,
+    // Deep-link first paint: keep committed score/feedback when blocked.
+    currentScore: blocked.progressionBlocked ? blocked.currentScore : undefined,
+    currentFeedback: blocked.progressionBlocked ? blocked.currentFeedback : undefined,
   };
 }
