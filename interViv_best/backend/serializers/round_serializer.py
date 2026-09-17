@@ -76,6 +76,9 @@ def sanitize_round_for_client(
 ) -> dict[str, Any]:
     """Return a strictly sanitized copy of a round document for candidate delivery."""
     cleaned = dict(round_doc)
+    # Attempt snapshots are server-side only (frozen answers and grading
+    # inputs); they never travel to clients on any round type or policy.
+    cleaned.pop("attempt_snapshot", None)
     round_type = cleaned.get("round_type", "technical_short_answer")
     config = dict(cleaned.get("config_json") or {})
 

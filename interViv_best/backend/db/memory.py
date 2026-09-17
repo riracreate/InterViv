@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import copy
 import threading
+from contextlib import contextmanager
 from typing import Any, Iterator
 from dataclasses import dataclass, field
+
+
+# Global write lock for _MemoryDB.atomic(). Lock order is always
+# global -> db -> collection, and plain ops never hold more than one, so
+# snapshotting under this lock cannot deadlock. RLock: atomic() nests.
+_ATOMIC_LOCK = threading.RLock()
 
 
 class _UpdateResult:
@@ -61,13 +68,16 @@ def _apply_update(doc: dict, update: dict) -> bool:
             cur = cur.setdefault(part, {})
         return cur, parts[-1]
 
+    # Stored values are deep-copied, like insert_one: the live document must
+    # never alias caller-owned mutables, or later caller-side mutation would
+    # corrupt the store without any write (and defeat atomic rollback).
     modified = False
     for op, body in update.items():
         if op == "$set":
             for k, v in body.items():
                 cur, leaf = target(k)
                 if cur.get(leaf) != v:
-                    cur[leaf] = v
+                    cur[leaf] = copy.deepcopy(v)
                     modified = True
         elif op == "$addToSet":
             for k, v in body.items():
@@ -80,14 +90,14 @@ def _apply_update(doc: dict, update: dict) -> bool:
                 values = v["$each"] if isinstance(v, dict) and "$each" in v else [v]
                 for item in values:
                     if item not in existing:
-                        existing.append(item)
+                        existing.append(copy.deepcopy(item))
                         modified = True
         elif op == "$push":
             for k, v in body.items():
                 cur, leaf = target(k)
                 existing = cur.setdefault(leaf, [])
                 values = v["$each"] if isinstance(v, dict) and "$each" in v else [v]
-                existing.extend(values)
+                existing.extend(copy.deepcopy(values))
                 if values:
                     modified = True
         elif op == "$inc":
@@ -163,6 +173,39 @@ class _MemoryDB:
             if name not in self._cols:
                 self._cols[name] = _Collection(name=name)
             return self._cols[name]
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Commit every write in the block as one unit, or roll it back.
+
+        Snapshot/restore under the global write lock: on exception every
+        collection returns to its entry state and collections created
+        inside the block disappear. Single-process only, like the rest of
+        this adapter. Keep blocks short and purely persistence.
+        """
+        with _ATOMIC_LOCK:
+            with self._lock:
+                names = sorted(self._cols)
+            snapshot = {}
+            for name in names:
+                col = self._cols[name]
+                with col._lock:
+                    snapshot[name] = copy.deepcopy(col._docs)
+            try:
+                yield
+            except Exception:
+                with self._lock:
+                    live = sorted(self._cols)
+                for name in live:
+                    col = self._cols[name]
+                    with col._lock:
+                        if name in snapshot:
+                            col._docs[:] = snapshot[name]
+                with self._lock:
+                    for name in live:
+                        if name not in snapshot:
+                            del self._cols[name]
+                raise
 
 
 _SINGLETON = _MemoryDB()

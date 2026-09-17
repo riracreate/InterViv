@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Iterator
@@ -17,6 +18,7 @@ from .sqlalchemy_models import (
     CandidateRow,
     CodingSubmissionRow,
     MLPrimitivesAttemptRow,
+    NarrationJobRow,
     PracticePresetRow,
     RetrySetRow,
     ReviewScheduleRow,
@@ -30,6 +32,11 @@ from .sqlalchemy_models import (
 
 class SQLAlchemyDatabaseError(RuntimeError):
     pass
+
+
+# Ambient transaction for ambient_session(): when set, session_scope() joins
+# it instead of opening a committing scope. Context-local, never global.
+_ambient_session: ContextVar = ContextVar("interviv_ambient_session", default=None)
 
 
 class _InsertResult:
@@ -80,6 +87,16 @@ def _sessionmaker():
 
 @contextmanager
 def session_scope():
+    # Inside ambient_session() every collection op joins the shared
+    # transaction instead of committing on its own. The exit flush makes
+    # this op's writes visible to the next op's reads (autoflush is off):
+    # without it, update-after-insert in one transaction would silently
+    # match nothing. Outside ambient_session() the behavior is unchanged.
+    ambient = _ambient_session.get()
+    if ambient is not None:
+        yield ambient
+        ambient.flush()
+        return
     session = _sessionmaker()()
     try:
         yield session
@@ -89,6 +106,23 @@ def session_scope():
         raise
     finally:
         session.close()
+
+
+@contextmanager
+def ambient_session():
+    """Share one SQLAlchemy transaction across nested ``session_scope`` calls.
+
+    The outermost scope still owns commit/rollback; inner scopes only flush.
+    Nesting is safe (inner blocks join the outer transaction). Not
+    re-entrant across threads: one block, one thread, short pure-persistence
+    work only.
+    """
+    with session_scope() as session:
+        token = _ambient_session.set(session)
+        try:
+            yield session
+        finally:
+            _ambient_session.reset(token)
 
 
 def create_all_for_smoke() -> None:
@@ -506,6 +540,7 @@ class _SessionCollection:
                     block_total=round_doc.get("block_total"),
                     assisted=round_doc.get("assisted"),
                     assistance_kinds=round_doc.get("assistance_kinds"),
+                    attempt_snapshot_json=round_doc.get("attempt_snapshot"),
                 )
             )
 
@@ -560,6 +595,7 @@ class _SessionCollection:
                     "block_total": round_row.block_total,
                     "assisted": round_row.assisted,
                     "assistance_kinds": round_row.assistance_kinds or [],
+                    "attempt_snapshot": round_row.attempt_snapshot_json,
                 }
             )
         return {
@@ -1430,6 +1466,105 @@ class _MLPrimitivesAttemptCollection:
         return sum(1 for _ in self.find(query))
 
 
+class _NarrationJobCollection:
+    """Document view over narration_jobs (deterministic id per round)."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": NarrationJobRow.id,
+            "user_id": NarrationJobRow.user_id,
+            "session_id": NarrationJobRow.session_id,
+            "round": NarrationJobRow.round_number,
+            "round_number": NarrationJobRow.round_number,
+            "status": NarrationJobRow.status,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, NarrationJobRow, self._field_columns(), query)
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(session, NarrationJobRow, self._field_columns(), query)
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            session.merge(NarrationJobRow(
+                id=data["id"],
+                user_id=data.get("user_id"),
+                session_id=data["session_id"],
+                round_number=int(data.get("round", data.get("round_number"))),
+                status=data.get("status") or "queued",
+                attempts=int(data.get("attempts") or 0),
+                feedback_json=data.get("feedback") or {},
+                snapshot_digest=data.get("snapshot_digest"),
+                skill=data.get("skill"),
+                final_score=data.get("final_score"),
+                artifact_json=data.get("artifact"),
+                last_error=data.get("last_error"),
+                claim_token=data.get("claim_token"),
+                lease_until=_coerce_datetime(data.get("lease_until")),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+                updated_at=_coerce_datetime(data.get("updated_at")) or _now(),
+            ))
+        return _InsertResult(data["id"])
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+        doc = self.find_one(query)
+        matched = 1 if doc else 0
+        if not doc:
+            if not upsert:
+                return _UpdateResult(0, 0)
+            doc = dict(query)
+        modified = _apply_update_dict(doc, update)
+        if doc.get("id"):
+            self.insert_one(doc)
+        return _UpdateResult(matched, 1 if modified else 0)
+
+    def delete_one(self, query: dict) -> None:
+        with session_scope() as session:
+            rows = _filtered_rows(session, NarrationJobRow, self._field_columns(), query)
+            for row in rows:
+                if _matches(self._to_doc(row), query):
+                    session.delete(row)
+                    return
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: NarrationJobRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "session_id": row.session_id,
+            "round": row.round_number,
+            "status": row.status,
+            "attempts": row.attempts,
+            "feedback": row.feedback_json or {},
+            "snapshot_digest": row.snapshot_digest,
+            "skill": row.skill,
+            "final_score": row.final_score,
+            "artifact": row.artifact_json,
+            "last_error": row.last_error,
+            "claim_token": row.claim_token,
+            "lease_until": row.lease_until,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+
 class SQLAlchemyDatabase:
     def __init__(self) -> None:
         self._collections = {
@@ -1447,6 +1582,7 @@ class SQLAlchemyDatabase:
             "bookmarks": _BookmarkCollection(),
             "assistance_events": _AssistanceEventCollection(),
             "review_schedules": _ReviewScheduleCollection(),
+            "narration_jobs": _NarrationJobCollection(),
         }
 
     def __getitem__(self, name: str):

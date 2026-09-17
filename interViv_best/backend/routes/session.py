@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.transactions import atomic
 from backend.execution import (
     CodingRateLimitedError,
     ExecutionUnavailableError,
@@ -1123,6 +1124,69 @@ def public_system_design_prompt_context(prompt: dict[str, Any]) -> dict[str, Any
     return public_system_design_prompt(prompt)
 
 
+_DIFFICULTY_ORDER = ("easy", "medium", "hard")
+
+
+def _topic_scope_status(
+    skill: str, topic: str, difficulty: str | None = None,
+) -> tuple[bool, list[str]]:
+    """Eligibility of an explicit (skill, topic) scope in legacy banks.
+
+    Resolves skill aliases exactly like runtime selection, then scans the
+    same cached structured-bank rows. Returns (eligible, difficulties the
+    topic is offered at). A pinned difficulty must match a row; an
+    adaptive (unpinned) difficulty only needs the topic to exist.
+    """
+    from modules import question_bank, question_runtime
+
+    dataset_skill, _ = question_bank.resolve_skill(skill)
+    want_skill = dataset_skill.strip().lower()
+    want_topic = topic.strip().lower()
+    want_difficulty = (difficulty or "").strip().lower() or None
+    offered: list[str] = []
+    for row in question_runtime.structured_bank_rows():
+        if (row.get("skill") or "").strip().lower() != want_skill:
+            continue
+        if (row.get("sub_domain") or "").strip().lower() != want_topic:
+            continue
+        level = (row.get("difficulty") or "").strip().lower()
+        if level and level not in offered:
+            offered.append(level)
+    offered.sort(key=lambda level: _DIFFICULTY_ORDER.index(level)
+                 if level in _DIFFICULTY_ORDER else len(_DIFFICULTY_ORDER))
+    if not offered:
+        return False, []
+    if want_difficulty and want_difficulty not in offered:
+        return False, offered
+    return True, offered
+
+
+def _verify_served_topic(
+    *, requested: str | None, served: str | None,
+    skill: str, difficulty: str | None,
+) -> None:
+    """Enforce an explicitly selected topic after legacy selection.
+
+    Legacy banks relax filters (protected selection code); orchestration
+    verifies the served topic honors an explicit pin instead of silently
+    substituting another topic. Unset topics keep relaxed legacy
+    behavior. Raises ValueError with an actionable unavailable outcome.
+    """
+    wanted = (requested or "").strip()
+    if not wanted or wanted.lower() == "general":
+        return
+    if (served or "").strip().lower() == wanted.lower():
+        return
+    _, offered = _topic_scope_status(skill, wanted)
+    raise ValueError(
+        f"Topic '{wanted}' for skill '{skill}' is not available"
+        + (f" at difficulty '{difficulty}'" if difficulty else "")
+        + (f" (topic offered at: {', '.join(offered)})"
+           if offered else " (no bank questions)")
+        + ". Loosen the topic, adjust difficulty/skills, or split the block."
+    )
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
@@ -1221,7 +1285,9 @@ def _validate_block_content(
         elif category == "interview":
             # Reviewed-only gate: fail before any write when the pinned
             # selection policy has no eligible inventory for a requested
-            # skill. Gate off → legacy/adaptive selection, unchanged.
+            # skill. Gate off → legacy/adaptive selection, unchanged,
+            # except an explicitly selected block topic is still honored:
+            # every selected skill must actually offer it.
             from modules.bundle_selector import (
                 reviewed_available_count,
                 reviewed_bundles_only,
@@ -1245,6 +1311,25 @@ def _validate_block_content(
                             + ". Reviewed-only selection is on; draft or "
                             "unreviewed content cannot be scored."
                         )
+            else:
+                topic = (block.get("topic") or "").strip() or None
+                if topic and topic.lower() != "general":
+                    difficulty = block.get("difficulty")
+                    for skill in block.get("skills") or []:
+                        eligible, offered = _topic_scope_status(
+                            str(skill), topic, difficulty=difficulty,
+                        )
+                        if not eligible:
+                            raise ValueError(
+                                f"Topic '{topic}' is not available for skill "
+                                f"'{skill}'"
+                                + (f" at difficulty '{difficulty}'"
+                                   if difficulty else "")
+                                + (f" (topic offered at: {', '.join(offered)})"
+                                   if offered else " (no bank questions)")
+                                + ". Split the block, adjust skills, or clear "
+                                "the topic."
+                            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1374,9 +1459,11 @@ def start_session(
     target_role_id = (
         str(user.get("target_role_id")) if user and user.get("target_role_id") else request.target_role_id
     )
+    candidate_is_new = False
     if not candidate:
         # Allow quick-start demo sessions without a resume upload. Resume uploads
         # still create richer candidate documents through /resume.
+        candidate_is_new = True
         candidate_id = candidate_id or str(uuid4())
         candidate_doc = CandidateDocument(
             candidate_id=candidate_id,
@@ -1390,18 +1477,10 @@ def start_session(
         candidate = candidate_doc.to_mongo()
         if user:
             candidate["user_id"] = user["id"]
-        try:
-            db["candidates"].insert_one(candidate)
-        except DatabaseConnectionError as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                detail=str(exc)) from exc
-        except Exception as exc:
-            if is_database_exception(exc):
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"MongoDB operation failed: {exc}",
-                ) from exc
-            raise
+        # Not inserted yet: the opening-round build below can still fail
+        # (unknown topic, exhausted inventory), and a candidate write must
+        # never precede it — that orphaned candidates with no session. The
+        # insert joins the atomic commit once the round is built.
 
     # ── first-round skill ───────────────────────────────────────────────────
     first_skill = (opening_spec.get("skills") or session_skills or ["System Design"])[0]
@@ -1454,6 +1533,12 @@ def start_session(
             block_total=opening_spec.get("block_total"),
             allow_unknown_fallback=allow_unknown_fallback,
         )
+        _verify_served_topic(
+            requested=opening_spec.get("topic"),
+            served=(round_document.question_context or {}).get("sub_domain"),
+            skill=first_skill,
+            difficulty=difficulty,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1502,26 +1587,32 @@ def start_session(
     session_dict["allow_unknown_topic_fallback"] = allow_unknown_fallback
 
     try:
-        db["sessions"].insert_one(session_dict)
-        candidate_update = {
-            "$addToSet": {
-                "session_history": session_id,
-                "resume_skills": {"$each": session_skills},
-            },
-            "$set": {},
-        }
-        # seed Elo for any skill the candidate hasn't been rated on
-        for s in session_skills:
-            existing_elo = candidate.get("elo_ratings", {}).get(s)
-            if existing_elo is None:
-                candidate_update["$set"][f"elo_ratings.{s}"] = settings.initial_elo
-        if sub_domain:
-            candidate_update["$set"][f"sub_domain_profile.{first_skill}"] = sub_domain
-        if user:
-            candidate_update["$set"]["user_id"] = user["id"]
-        db["candidates"].update_one({"candidate_id": candidate_id}, candidate_update)
-        if user:
-            StudentSkillGraph(user["id"]).initialize_from_resume(session_skills)
+        # One atomic commit: a 503 here must leave no orphan candidate,
+        # no session missing from its candidate, and no half-seeded Elo —
+        # the client can retry start cleanly.
+        with atomic(db):
+            if candidate_is_new:
+                db["candidates"].insert_one(candidate)
+            db["sessions"].insert_one(session_dict)
+            candidate_update = {
+                "$addToSet": {
+                    "session_history": session_id,
+                    "resume_skills": {"$each": session_skills},
+                },
+                "$set": {},
+            }
+            # seed Elo for any skill the candidate hasn't been rated on
+            for s in session_skills:
+                existing_elo = candidate.get("elo_ratings", {}).get(s)
+                if existing_elo is None:
+                    candidate_update["$set"][f"elo_ratings.{s}"] = settings.initial_elo
+            if sub_domain:
+                candidate_update["$set"][f"sub_domain_profile.{first_skill}"] = sub_domain
+            if user:
+                candidate_update["$set"]["user_id"] = user["id"]
+            db["candidates"].update_one({"candidate_id": candidate_id}, candidate_update)
+            if user:
+                StudentSkillGraph(user["id"]).initialize_from_resume(session_skills)
     except DatabaseConnectionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
