@@ -51,7 +51,7 @@
 
 ## Final SHA
 
-`39c460e` (full: see `git rev-parse HEAD` on `phase3b/feedback-delivery`)
+`92e1c483a84642d09c5f869093e4d251767a45ec`
 
 ## Post-audit follow-up
 
