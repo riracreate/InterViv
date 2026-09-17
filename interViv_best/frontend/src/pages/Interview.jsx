@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback } from '../lib/api';
-import { applyFeedbackPollResult, shouldKeepPollingNarration } from '../lib/feedbackPoll';
+import {
+  applyFeedbackPollResult,
+  clearFeedbackPollInterval,
+  isFeedbackPollTickCurrent,
+  shouldKeepPollingNarration,
+} from '../lib/feedbackPoll';
 import { blockedResumeFromSession } from '../lib/blockedResume';
 import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
 import MCQRound from '../components/MCQRound';
@@ -276,7 +281,7 @@ export default function Interview({ sessionState = null }) {
   }, []);
 
   useEffect(() => () => {
-    if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+    feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
   }, []);
 
@@ -926,7 +931,7 @@ export default function Interview({ sessionState = null }) {
       if (score !== null && sessionId) {
         const pollRound = round;
         feedbackRoundRef.current = pollRound;
-        if (feedbackPollRef.current) clearInterval(feedbackPollRef.current);
+        feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
         let pollState = {
           displayFeedback: feedbackWithMode,
           displaySource: 'Rules feedback',
@@ -934,7 +939,7 @@ export default function Interview({ sessionState = null }) {
           polling: true,
         };
         const tick = async () => {
-          if (feedbackRoundRef.current !== pollRound) return;
+          if (!isFeedbackPollTickCurrent(feedbackRoundRef.current, pollRound)) return;
           try {
             const payload = await fetchRoundFeedback(sessionId, pollRound);
             pollState = applyFeedbackPollResult(pollState, payload, pollRound);
@@ -943,10 +948,7 @@ export default function Interview({ sessionState = null }) {
             if (pollState.displaySource) setFeedbackSourceLabel(pollState.displaySource);
             setFeedbackDetails(pollState.narrationDetails || null);
             if (!shouldKeepPollingNarration(pollState.narrationStatus)) {
-              if (feedbackPollRef.current) {
-                clearInterval(feedbackPollRef.current);
-                feedbackPollRef.current = null;
-              }
+              feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
             }
           } catch {
             /* keep rules feedback visible */
@@ -994,10 +996,7 @@ export default function Interview({ sessionState = null }) {
       navigate(`/dashboard/${sessionId}`);
       return;
     }
-    if (feedbackPollRef.current) {
-      clearInterval(feedbackPollRef.current);
-      feedbackPollRef.current = null;
-    }
+    feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
     setTranscript(''); setInterimText('');
     setCurrentScore(null); setCurrentFeedback('');
