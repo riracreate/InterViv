@@ -39,7 +39,7 @@
 | `pytest tests/test_demo_path_contracts.py` | 1 passed |
 | Frontend `npm test` | 106 passed |
 | `tsc --noEmit` | exit 0 |
-| `npm run build` | *(see commit evidence)* |
+| `npm run build` | success |
 | Live Adzuna smoke | **skipped** — no local `ADZUNA_*` credentials configured |
 | Scoring / AI gates | unchanged (`LLM_LIVE_FETCH=0`, reviewed-only off) |
 
@@ -49,7 +49,7 @@ Publishing listings only (permissible use). Per-ad “Jobs by Adzuna” branding
 
 ## Final SHA
 
-*(filled after commits)*
+`ffa003fae4049cb08faa12d08a7ca6fc60ffe270`
 
 ## Remaining limitations
 
