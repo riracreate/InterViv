@@ -12,6 +12,8 @@ type Round = {
   confidenceBand?: number | null;
   difficulty: "Easy" | "Medium" | "Hard" | "Expert";
   feedback: string;
+  roundType?: string;
+  feedbackSource?: string | null;
 };
 
 function shortIdealAnswer(answer?: string) {
@@ -97,16 +99,18 @@ export function RoundTimeline(props: { rounds: Round[] }) {
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-[minmax(180px,0.36fr)_1fr]">
-                  <div className="rounded-xl border border-emerald-300/15 bg-emerald-300/[0.05] p-3">
-                    <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-emerald-100/55" style={{ fontFamily: "var(--font-body)" }}>
-                      Ideal answer
+                  {round.roundType !== "mcq" && (
+                    <div className="rounded-xl border border-emerald-300/15 bg-emerald-300/[0.05] p-3">
+                      <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-emerald-100/55" style={{ fontFamily: "var(--font-body)" }}>
+                        Ideal answer
+                      </div>
+                      <p className="text-sm leading-relaxed text-white/78" style={{ fontFamily: "var(--font-body)" }}>
+                        {shortIdealAnswer(round.idealAnswer)}
+                      </p>
                     </div>
-                    <p className="text-sm leading-relaxed text-white/78" style={{ fontFamily: "var(--font-body)" }}>
-                      {shortIdealAnswer(round.idealAnswer)}
-                    </p>
-                  </div>
+                  )}
 
-                  <div>
+                  <div className={round.roundType === "mcq" ? "md:col-span-2" : ""}>
                     <p className="text-sm leading-relaxed text-white/90" style={{ fontFamily: "var(--font-body)" }}>
                       {round.question}
                     </p>
@@ -118,6 +122,11 @@ export function RoundTimeline(props: { rounds: Round[] }) {
                         {round.answer?.trim() || "No answer captured."}
                       </p>
                     </div>
+                    {round.feedbackSource && (
+                      <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-white/45" style={{ fontFamily: "var(--font-body)" }}>
+                        Feedback source: {round.feedbackSource}
+                      </p>
+                    )}
                     <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
                       {round.feedback}
                     </p>

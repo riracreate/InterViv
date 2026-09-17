@@ -3,6 +3,7 @@
  * Pure functions — no React — so node:test can cover them without a DOM.
  */
 import { unscoredReasonLabel } from "./accountOverview.js";
+import { formatMcqAnswerSummary, mapMcqReview } from "./mcqReviewMapping.js";
 
 function clamp01(n) {
   return Math.min(1, Math.max(0, n));
@@ -241,23 +242,52 @@ export function mapRealDataToDashboard(session) {
   }));
   const scoreProgression = completed.map((r, i) => ({ t: `R${i + 1}`, value: r.final_score }));
 
-  const roundsForTimeline = completed.map((r, i) => ({
-    id: String(i + 1),
-    question: r.question || r.question_context?.question || `Round ${i + 1}`,
-    idealAnswer: r.ideal_answer || r.question_context?.ideal_answer || "",
-    answer: r.answer_text || "",
-    score: r.final_score,
-    confidenceBand: typeof r.confidence_band === "number" ? r.confidence_band : null,
-    difficulty: capitalizeDifficulty(r.difficulty),
-    feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
-    topic: r.topic || r.sub_domain || r.question_context?.topic || r.question_context?.sub_domain || "",
-    questionType: r.question_type || r.question_context?.question_type || "",
-    followups: r.followups || r.question_context?.followups || [],
-    scoring_breakdown: r.scoring_breakdown || null,
-    scoring_mode: r.scoring_mode || "unknown",
-    scoring_mode_label: r.scoring_mode_label || null,
-    evidence_kind: r.evidence_kind || null,
-  }));
+  const roundsForTimeline = completed.map((r, i) => {
+    const roundType = r.round_type || r.question_context?.round_type || "";
+    const assessmentCompleted = String(session?.status || "").toLowerCase() === "completed";
+    const mcqReview = roundType === "mcq"
+      ? mapMcqReview(r, { assessmentCompleted })
+      : null;
+    let answer = r.answer_text || "";
+    if (roundType === "mcq" && mcqReview) {
+      answer = formatMcqAnswerSummary(mcqReview) || answer;
+    } else if (roundType === "sql" && r.artifact_json) {
+      const art = r.artifact_json;
+      const passed = art.cases_passed;
+      const total = art.evaluation_cases;
+      if (passed != null && total != null) {
+        answer = `SQL submitted · ${passed}/${total} cases passed`;
+      }
+    }
+    return {
+      id: String(i + 1),
+      roundType,
+      question: r.question || r.question_context?.question || `Round ${i + 1}`,
+      idealAnswer: roundType === "mcq"
+        ? ""
+        : (r.ideal_answer || r.question_context?.ideal_answer || ""),
+      answer,
+      score: r.final_score,
+      confidenceBand: typeof r.confidence_band === "number" ? r.confidence_band : null,
+      difficulty: capitalizeDifficulty(r.difficulty),
+      feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
+      topic: r.topic || r.sub_domain || r.question_context?.topic || r.question_context?.sub_domain || "",
+      questionType: r.question_type || r.question_context?.question_type || "",
+      followups: r.followups || r.question_context?.followups || [],
+      scoring_breakdown: r.scoring_breakdown || null,
+      scoring_mode: r.scoring_mode || "unknown",
+      scoring_mode_label: r.scoring_mode_label || null,
+      evidence_kind: r.evidence_kind || null,
+      mcqReview,
+      reviewPolicy: r.review_policy || r.config_json?.review_policy || null,
+      feedbackSource: r.feedback_source || r.narration_source || null,
+      scorerProvenance: r.scorer_provenance || r.attempt_snapshot?.scorer_provenance || null,
+    };
+  });
+
+  const mcqReviews = roundsForTimeline
+    .map((r) => r.mcqReview)
+    .filter(Boolean);
 
   const strengths = [];
   const weaknesses = [];
@@ -354,6 +384,7 @@ export function mapRealDataToDashboard(session) {
     radar: radarSkills,
     performance: { finalRating: finalElo, difficulty: diffProgression, score: scoreProgression },
     rounds: roundsForTimeline,
+    mcqReviews,
     highlights: { strengths, weaknesses },
     feedbackCards,
   };

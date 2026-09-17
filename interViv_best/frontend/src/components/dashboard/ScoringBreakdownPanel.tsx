@@ -69,6 +69,8 @@ interface Round {
   scoring_mode?: string;
   scoring_mode_label?: string;
   evidence_kind?: string;
+  scorerProvenance?: Record<string, unknown> | string | null;
+  feedbackSource?: string | null;
 }
 
 function fmt(n?: number | null, decimals = 1): string {
@@ -187,6 +189,23 @@ function RoundBreakdown({ round }: { round: Round }) {
                       ? ". Mode was not recorded when this attempt was scored."
                       : ". This result is self-reported and is not measured mastery."}
                 </div>
+              )}
+
+              {(round.feedbackSource || round.scorerProvenance) && (
+                <details className="mb-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/65">
+                  <summary className="cursor-pointer text-white/80">Detailed scoring provenance</summary>
+                  <ul className="mt-2 space-y-1">
+                    {round.feedbackSource && <li>Feedback source: {String(round.feedbackSource)}</li>}
+                    {round.evidence_kind && <li>Evidence: {String(round.evidence_kind)}</li>}
+                    {round.scorerProvenance && (
+                      <li className="break-all whitespace-pre-wrap">
+                        {typeof round.scorerProvenance === "string"
+                          ? round.scorerProvenance
+                          : JSON.stringify(round.scorerProvenance, null, 2)}
+                      </li>
+                    )}
+                  </ul>
+                </details>
               )}
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
