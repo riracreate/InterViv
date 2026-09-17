@@ -37,6 +37,8 @@ from backend.routes.target_context import router as target_context_router
 from backend.routes.resume import router as resume_router
 from backend.routes.resources import router as resources_router
 from backend.routes.session import router as session_router
+from backend.routes.feedback import router as feedback_router
+from backend.routes.session_continue import router as session_continue_router
 from backend.routes.transcribe import router as transcribe_router
 from backend.startup_warmup import warm_runtime_dependencies
 
@@ -120,6 +122,8 @@ app.include_router(companies_router)
 app.include_router(gap_analysis_router)
 app.include_router(roadmap_router)
 app.include_router(session_router)
+app.include_router(session_continue_router)
+app.include_router(feedback_router)
 app.include_router(answer_router)
 app.include_router(dashboard_router)
 app.include_router(learning_router)
