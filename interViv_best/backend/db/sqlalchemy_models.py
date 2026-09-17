@@ -203,6 +203,8 @@ class RoundRow(Base):
     # Phase D assistance marking (nullable: legacy rounds read as unassisted).
     assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     assistance_kinds: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Phase 3A immutable attempt snapshot (nullable: pre-snapshot rounds).
+    attempt_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -721,3 +723,39 @@ class BundleStatusAuditRow(Base):
     actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class NarrationJobRow(Base):
+    """Durable outbox for post-submit narration work (Phase 3A).
+
+    One row per scored round; the id is deterministic
+    (``"<session_id>:<round>:narration"``) so enqueue is idempotent by
+    primary key. The worker renders a deterministic artifact from the
+    stored rules feedback — no live generation in Phase 3A.
+    """
+
+    __tablename__ = "narration_jobs"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feedback_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    skill: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    final_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    artifact_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','processing','done','failed','skipped')",
+            name="ck_narration_jobs_status",
+        ),
+    )

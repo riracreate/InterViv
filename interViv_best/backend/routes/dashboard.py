@@ -61,6 +61,7 @@ def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
             from backend.serializers.round_serializer import sanitize_round_for_client
             round_document = sanitize_round_for_client(round_document)
         cleaned = dict(round_document)
+        cleaned.pop("attempt_snapshot", None)
         question_context = cleaned.get("question_context", {}) or {}
         # Completed-session reports may show approved reference content. Resolve
         # from the pinned bundle when present; never trust client-supplied keys.
