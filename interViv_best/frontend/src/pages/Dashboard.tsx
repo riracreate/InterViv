@@ -30,6 +30,7 @@ import { StrengthsWeaknesses } from "../components/dashboard/StrengthsWeaknesses
 import { FeedbackCards } from "../components/dashboard/FeedbackCards";
 import { ScoringBreakdownPanel } from "../components/dashboard/ScoringBreakdownPanel";
 import Phase2InsightsPanel from "../components/dashboard/Phase2InsightsPanel";
+import { McqRoundReview } from "../components/dashboard/McqRoundReview";
 
 
 const pageMotion = {
@@ -433,6 +434,14 @@ export default function Dashboard() {
           {data.multiBlock && data.blocks.length > 1 && (
             <motion.div variants={item} className="mt-8">
               <BlockResults blocks={data.blocks} />
+            </motion.div>
+          )}
+
+          {(data.mcqReviews || []).length > 0 && (
+            <motion.div variants={item} className="mt-8 space-y-6">
+              {data.mcqReviews.map((review, index) => (
+                <McqRoundReview key={`mcq-review-${index}`} review={review} />
+              ))}
             </motion.div>
           )}
 
