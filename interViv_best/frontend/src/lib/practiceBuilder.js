@@ -572,22 +572,25 @@ export function isAvailabilityMessage(message) {
 
 /**
  * Interview topic options for the given skills, from the practice-bank
- * `interview_topics` metadata ({skill: [topics]}). Union across skills,
- * deduplicated and sorted; skills match case-insensitively. Pure.
+ * `interview_topics` metadata ({skill: [topics]}). One block-level topic
+ * applies to every selected skill, so only topics shared by ALL skills
+ * are offered (intersection, deduplicated and sorted); skills match
+ * case-insensitively. Pure.
  */
-export function topicsForSkills(skills, metadata) {
+export function sharedTopicsForSkills(skills, metadata) {
   if (!metadata || typeof metadata !== 'object') return [];
   const wanted = (skills || []).map((s) => String(s).trim().toLowerCase()).filter(Boolean);
   if (wanted.length === 0) return [];
-  const found = new Set();
+  let shared = null;
   for (const [skill, topics] of Object.entries(metadata)) {
     if (!wanted.includes(String(skill).trim().toLowerCase())) continue;
-    for (const topic of topics || []) {
-      const name = String(topic || '').trim();
-      if (name) found.add(name);
-    }
+    const names = new Set(
+      (topics || []).map((topic) => String(topic || '').trim()).filter(Boolean)
+    );
+    shared = shared === null ? names : new Set([...shared].filter((name) => names.has(name)));
   }
-  return Array.from(found).sort((a, b) => a.localeCompare(b));
+  if (shared === null) return [];
+  return Array.from(shared).sort((a, b) => a.localeCompare(b));
 }
 
 /**
@@ -598,9 +601,21 @@ export function topicsForSkills(skills, metadata) {
 export function reconcileTopic(selected, skills, metadata) {
   const current = typeof selected === 'string' ? selected.trim() : '';
   if (!current) return { topic: '', cleared: false };
-  const options = topicsForSkills(skills, metadata);
+  const options = sharedTopicsForSkills(skills, metadata);
   if (options.includes(current)) return { topic: current, cleared: false };
   return { topic: '', cleared: true };
+}
+
+/**
+ * Explains an empty shared-topic offer for multi-skill selections so the
+ * user can split the block or change its scope. Returns null when no
+ * explanation applies (single skill, no skills, or options exist). Pure.
+ */
+export function multiSkillTopicNote(skills, metadata, metadataReady) {
+  const list = (skills || []).map((s) => String(s).trim()).filter(Boolean);
+  if (!metadataReady || list.length < 2) return null;
+  if (sharedTopicsForSkills(list, metadata).length > 0) return null;
+  return `No topic is shared by ${list.join(' and ')}. Split into separate blocks, adjust skills, or leave the topic unrestricted.`;
 }
 
 /**
