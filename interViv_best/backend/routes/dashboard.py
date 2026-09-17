@@ -54,22 +54,32 @@ def compute_confidence_band(layer_scores: list[float | None]) -> float | None:
     return round(min(band, CONFIDENCE_BAND_CAP), 2)
 
 
-def _sanitize_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sanitize_rounds(
+    rounds: list[dict[str, Any]],
+    *,
+    assessment_completed: bool = False,
+) -> list[dict[str, Any]]:
     sanitized = []
     for round_document in rounds:
         if round_document.get("round_type") == "ml_primitives":
             from backend.serializers.round_serializer import sanitize_round_for_client
-            round_document = sanitize_round_for_client(round_document)
+            round_document = sanitize_round_for_client(
+                round_document, is_session_completed=assessment_completed
+            )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
         question_context = cleaned.get("question_context", {}) or {}
-        # Completed-session reports may show approved reference content. Resolve
-        # from the pinned bundle when present; never trust client-supplied keys.
-        from modules.bundle_scoring import report_ideal_fields
+        # Reference ideals only after a completed assessment. content_blocked
+        # and active sessions keep practice feedback but not solution keys.
+        if assessment_completed:
+            from modules.bundle_scoring import report_ideal_fields
 
-        ideals = report_ideal_fields(question_context)
-        cleaned["ideal_answer"] = ideals["ideal_answer"]
-        cleaned["ideal_keywords"] = ideals["ideal_keywords"]
+            ideals = report_ideal_fields(question_context)
+            cleaned["ideal_answer"] = ideals["ideal_answer"]
+            cleaned["ideal_keywords"] = ideals["ideal_keywords"]
+        else:
+            cleaned["ideal_answer"] = ""
+            cleaned["ideal_keywords"] = ""
         cleaned["topic"] = question_context.get("topic") or question_context.get("sub_domain")
         cleaned["sub_domain"] = question_context.get("sub_domain") or cleaned.get("sub_domain")
         cleaned["question_type"] = question_context.get("question_type")
@@ -304,6 +314,17 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
         if scored or has_coding or has_ml:
             history.append(summary)
         active = rounds[-1] if rounds else None
+        # content_blocked sessions are resumable for continuation (retry next
+        # question) while preserving the committed score/feedback.
+        if session.get("status") == "content_blocked":
+            if resumable is None:
+                resumable = {
+                    **summary,
+                    "expires_at": None,
+                    "continuation": True,
+                    "progression_blocked_reason": session.get("progression_blocked_reason"),
+                }
+            continue
         if resumable is not None or session.get("status") != "active" or not active:
             continue
         if active.get("status") != "in_progress" or active.get("final_score") is not None:
@@ -393,34 +414,19 @@ def get_dashboard(
             detail="Session not found.",
         )
     # Same gate as GET /session/{session_id}: owned sessions and Phase 2
-    # (MCQ/SQL) rounds always require a JWT for the owning user. Anonymous
-    # legacy sessions keep the guest-readable path; anonymous Phase 2 data
-    # is never served (a bare session_id must not become a capability URL
-    # for assessment content).
-    has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql", "coding", "system_design", "ml_primitives")
-        for r in session.get("rounds", [])
+    # rounds require the owning JWT. Anonymous legacy technical stays guest-readable.
+    from backend.routes.session_access import (
+        assert_session_access,
+        session_assessment_completed,
     )
-    if has_phase2_round or session.get("user_id"):
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
-            )
-        user = require_user(authorization)
-        if session.get("user_id"):
-            if str(session["user_id"]) != str(user["id"]):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You cannot access another user's session.",
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Anonymous sessions are not permitted for this round type.",
-            )
 
-    rounds = _sanitize_rounds(session.get("rounds", []))
+    assert_session_access(session, authorization)
+
+    assessment_completed = session_assessment_completed(session)
+    rounds = _sanitize_rounds(
+        session.get("rounds", []),
+        assessment_completed=assessment_completed,
+    )
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
     measured_rounds = [item for item in completed_rounds if not is_self_reported_round(item)]
     self_reported_rounds = [

@@ -112,6 +112,7 @@ def test_full_flow_persists_through_sqlalchemy(sql_client) -> None:
 
     answer = client.post(
         "/session/answer",
+        headers=headers,
         json={
             "session_id": session_id,
             "round": 1,

@@ -1807,34 +1807,18 @@ def get_session(
         )
 
     rounds = session.get("rounds", [])
-    has_phase2_round = any(
-        r.get("round_type") in ("mcq", "sql", "coding", "system_design", "ml_primitives")
-        for r in rounds
+    from backend.routes.session_access import (
+        assert_session_access,
+        session_assessment_completed,
     )
-    if has_phase2_round or session.get("user_id"):
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
-            )
-        user = require_user(authorization)
-        if session.get("user_id"):
-            if str(session["user_id"]) != str(user["id"]):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You cannot access another user's session.",
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Anonymous sessions are not permitted for this round type.",
-            )
+
+    assert_session_access(session, authorization)
 
     active_round = next(
         (r for r in reversed(rounds) if r.get("status") == "in_progress"),
         rounds[-1] if rounds else None,
     )
-    is_completed = session.get("status") == "completed"
+    is_completed = session_assessment_completed(session)
 
     sanitized_active_round = (
         sanitize_round_for_client(active_round, is_session_completed=is_completed)
@@ -1847,6 +1831,7 @@ def get_session(
         "candidate_id": session.get("candidate_id"),
         "user_id": session.get("user_id"),
         "status": session.get("status", "active"),
+        "progression_blocked_reason": session.get("progression_blocked_reason"),
         "current_skill": session.get("current_skill", session.get("skill")),
         "current_difficulty": session.get("current_difficulty"),
         "last_round": session.get("last_round", 1),
