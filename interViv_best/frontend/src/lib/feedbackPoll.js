@@ -7,6 +7,17 @@ export function shouldKeepPollingNarration(status) {
   return status === 'queued' || status === 'processing';
 }
 
+/** True only while the tick still belongs to the live expected round. */
+export function isFeedbackPollTickCurrent(expectedRound, tickRound) {
+  return expectedRound != null && expectedRound === tickRound;
+}
+
+/** Clear a scheduled poll interval; returns null for the stored id. */
+export function clearFeedbackPollInterval(intervalId, clearFn = clearInterval) {
+  if (intervalId != null) clearFn(intervalId);
+  return null;
+}
+
 export function applyFeedbackPollResult(state, payload, expectedRound) {
   if (!payload || payload.round !== expectedRound) {
     return { ...state, ignoredStale: true };
