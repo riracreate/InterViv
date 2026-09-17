@@ -50,7 +50,7 @@ Phase 3B-only: `alembic downgrade 20260914_0012` drops `progression_blocked_reas
 
 ## Final SHA
 
-See `docs/phase3b_integration_checkpoint.md` (branch tip after verification commit).
+`89f22bb201ab7eade2d110d8710dbed37173bb56`
 
 ## Roadmap note
 

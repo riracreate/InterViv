@@ -36,6 +36,10 @@ Phase 3A tip (`3c073a5`). Scoring algorithms and activation gates are unchanged.
 - Report hash: `eb69fdb59cbf35250bdfe96492ba6b37fe8ac4bce9994fd71f25d57c65d3d2ea`
 - Browser QA: pending
 
+## Final SHA
+
+`89f22bb201ab7eade2d110d8710dbed37173bb56`
+
 ## Not in Phase 3B
 
 - Live narration activation, reviewed-only activation,
