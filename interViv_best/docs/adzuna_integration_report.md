@@ -50,7 +50,7 @@ Publishing listings only (permissible use). Per-ad “Jobs by Adzuna” branding
 
 ## Final SHA
 
-Recorded in follow-up docs pin after verification commit.
+`3739824cc1c17c79c1979b91bbc4f4995cfadb4d`
 
 ## Remaining limitations
 
