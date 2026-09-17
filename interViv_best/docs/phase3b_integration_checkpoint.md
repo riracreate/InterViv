@@ -51,4 +51,4 @@
 
 ## Final SHA
 
-See git tip after checkpoint commit (this file updated in that commit).
+`ef60d10365b0b7eb428ecf956c38fc4f9a9a38c7`
