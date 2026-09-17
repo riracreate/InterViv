@@ -8,7 +8,7 @@ Living phase tracker for the Cursor implementation plan. This is not a chat log.
 | 1A Reviewed-bundle infrastructure | **Implemented + verified (engineering)** on `phase1a/reviewed-bundles`; **awaiting real human review** (0 bundles reviewed). |
 | 1B Concept evaluator / reference contract | **Implemented + verified (engineering)** on `phase1b/reviewed-evaluator`; gate OFF; **awaiting real human review**. Stopped before activation and Phase 2. |
 | 2 Standalone and composed practice | **Implemented + verified (engineering)** on `phase2/modular-practice`; gates OFF; **awaiting real human review**. Stopped before activation and Phase 3. |
-| 3 Persistence, feedback, shared UI | Deferred |
+| 3 Persistence, feedback, shared UI | **3A + 3B implemented** on `phase3b/feedback-delivery`; gates OFF; live narration off |
 | 4 Follow-ups, assistance policies | Deferred |
 | Research Completeness / evaluation | Deferred; held-out ratings absent |
 
@@ -102,3 +102,13 @@ API shape (additive fields only). No new follow-ups; no scoring changes.
 - See phase-boundary command output in `docs/phase2_implementation_report.md`.
 - No push, merge, deploy, scorer promotion, flag activation, hint-coach
   import, or production activation.
+
+## Phase 3A / 3B
+
+- **3A** tip: `3c073a5` — atomic start/attempt, snapshots, narration jobs, topic contract.
+  Report: `docs/phase3a_implementation_report.md`. Rollback: `alembic downgrade 20260913_0010`.
+- **3B** branch `phase3b/feedback-delivery` in `.worktrees/cursor-ai-design-phase3b`.
+  Ownership-consistent answer/continue/feedback; disclosure timing; blocked continue;
+  snapshot v2 provenance; allowlisted feedback + validator + fake provider; Interview poll.
+  Report: `docs/phase3b_implementation_report.md`. Migration `20260915_0013`.
+  Gates remain off; Adzuna deferred to roadmap only.
