@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchGapAnalysis, fetchMyGapAnalysis } from '../lib/api';
 import ResourceLinks from '../components/ResourceLinks';
+import AppNav from '../components/AppNav';
+import '../styles/hub.css';
 
 const SEVERITY_COLORS = {
   Untested: { bar: '#9CA3AF', tag: '#374151', bg: '#F3F4F6' },
-  High:     { bar: '#EF4444', tag: '#991B1B', bg: '#FEE2E2' },
-  Medium:   { bar: '#F59E0B', tag: '#92400E', bg: '#FEF3C7' },
-  Low:      { bar: '#10B981', tag: '#065F46', bg: '#D1FAE5' },
+  High:     { bar: 'var(--color-danger)', tag: '#991B1B', bg: 'var(--color-danger-soft)' },
+  Medium:   { bar: 'var(--color-warn)', tag: '#92400E', bg: 'var(--color-warn-soft)' },
+  Low:      { bar: 'var(--color-success)', tag: '#065F46', bg: 'var(--color-success-soft)' },
 };
 
 function SeverityBadge({ severity }) {
@@ -101,28 +103,26 @@ export default function GapAnalysis() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <p className="text-sm text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
-          Computing your readiness…
-        </p>
-      </div>
+      <main className="hub-page">
+        <div className="hub-container">
+          <AppNav userId={userId === 'me' ? null : userId} roleId={roleId} />
+          <p className="hub-loading" role="status">Computing your readiness…</p>
+        </div>
+      </main>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-white px-6 py-16 max-w-3xl mx-auto">
-        <p className="text-sm text-red-700" style={{ fontFamily: "var(--font-body)" }}>
-          {error}
-        </p>
-        <button
-          onClick={() => navigate('/upload')}
-          className="mt-6 rounded-full px-5 py-2 text-sm font-medium text-white bg-black"
-          style={{ fontFamily: "var(--font-body)" }}
-        >
-          ← Back to Upload
-        </button>
-      </div>
+      <main className="hub-page">
+        <div className="hub-container">
+          <AppNav userId={userId === 'me' ? null : userId} roleId={roleId} />
+          <div className="hub-error" role="alert">{error}</div>
+          <button type="button" onClick={() => navigate('/upload')} className="hub-button hub-button-primary">
+            ← Back to Upload
+          </button>
+        </div>
+      </main>
     );
   }
 
@@ -131,25 +131,12 @@ export default function GapAnalysis() {
   const readiness = Math.round(report.overall_readiness_percentage);
 
   return (
-    <div className="min-h-screen bg-white" data-testid="gap-analysis-page">
-      <nav className="w-full border-b border-black/5">
-        <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
-             className="text-2xl tracking-tight text-black"
-             style={{ fontFamily: "var(--font-display)" }}>
-            interViv<sup className="text-xs align-super">©</sup>
-          </a>
-          <button onClick={() => navigate(-1)}
-                  className="text-sm text-[#6F6F6F] hover:text-black"
-                  style={{ fontFamily: "var(--font-body)" }}>
-            ← Back
-          </button>
-        </div>
-      </nav>
+    <main className="hub-page" data-testid="gap-analysis-page">
+      <div className="hub-container">
+        <AppNav userId={report.user_id || (userId === 'me' ? null : userId)} roleId={report.role_id || roleId} />
 
-      <div className="max-w-4xl mx-auto px-6 pt-12 pb-24">
-        <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-3"
-           style={{ fontFamily: "var(--font-body)" }}>
+        <header className="hub-page-hero">
+        <p className="hub-eyebrow">
           Gap analysis · {report.company_name} · {report.role_title}
         </p>
 
@@ -188,14 +175,15 @@ export default function GapAnalysis() {
           />
         </div>
 
+        </header>
+
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <div className="md:col-span-2 rounded-2xl border border-black/8 p-6">
+          <div className="hub-card md:col-span-2">
             <h2 className="text-xl tracking-tight mb-1"
                 style={{ fontFamily: "var(--font-display)", letterSpacing: '-0.5px' }}>
               Per-skill readiness
             </h2>
-            <p className="text-xs text-[#6F6F6F] mb-4"
-               style={{ fontFamily: "var(--font-body)" }}>
+            <p className="hub-caption mb-4">
               Coloured bar = your level; pale track = role target.
               Severity = required − your level (High &gt; 25, Medium 11–25, Low ≤ 10).
             </p>
@@ -204,14 +192,12 @@ export default function GapAnalysis() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-black/8 p-6"
-               data-testid="ranked-weak-areas">
+          <div className="hub-card" data-testid="ranked-weak-areas">
             <h2 className="text-xl tracking-tight mb-1"
                 style={{ fontFamily: "var(--font-display)", letterSpacing: '-0.5px' }}>
               Top weak areas
             </h2>
-            <p className="text-xs text-[#6F6F6F] mb-4"
-               style={{ fontFamily: "var(--font-body)" }}>
+            <p className="hub-caption mb-4">
               Ranked by importance × gap.
             </p>
             <ol className="space-y-3">
@@ -254,28 +240,28 @@ export default function GapAnalysis() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="hub-toolbar">
           <button
+            type="button"
             onClick={startPracticeOnWeakest}
             disabled={topWeakAreas.length === 0}
-            className="rounded-full px-6 py-3 text-sm font-medium text-white bg-black disabled:opacity-30 cursor-pointer"
-            style={{ fontFamily: "var(--font-body)" }}
+            className="hub-button hub-button-primary"
             data-testid="start-practice-cta"
           >
             Start practice on weak areas →
           </button>
           <button
+            type="button"
             onClick={() => navigate(`/roadmap/${userId}/${roleId}?days=30`)}
-            className="rounded-full px-6 py-3 text-sm font-medium text-white bg-black/80 hover:bg-black cursor-pointer"
-            style={{ fontFamily: "var(--font-body)" }}
+            className="hub-button hub-button-primary"
             data-testid="build-roadmap-cta"
           >
             Build my study plan →
           </button>
           <button
+            type="button"
             onClick={() => navigate('/practice')}
-            className="rounded-full px-6 py-3 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
-            style={{ fontFamily: "var(--font-body)" }}
+            className="hub-button"
           >
             General practice
           </button>
@@ -284,13 +270,12 @@ export default function GapAnalysis() {
         {report.disclaimer && (
           <p
             data-testid="gap-disclaimer"
-            className="mt-10 text-xs text-[#6F6F6F] leading-relaxed border-t border-black/5 pt-4"
-            style={{ fontFamily: "var(--font-body)" }}
+            className="hub-caption mt-10 border-t border-[var(--color-border)] pt-4"
           >
-            <span className="font-medium text-black">Note:</span> {report.disclaimer}
+            <span className="font-medium text-[var(--color-ink)]">Note:</span> {report.disclaimer}
           </p>
         )}
       </div>
-    </div>
+    </main>
   );
 }
