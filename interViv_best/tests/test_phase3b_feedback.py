@@ -104,6 +104,66 @@ def test_content_blocked_dashboard_hides_ideals() -> None:
     assert round0.get("feedback")
 
 
+def test_content_blocked_after_session_hides_review_keys() -> None:
+    """after_session must not reveal keys while status is content_blocked."""
+    client = TestClient(app)
+    user = _make_user("t3b-as")
+    headers = _headers(user)
+    start = client.post("/session/start", headers=headers, json={
+        "blocks": [{
+            "round_type": "mcq",
+            "category": "oa",
+            "skills": ["DBMS"],
+            "count": 2,
+            "duration_minutes": 20,
+            "review_policy": "after_session",
+        }],
+    })
+    assert start.status_code == 200, start.text
+    body = start.json()
+    session_id = body["session_id"]
+    answers = [
+        {"question_id": q["id"], "selected_option_ids": [q["options"][0]["id"]]}
+        for q in (body.get("questions") or [])
+    ]
+    answer = client.post("/session/answer", headers=headers, json={
+        "session_id": session_id, "round": 1, "answers": answers,
+    })
+    assert answer.status_code == 200, answer.text
+    # Answer payload must never carry review keys (sanitize defaults).
+    assert "correct_option_ids" not in answer.text
+    assert "ideal_answer" not in answer.text
+
+    # Force content_blocked while keeping after_session on the round.
+    db = get_database()
+    session = db["sessions"].find_one({"session_id": session_id})
+    rounds = list(session.get("rounds") or [])
+    cfg = dict(rounds[0].get("config_json") or {})
+    cfg["review_policy"] = "after_session"
+    rounds[0]["config_json"] = cfg
+    # Plant a reference ideal that must stay server-side on resume.
+    rounds[0]["ideal_answer"] = "SECRET-IDEAL-NEVER-PUBLIC"
+    db["sessions"].update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "rounds": rounds,
+            "status": "content_blocked",
+            "progression_blocked_reason": "Forced for disclosure test.",
+        }},
+    )
+
+    resume = client.get(f"/session/{session_id}", headers=headers)
+    assert resume.status_code == 200, resume.text
+    assert resume.json()["status"] == "content_blocked"
+    assert "SECRET-IDEAL-NEVER-PUBLIC" not in resume.text
+    assert "correct_option_ids" not in resume.text
+    active = resume.json().get("active_round") or {}
+    for q in (active.get("question_context") or {}).get("questions") or []:
+        assert "correct_option_ids" not in q
+        assert "explanation" not in q
+    assert active.get("ideal_answer") in (None, "")
+
+
 def test_continue_recovers_when_inventory_allows(monkeypatch) -> None:
     client = TestClient(app)
     user = _make_user("t3b-cont")
@@ -230,9 +290,8 @@ def test_feedback_endpoint_allowlist_and_auth() -> None:
 
 def test_invalid_narration_keeps_rules(monkeypatch) -> None:
     monkeypatch.setenv("LLM_LIVE_FETCH", "1")
-    from modules import llm_outbound_gate
-    # Clear any cached read if present
-    set_narration_provider(FakeNarrationProvider(invalid=True))
+    provider = FakeNarrationProvider(invalid=True)
+    set_narration_provider(provider)
     client = TestClient(app)
     user = _make_user("t3b-inv")
     headers = _headers(user)
@@ -246,8 +305,10 @@ def test_invalid_narration_keeps_rules(monkeypatch) -> None:
     })
     job_id = narration_job_id(session_id, 1)
     finished = process_narration_job(get_database(), job_id)
+    assert provider.calls >= 1
     assert finished["status"] == "skipped"
     assert finished["artifact"]["source"] == "rules_feedback"
+    assert (finished["artifact"].get("metadata") or {}).get("validation") == "failed"
     assert "evil" not in (finished["artifact"].get("script") or "")
     set_narration_provider(None)
     monkeypatch.setenv("LLM_LIVE_FETCH", "0")

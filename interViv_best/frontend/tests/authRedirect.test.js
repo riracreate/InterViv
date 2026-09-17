@@ -32,5 +32,32 @@ test('resume restores only server-supplied session identity, round, options and 
   assert.equal(state.elo, 0);
   assert.deepEqual(state.question_context.questions, questions);
   assert.equal(state.expires_at, session.active_round.expires_at);
+  assert.equal(state.progressionBlocked, false);
   assert.throws(() => interviewStateFromSession({ session_id: 'no-round' }));
+});
+
+test('content_blocked resume carries score feedback and retry flags', () => {
+  const session = {
+    session_id: 'blocked',
+    candidate_id: 'candidate',
+    status: 'content_blocked',
+    progression_blocked_reason: 'No matching inventory.',
+    current_skill: 'DBMS',
+    total_rounds: 2,
+    last_round: 1,
+    active_round: {
+      round: 1,
+      round_type: 'technical_short_answer',
+      question: 'What is ACID?',
+      final_score: 70,
+      feedback: { next_step: 'Review atomicity' },
+      elo_before: 1200,
+    },
+  };
+  const state = interviewStateFromSession(session);
+  assert.equal(state.status, 'content_blocked');
+  assert.equal(state.progressionBlocked, true);
+  assert.equal(state.progressionBlockedReason, 'No matching inventory.');
+  assert.equal(state.currentScore, 70);
+  assert.equal(state.currentFeedback, 'Review atomicity');
 });
