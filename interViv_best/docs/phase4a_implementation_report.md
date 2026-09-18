@@ -7,7 +7,7 @@ Assistance tracking, assessment eligibility, and bounded optional follow-ups.
 | Branch | `phase4a/assistance-followups` |
 | Worktree | `.worktrees/cursor-ai-design-phase4a` |
 | Base | `e591f0b9f0cf637d707aff516f6da054751c0483` (Phase 3C tip) |
-| Final tip | `fb8ed945dcd745742c2382cbca9bbe361e274e21` |
+| Final tip | `62a74bad1f8f4ba8c2b0881db9cf3d8786ca18cc` |
 | Ancestors verified | Adzuna `c498d6fe…`, Phase 3B `379007314…` |
 | App root | `interViv_best` |
 
