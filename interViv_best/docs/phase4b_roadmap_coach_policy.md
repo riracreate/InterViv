@@ -80,8 +80,15 @@ snippets never become assessed evidence.
 - Per-session threading lock: single-process submit / follow-up serialization.
 - SQL conditional round claim (`backend/db/round_claim.py`) for multi-worker
   submit races.
-- Follow-up caps remain application-level; partial unique index on
-  `(session_id, follow_up_parent_round)` when a follow-up round row exists.
+- Follow-up caps are enforced atomically in storage
+  (`backend/db/follow_up_allocate.py`, migration `20260918_0016`):
+  optimistic concurrency on `sessions.revision` with a conditional write of
+  `expanded_plan`/`total_rounds` plus the teaching exposure in one
+  transaction and bounded retry; caps count pending (scheduled but
+  unmaterialized) entries, honor a lower per-block `max_follow_ups`, and
+  reserve mandatory rounds under the session cap. The partial unique index
+  on `(session_id, follow_up_parent_round)` remains as defense-in-depth at
+  materialization time.
 - Memory atomic() also snapshots skill-graph / mastery / learning-signal /
   plan / conversation module globals.
 
