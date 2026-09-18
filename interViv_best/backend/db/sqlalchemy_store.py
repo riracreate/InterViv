@@ -35,6 +35,19 @@ class SQLAlchemyDatabaseError(RuntimeError):
     pass
 
 
+class SessionWriteConflict(Exception):
+    """A session write lost a cross-worker race; reload and retry.
+
+    Raised by ``_SessionsCollection.update_one`` when the row changed since
+    the caller's read (``expected_revision`` mismatch) or between the
+    store's own read and write (conditional-update rowcount != 1). The
+    attempt wrote nothing — not even partially — so the caller can safely
+    reload, revalidate, and retry with a bounded budget. Deliberately NOT a
+    ``SQLAlchemyDatabaseError``: it is a 409-style contention signal, not a
+    503-style storage failure, and ``is_database_exception`` must stay False.
+    """
+
+
 # Ambient transaction for ambient_session(): when set, session_scope() joins
 # it instead of opening a committing scope. Context-local, never global.
 _ambient_session: ContextVar = ContextVar("interviv_ambient_session", default=None)
@@ -399,6 +412,64 @@ class _UserCollection:
         }
 
 
+#: Document key → SessionRow column for narrow session writes.
+_SESSION_KEY_COLUMNS = {
+    "user_id": "user_id",
+    "candidate_id": "candidate_id",
+    "target_company_id": "target_company_id",
+    "target_role_id": "target_role_id",
+    "started_at": "started_at",
+    "completed_at": "completed_at",
+    "overall_readiness_score": "overall_readiness_score",
+    "skill": "skill",
+    "sub_domain": "sub_domain",
+    "status": "status",
+    "current_difficulty": "current_difficulty",
+    "current_skill": "current_skill",
+    "last_round": "last_round",
+    "skills": "skills_json",
+    "rounds_per_skill": "rounds_per_skill",
+    "total_rounds": "total_rounds",
+    "template_id": "template_id",
+    "round_plan": "round_plan_json",
+    "round_config": "round_config_json",
+    "block_plan": "block_plan_json",
+    "expanded_plan": "expanded_plan_json",
+    "allow_unknown_topic_fallback": "allow_unknown_topic_fallback",
+    "progression_blocked_reason": "progression_blocked_reason",
+    "practice_mode": "practice_mode",
+    "allow_optional_follow_ups": "allow_optional_follow_ups",
+}
+
+
+def _session_column_value(key: str, raw: Any, merged: dict[str, Any], row: Any) -> Any:
+    """Coerce one document value exactly like ``_apply_doc_to_row``.
+
+    ``merged`` is the post-``$set`` document (for cross-field fallbacks);
+    ``row`` is the live ``SessionRow`` (for the ``started_at`` fallback).
+    """
+    value = _json_ready(raw)
+    if key == "started_at":
+        return (
+            _coerce_datetime(value or merged.get("created_at"))
+            or getattr(row, "started_at", None)
+            or _now()
+        )
+    if key == "completed_at":
+        return _coerce_datetime(value)
+    if key == "status":
+        return value or "active"
+    if key == "last_round":
+        return int(value or 1)
+    if key == "rounds_per_skill":
+        return int(value or 3)
+    if key == "skills":
+        return value or (
+            [merged["skill"]] if merged.get("skill") else []
+        )
+    return value
+
+
 class _SessionCollection:
     @staticmethod
     def _field_columns() -> dict[str, Any]:
@@ -442,17 +513,117 @@ class _SessionCollection:
             self._replace_rounds(session, row, data.get("rounds") or [])
         return _InsertResult(session_id)
 
-    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
-        doc = self.find_one(query)
-        matched = 1 if doc else 0
-        if not doc:
-            if not upsert:
-                return _UpdateResult(0, 0)
-            doc = dict(query)
-        modified = _apply_update_dict(doc, update)
-        if doc.get("session_id"):
-            self.insert_one(doc)
-        return _UpdateResult(matched, 1 if modified else 0)
+    def update_one(
+        self,
+        query: dict,
+        update: dict,
+        upsert: bool = False,
+        *,
+        expected_revision: int | None = None,
+    ) -> _UpdateResult:
+        """Narrow, revision-gated session write.
+
+        Only the columns named by top-level ``$set`` keys are touched, so a
+        submit/continue commit (``rounds`` + scalars) can never clobber a
+        concurrently committed ``expanded_plan``/``total_rounds`` entry and
+        vice versa. Every write bumps ``revision``; when ``expected_revision``
+        (the ``revision`` from the caller's own read, exposed by
+        :meth:`_to_doc`) is given, a mismatch raises :class:`SessionWriteConflict`
+        before anything is written. The write itself is a conditional
+        ``UPDATE ... WHERE id AND revision`` with a rowcount gate, so the
+        store's internal read-to-write window is closed too. Dotted keys or
+        non-``$set`` operators fall back to a full merged write that is still
+        conditional on the revision. Unknown top-level keys are ignored, and
+        ``revision``/identity keys are store-managed — matching the previous
+        drop-unknowns behavior. A ``$set`` that changes nothing performs no
+        write and no revision bump.
+        """
+        from sqlalchemy import update as _sa_update
+
+        set_body = dict((update or {}).get("$set") or {})
+        set_keys = [key for key in set_body if key != "revision"]
+        exotic = any("." in key for key in set_keys) or any(
+            op != "$set" for op in (update or {})
+        )
+        with session_scope() as session:
+            rows = _filtered_rows(session, SessionRow, self._field_columns(), query)
+            row = next(
+                (candidate for candidate in rows
+                 if _matches(self._to_doc(candidate), query)),
+                None,
+            )
+            if row is None:
+                if not upsert:
+                    return _UpdateResult(0, 0)
+                merged = dict(query)
+                upsert_modified = _apply_update_dict(merged, update)
+                if merged.get("session_id"):
+                    self.insert_one(merged)
+                return _UpdateResult(0, 1 if upsert_modified else 0)
+            current_revision = int(row.revision or 0)
+            if expected_revision is not None and current_revision != int(
+                expected_revision
+            ):
+                raise SessionWriteConflict(
+                    "session changed since read "
+                    f"(expected revision {int(expected_revision)}, "
+                    f"found {current_revision})"
+                )
+            current_doc = self._to_doc(row)
+            if exotic:
+                merged = copy.deepcopy(current_doc)
+                modified = _apply_update_dict(merged, update)
+                if not modified:
+                    return _UpdateResult(1, 0)
+                values = {
+                    key: _session_column_value(key, merged.get(key), merged, row)
+                    for key in _SESSION_KEY_COLUMNS
+                    if key in merged
+                }
+                rounds_value = _json_ready(merged.get("rounds")) or []
+                replace_rounds = True
+            else:
+                merged = {**current_doc, **set_body}
+                values = {}
+                for key in set_keys:
+                    if key in ("session_id", "id", "rounds"):
+                        continue
+                    if key not in _SESSION_KEY_COLUMNS:
+                        continue
+                    if current_doc.get(key) != set_body[key]:
+                        values[key] = _session_column_value(
+                            key, set_body[key], merged, row
+                        )
+                replace_rounds = (
+                    "rounds" in set_keys
+                    and current_doc.get("rounds") != set_body["rounds"]
+                )
+                rounds_value = (
+                    _json_ready(set_body["rounds"]) if replace_rounds else []
+                )
+                if not values and not replace_rounds:
+                    return _UpdateResult(1, 0)
+            column_values = {
+                _SESSION_KEY_COLUMNS[key]: value for key, value in values.items()
+            }
+            applied = session.execute(
+                _sa_update(SessionRow)
+                .where(
+                    SessionRow.id == row.id,
+                    SessionRow.revision == current_revision,
+                )
+                .values(**column_values, revision=current_revision + 1)
+            )
+            if int(applied.rowcount or 0) != 1:
+                raise SessionWriteConflict(
+                    "session changed during write "
+                    f"(revision {current_revision} already advanced)"
+                )
+            if replace_rounds:
+                session.refresh(row)
+                self._replace_rounds(session, row, rounds_value)
+                session.flush()
+            return _UpdateResult(1, 1)
 
     def delete_one(self, query: dict) -> None:
         session_id = query.get("session_id") or query.get("id")
@@ -662,6 +833,11 @@ class _SessionCollection:
             "practice_mode": row.practice_mode,
             "allow_optional_follow_ups": row.allow_optional_follow_ups,
             "rounds": rounds,
+            # Optimistic-concurrency version. Routes pass it back as
+            # ``expected_revision`` so a stale read fails instead of
+            # clobbering another worker's commit. Internal only: response
+            # builders select explicit fields and never spread this doc.
+            "revision": int(row.revision or 0),
         }
 
 
