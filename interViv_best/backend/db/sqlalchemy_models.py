@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -798,3 +799,39 @@ class NarrationJobRow(Base):
             name="ck_narration_jobs_status",
         ),
     )
+
+
+class StudyPlanRow(Base):
+    """Versioned deterministic study plans (Phase 4B)."""
+
+    __tablename__ = "study_plans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    plan_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("plan_id", "version", name="uq_study_plans_plan_version"),
+        Index("ix_study_plans_user_scope_active", "user_id", "scope_key", "is_active"),
+    )
+
+
+class CoachConversationRow(Base):
+    """Owned multi-turn planning coach conversations (Phase 4B)."""
+
+    __tablename__ = "coach_conversations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    conversation_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
