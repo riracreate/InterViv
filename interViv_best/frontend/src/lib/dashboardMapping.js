@@ -28,6 +28,24 @@ function capitalizeDifficulty(raw) {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
+/** Phase 4A display labels for assessment eligibility. */
+export function eligibilityPracticeLabel(round) {
+  const decision = String(round?.assessment_eligibility || "").toLowerCase();
+  if (round?.is_follow_up) return "Follow-up";
+  if (decision === "eligible") return "Assessment";
+  if (decision === "excluded") {
+    const reasons = round?.eligibility_exclusion_reasons || [];
+    if (reasons.includes("same_item_retry")) return "Repeated practice";
+    if (reasons.includes("follow_up")) return "Follow-up";
+    return "Practiced with help";
+  }
+  if (decision === "unknown" || decision === "legacy_unknown") {
+    return "Unscored practice";
+  }
+  if (round?.assisted) return "Practiced with help";
+  return null;
+}
+
 // The API sends a null average when no measured round was scored (e.g. an
 // expired round that could not be evaluated). Absence is not a zero.
 function measuredAverage(session) {
@@ -278,6 +296,10 @@ export function mapRealDataToDashboard(session) {
       scoring_mode: r.scoring_mode || "unknown",
       scoring_mode_label: r.scoring_mode_label || null,
       evidence_kind: r.evidence_kind || null,
+      assessment_eligibility: r.assessment_eligibility || null,
+      eligibility_exclusion_reasons: r.eligibility_exclusion_reasons || [],
+      practiceLabel: eligibilityPracticeLabel(r),
+      is_follow_up: Boolean(r.is_follow_up),
       mcqReview,
       reviewPolicy: r.review_policy || r.config_json?.review_policy || null,
       feedbackSource: r.feedback_source || r.narration_source || null,

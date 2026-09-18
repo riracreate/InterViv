@@ -95,6 +95,9 @@ export default function Practice() {
   const [skillsExplicit, setSkillsExplicit] = useState(false);
   const [prefillNote, setPrefillNote] = useState('');
   const [target, setTarget] = useState({ companyId: '', roleId: '' });
+  // Phase 4A: assessment vs coached practice; follow-ups default off for assessment.
+  const [practiceMode, setPracticeMode] = useState('coached_practice');
+  const [allowOptionalFollowUps, setAllowOptionalFollowUps] = useState(false);
 
   // Full interview
   const [roundsPerSkill, setRoundsPerSkill] = useState(3);
@@ -445,6 +448,17 @@ export default function Practice() {
     setAvailability(null);
     try {
       const body = stripClientOnly(mapped.payload);
+      body.practice_mode = practiceMode;
+      body.allow_optional_follow_ups =
+        practiceMode === 'assessment' ? false : allowOptionalFollowUps;
+      if (payloadHasInterview(body) && allowOptionalFollowUps && practiceMode !== 'assessment') {
+        // Opt interview blocks into optional follow-ups when the session setting is on.
+        body.blocks = (body.blocks || []).map((b) => (
+          b?.category === 'interview' || b?.round_type === 'technical_short_answer'
+            ? { ...b, allow_optional_follow_ups: true }
+            : b
+        ));
+      }
       if (payloadHasInterview(body)) {
         // Pre-commit probe: interview content resolves per skill on the
         // server. Unavailable inventory stops here, before any session.
@@ -503,6 +517,38 @@ export default function Practice() {
             Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, coding, and interview practice.
             Coding practice runs Python with visible examples and hidden-test scoring; SQL practice uses the sandboxed SQL runner only.
           </p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-6">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-[var(--color-ink)]">Session mode</span>
+              <select
+                className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+                value={practiceMode}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPracticeMode(next);
+                  if (next === 'assessment') setAllowOptionalFollowUps(false);
+                }}
+                aria-label="Session mode"
+              >
+                <option value="coached_practice">Coached practice</option>
+                <option value="assessment">Assessment</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-[var(--color-ink)]">
+              <input
+                type="checkbox"
+                checked={allowOptionalFollowUps && practiceMode !== 'assessment'}
+                disabled={practiceMode === 'assessment'}
+                onChange={(e) => setAllowOptionalFollowUps(e.target.checked)}
+              />
+              Allow optional follow-ups (Interview blocks; max 1 per parent, 2 per block)
+            </label>
+          </div>
+          {practiceMode === 'assessment' && (
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+              Assessment keeps hints and follow-ups off by default. Assisted work is labeled Practiced with help and stays out of primary metrics.
+            </p>
+          )}
         </header>
 
         {error && (
