@@ -10,6 +10,8 @@ from backend.db import DatabaseConnectionError, get_database, is_database_except
 from backend.evidence_kind import (
     is_self_reported_round,
     measured_scores,
+    assessment_eligible_rounds,
+    assessment_eligible_scores,
     scoring_mode_for_round,
     scoring_mode_label_for_display,
 )
@@ -176,6 +178,15 @@ def _block_results(
             or (r.get("final_score") is not None and r.get("status") == "submitted")
         ]
         measured = [r for r in scored if not is_self_reported_round(r)]
+        eligible = assessment_eligible_rounds(group)
+        assisted_practice = [
+            r for r in measured
+            if r not in eligible and (
+                r.get("assisted")
+                or r.get("is_follow_up")
+                or r.get("assessment_eligibility") in ("excluded", "unknown", "legacy_unknown")
+            )
+        ]
         self_reported = [r for r in scored if is_self_reported_round(r)]
         round_skills = sorted({str(r.get("skill")) for r in group
                                if r.get("skill")})
@@ -186,8 +197,8 @@ def _block_results(
                   sorted(planned_skills.get(str(group[0].get("block_id")), []))
                   or ["General"])
         avg = (
-            round(sum(float(r["final_score"]) for r in measured) / len(measured), 2)
-            if measured
+            round(sum(float(r["final_score"]) for r in eligible) / len(eligible), 2)
+            if eligible
             else None
         )
         self_avg = (
@@ -199,8 +210,8 @@ def _block_results(
             else None
         )
         suggestion = None
-        if measured:
-            weakest = min(measured, key=lambda r: float(r["final_score"]))
+        if eligible:
+            weakest = min(eligible, key=lambda r: float(r["final_score"]))
             if float(weakest["final_score"]) < 61.0:
                 skill = str(weakest.get("skill") or "General")
                 suggestion = {
@@ -226,15 +237,18 @@ def _block_results(
             "scored_rounds": len(scored),
             "unscored_rounds": len(group) - len(scored),
             "measured_rounds": len(measured),
+            "assessment_eligible_rounds": len(eligible),
+            "assisted_practice_rounds": len(assisted_practice),
             "self_reported_rounds": len(self_reported),
             "average_score": avg,
-            "average_score_population": "measured",
+            "average_score_population": "assessment_eligible",
             "self_reported_average": self_avg,
             "assisted_rounds": sum(1 for r in measured if r.get("assisted")),
             "scoring_modes": sorted({
                 scoring_mode_for_round(r) for r in scored
             }),
             "suggestion": suggestion,
+            "insufficient_assessment_evidence": len(eligible) == 0 and len(measured) > 0,
         })
     return results
 

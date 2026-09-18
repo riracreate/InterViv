@@ -17,6 +17,8 @@ from backend.routes.session_access import (
     session_assessment_completed,
 )
 from modules.narration_jobs import narration_job_id
+from modules.teaching_exposures import record_teaching_exposure
+from modules.assistance_policy import item_identity_for_round
 
 router = APIRouter(prefix="/session", tags=["feedback"])
 
@@ -162,6 +164,26 @@ def get_round_feedback(
             "id": narration_job_id(session_id, int(round_number)),
         })
 
+        # Explicit teaching delivery for allowlisted feedback content. Does not
+        # advance session progression. Idempotent on delivery_id. Occurs after
+        # submission so it cannot retroactively mark the committed attempt.
+        item_type, item_id = item_identity_for_round(round_doc)
+        try:
+            record_teaching_exposure(
+                db,
+                kind="feedback_reveal",
+                item_type=item_type,
+                item_id=item_id or f"round:{round_number}",
+                session=session,
+                user_id=session.get("user_id"),
+                round_number=int(round_number),
+                block_id=round_doc.get("block_id"),
+                content_fingerprint="feedback_allowlist_v1",
+                also_legacy_assistance=False,
+            )
+        except Exception:
+            pass
+
         response = {
             "session_id": session_id,
             "round": int(round_number),
@@ -173,6 +195,11 @@ def get_round_feedback(
                 assessment_completed=assessment_done,
             ),
             "assessment_completed": assessment_done,
+            "assessment_eligibility": round_doc.get("assessment_eligibility"),
+            "eligibility_exclusion_reasons": round_doc.get(
+                "eligibility_exclusion_reasons"
+            )
+            or [],
         }
         if round_doc.get("guard_applied") is not None:
             response["guard_applied"] = round_doc.get("guard_applied")
