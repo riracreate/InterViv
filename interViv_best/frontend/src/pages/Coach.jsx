@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchMe, fetchCoachPlan, fetchCoachStartPractice, saveInterviewState, fetchTargetContext, saveTargetContext } from '../lib/api';
+import {
+  fetchMe,
+  fetchCoachPlan,
+  fetchCoachStartPractice,
+  saveInterviewState,
+  fetchTargetContext,
+  saveTargetContext,
+  createCoachConversation,
+  postCoachMessage,
+  patchCoachGoals,
+} from '../lib/api';
 import { mapCoachPlan } from '../lib/coachMapping';
 import AppNav from '../components/AppNav';
 
@@ -15,6 +25,13 @@ export default function Coach() {
   const [plan, setPlan] = useState(null);
   const [roleId, setRoleId] = useState('');
   const [userId, setUserId] = useState(null);
+  const [conversationId, setConversationId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [studyPlan, setStudyPlan] = useState(null);
+  const [hoursPerWeek, setHoursPerWeek] = useState(6);
+  const [replyActions, setReplyActions] = useState([]);
+  const [statusNote, setStatusNote] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -29,8 +46,6 @@ export default function Coach() {
       .catch(() => {
         if (!cancelled) navigate('/login', { state: { next: '/coach' } });
       });
-    // Prefill from the shared target context only when fields are empty;
-    // user input is never overridden.
     fetchTargetContext()
       .then((data) => {
         if (cancelled || !data.target) return;
@@ -39,6 +54,14 @@ export default function Coach() {
           setText(data.target.jd_text);
           setMode('jd');
         }
+      })
+      .catch(() => {});
+    createCoachConversation()
+      .then((data) => {
+        if (cancelled) return;
+        const convo = data.conversation;
+        setConversationId(convo.conversation_id);
+        setMessages(convo.messages || []);
       })
       .catch(() => {});
     return () => {
@@ -56,15 +79,118 @@ export default function Coach() {
           : { goal_text: text, jd_text: '', include_dashboard: true, role_id: roleId || null };
       const data = await fetchCoachPlan(body);
       setPlan(mapCoachPlan(data));
-      // Carry a pasted JD forward so ATS and later visits prefill it.
       if (mode === 'jd' && text.trim()) {
         saveTargetContext({ jd_text: text.trim(), jd_source: 'paste' }).catch(() => {});
+      }
+      if (conversationId) {
+        await patchCoachGoals(conversationId, {
+          confirmed_goal: text.trim() || null,
+          role_id: roleId || null,
+          hours_per_week: hoursPerWeek,
+        });
+        const turn = await postCoachMessage(conversationId, {
+          text: text.trim() || 'Build my starter plan',
+          action: 'create_plan',
+          action_payload: { days: 30 },
+        });
+        setMessages(turn.conversation?.messages || []);
+        setStudyPlan(turn.plan || null);
+        setReplyActions(turn.reply?.actions || []);
+        setStatusNote(
+          turn.reply?.mode === 'deterministic'
+            ? 'Deterministic coach reply (live generation off).'
+            : ''
+        );
       }
     } catch (err) {
       setError(err.message || 'Could not build a plan.');
       setPlan(null);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const sendChat = async (action = null, actionPayload = {}) => {
+    if (!conversationId) return;
+    setBusy(true);
+    setError('');
+    setStatusNote('');
+    try {
+      const turn = await postCoachMessage(conversationId, {
+        text: chatInput,
+        action,
+        action_payload: actionPayload,
+      });
+      setMessages(turn.conversation?.messages || []);
+      setStudyPlan(turn.plan || studyPlan);
+      setReplyActions(turn.reply?.actions || []);
+      setChatInput('');
+      setStatusNote(
+        turn.reply?.provider_rejected
+          ? 'Provider output rejected — showing deterministic reply.'
+          : turn.reply?.mode === 'deterministic'
+            ? 'Deterministic coach reply (live generation off).'
+            : ''
+      );
+    } catch (err) {
+      setError(err.message || 'Could not send message.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runAction = async (action) => {
+    if (!action) return;
+    if (action.type === 'start_task' || action.type === 'assess_independently') {
+      const skills = action.skill ? [action.skill] : studyPlan?.tasks?.[0]?.skill
+        ? [studyPlan.tasks[0].skill]
+        : [];
+      if (!skills.length) {
+        setError('No supported skill on this task — refusing silent substitution.');
+        return;
+      }
+      setBusy(true);
+      try {
+        const data = await fetchCoachStartPractice({ skills });
+        const sessionId = data.session_id;
+        if (!sessionId) throw new Error('Practice start did not return a session.');
+        const state = {
+          candidateId: data.candidate_id,
+          skill: skills[0],
+          allSkills: skills,
+          sessionId,
+          question: data.question,
+          difficulty: data.difficulty,
+          round_type: data.round_type || 'technical_short_answer',
+          block_category: data.block_category || null,
+          question_context: data.question_context || {},
+          config_json: data.config_json || {},
+          expires_at: data.expires_at || null,
+          round: data.round || 1,
+          elo: data.elo || 1200,
+          totalRounds: data.total_rounds || 1,
+          roundsPerSkill: 1,
+        };
+        saveInterviewState(state);
+        navigate(data.navigate || `/interview/${sessionId}`, { state });
+      } catch (err) {
+        setError(err.message || 'Could not start practice.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (action.type === 'update_hours') {
+      await patchCoachGoals(conversationId, { hours_per_week: hoursPerWeek });
+      await sendChat('update_hours', { hours_per_week: hoursPerWeek, days: 30 });
+      return;
+    }
+    if (action.type === 'complete_task' && action.task_id) {
+      await sendChat('complete_task', { task_id: action.task_id });
+      return;
+    }
+    if (action.type === 'create_plan') {
+      await sendChat('create_plan', { days: 30 });
     }
   };
 
@@ -268,6 +394,99 @@ export default function Coach() {
             </button>
           </section>
         )}
+
+        <section className="mt-10 border-t border-[var(--color-border)] pt-6" data-testid="coach-chat">
+          <h2 className="text-base font-semibold">Conversation</h2>
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+            Bounded planning chat with a deterministic fallback when live generation is off.
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            Hours / week
+            <input
+              type="number"
+              min={1}
+              max={40}
+              value={hoursPerWeek}
+              onChange={(e) => setHoursPerWeek(Number(e.target.value) || 6)}
+              className="w-20 rounded border border-[var(--color-border)] px-2 py-1"
+              data-testid="coach-hours"
+            />
+          </label>
+          <div
+            className="mt-4 max-h-64 space-y-2 overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-3"
+            role="log"
+            aria-live="polite"
+            data-testid="coach-messages"
+          >
+            {messages.length === 0 && (
+              <p className="text-sm text-[var(--color-ink-muted)]">
+                Ask why a task is recommended, change study time, or build a starter plan.
+              </p>
+            )}
+            {messages.map((m) => (
+              <div key={m.id} className="text-sm">
+                <span className="font-semibold">{m.role === 'user' ? 'You' : 'Coach'}: </span>
+                <span>{m.text}</span>
+              </div>
+            ))}
+          </div>
+          {statusNote && (
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]" data-testid="coach-status">
+              {statusNote}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {replyActions.map((action) => (
+              <button
+                key={`${action.type}-${action.task_id || action.label}`}
+                type="button"
+                disabled={busy}
+                className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
+                onClick={() => runAction(action)}
+              >
+                {action.label || action.type}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <input
+              className="grow rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Ask to explain the next task…"
+              maxLength={2000}
+              aria-label="Coach message"
+              data-testid="coach-chat-input"
+            />
+            <button
+              type="button"
+              disabled={busy || (!chatInput.trim() && !conversationId)}
+              onClick={() => sendChat()}
+              className="rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Send
+            </button>
+          </div>
+          {studyPlan && (
+            <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] p-4" data-testid="coach-study-plan">
+              <p className="text-sm font-semibold">
+                Study plan v{studyPlan.version} · {studyPlan.meta?.plan_kind}
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{studyPlan.meta?.readiness_note}</p>
+              <ul className="mt-3 space-y-2">
+                {(studyPlan.tasks || []).slice(0, 6).map((task) => (
+                  <li key={task.task_id} className="text-sm">
+                    <span className="font-medium">{task.title}</span>
+                    <span className="text-[var(--color-ink-muted)]"> — {task.rationale}</span>
+                    <span className="ml-2 text-xs uppercase tracking-wide text-[var(--color-ink-muted)]">
+                      {task.population} · {task.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
