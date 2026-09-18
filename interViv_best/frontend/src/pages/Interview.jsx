@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback, requestFollowUp } from '../lib/api';
 import {
   applyFeedbackPollResult,
   clearFeedbackPollInterval,
@@ -109,6 +109,12 @@ export default function Interview({ sessionState = null }) {
     initState.progressionBlockedReason || initState.progression_blocked_reason || ''
   );
   const [continueBusy, setContinueBusy] = useState(false);
+  const [eligibilityLabel, setEligibilityLabel] = useState('');
+  const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [followUpNote, setFollowUpNote] = useState('');
+  const [roundSettled, setRoundSettled] = useState(
+    () => Boolean(initState.roundSettled) || initState.currentScore != null
+  );
   const feedbackPollRef = useRef(null);
   const feedbackRoundRef = useRef(null);
   const [currentRubric, setCurrentRubric] = useState(null);
@@ -834,6 +840,21 @@ export default function Interview({ sessionState = null }) {
       const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
       const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
       setCurrentScore(score);
+      setRoundSettled(true);
+      const elig = resp.assessment_eligibility;
+      if (elig === 'excluded' || resp.assisted) {
+        setEligibilityLabel(
+          resp.is_follow_up ? 'Follow-up · Practiced with help' : 'Practiced with help'
+        );
+      } else if (elig === 'eligible') {
+        setEligibilityLabel('Assessment');
+      } else if (elig === 'unknown' || elig === 'legacy_unknown') {
+        setEligibilityLabel('Unscored practice');
+      } else if (score === null) {
+        setEligibilityLabel('Unscored practice');
+      } else {
+        setEligibilityLabel('');
+      }
       let feedbackWithMode = feedback;
       if (resp.scoring_mode === 'lexical_fallback_degraded') {
         feedbackWithMode = (
@@ -1038,7 +1059,7 @@ export default function Interview({ sessionState = null }) {
   const serverSttActive = useServerSTT || !hasBrowserSTT;
   const canSubmit = transcript.trim().length > 0 && !isScoring && currentScore === null && !serverRecording && !serverTranscribing && isSupportedRoundType(roundType);
   const voiceButtonBusy = serverSttActive ? (serverRecording || serverTranscribing) : isRecording;
-  const voiceButtonDisabled = isScoring || currentScore !== null || serverTranscribing;
+  const voiceButtonDisabled = isScoring || roundSettled || serverTranscribing;
   const voiceStatus = serverTranscribing
     ? 'Transcribing'
     : serverRecording
@@ -1486,7 +1507,7 @@ export default function Interview({ sessionState = null }) {
                 setTranscript(e.target.value);
                 setCurrentFeedback('');
               }}
-              disabled={isScoring || currentScore !== null}
+              disabled={isScoring || roundSettled}
               placeholder={isRecording || serverRecording ? 'Listening...' : serverTranscribing ? 'Transcribing...' : 'Type your answer here or use the microphone.'}
               className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[#333] outline-none transition-colors placeholder:text-[#6F6F6F]/40 focus:border-black/10 focus:bg-black/[0.015] disabled:cursor-default"
               style={{ fontFamily: "var(--font-body)" }}
@@ -1506,12 +1527,18 @@ export default function Interview({ sessionState = null }) {
           </div>
           )}
 
-          {currentScore !== null && (
+          {roundSettled && (
             <div className="rounded-2xl border border-black/8 p-5">
               <div className="text-3xl font-normal mb-1 text-center"
-                style={{ fontFamily: "var(--font-display)", color: scoreColor(currentScore) }}>
-                {Math.round(currentScore)}%
+                style={{ fontFamily: "var(--font-display)", color: currentScore == null ? '#6F6F6F' : scoreColor(currentScore) }}>
+                {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
               </div>
+              {eligibilityLabel && (
+                <p className="text-[11px] uppercase tracking-wider text-center text-[#6F6F6F] mb-2"
+                  style={{ fontFamily: "var(--font-body)" }}>
+                  {eligibilityLabel}
+                </p>
+              )}
               {currentFeedback && (
                 <p className="text-xs text-[#6F6F6F] text-center mt-1 leading-relaxed"
                   style={{ fontFamily: "var(--font-body)" }}>
@@ -1572,6 +1599,41 @@ export default function Interview({ sessionState = null }) {
                   <span className="font-medium text-black">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
+              {roundType === 'technical_short_answer' && !sessionComplete && !followUpNote && (
+                <button
+                  type="button"
+                  className="mt-4 w-full rounded-xl border border-black/10 px-3 py-2 text-xs text-[#333] disabled:opacity-50"
+                  style={{ fontFamily: "var(--font-body)" }}
+                  disabled={followUpBusy}
+                  onClick={async () => {
+                    if (!window.confirm(
+                      'Optional follow-ups are Practiced with help and excluded from primary assessment metrics. Continue?'
+                    )) return;
+                    setFollowUpBusy(true);
+                    try {
+                      const res = await requestFollowUp(sessionId, round);
+                      if (res.scheduled) {
+                        setFollowUpNote(
+                          `Follow-up scheduled (${res.follow_up_scoring || 'unscored'}). It appears after remaining mandatory rounds.`
+                        );
+                      } else {
+                        setFollowUpNote(`Follow-up not scheduled: ${res.reason || 'unavailable'}.`);
+                      }
+                    } catch (err) {
+                      setFollowUpNote(err?.message || 'Follow-up request failed.');
+                    } finally {
+                      setFollowUpBusy(false);
+                    }
+                  }}
+                >
+                  {followUpBusy ? 'Scheduling follow-up…' : 'Request optional follow-up'}
+                </button>
+              )}
+              {followUpNote && (
+                <p className="mt-3 text-[11px] text-[#6F6F6F] text-center" style={{ fontFamily: "var(--font-body)" }}>
+                  {followUpNote}
+                </p>
+              )}
             </div>
           )}
 
@@ -1621,8 +1683,8 @@ export default function Interview({ sessionState = null }) {
               </button>
             )}
 
-            {currentScore !== null && (
-              <button
+            {roundSettled && (
+                <button
                 onClick={progressionBlocked ? handleContinueBlocked : handleNext}
                 disabled={continueBusy}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:opacity-50"
