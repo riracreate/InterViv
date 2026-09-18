@@ -389,6 +389,17 @@ export function fetchRoundFeedback(sessionId, roundNumber) {
   );
 }
 
+export function requestFollowUp(sessionId, parentRound) {
+  return request(`/session/${encodeURIComponent(sessionId)}/follow-ups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      parent_round: parentRound,
+      accept_eligibility_consequence: true,
+    }),
+  });
+}
+
 /** Poll while narration is queued/processing; stop on terminal or abort. */
 export function narrationIsPending(status) {
   return status === "queued" || status === "processing";

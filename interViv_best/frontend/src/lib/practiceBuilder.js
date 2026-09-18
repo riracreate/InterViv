@@ -246,12 +246,22 @@ export function mapBlocksToStartPayload(blocks, form = {}) {
       if (b.question_ids?.length) item.question_ids = [...b.question_ids];
       if (b.problem_ids?.length) item.problem_ids = [...b.problem_ids];
       if (b.language) item.language = b.language;
+      if (b.category === 'interview' && b.allow_optional_follow_ups) {
+        item.allow_optional_follow_ups = true;
+      }
+      if (b.review_policy) item.review_policy = b.review_policy;
       return item;
     }),
     target_company_id: form.targetCompanyId || null,
     target_role_id: form.targetRoleId || null,
   };
   if (form.candidateId) payload.candidate_id = form.candidateId;
+  if (form.practiceMode === 'assessment' || form.practiceMode === 'coached_practice') {
+    payload.practice_mode = form.practiceMode;
+  }
+  if (typeof form.allowOptionalFollowUps === 'boolean') {
+    payload.allow_optional_follow_ups = form.allowOptionalFollowUps;
+  }
   return { payload };
 }
 
