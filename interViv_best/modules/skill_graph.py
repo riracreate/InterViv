@@ -184,6 +184,8 @@ class StudentSkillGraph:
                 session.add(graph_row)
                 session.flush()
 
+            from sqlalchemy import or_, and_
+
             recent_scores = [
                 float(value)
                 for (value,) in (
@@ -192,6 +194,23 @@ class StudentSkillGraph:
                     .filter(SessionRow.user_id == self.user_id)
                     .filter(RoundRow.skill_text == skill)
                     .filter(RoundRow.final_score.isnot(None))
+                    # Phase 4A eligible, or pre-4A legacy unassisted non-follow-up.
+                    .filter(
+                        or_(
+                            RoundRow.assessment_eligibility == "eligible",
+                            and_(
+                                RoundRow.assessment_eligibility.is_(None),
+                                or_(
+                                    RoundRow.assisted.is_(None),
+                                    RoundRow.assisted.is_(False),
+                                ),
+                                or_(
+                                    RoundRow.is_follow_up.is_(None),
+                                    RoundRow.is_follow_up.is_(False),
+                                ),
+                            ),
+                        )
+                    )
                     .order_by(RoundRow.created_at.desc(), RoundRow.id.desc())
                     .limit(ROLLING_WINDOW)
                     .all()

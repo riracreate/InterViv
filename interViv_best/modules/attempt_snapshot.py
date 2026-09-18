@@ -173,6 +173,11 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
         "evidence_kind": scored_round.get("evidence_kind"),
         "scoring_mode": scored_round.get("scoring_mode"),
         "evaluation_mode": scored_round.get("evaluation_mode"),
+        "assessment_eligibility": scored_round.get("assessment_eligibility"),
+        "eligibility_policy_version": scored_round.get("eligibility_policy_version"),
+        "eligibility_exclusion_reasons": copy.deepcopy(
+            scored_round.get("eligibility_exclusion_reasons") or []
+        ),
         "config": {
             "attempt_policy": (config or {}).get("attempt_policy"),
             "review_policy": (config or {}).get("review_policy"),

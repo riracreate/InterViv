@@ -72,6 +72,8 @@ class BlockSpec(BaseModel):
     language: str | None = None
     negative_marking: float | None = None
     review_policy: str | None = None
+    # Phase 4A: optional follow-ups (Interview blocks; assessment defaults off).
+    allow_optional_follow_ups: bool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -368,6 +370,9 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "language": language,
             "negative_marking": negative_marking,
             "review_policy": review_policy,
+            "allow_optional_follow_ups": bool(spec.allow_optional_follow_ups)
+            if category == "interview"
+            else False,
         })
 
     total = sum(b["count"] if b["category"] in (
