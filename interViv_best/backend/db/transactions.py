@@ -30,12 +30,25 @@ def atomic(db: Any) -> Iterator[None]:
 
     Raises ``TypeError`` for unknown backends: silently running a "commit
     sequence" without atomicity would be worse than refusing.
+
+    Memory path also snapshots skill-graph / mastery / learning-signal
+    module globals so learning effects join the same rollback unit.
     """
     from backend.db.memory import _MemoryDB
 
     if isinstance(db, _MemoryDB):
-        with db.atomic():
-            yield
+        from backend.db.learning_memory import (
+            restore_learning_memory,
+            snapshot_learning_memory,
+        )
+
+        learning_snap = snapshot_learning_memory()
+        try:
+            with db.atomic():
+                yield
+        except Exception:
+            restore_learning_memory(learning_snap)
+            raise
         return
 
     from backend.db.sqlalchemy_store import SQLAlchemyDatabase, ambient_session
