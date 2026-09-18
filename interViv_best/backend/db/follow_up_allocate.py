@@ -6,34 +6,32 @@ could double-book a parent, overspend a block budget, or exceed session
 capacity — and pending (scheduled-but-unmaterialized) follow-ups were
 invisible to the caps entirely.
 
-Protocol (SQLAlchemy): optimistic concurrency on ``sessions.revision``.
-Every attempt runs inside ONE transaction on ONE connection:
+Protocol (SQLAlchemy): the store's shared optimistic-concurrency protocol
+on ``sessions.revision``. Every attempt runs inside ONE transaction on ONE
+connection:
 
   1. fresh-read the session document (rounds + expanded_plan + block_plan),
   2. re-validate parent/materialized+pending caps and mandatory reservation,
-  3. conditional ``UPDATE ... WHERE id AND revision`` touching ONLY
-     ``expanded_plan_json`` / ``total_rounds`` / ``revision`` — rowcount
-     must be 1, else another writer won and this attempt rolls back,
+  3. narrow conditional write of ONLY ``expanded_plan`` / ``total_rounds``
+     via ``sessions.update_one(..., expected_revision=...)`` — a
+     ``SessionWriteConflict`` means another writer won and this attempt
+     rolls back,
   4. insert the teaching exposure in the same transaction.
 
-Rowcount 0 (or a lock/serialization error) rolls back and retries with a
-fresh read, up to ``max_attempts``; definitive cap failures return their
-reason immediately; exhaustion returns a retryable ``allocation_conflict``.
+Conflicts (or lock/serialization errors) roll back and retry with a fresh
+read, up to ``max_attempts``; definitive cap failures return their reason
+immediately; exhaustion returns a retryable ``allocation_conflict``.
 
-Because the write never touches round rows, assigned round identities,
-snapshots, feedback, and narration jobs are preserved byte-for-byte. The
-partial unique index on ``(session_id, follow_up_parent_round)`` remains
-as defense-in-depth at materialization time.
+Submit and continue commits use the same protocol and only touch
+``rounds`` + their scalars, so neither direction can clobber the other:
+concurrent operations serialize into an order where every winner's effect
+survives. The partial unique index on
+``(session_id, follow_up_parent_round)`` remains as defense-in-depth at
+materialization time.
 
 Memory backend: the same read-validate-write runs inside the store-global
 ``atomic()`` lock, which is a true critical section for the process-local
 store, so one attempt suffices.
-
-Out of scope (documented, unchanged): a full-doc session rewrite from
-another worker (e.g. submit finalization) racing an allocation can still
-clobber the committed plan entry, and vice versa the allocator never
-touches round rows. Single-process deployments are fully serialized by
-the per-session submit lock held by both paths.
 """
 
 from __future__ import annotations
@@ -41,10 +39,6 @@ from __future__ import annotations
 from typing import Any
 
 MAX_ALLOCATION_ATTEMPTS = 5
-
-
-class _AllocationConflict(Exception):
-    """Lost a store-level race; safe to retry with a fresh read."""
 
 
 def allocate_follow_up(
@@ -152,10 +146,7 @@ def _allocate_sql(
     plan_entry: dict[str, Any],
     max_attempts: int,
 ) -> dict[str, Any]:
-    from sqlalchemy import select, update
-
-    from backend.db.sqlalchemy_models import SessionRow
-    from backend.db.sqlalchemy_store import _json_ready, ambient_session
+    from backend.db.sqlalchemy_store import SessionWriteConflict, ambient_session
     from modules.teaching_exposures import record_teaching_exposure
 
     identity = str(plan_entry.get("follow_up_identity") or "")
@@ -163,36 +154,27 @@ def _allocate_sql(
     while attempts < max_attempts:
         attempts += 1
         try:
-            with ambient_session() as session:
+            with ambient_session():
                 doc = db["sessions"].find_one({"session_id": session_id})
                 checked = _validate_fresh_doc(
                     doc, parent_round=parent_round, plan_entry=plan_entry
                 )
                 if not checked.get("scheduled"):
                     return {**checked, "attempts": attempts}
-                revision = session.execute(
-                    select(SessionRow.revision).where(SessionRow.id == session_id)
-                ).scalar()
-                if revision is None:
-                    return {
-                        "scheduled": False,
-                        "reason": "session_not_found",
-                        "attempts": attempts,
-                    }
-                applied = session.execute(
-                    update(SessionRow)
-                    .where(
-                        SessionRow.id == session_id,
-                        SessionRow.revision == int(revision),
-                    )
-                    .values(
-                        expanded_plan_json=_json_ready(checked["expanded_plan"]),
-                        total_rounds=int(checked["total_rounds"]),
-                        revision=int(revision) + 1,
-                    )
+                # Narrow conditional write through the shared store
+                # protocol: the read above and this write share one
+                # transaction, and a lost race raises SessionWriteConflict
+                # with nothing persisted — not even the exposure below.
+                db["sessions"].update_one(
+                    {"session_id": session_id},
+                    {
+                        "$set": {
+                            "expanded_plan": checked["expanded_plan"],
+                            "total_rounds": int(checked["total_rounds"]),
+                        }
+                    },
+                    expected_revision=(doc or {}).get("revision"),
                 )
-                if int(applied.rowcount or 0) != 1:
-                    raise _AllocationConflict()
                 rounds = list((doc or {}).get("rounds") or [])
                 parent = next(
                     (r for r in rounds if int(r.get("round") or 0) == int(parent_round)),
@@ -217,7 +199,7 @@ def _allocate_sql(
                     "total_rounds": int(checked["total_rounds"]),
                     "attempts": attempts,
                 }
-        except _AllocationConflict:
+        except SessionWriteConflict:
             continue
         except Exception as exc:
             if _is_transient_db_error(exc) and attempts < max_attempts:

@@ -2074,18 +2074,75 @@ def run_coding_preview(
     q_ctx = target_round.get("question_context") or {}
     problem_id = str(q_ctx.get("problem_id") or "")
     from backend.db.phase_c_coding_bank import get_coding_problem
+    from backend.db.sqlalchemy_store import SessionWriteConflict
     problem = get_coding_problem(problem_id) if problem_id else None
     if problem is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown coding problem: {problem_id!r}.",
         )
+    # Persist the consumed execution slot conditionally: on a lost write
+    # race reload and revalidate once rather than clobbering the winner.
+    for _run_attempt in range(2):
+        if _run_attempt:
+            session = db["sessions"].find_one({"session_id": request.session_id})
+            if not session:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+                )
+            rounds = session.get("rounds", [])
+            target_round = next(
+                (r for r in rounds if r.get("round") == request.round), None
+            )
+            if not target_round:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Target round not found in session.",
+                )
+            if target_round.get("round_type") != "coding":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Target round is not a coding round.",
+                )
+            if target_round.get("status") != "in_progress":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This round is no longer active.",
+                )
+            retry_expires = target_round.get("expires_at")
+            if retry_expires is not None:
+                if isinstance(retry_expires, str):
+                    try:
+                        retry_expires = datetime.fromisoformat(retry_expires)
+                    except Exception:
+                        retry_expires = None
+                if retry_expires and retry_expires.tzinfo is None:
+                    retry_expires = retry_expires.replace(tzinfo=timezone.utc)
+                if retry_expires and datetime.now(timezone.utc) > retry_expires:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Answer deadline has expired.",
+                    )
+        try:
+            assert_coding_exec_allowed(str(user["id"]), target_round)
+            db["sessions"].update_one(
+                {"session_id": request.session_id},
+                {"$set": {"rounds": rounds}},
+                expected_revision=session.get("revision"),
+            )
+        except CodingRateLimitedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+            ) from exc
+        except SessionWriteConflict:
+            if _run_attempt:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Concurrent session update; retry the request.",
+                ) from None
+            continue
+        break
     try:
-        assert_coding_exec_allowed(str(user["id"]), target_round)
-        db["sessions"].update_one(
-            {"session_id": request.session_id},
-            {"$set": {"rounds": rounds}},
-        )
         result = execute_python_tests(
             source=request.source or "",
             function=str(problem.get("function") or ""),

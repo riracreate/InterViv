@@ -1765,10 +1765,38 @@ def start_due_reviews(
     existing_cfg["purpose"] = SPACED_REVIEW_PURPOSE
     existing_cfg["review_map"] = review_map
     existing_cfg["review_set_id"] = set_doc["id"]
-    db["sessions"].update_one(
-        {"session_id": sid},
-        {"$set": {"round_config": existing_cfg}},
-    )
+    from backend.db.sqlalchemy_store import SessionWriteConflict
+
+    try:
+        db["sessions"].update_one(
+            {"session_id": sid},
+            {"$set": {"round_config": existing_cfg}},
+            expected_revision=stored.get("revision"),
+        )
+    except SessionWriteConflict:
+        # Someone committed on this just-created session first (only
+        # possible across workers): re-merge the review stamp onto the
+        # fresh config once rather than clobbering their write.
+        fresh = db["sessions"].find_one({"session_id": sid}) or {}
+        if not fresh:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
+            ) from None
+        fresh_cfg = dict(fresh.get("round_config") or {})
+        fresh_cfg["purpose"] = SPACED_REVIEW_PURPOSE
+        fresh_cfg["review_map"] = review_map
+        fresh_cfg["review_set_id"] = set_doc["id"]
+        try:
+            db["sessions"].update_one(
+                {"session_id": sid},
+                {"$set": {"round_config": fresh_cfg}},
+                expected_revision=fresh.get("revision"),
+            )
+        except SessionWriteConflict:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Concurrent session update; retry the request.",
+            ) from None
     return {
         **session,
         "navigate": f"/interview/{sid}",

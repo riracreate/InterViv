@@ -54,7 +54,7 @@ def test_every_attempt_field_survives_migrated_store_reopen(migrated_store):
 
 def test_upgrade_store_downgrade_one_revision_reupgrade_store(migrated_store):
     script = _script_directory()
-    assert script.get_heads() == ["20260915_0013"]  # Phase 3B blocked-reason head
+    assert script.get_heads() == ["20260918_0016"]  # must track the current chain head
     assert_roundtrip(attempt_document())
     get_engine().dispose()
     _clear_db_caches()
@@ -66,7 +66,7 @@ def test_upgrade_store_downgrade_one_revision_reupgrade_store(migrated_store):
     _clear_db_caches()
     _run_alembic(migrated_store, "upgrade", "head")
     assert_roundtrip(attempt_document())
-    assert script.get_heads() == ["20260915_0013"]  # Phase 3B blocked-reason head
+    assert script.get_heads() == ["20260918_0016"]  # must track the current chain head
 
 
 def test_unavailable_submission_and_ownership_on_durable_adapter(migrated_store, monkeypatch, tmp_path):
@@ -111,7 +111,12 @@ def test_unavailable_submission_and_ownership_on_durable_adapter(migrated_store,
         assert client.get(f"/ml-primitives/attempts/{attempt_id}", headers=stranger).status_code == 403
         assert client.delete(f"/ml-primitives/attempts/{attempt_id}", headers=stranger).status_code == 403
     assert not marker.exists()
-    assert db["sessions"].find_one({"session_id": "s-x"}) == before
+    after = db["sessions"].find_one({"session_id": "s-x"})
+    # Each 503 claimed then released the round (content restored, round
+    # left openly resubmittable); the version counter records exactly the
+    # two release writes, and everything else is byte-identical.
+    assert after.pop("revision") == before.pop("revision") + 2
+    assert after == before
     get_engine().dispose()
     _clear_db_caches()
     attempts = client.get("/ml-primitives/attempts", headers=owner).json()["attempts"]
