@@ -50,7 +50,7 @@ from backend.evidence_kind import (
     evaluation_unavailable,
     evidence_kind_for_round,
     is_self_reported_round,
-    measured_scores,
+    assessment_eligible_scores,
 )
 from modules import adaptive_question_selector
 from modules.attempt_snapshot import freeze_attempt_snapshot
@@ -58,6 +58,12 @@ from modules.narration_jobs import enqueue_narration_job
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
 from modules.skill_graph import StudentSkillGraph
+from modules.assistance_policy import (
+    ELIGIBLE,
+    evaluate_eligibility,
+    is_follow_up_round,
+)
+from modules.teaching_exposures import list_exposures_for_eligibility
 
 router = APIRouter(prefix="/session", tags=["answer"])
 logger = logging.getLogger(__name__)
@@ -585,7 +591,33 @@ def submit_answer(
             ) / len(rounds_so_far)
 
         try:
-            if round_type == "mcq":
+            follow_up_scoring_pre = (
+                (active_round.get("config_json") or {}).get("follow_up_scoring")
+                or active_round.get("follow_up_scoring")
+            )
+            if is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
+                # Unreviewed follow-ups are explicitly unscored practice even
+                # when REVIEWED_BUNDLES_ONLY is false. No numeric score.
+                scoring_result = {
+                    "final_score": None,
+                    "nlp_score": None,
+                    "svm_label": None,
+                    "kg_score": None,
+                    "ner_entities": [],
+                    "feedback": {
+                        "content": ["Unscored clarification follow-up."],
+                        "strengths": [],
+                        "weakness": [],
+                        "next_step": "Continue with the remaining mandatory rounds.",
+                    },
+                    "scoring_breakdown": {
+                        "follow_up_scoring": "unreviewed",
+                        "unscored_reason": "unreviewed_follow_up",
+                    },
+                    "score_explanation": {},
+                    "guard_applied": None,
+                }
+            elif round_type == "mcq":
                 scoring_result = score_round(
                     round_type="mcq",
                     answers=normalized_answers,
@@ -752,8 +784,8 @@ def submit_answer(
                     ),
                 )
 
-        # Elo / difficulty: self-reported and spaced-review practice never
-        # move measured Elo.
+        # Elo / difficulty: self-reported, spaced-review, and non-eligible
+        # assisted/repeated/follow-up attempts never move measured Elo.
         elo_before = float(active_round.get("elo_before") or settings.initial_elo)
         is_spaced_review = (
             (session.get("round_config") or {}).get("purpose") == "spaced_review"
@@ -767,7 +799,60 @@ def submit_answer(
             )
         )
         self_reported = evidence_kind == EVIDENCE_SELF_REPORTED
-        if self_reported or is_spaced_review:
+
+        # Freeze eligibility at submission acceptance using exposures at or
+        # before this server cutoff. Feedback released after commit cannot
+        # retroactively mark this attempt assisted.
+        assisted, assistance_kinds = _assistance_for_round(
+            db,
+            user_id=session.get("user_id"),
+            session_id=session.get("session_id"),
+            round_type=round_type,
+            round_document=active_round,
+            now=now,
+        )
+        exposures = list_exposures_for_eligibility(
+            db,
+            session=session,
+            user_id=session.get("user_id"),
+            before=now,
+        )
+        # Carry follow-up flags from the active round / expanded plan.
+        eligibility_round = dict(active_round)
+        if is_follow_up_round(active_round):
+            eligibility_round["is_follow_up"] = True
+        eligibility = evaluate_eligibility(
+            session=session,
+            round_doc=eligibility_round,
+            exposures=exposures,
+            prior_rounds=rounds,
+            now=now,
+            history_complete=True,
+        )
+        # Phase D assisted flag stays for notebooks; eligibility is authoritative.
+        if eligibility["decision"] != ELIGIBLE and not assisted:
+            if any(
+                r in eligibility["exclusion_reasons"]
+                for r in (
+                    "teaching_exposure",
+                    "related_topic_exposure",
+                    "coarse_topic_scope",
+                )
+            ):
+                assisted = True
+                assistance_kinds = list(
+                    dict.fromkeys(
+                        list(assistance_kinds)
+                        + [
+                            str(e.get("content_kind") or "hint")
+                            for e in exposures
+                            if e.get("delivery_id") in set(eligibility["exposure_ids"])
+                        ]
+                    )
+                )
+
+        assessment_eligible = eligibility["decision"] == ELIGIBLE
+        if self_reported or is_spaced_review or not assessment_eligible:
             elo_after = elo_before
             next_difficulty = active_round.get("difficulty", "medium")
             difficulty_change = "same"
@@ -788,15 +873,26 @@ def submit_answer(
             else json.dumps(normalized_answers)
         )
 
-        # Persist this round
-        assisted, assistance_kinds = _assistance_for_round(
-            db,
-            user_id=session.get("user_id"),
-            session_id=session.get("session_id"),
-            round_type=round_type,
-            round_document=active_round,
-            now=now,
+        # Unreviewed follow-ups are always null-scored practice even when
+        # REVIEWED_BUNDLES_ONLY is false.
+        follow_up_scoring = (
+            (active_round.get("config_json") or {}).get("follow_up_scoring")
+            or active_round.get("follow_up_scoring")
         )
+        if is_follow_up_round(active_round) and follow_up_scoring == "unreviewed":
+            scoring_result = {
+                **scoring_result,
+                "final_score": None,
+                "feedback": scoring_result.get("feedback")
+                or {
+                    "content": ["Unscored clarification follow-up."],
+                    "strengths": [],
+                    "weakness": [],
+                    "next_step": "Continue with the remaining mandatory rounds.",
+                },
+            }
+
+        # Persist this round (assisted already resolved above)
         _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
         scoring_mode = scoring_mode_at_write(
             self_reported=self_reported,
@@ -819,6 +915,18 @@ def submit_answer(
             _bd["semantic_fallback_reason"] = scoring_result.get(
                 "semantic_fallback_reason"
             )
+        _bd["assessment_eligibility"] = {
+            "decision": eligibility["decision"],
+            "policy_version": eligibility["policy_version"],
+            "exclusion_reasons": eligibility["exclusion_reasons"],
+            "exposure_ids": eligibility["exposure_ids"],
+            "cutoff_at": eligibility.get("cutoff_at"),
+            "legacy": False,
+        }
+        _bd["eligibility_policy_version"] = eligibility["policy_version"]
+        _bd["eligibility_exclusion_reasons"] = eligibility["exclusion_reasons"]
+        _bd["eligibility_exposure_ids"] = eligibility["exposure_ids"]
+        _bd["assessment_eligibility_decision"] = eligibility["decision"]
         for index, round_document in enumerate(rounds):
             if round_document.get("round") != request.round:
                 continue
@@ -829,6 +937,15 @@ def submit_answer(
                 "status": "submitted",
                 "assisted": assisted,
                 "assistance_kinds": assistance_kinds,
+                "assessment_eligibility": eligibility["decision"],
+                "eligibility_policy_version": eligibility["policy_version"],
+                "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
+                "eligibility_exposure_ids": eligibility["exposure_ids"],
+                "is_follow_up": bool(is_follow_up_round(active_round)),
+                "follow_up_parent_round": active_round.get("follow_up_parent_round")
+                or (active_round.get("config_json") or {}).get("follow_up_parent_round"),
+                "follow_up_identity": active_round.get("follow_up_identity")
+                or (active_round.get("config_json") or {}).get("follow_up_identity"),
                 "submitted_at": now,
                 "nlp_score": scoring_result.get("nlp_score"),
                 "svm_label": scoring_result.get("svm_label"),
@@ -890,9 +1007,9 @@ def submit_answer(
         is_spaced_review = (
             (session.get("round_config") or {}).get("purpose") == "spaced_review"
         )
-        # Measured readiness only — self-reported and spaced-review practice
-        # stay out of the mean.
-        completed_scores = [] if is_spaced_review else measured_scores(rounds)
+        # Assessment-eligible readiness only — self-reported, spaced-review,
+        # and assisted/repeated/follow-up attempts stay out of the mean.
+        completed_scores = [] if is_spaced_review else assessment_eligible_scores(rounds)
         try:
             # The next round is built in memory first. Expected inventory /
             # topic exhaustion sets progression_blocked and still commits the
@@ -1169,10 +1286,46 @@ def submit_answer(
                                 "status": "in_progress",
                                 "block_id": (expanded_spec or {}).get("block_id"),
                                 "block_position": (expanded_spec or {}).get("block_position"),
-                                "block_category": (expanded_spec or {}).get("category"),
+                                "block_category": (expanded_spec or {}).get("category")
+                                or (expanded_spec or {}).get("block_category"),
                                 "block_index": (expanded_spec or {}).get("block_index"),
                                 "block_total": (expanded_spec or {}).get("block_total"),
                             }
+                            if expanded_spec and expanded_spec.get("is_follow_up"):
+                                next_round_doc["is_follow_up"] = True
+                                next_round_doc["follow_up_parent_round"] = (
+                                    expanded_spec.get("follow_up_parent_round")
+                                )
+                                next_round_doc["follow_up_identity"] = (
+                                    expanded_spec.get("follow_up_identity")
+                                )
+                                next_round_doc["follow_up_scoring"] = (
+                                    expanded_spec.get("follow_up_scoring")
+                                )
+                                next_round_doc["purpose"] = "follow_up"
+                                cfg = dict(next_round_doc.get("config_json") or {})
+                                cfg["is_follow_up"] = True
+                                cfg["follow_up_parent_round"] = expanded_spec.get(
+                                    "follow_up_parent_round"
+                                )
+                                cfg["follow_up_identity"] = expanded_spec.get(
+                                    "follow_up_identity"
+                                )
+                                cfg["follow_up_scoring"] = expanded_spec.get(
+                                    "follow_up_scoring"
+                                )
+                                next_round_doc["config_json"] = cfg
+                                if expanded_spec.get("follow_up_scoring") == "unreviewed":
+                                    prompt = (
+                                        expanded_spec.get("clarification_prompt")
+                                        or "Clarify the key idea from the previous question."
+                                    )
+                                    next_round_doc["question"] = prompt
+                                    next_round_doc["question_context"] = {
+                                        **dict(question_payload or {}),
+                                        "source": "follow_up_clarification",
+                                        "followups": [],
+                                    }
                             rounds.append(next_round_doc)
                             next_question = question_payload["question"]
                             sanitized_next = sanitize_round_for_client(dict(next_round_doc))
@@ -1209,13 +1362,18 @@ def submit_answer(
                     if completed_scores
                     else None
                 )
-                session_update["overall_readiness_population"] = "measured"
+                session_update["overall_readiness_population"] = "assessment_eligible"
             with atomic(db):
                 db["sessions"].update_one(
                     {"session_id": request.session_id},
                     {"$set": session_update},
                 )
-                if not self_reported and not is_spaced_review:
+                if (
+                    not self_reported
+                    and not is_spaced_review
+                    and assessment_eligible
+                    and scoring_result.get("final_score") is not None
+                ):
                     db["candidates"].update_one(
                         {"candidate_id": session["candidate_id"]},
                         {"$set": {f"elo_ratings.{current_skill}": elo_after}},
@@ -1233,7 +1391,7 @@ def submit_answer(
                     round_number=request.round,
                     user_id=session.get("user_id"),
                     skill=current_skill,
-                    final_score=scoring_result["final_score"],
+                    final_score=scoring_result.get("final_score"),
                     feedback=scoring_result["feedback"],
                     snapshot_digest=scored_snapshot.get("digest"),
                 )
@@ -1253,7 +1411,12 @@ def submit_answer(
         # measured rounds update learning state, spaced-review rounds update
         # the review schedule, and the saved draft for a submitted round is
         # cleared. None of these can fail the already-committed submit.
-        if not self_reported and not is_spaced_review:
+        if (
+            not self_reported
+            and not is_spaced_review
+            and assessment_eligible
+            and scoring_result.get("final_score") is not None
+        ):
             _update_learning_state(
                 session=session,
                 skill=current_skill,
@@ -1347,4 +1510,8 @@ def submit_answer(
             "progression_blocked_reason": progression_blocked_reason,
             "assisted": assisted,
             "assistance_kinds": assistance_kinds,
+            "assessment_eligibility": eligibility["decision"],
+            "eligibility_policy_version": eligibility["policy_version"],
+            "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
+            "is_follow_up": bool(is_follow_up_round(active_round)),
         }

@@ -877,6 +877,36 @@ def _record_assistance(
     session_id: str | None = None,
     round_number: int | None = None,
 ) -> dict[str, Any]:
+    session_doc = None
+    if session_id:
+        try:
+            session_doc = db["sessions"].find_one({"session_id": session_id})
+        except Exception:
+            session_doc = {"session_id": session_id, "user_id": user_id}
+    from modules.teaching_exposures import record_teaching_exposure
+
+    exposure = record_teaching_exposure(
+        db,
+        kind=kind,
+        item_type=item_type,
+        item_id=item_id,
+        session=session_doc or {"session_id": session_id, "user_id": user_id},
+        user_id=user_id,
+        round_number=round_number,
+        also_legacy_assistance=True,
+    )
+    if exposure:
+        return {
+            "id": exposure.get("id"),
+            "user_id": user_id,
+            "item_type": item_type,
+            "item_id": item_id,
+            "kind": kind,
+            "session_id": session_id,
+            "round": round_number,
+            "created_at": exposure.get("created_at"),
+            "delivery_id": exposure.get("delivery_id"),
+        }
     event = {
         "id": str(uuid4()),
         "user_id": user_id,

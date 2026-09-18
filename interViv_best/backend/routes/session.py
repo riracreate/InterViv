@@ -79,6 +79,10 @@ class StartSessionRequest(BaseModel):
     # Phase B: per-block plan with independent settings. When set, blocks
     # drive the session; legacy skills/round_plan are derived for storage.
     blocks: list[dict[str, Any]] | None = None
+    # Phase 4A: assessment vs coached practice (optional follow-ups default off
+    # for assessment).
+    practice_mode: str | None = None
+    allow_optional_follow_ups: bool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1585,6 +1589,30 @@ def start_session(
     session_dict["block_plan"] = block_plan
     session_dict["expanded_plan"] = expanded
     session_dict["allow_unknown_topic_fallback"] = allow_unknown_fallback
+    mode = str(request.practice_mode or "").strip().lower()
+    if mode not in ("assessment", "coached_practice"):
+        # Infer assessment when any block uses after_session review.
+        if any(
+            str(b.get("review_policy") or "") == "after_session"
+            for b in (block_plan or [])
+            if isinstance(b, dict)
+        ):
+            mode = "assessment"
+        else:
+            mode = "coached_practice"
+    session_dict["practice_mode"] = mode
+    if request.allow_optional_follow_ups is not None:
+        session_dict["allow_optional_follow_ups"] = bool(
+            request.allow_optional_follow_ups
+        )
+    elif mode == "assessment":
+        session_dict["allow_optional_follow_ups"] = False
+    else:
+        session_dict["allow_optional_follow_ups"] = any(
+            bool(b.get("allow_optional_follow_ups"))
+            for b in (block_plan or [])
+            if isinstance(b, dict)
+        )
 
     try:
         # One atomic commit: a 503 here must leave no orphan candidate,

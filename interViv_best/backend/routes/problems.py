@@ -123,19 +123,19 @@ def coding_coach_hint(
         prefer_ai=True,
     )
     try:
-        db["assistance_events"].insert_one(
-            {
-                "id": str(uuid4()),
-                "user_id": user_id,
-                "item_type": "coding",
-                "item_id": problem["id"],
-                "kind": "hint",
-                "session_id": body.session_id,
-                "round": body.round,
-                "coach_kind": payload["kind"],
-                "coach_level": payload["level"],
-                "created_at": datetime.now(timezone.utc),
-            }
+        from modules.teaching_exposures import record_teaching_exposure
+
+        record_teaching_exposure(
+            db,
+            kind="hint",
+            item_type="coding",
+            item_id=problem["id"],
+            session=session,
+            user_id=user_id,
+            round_number=body.round,
+            block_id=target.get("block_id"),
+            content_fingerprint=f"coach:{payload.get('kind')}:{payload.get('level')}",
+            also_legacy_assistance=True,
         )
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
