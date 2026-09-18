@@ -74,6 +74,8 @@ class BlockSpec(BaseModel):
     review_policy: str | None = None
     # Phase 4A: optional follow-ups (Interview blocks; assessment defaults off).
     allow_optional_follow_ups: bool | None = None
+    # Acceptance: lower per-block follow-up cap (default 2 when unset).
+    max_follow_ups: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="before")
     @classmethod
@@ -373,6 +375,9 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "allow_optional_follow_ups": bool(spec.allow_optional_follow_ups)
             if category == "interview"
             else False,
+            "max_follow_ups": spec.max_follow_ups
+            if category == "interview"
+            else None,
         })
 
     total = sum(b["count"] if b["category"] in (

@@ -8,15 +8,10 @@ from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
-from backend.db.transactions import atomic
+from backend.db.follow_up_allocate import allocate_follow_up
 from backend.routes.answer import _submit_locked
 from backend.routes.session_access import assert_session_access
-from modules.follow_ups import (
-    build_follow_up_plan_entry,
-    can_schedule_follow_up,
-    schedule_follow_up_in_session,
-)
-from modules.teaching_exposures import record_teaching_exposure
+from modules.follow_ups import build_follow_up_plan_entry
 
 router = APIRouter(prefix="/session", tags=["follow-ups"])
 
@@ -73,15 +68,6 @@ def request_follow_up(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Parent round must be submitted before a follow-up can be scheduled.",
                 )
-            ok, reason = can_schedule_follow_up(session=session, parent_round_doc=parent)
-            if not ok:
-                return {
-                    "scheduled": False,
-                    "reason": reason,
-                    "session_id": session_id,
-                    "parent_round": body.parent_round,
-                }
-
             # Never invent reviewed inventory. Prefer clarification unscored
             # when no reviewed bundle is available in the production path.
             reviewed = None
@@ -98,39 +84,47 @@ def request_follow_up(
                 reviewed_bundle=reviewed,
                 clarification_prompt=clarification,
             )
-            result = schedule_follow_up_in_session(
-                session, parent_round_doc=parent, plan_entry=plan_entry
+            # Store-level atomic allocation: re-validates caps on a fresh
+            # read inside one transaction (conditional revision write +
+            # exposure insert), so concurrent workers cannot overspend
+            # parent/block/session budgets.
+            result = allocate_follow_up(
+                db,
+                session_id=session_id,
+                parent_round=int(body.parent_round),
+                plan_entry=plan_entry,
             )
             if not result.get("scheduled"):
+                reason = result.get("reason") or "not_scheduled"
+                if reason == "session_not_found":
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Session not found.",
+                    )
+                if reason == "parent_not_found":
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Parent round {body.parent_round} not found.",
+                    )
+                if reason == "parent_not_submitted":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Parent round must be submitted before a follow-up can be scheduled.",
+                    )
+                if reason == "allocation_conflict":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Follow-up allocation conflicted with a concurrent "
+                            "request; retry."
+                        ),
+                    )
                 return {
                     "scheduled": False,
-                    "reason": result.get("reason") or "not_scheduled",
+                    "reason": reason,
                     "session_id": session_id,
                     "parent_round": body.parent_round,
                 }
-
-            with atomic(db):
-                db["sessions"].update_one(
-                    {"session_id": session_id},
-                    {
-                        "$set": {
-                            "expanded_plan": result["expanded_plan"],
-                            "total_rounds": result["total_rounds"],
-                        }
-                    },
-                )
-                record_teaching_exposure(
-                    db,
-                    kind="follow_up_prompt",
-                    item_type="follow_up",
-                    item_id=str(result.get("follow_up_identity") or ""),
-                    session=session,
-                    user_id=session.get("user_id"),
-                    round_number=int(body.parent_round),
-                    block_id=parent.get("block_id"),
-                    content_fingerprint=str(result.get("follow_up_identity") or ""),
-                    also_legacy_assistance=False,
-                )
 
             return {
                 "scheduled": True,
