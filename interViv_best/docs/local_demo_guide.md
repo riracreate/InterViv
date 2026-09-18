@@ -99,7 +99,14 @@ Practice journeys (API):
       late submit returns 400
 - [ ] Assessment vs coached practice labels; follow-up schedules on a
       coached parent, second attempt on the same parent is refused with
-      an explanatory reason
+      an explanatory reason (API)
+- [ ] Concurrent submit + schedule from two tabs/devices: both effects
+      persist (scored round and scheduled follow-up); a rare 409 means
+      "retry the request", never a lost answer (API race tests cover
+      this; browser timing can't force it deterministically)
+- [ ] ML-primitives submit while execution is unavailable: 503 with the
+      attempt saved, and the round stays openly resubmittable
+      (`in_progress` on resume, not stuck) (API)
 - [ ] Completed report: averages use assessment-eligible rounds only;
       answers disclose per policy after completion
 
