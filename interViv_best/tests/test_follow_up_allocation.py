@@ -80,6 +80,7 @@ def sql_db(tmp_path, monkeypatch):
         pool_pre_ping=True,
         future=True,
     )
+    from backend import config as app_config
     from backend.db import sqlalchemy_store
 
     monkeypatch.setattr(sqlalchemy_store, "get_engine", lambda: engine)
@@ -97,6 +98,9 @@ def sql_db(tmp_path, monkeypatch):
         yield get_sqlalchemy_database(), engine
     finally:
         engine.dispose()
+        # get_engine itself is a monkeypatched lambda here (no cache to
+        # clear); everything else must reset so no settings leak out.
+        app_config.get_settings.cache_clear()
         sqlalchemy_store._sessionmaker.cache_clear()
         sqlalchemy_store.get_sqlalchemy_database.cache_clear()
 

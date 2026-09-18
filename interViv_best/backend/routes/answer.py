@@ -332,22 +332,63 @@ def _release_claim_to_pre_submit(
     rounds: list[dict[str, Any]],
     round_number: int,
     pre_submit_round: dict[str, Any],
+    expected_revision: int | None = None,
 ) -> None:
     """Best-effort rollback of the finalizing claim to the pre-submit round.
 
-    Used only when scoring itself failed before an attempt commit. When the
+    Used when scoring failed before an attempt commit, and on the
+    store-up unavailable paths (ml_primitives 503) so the round stays
+    openly resubmittable instead of stuck in ``finalizing``. When the
     next question cannot be supplied after a successful evaluation, the
     scored result is preserved instead (session ``content_blocked``) — do
-    not call this helper for that path. Never raises: if the store is down
-    the caller is already raising, and stale-claim takeover covers retry.
+    not call this helper for that path.
+
+    On a revision conflict the session is reloaded: if our round is still
+    an unscored ``finalizing`` claim the release is retried once against
+    the fresh revision, otherwise the state moved on (another worker owns
+    it now) and the release is correctly skipped. Never raises: if the
+    store is down the caller is already raising, and stale-claim takeover
+    covers retry.
     """
+    from backend.db.sqlalchemy_store import SessionWriteConflict
+
     try:
         restored = [copy.deepcopy(pre_submit_round) if doc.get("round") == round_number else doc
                     for doc in rounds]
-        db["sessions"].update_one(
-            {"session_id": session_id},
-            {"$set": {"rounds": restored}},
+        try:
+            db["sessions"].update_one(
+                {"session_id": session_id},
+                {"$set": {"rounds": restored}},
+                expected_revision=expected_revision,
+            )
+            return
+        except SessionWriteConflict:
+            pass
+        fresh = db["sessions"].find_one({"session_id": session_id}) or {}
+        fresh_rounds = list(fresh.get("rounds") or [])
+        live = next(
+            (doc for doc in fresh_rounds if doc.get("round") == round_number),
+            None,
         )
+        if live is None:
+            return
+        if str(live.get("status") or "") != "finalizing":
+            return
+        if bool(live.get("answer_text")) or live.get("final_score") is not None:
+            return
+        restored = [copy.deepcopy(pre_submit_round) if doc.get("round") == round_number else doc
+                    for doc in fresh_rounds]
+        try:
+            db["sessions"].update_one(
+                {"session_id": session_id},
+                {"$set": {"rounds": restored}},
+                expected_revision=fresh.get("revision"),
+            )
+        except SessionWriteConflict:
+            logger.warning(
+                "Release of finalizing claim lost a second race; "
+                "stale-claim takeover covers retry."
+            )
     except Exception:
         logger.warning("Failed to release finalizing claim.", exc_info=True)
 
@@ -363,6 +404,13 @@ def _clear_answer_draft(db: Any, session_id: str, round_number: int) -> None:
 
 
 MAX_SUBMISSION_SOURCE_CHARS = 100_000
+
+# Bounded retries for the submit commit: on a lost cross-worker write race
+# the attempt rolls back, reloads the session, revalidates round ownership,
+# and re-runs progression against the fresh read. Scoring is never re-run,
+# so retries cannot duplicate scores, snapshots, Elo, narration, or
+# learning effects. Exhaustion is a controlled 409, not a 500.
+MAX_SUBMIT_COMMIT_ATTEMPTS = 3
 
 
 def _record_coding_attempt(
@@ -533,13 +581,65 @@ def submit_answer(
             if expires_at and expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at and now > expires_at:
+                from backend.db.sqlalchemy_store import SessionWriteConflict
+
                 active_round["status"] = "expired"
                 if not evaluation_unavailable(round_type):
                     active_round["final_score"] = 0.0
-                db["sessions"].update_one(
-                    {"session_id": request.session_id},
-                    {"$set": {"rounds": rounds}},
-                )
+                try:
+                    db["sessions"].update_one(
+                        {"session_id": request.session_id},
+                        {"$set": {"rounds": rounds}},
+                        expected_revision=session.get("revision"),
+                    )
+                except SessionWriteConflict:
+                    # Another worker committed since our read: reload and
+                    # re-decide rather than clobber. A concurrently
+                    # submitted round wins over the late expiry mark.
+                    fresh = (
+                        db["sessions"].find_one(
+                            {"session_id": request.session_id}
+                        )
+                        or {}
+                    )
+                    fresh_rounds = list(fresh.get("rounds") or [])
+                    live = next(
+                        (
+                            item
+                            for item in fresh_rounds
+                            if item.get("round") == request.round
+                        ),
+                        None,
+                    )
+                    if live is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Requested round not found in session.",
+                        ) from None
+                    if str(live.get("status") or "") == "submitted" or (
+                        live.get("final_score") is not None
+                        and str(live.get("status") or "") != "expired"
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="This round has already been submitted.",
+                        ) from None
+                    live["status"] = "expired"
+                    if not evaluation_unavailable(round_type):
+                        live["final_score"] = 0.0
+                    try:
+                        db["sessions"].update_one(
+                            {"session_id": request.session_id},
+                            {"$set": {"rounds": fresh_rounds}},
+                            expected_revision=fresh.get("revision"),
+                        )
+                    except SessionWriteConflict:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                "Concurrent session update; retry the submission."
+                            ),
+                        ) from None
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Assessment deadline expired at {expires_at.isoformat()}.",
@@ -589,15 +689,6 @@ def submit_answer(
         )
         active_round["status"] = "finalizing"
 
-        if round_type == "ml_primitives":
-            from backend.routes.ml_primitives import store_unavailable_attempt
-
-            # Persist before returning 503. No scorer, executor, or aggregate
-            # update runs on this path, and an unsuccessful write is never
-            # represented as an accepted submission.
-            detail = store_unavailable_attempt(db, session, active_round, request.answer_text)
-            raise HTTPException(status_code=503, detail=detail)
-
         # Pristine pre-submit copy: a failure before the attempt commit
         # (content errors building the next round) restores this, so the
         # retry is a clean resubmit rather than a 409 over half-scored data.
@@ -605,6 +696,28 @@ def submit_answer(
         if pre_submit_round.get("status") == "finalizing":
             # Takeover path: release must undo the claim, not re-persist it.
             pre_submit_round["status"] = "in_progress"
+
+        if round_type == "ml_primitives":
+            from backend.routes.ml_primitives import store_unavailable_attempt
+
+            # Persist before returning 503. No scorer, executor, or aggregate
+            # update runs on this path, and an unsuccessful write is never
+            # represented as an accepted submission. The claim is always
+            # released (attempt stored or store failure): like the coding
+            # unavailable seam, the round stays openly resubmittable instead
+            # of stuck in "finalizing".
+            try:
+                detail = store_unavailable_attempt(db, session, active_round, request.answer_text)
+            finally:
+                _release_claim_to_pre_submit(
+                    db,
+                    request.session_id,
+                    rounds,
+                    request.round,
+                    pre_submit_round,
+                    expected_revision=session.get("revision"),
+                )
+            raise HTTPException(status_code=503, detail=detail)
 
         # Which skill does THIS round belong to?
         current_skill = _skill_for_round(session, request.round)
@@ -709,10 +822,13 @@ def submit_answer(
                 )
         except Exception as exc:
             # Rollback status on failure so round is not stuck in 'finalizing'
-            active_round["status"] = "in_progress"
-            db["sessions"].update_one(
-                {"session_id": request.session_id},
-                {"$set": {"rounds": rounds}},
+            _release_claim_to_pre_submit(
+                db,
+                request.session_id,
+                rounds,
+                request.round,
+                pre_submit_round,
+                expected_revision=session.get("revision"),
             )
             if isinstance(exc, CodingRateLimitedError):
                 raise HTTPException(
@@ -797,10 +913,13 @@ def submit_answer(
             )
             if incomplete or scoring_result.get("final_score") is None:
                 # Incomplete self-assessment: no score, round stays open.
-                active_round["status"] = "in_progress"
-                db["sessions"].update_one(
-                    {"session_id": request.session_id},
-                    {"$set": {"rounds": rounds}},
+                _release_claim_to_pre_submit(
+                    db,
+                    request.session_id,
+                    rounds,
+                    request.round,
+                    pre_submit_round,
+                    expected_revision=session.get("revision"),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -954,503 +1073,611 @@ def submit_answer(
         _bd["eligibility_exclusion_reasons"] = eligibility["exclusion_reasons"]
         _bd["eligibility_exposure_ids"] = eligibility["exposure_ids"]
         _bd["assessment_eligibility_decision"] = eligibility["decision"]
-        for index, round_document in enumerate(rounds):
-            if round_document.get("round") != request.round:
-                continue
-            rounds[index] = {
-                **round_document,
-                "skill": current_skill,
-                "answer_text": persisted_answer,
-                "status": "submitted",
-                "assisted": assisted,
-                "assistance_kinds": assistance_kinds,
-                "assessment_eligibility": eligibility["decision"],
-                "eligibility_policy_version": eligibility["policy_version"],
-                "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
-                "eligibility_exposure_ids": eligibility["exposure_ids"],
-                "is_follow_up": bool(is_follow_up_round(active_round)),
-                "follow_up_parent_round": active_round.get("follow_up_parent_round")
-                or (active_round.get("config_json") or {}).get("follow_up_parent_round"),
-                "follow_up_identity": active_round.get("follow_up_identity")
-                or (active_round.get("config_json") or {}).get("follow_up_identity"),
-                "submitted_at": now,
-                "nlp_score": scoring_result.get("nlp_score"),
-                "svm_label": scoring_result.get("svm_label"),
-                "kg_score": scoring_result.get("kg_score"),
-                "kg_label": _bd.get("kg_label", ""),
-                "covered_concepts": _bd.get("covered_concepts", []),
-                "missing_concepts": _bd.get("missing_concepts", []),
-                "ner_entities": scoring_result.get("ner_entities", []),
-                "final_score": scoring_result["final_score"],
-                "difficulty_change": difficulty_change,
-                "feedback": scoring_result["feedback"],
-                "score_explanation": scoring_result.get("score_explanation", {}),
-                "elo_before": elo_before,
-                "elo_after": elo_after,
-                "engagement_label": request.engagement_label,
-                "engagement_confidence": request.engagement_confidence,
-                "engagement_delta": request.engagement_delta,
-                "scoring_breakdown": _bd,
-                "artifact_json": scoring_result.get("artifact_json") or round_document.get("artifact_json", {}),
-                "guard_applied": scoring_result.get("guard_applied"),
-                "evaluation_mode": scoring_result.get("evaluation_mode"),
-                "evidence_kind": evidence_kind,
-                "scoring_mode": scoring_mode,
-                "semantic_scoring_available": _bd.get(
-                    "semantic_scoring_available",
-                    scoring_result.get("semantic_scoring_available"),
-                ),
-                "semantic_fallback_reason": _bd.get(
-                    "semantic_fallback_reason",
-                    scoring_result.get("semantic_fallback_reason"),
-                ),
-            }
-            # Freeze the immutable attempt snapshot with the scored round:
-            # everything the score depended on, digested, committed once.
-            rounds[index]["attempt_snapshot"] = freeze_attempt_snapshot(
-                rounds[index], scoring_result
-            )
-            break
-
-        total_rounds = _total_rounds(session, settings)
-
-        next_question: str | None = None
-        next_skill: str | None = None
-        next_target: dict[str, object] | None = None
-        response_next_difficulty = next_difficulty
-        next_round_type: str | None = None
-        next_question_context: dict[str, object] | None = None
-        next_config_json: dict[str, object] | None = None
-        next_expires_at: str | None = None
-        next_block_id: str | None = None
-        next_block_position: int | None = None
-        next_block_category: str | None = None
-        # When the next question cannot be supplied after a successful
-        # evaluation, keep the scored result and mark the session blocked
-        # instead of rolling the answer back.
-        progression_blocked_reason: str | None = None
-
-        session_status = "completed" if request.round >= total_rounds else "active"
-        is_spaced_review = (
-            (session.get("round_config") or {}).get("purpose") == "spaced_review"
+        # Scored-round payload, computed ONCE from this request's scoring
+        # result. Every commit attempt merges it onto a fresh read instead
+        # of rescoring, so a retried commit can never duplicate scoring,
+        # attempt snapshots, Elo updates, narration jobs, or learning
+        # effects: the losing attempt rolled back before any of them ran.
+        _scored_base = next(
+            (doc for doc in rounds if doc.get("round") == request.round),
+            active_round,
         )
-        # Assessment-eligible readiness only — self-reported, spaced-review,
-        # and assisted/repeated/follow-up attempts stay out of the mean.
-        completed_scores = [] if is_spaced_review else assessment_eligible_scores(rounds)
-        try:
-            # Expected inventory / topic exhaustion sets progression_blocked and
-            # still commits the scored answer (content_blocked). Unrelated
-            # DatabaseConnectionError during the attempt commit rolls the score
-            # (and required learning effects) back so retry can resubmit via
-            # stale-claim takeover. Elo, narration job, and graph/mastery
-            # updates join the attempt transaction.
-            # Queue the next round after recomputing the user's weakest skill
-            # and concept from fresh learning state. Anonymous sessions keep the
-            # existing rotation behavior. Block sessions honor the expanded plan
-            # in requested order; legacy sessions honor round_plan.
-            if request.round < total_rounds:
-                next_round = request.round + 1
-                # Idempotent progression: if the next round already exists (retry
-                # after a lost response), reuse it instead of appending a duplicate.
-                existing_next = next(
-                    (item for item in rounds if item.get("round") == next_round),
+        scored_round_update = {
+            "skill": current_skill,
+            "answer_text": persisted_answer,
+            "status": "submitted",
+            "assisted": assisted,
+            "assistance_kinds": assistance_kinds,
+            "assessment_eligibility": eligibility["decision"],
+            "eligibility_policy_version": eligibility["policy_version"],
+            "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
+            "eligibility_exposure_ids": eligibility["exposure_ids"],
+            "is_follow_up": bool(is_follow_up_round(active_round)),
+            "follow_up_parent_round": active_round.get("follow_up_parent_round")
+            or (active_round.get("config_json") or {}).get("follow_up_parent_round"),
+            "follow_up_identity": active_round.get("follow_up_identity")
+            or (active_round.get("config_json") or {}).get("follow_up_identity"),
+            "submitted_at": now,
+            "nlp_score": scoring_result.get("nlp_score"),
+            "svm_label": scoring_result.get("svm_label"),
+            "kg_score": scoring_result.get("kg_score"),
+            "kg_label": _bd.get("kg_label", ""),
+            "covered_concepts": _bd.get("covered_concepts", []),
+            "missing_concepts": _bd.get("missing_concepts", []),
+            "ner_entities": scoring_result.get("ner_entities", []),
+            "final_score": scoring_result["final_score"],
+            "difficulty_change": difficulty_change,
+            "feedback": scoring_result["feedback"],
+            "score_explanation": scoring_result.get("score_explanation", {}),
+            "elo_before": elo_before,
+            "elo_after": elo_after,
+            "engagement_label": request.engagement_label,
+            "engagement_confidence": request.engagement_confidence,
+            "engagement_delta": request.engagement_delta,
+            "scoring_breakdown": _bd,
+            "artifact_json": scoring_result.get("artifact_json") or _scored_base.get("artifact_json", {}),
+            "guard_applied": scoring_result.get("guard_applied"),
+            "evaluation_mode": scoring_result.get("evaluation_mode"),
+            "evidence_kind": evidence_kind,
+            "scoring_mode": scoring_mode,
+            "semantic_scoring_available": _bd.get(
+                "semantic_scoring_available",
+                scoring_result.get("semantic_scoring_available"),
+            ),
+            "semantic_fallback_reason": _bd.get(
+                "semantic_fallback_reason",
+                scoring_result.get("semantic_fallback_reason"),
+            ),
+        }
+
+        from backend.db.sqlalchemy_store import SessionWriteConflict
+
+        for _commit_attempt in range(MAX_SUBMIT_COMMIT_ATTEMPTS):
+            if _commit_attempt:
+                # Lost a write race: reload, revalidate ownership of this
+                # round, and re-run progression against the fresh session so
+                # the retry behaves like a submit that started after the
+                # winner committed. Scoring is NOT re-run.
+                logger.warning(
+                    "Submit commit for session %s round %s lost a write race; "
+                    "reloading (attempt %d of %d).",
+                    request.session_id,
+                    request.round,
+                    _commit_attempt + 1,
+                    MAX_SUBMIT_COMMIT_ATTEMPTS,
+                )
+                reloaded = db["sessions"].find_one(
+                    {"session_id": request.session_id}
+                )
+                if not reloaded:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Session not found.",
+                    )
+                session = reloaded
+                rounds = list(session.get("rounds") or [])
+                live = next(
+                    (
+                        item
+                        for item in rounds
+                        if item.get("round") == request.round
+                    ),
                     None,
                 )
-                if existing_next is not None:
-                    sanitized_existing = sanitize_round_for_client(dict(existing_next))
-                    next_question = existing_next.get("question")
-                    next_skill = existing_next.get("skill") or _skill_for_round(session, next_round)
-                    next_round_type = existing_next.get("round_type")
-                    response_next_difficulty = existing_next.get("difficulty", next_difficulty)
-                    next_question_context = sanitized_existing.get("question_context") or {}
-                    next_config_json = dict(existing_next.get("config_json") or {})
-                    raw_expires = existing_next.get("expires_at")
-                    next_expires_at = (
-                        raw_expires.isoformat()
-                        if hasattr(raw_expires, "isoformat")
-                        else (raw_expires if isinstance(raw_expires, str) else None)
+                if live is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Requested round not found in session.",
                     )
-                    next_block_id = existing_next.get("block_id")
-                    next_block_position = existing_next.get("block_position")
-                    next_block_category = existing_next.get("block_category")
-                    # No write here: the reused round is already persisted and
-                    # the session-level next values join the commit below.
-                else:
-                    plan = session.get("round_plan") or []
-                    planned_type = None
-                    if plan and next_round - 1 < len(plan):
-                        planned_type = str(plan[next_round - 1])
-                    expanded_spec = _expanded_spec_for_round(session, next_round)
-                    if expanded_spec:
-                        planned_type = str(expanded_spec.get("round_type") or planned_type)
+                live_status = str(live.get("status") or "")
+                live_scored = bool(live.get("answer_text")) or (
+                    live.get("final_score") is not None
+                )
+                if live_status == "expired":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Assessment deadline expired before submission.",
+                    )
+                if live_status == "submitted" or live_scored:
+                    # Another worker finalized this round (a co-held claim
+                    # committed first): our answer is recorded; resubmitting
+                    # must not overwrite the winner's score.
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="This round has already been submitted.",
+                    )
+                if live_status != "finalizing":
+                    # Our claim was overwritten by a racing writer: reclaim
+                    # conditionally rather than assuming ownership.
+                    reclaim = claim_round_finalizing(
+                        db,
+                        session_id=request.session_id,
+                        round_number=request.round,
+                        allow_stale_takeover=False,
+                    )
+                    if reclaim == "missing":
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Round not found.",
+                        )
+                    if reclaim != "claimed":
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="This round has already been submitted or is finalizing.",
+                        )
+                    live["status"] = "finalizing"
+            # Merge the scored payload onto this attempt's rounds and freeze
+            # the immutable attempt snapshot: everything the score depended
+            # on, digested, committed once.
+            for index, round_document in enumerate(rounds):
+                if round_document.get("round") != request.round:
+                    continue
+                rounds[index] = {**round_document, **scored_round_update}
+                rounds[index]["attempt_snapshot"] = freeze_attempt_snapshot(
+                    rounds[index], scoring_result
+                )
+                active_round = rounds[index]
+                break
 
-                    rotation_skill = _skill_for_round(session, next_round)
-                    candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
-                    candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
-                    if not self_reported and not is_spaced_review:
-                        # The Elo commit below hasn't run yet; rotation must
-                        # see this round's update exactly as if it had.
-                        candidate_elos[current_skill] = elo_after
-                    rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
-                    rotation_difficulty = _difficulty_from_elo(rotation_elo)
-                    session_user_id = session.get("user_id")
-                    session_target_company = session.get("target_company_id")
-                    session_target_role = session.get("target_role_id")
-                    resume_skills = list((candidate_doc or {}).get("resume_skills") or session.get("skills") or [])
-                    session_skills = list(session.get("skills") or [session.get("skill") or "DBMS"])
-                    if expanded_spec:
-                        spec_skills = [s for s in (expanded_spec.get("skills") or []) if s]
-                        if spec_skills:
-                            session_skills = spec_skills
-                            rotation_skill = spec_skills[0]
-                            rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
-                            rotation_difficulty = (
-                                str(expanded_spec.get("difficulty"))
-                                if expanded_spec.get("difficulty")
-                                else _difficulty_from_elo(rotation_elo)
-                            )
+            total_rounds = _total_rounds(session, settings)
 
-                    if planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
-                        if expanded_spec:
-                            spec_config: dict[str, Any] = {
-                                "count": expanded_spec.get("count", 15),
-                                "duration_minutes": expanded_spec.get("duration_minutes"),
-                                "negative_marking": expanded_spec.get("negative_marking", 0.25),
-                                "review_policy": expanded_spec.get("review_policy", "none"),
-                                "difficulty": expanded_spec.get("difficulty"),
-                                "question_ids": expanded_spec.get("question_ids") or None,
-                                "problem_ids": expanded_spec.get("problem_ids") or None,
-                                "problem_id": (expanded_spec.get("problem_ids") or [None])[0],
-                            }
-                            legacy_cfg = dict(session.get("round_config") or {})
-                            for key in ("max_rows", "timeout_seconds"):
-                                if key in legacy_cfg:
-                                    spec_config[key] = legacy_cfg[key]
-                            if spec_config.get("duration_minutes") is None:
-                                spec_config.pop("duration_minutes", None)
-                            sql_index = 0
-                        else:
-                            if planned_type == "coding":
-                                sql_index = sum(
-                                    1 for i, t in enumerate(plan[: next_round - 1]) if t == "coding"
-                                )
-                            elif planned_type == "system_design":
-                                sql_index = sum(
-                                    1 for i, t in enumerate(plan[: next_round - 1])
-                                    if t == "system_design"
-                                )
-                            else:
-                                sql_index = sum(
-                                    1 for i, t in enumerate(plan[: next_round - 1]) if t == "sql"
-                                )
-                            spec_config = dict(session.get("round_config") or {})
-                        try:
-                            next_doc = build_round_document(
-                                round_number=next_round,
-                                round_type=planned_type,
-                                skills=session_skills,
-                                elo_before=rotation_elo,
-                                difficulty=rotation_difficulty,
-                                sub_domain=_sub_domain_for_skill(candidate_doc, rotation_skill),
-                                round_config=spec_config,
-                                user_id=str(session_user_id) if session_user_id else None,
-                                target_company_id=str(session_target_company) if session_target_company else None,
-                                target_role_id=str(session_target_role) if session_target_role else None,
-                                resume_skills=resume_skills,
-                                asked=[item.get("question", "") for item in rounds],
-                                sql_problem_index=sql_index,
-                                block_id=(expanded_spec or {}).get("block_id"),
-                                block_position=(expanded_spec or {}).get("block_position"),
-                                block_category=(expanded_spec or {}).get("category"),
-                                block_index=(expanded_spec or {}).get("block_index"),
-                                block_total=(expanded_spec or {}).get("block_total"),
-                                allow_unknown_fallback=bool(session.get("allow_unknown_topic_fallback")),
-                            )
-                        except ValueError as exc:
-                            progression_blocked_reason = str(exc)
-                            next_doc = None
-                        except IntegrationError as exc:
-                            from modules.bundle_selector import (
-                                ReviewedInventoryUnavailable,
-                            )
+            next_question: str | None = None
+            next_skill: str | None = None
+            next_target: dict[str, object] | None = None
+            response_next_difficulty = next_difficulty
+            next_round_type: str | None = None
+            next_question_context: dict[str, object] | None = None
+            next_config_json: dict[str, object] | None = None
+            next_expires_at: str | None = None
+            next_block_id: str | None = None
+            next_block_position: int | None = None
+            next_block_category: str | None = None
+            # When the next question cannot be supplied after a successful
+            # evaluation, keep the scored result and mark the session blocked
+            # instead of rolling the answer back.
+            progression_blocked_reason: str | None = None
 
-                            if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
-                                progression_blocked_reason = str(exc)
-                                next_doc = None
-                            else:
-                                progression_blocked_reason = str(exc)
-                                next_doc = None
-                        if next_doc is None:
-                            pass
-                        else:
-                            next_payload = next_doc.model_dump()
-                            rounds.append(next_payload)
-                            next_question = next_doc.question
-                            next_skill = rotation_skill
-                            next_round_type = planned_type
-                            response_next_difficulty = next_doc.difficulty
-                            sanitized = sanitize_round_for_client(next_payload)
-                            next_question_context = sanitized.get("question_context") or {}
-                            next_config_json = next_doc.config_json or {}
-                            next_expires_at = (
-                                next_doc.expires_at.isoformat() if next_doc.expires_at else None
-                            )
-                            next_block_id = next_doc.block_id
-                            next_block_position = next_doc.block_position
-                            next_block_category = next_doc.block_category
-                            # No write here: the appended round joins the single
-                            # commit below with the scored round and Elo.
+            session_status = "completed" if request.round >= total_rounds else "active"
+            is_spaced_review = (
+                (session.get("round_config") or {}).get("purpose") == "spaced_review"
+            )
+            # Assessment-eligible readiness only — self-reported, spaced-review,
+            # and assisted/repeated/follow-up attempts stay out of the mean.
+            completed_scores = [] if is_spaced_review else assessment_eligible_scores(rounds)
+            try:
+                # Expected inventory / topic exhaustion sets progression_blocked and
+                # still commits the scored answer (content_blocked). Unrelated
+                # DatabaseConnectionError during the attempt commit rolls the score
+                # (and required learning effects) back so retry can resubmit via
+                # stale-claim takeover. Elo, narration job, and graph/mastery
+                # updates join the attempt transaction.
+                # Queue the next round after recomputing the user's weakest skill
+                # and concept from fresh learning state. Anonymous sessions keep the
+                # existing rotation behavior. Block sessions honor the expanded plan
+                # in requested order; legacy sessions honor round_plan.
+                if request.round < total_rounds:
+                    next_round = request.round + 1
+                    # Idempotent progression: if the next round already exists (retry
+                    # after a lost response), reuse it instead of appending a duplicate.
+                    existing_next = next(
+                        (item for item in rounds if item.get("round") == next_round),
+                        None,
+                    )
+                    if existing_next is not None:
+                        sanitized_existing = sanitize_round_for_client(dict(existing_next))
+                        next_question = existing_next.get("question")
+                        next_skill = existing_next.get("skill") or _skill_for_round(session, next_round)
+                        next_round_type = existing_next.get("round_type")
+                        response_next_difficulty = existing_next.get("difficulty", next_difficulty)
+                        next_question_context = sanitized_existing.get("question_context") or {}
+                        next_config_json = dict(existing_next.get("config_json") or {})
+                        raw_expires = existing_next.get("expires_at")
+                        next_expires_at = (
+                            raw_expires.isoformat()
+                            if hasattr(raw_expires, "isoformat")
+                            else (raw_expires if isinstance(raw_expires, str) else None)
+                        )
+                        next_block_id = existing_next.get("block_id")
+                        next_block_position = existing_next.get("block_position")
+                        next_block_category = existing_next.get("block_category")
+                        # No write here: the reused round is already persisted and
+                        # the session-level next values join the commit below.
                     else:
-                        # Block sessions constrain adaptation to the block's own
-                        # skills; legacy sessions adapt across all session skills.
-                        adaptive_skills = (
-                            session_skills if expanded_spec
-                            else (session.get("skills") or [session.get("skill")])
-                        )
-                        target = adaptive_question_selector.choose_adaptive_target(
-                            user_id=str(session_user_id) if session_user_id else None,
-                            fallback_skill=rotation_skill,
-                            fallback_difficulty=rotation_difficulty,
-                            session_skills=adaptive_skills,
-                            target_role_id=str(session_target_role) if session_target_role else None,
-                            candidate_elo_by_skill=candidate_elos,
-                        )
-                        next_skill = target.skill
+                        plan = session.get("round_plan") or []
+                        planned_type = None
+                        if plan and next_round - 1 < len(plan):
+                            planned_type = str(plan[next_round - 1])
+                        expanded_spec = _expanded_spec_for_round(session, next_round)
                         if expanded_spec:
-                            # Stay inside the requested block topics.
-                            spec_skill_set = set(session_skills)
-                            if next_skill not in spec_skill_set:
-                                next_skill = rotation_skill
-                        next_skill_elo = float(
-                            target.current_elo
-                            if target.current_elo is not None
-                            else candidate_elos.get(next_skill, elo_after)
-                        )
-                        next_round_difficulty = (
-                            str(expanded_spec.get("difficulty"))
-                            if expanded_spec and expanded_spec.get("difficulty")
-                            else target.difficulty
-                        )
-                        response_next_difficulty = next_round_difficulty
-                        # The block's explicit topic (if any) stays pinned
-                        # for every round of the block, like the opening
-                        # round at start.
-                        sub = ((expanded_spec or {}).get("topic")
-                               or _sub_domain_for_skill(candidate_doc, next_skill))
-                        asked = [item.get("question", "") for item in rounds]
-                        weak_context = list(target.target_concepts or [])
-                        if target.source != "rotation" and target.skill:
-                            weak_context.insert(0, target.skill)
+                            planned_type = str(expanded_spec.get("round_type") or planned_type)
 
-                        try:
-                            question_payload = _get_next_question(
-                                skill=next_skill,
-                                sub_domain=sub,
-                                difficulty=next_round_difficulty,
-                                asked=asked,
-                                user_id=str(session_user_id) if session_user_id else None,
-                                target_company_id=str(session_target_company) if session_target_company else None,
-                                target_role_id=str(session_target_role) if session_target_role else None,
-                                target_concepts=target.target_concepts,
-                                resume_skills=resume_skills,
-                                weak_skills=weak_context,
-                            )
-                        except IntegrationError as exc:
-                            progression_blocked_reason = str(exc)
-                            question_payload = None
-                        if question_payload is not None:
+                        rotation_skill = _skill_for_round(session, next_round)
+                        candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
+                        candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
+                        if not self_reported and not is_spaced_review:
+                            # The Elo commit below hasn't run yet; rotation must
+                            # see this round's update exactly as if it had.
+                            candidate_elos[current_skill] = elo_after
+                        rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
+                        rotation_difficulty = _difficulty_from_elo(rotation_elo)
+                        session_user_id = session.get("user_id")
+                        session_target_company = session.get("target_company_id")
+                        session_target_role = session.get("target_role_id")
+                        resume_skills = list((candidate_doc or {}).get("resume_skills") or session.get("skills") or [])
+                        session_skills = list(session.get("skills") or [session.get("skill") or "DBMS"])
+                        if expanded_spec:
+                            spec_skills = [s for s in (expanded_spec.get("skills") or []) if s]
+                            if spec_skills:
+                                session_skills = spec_skills
+                                rotation_skill = spec_skills[0]
+                                rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
+                                rotation_difficulty = (
+                                    str(expanded_spec.get("difficulty"))
+                                    if expanded_spec.get("difficulty")
+                                    else _difficulty_from_elo(rotation_elo)
+                                )
+
+                        if planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
+                            if expanded_spec:
+                                spec_config: dict[str, Any] = {
+                                    "count": expanded_spec.get("count", 15),
+                                    "duration_minutes": expanded_spec.get("duration_minutes"),
+                                    "negative_marking": expanded_spec.get("negative_marking", 0.25),
+                                    "review_policy": expanded_spec.get("review_policy", "none"),
+                                    "difficulty": expanded_spec.get("difficulty"),
+                                    "question_ids": expanded_spec.get("question_ids") or None,
+                                    "problem_ids": expanded_spec.get("problem_ids") or None,
+                                    "problem_id": (expanded_spec.get("problem_ids") or [None])[0],
+                                }
+                                legacy_cfg = dict(session.get("round_config") or {})
+                                for key in ("max_rows", "timeout_seconds"):
+                                    if key in legacy_cfg:
+                                        spec_config[key] = legacy_cfg[key]
+                                if spec_config.get("duration_minutes") is None:
+                                    spec_config.pop("duration_minutes", None)
+                                sql_index = 0
+                            else:
+                                if planned_type == "coding":
+                                    sql_index = sum(
+                                        1 for i, t in enumerate(plan[: next_round - 1]) if t == "coding"
+                                    )
+                                elif planned_type == "system_design":
+                                    sql_index = sum(
+                                        1 for i, t in enumerate(plan[: next_round - 1])
+                                        if t == "system_design"
+                                    )
+                                else:
+                                    sql_index = sum(
+                                        1 for i, t in enumerate(plan[: next_round - 1]) if t == "sql"
+                                    )
+                                spec_config = dict(session.get("round_config") or {})
                             try:
-                                _verify_served_topic(
-                                    requested=(expanded_spec or {}).get("topic"),
-                                    served=question_payload.get("sub_domain"),
-                                    skill=next_skill,
-                                    difficulty=next_round_difficulty,
+                                next_doc = build_round_document(
+                                    round_number=next_round,
+                                    round_type=planned_type,
+                                    skills=session_skills,
+                                    elo_before=rotation_elo,
+                                    difficulty=rotation_difficulty,
+                                    sub_domain=_sub_domain_for_skill(candidate_doc, rotation_skill),
+                                    round_config=spec_config,
+                                    user_id=str(session_user_id) if session_user_id else None,
+                                    target_company_id=str(session_target_company) if session_target_company else None,
+                                    target_role_id=str(session_target_role) if session_target_role else None,
+                                    resume_skills=resume_skills,
+                                    asked=[item.get("question", "") for item in rounds],
+                                    sql_problem_index=sql_index,
+                                    block_id=(expanded_spec or {}).get("block_id"),
+                                    block_position=(expanded_spec or {}).get("block_position"),
+                                    block_category=(expanded_spec or {}).get("category"),
+                                    block_index=(expanded_spec or {}).get("block_index"),
+                                    block_total=(expanded_spec or {}).get("block_total"),
+                                    allow_unknown_fallback=bool(session.get("allow_unknown_topic_fallback")),
                                 )
                             except ValueError as exc:
                                 progression_blocked_reason = str(exc)
-                                question_payload = None
-                        if question_payload is None:
-                            pass
+                                next_doc = None
+                            except IntegrationError as exc:
+                                from modules.bundle_selector import (
+                                    ReviewedInventoryUnavailable,
+                                )
+
+                                if isinstance(exc.__cause__, ReviewedInventoryUnavailable):
+                                    progression_blocked_reason = str(exc)
+                                    next_doc = None
+                                else:
+                                    progression_blocked_reason = str(exc)
+                                    next_doc = None
+                            if next_doc is None:
+                                pass
+                            else:
+                                next_payload = next_doc.model_dump()
+                                rounds.append(next_payload)
+                                next_question = next_doc.question
+                                next_skill = rotation_skill
+                                next_round_type = planned_type
+                                response_next_difficulty = next_doc.difficulty
+                                sanitized = sanitize_round_for_client(next_payload)
+                                next_question_context = sanitized.get("question_context") or {}
+                                next_config_json = next_doc.config_json or {}
+                                next_expires_at = (
+                                    next_doc.expires_at.isoformat() if next_doc.expires_at else None
+                                )
+                                next_block_id = next_doc.block_id
+                                next_block_position = next_doc.block_position
+                                next_block_category = next_doc.block_category
+                                # No write here: the appended round joins the single
+                                # commit below with the scored round and Elo.
                         else:
-                            question_payload["adaptive_target"] = target.to_dict()
-                            next_target = target.to_dict()
-                            next_round_type = "technical_short_answer"
+                            # Block sessions constrain adaptation to the block's own
+                            # skills; legacy sessions adapt across all session skills.
+                            adaptive_skills = (
+                                session_skills if expanded_spec
+                                else (session.get("skills") or [session.get("skill")])
+                            )
+                            target = adaptive_question_selector.choose_adaptive_target(
+                                user_id=str(session_user_id) if session_user_id else None,
+                                fallback_skill=rotation_skill,
+                                fallback_difficulty=rotation_difficulty,
+                                session_skills=adaptive_skills,
+                                target_role_id=str(session_target_role) if session_target_role else None,
+                                candidate_elo_by_skill=candidate_elos,
+                            )
+                            next_skill = target.skill
+                            if expanded_spec:
+                                # Stay inside the requested block topics.
+                                spec_skill_set = set(session_skills)
+                                if next_skill not in spec_skill_set:
+                                    next_skill = rotation_skill
+                            next_skill_elo = float(
+                                target.current_elo
+                                if target.current_elo is not None
+                                else candidate_elos.get(next_skill, elo_after)
+                            )
+                            next_round_difficulty = (
+                                str(expanded_spec.get("difficulty"))
+                                if expanded_spec and expanded_spec.get("difficulty")
+                                else target.difficulty
+                            )
+                            response_next_difficulty = next_round_difficulty
+                            # The block's explicit topic (if any) stays pinned
+                            # for every round of the block, like the opening
+                            # round at start.
+                            sub = ((expanded_spec or {}).get("topic")
+                                   or _sub_domain_for_skill(candidate_doc, next_skill))
+                            asked = [item.get("question", "") for item in rounds]
+                            weak_context = list(target.target_concepts or [])
+                            if target.source != "rotation" and target.skill:
+                                weak_context.insert(0, target.skill)
 
-                            next_expires_value = None
-                            next_config_value: dict[str, Any] = {}
-                            if expanded_spec and expanded_spec.get("duration_minutes"):
-                                from datetime import timedelta as _timedelta
-                                activated = datetime.now(timezone.utc)
-                                next_expires_value = activated + _timedelta(
-                                    minutes=int(expanded_spec["duration_minutes"])
+                            try:
+                                question_payload = _get_next_question(
+                                    skill=next_skill,
+                                    sub_domain=sub,
+                                    difficulty=next_round_difficulty,
+                                    asked=asked,
+                                    user_id=str(session_user_id) if session_user_id else None,
+                                    target_company_id=str(session_target_company) if session_target_company else None,
+                                    target_role_id=str(session_target_role) if session_target_role else None,
+                                    target_concepts=target.target_concepts,
+                                    resume_skills=resume_skills,
+                                    weak_skills=weak_context,
                                 )
-                                next_config_value = {
-                                    "duration_minutes": int(expanded_spec["duration_minutes"])
-                                }
-                                next_expires_at = next_expires_value.isoformat()
-                            next_round_doc = {
-                                "round": next_round,
-                                "skill": next_skill,
-                                "round_type": "technical_short_answer",
-                                "artifact_json": {},
-                                "config_json": next_config_value,
-                                "question": question_payload["question"],
-                                "answer_text": None,
-                                "nlp_score": None,
-                                "svm_label": None,
-                                "kg_score": None,
-                                "ner_entities": [],
-                                "final_score": None,
-                                "difficulty": next_round_difficulty,
-                                "difficulty_change": None,
-                                "feedback": {"content": [], "strengths": [], "next_step": ""},
-                                "elo_before": next_skill_elo,
-                                "elo_after": None,
-                                "question_context": question_payload,
-                                "started_at": datetime.now(timezone.utc),
-                                "expires_at": next_expires_value,
-                                "status": "in_progress",
-                                "block_id": (expanded_spec or {}).get("block_id"),
-                                "block_position": (expanded_spec or {}).get("block_position"),
-                                "block_category": (expanded_spec or {}).get("category")
-                                or (expanded_spec or {}).get("block_category"),
-                                "block_index": (expanded_spec or {}).get("block_index"),
-                                "block_total": (expanded_spec or {}).get("block_total"),
-                            }
-                            if expanded_spec and expanded_spec.get("is_follow_up"):
-                                next_round_doc["is_follow_up"] = True
-                                next_round_doc["follow_up_parent_round"] = (
-                                    expanded_spec.get("follow_up_parent_round")
-                                )
-                                next_round_doc["follow_up_identity"] = (
-                                    expanded_spec.get("follow_up_identity")
-                                )
-                                next_round_doc["follow_up_scoring"] = (
-                                    expanded_spec.get("follow_up_scoring")
-                                )
-                                next_round_doc["purpose"] = "follow_up"
-                                cfg = dict(next_round_doc.get("config_json") or {})
-                                cfg["is_follow_up"] = True
-                                cfg["follow_up_parent_round"] = expanded_spec.get(
-                                    "follow_up_parent_round"
-                                )
-                                cfg["follow_up_identity"] = expanded_spec.get(
-                                    "follow_up_identity"
-                                )
-                                cfg["follow_up_scoring"] = expanded_spec.get(
-                                    "follow_up_scoring"
-                                )
-                                next_round_doc["config_json"] = cfg
-                                if expanded_spec.get("follow_up_scoring") == "unreviewed":
-                                    prompt = (
-                                        expanded_spec.get("clarification_prompt")
-                                        or "Clarify the key idea from the previous question."
+                            except IntegrationError as exc:
+                                progression_blocked_reason = str(exc)
+                                question_payload = None
+                            if question_payload is not None:
+                                try:
+                                    _verify_served_topic(
+                                        requested=(expanded_spec or {}).get("topic"),
+                                        served=question_payload.get("sub_domain"),
+                                        skill=next_skill,
+                                        difficulty=next_round_difficulty,
                                     )
-                                    next_round_doc["question"] = prompt
-                                    next_round_doc["question_context"] = {
-                                        **dict(question_payload or {}),
-                                        "source": "follow_up_clarification",
-                                        "followups": [],
+                                except ValueError as exc:
+                                    progression_blocked_reason = str(exc)
+                                    question_payload = None
+                            if question_payload is None:
+                                pass
+                            else:
+                                question_payload["adaptive_target"] = target.to_dict()
+                                next_target = target.to_dict()
+                                next_round_type = "technical_short_answer"
+
+                                next_expires_value = None
+                                next_config_value: dict[str, Any] = {}
+                                if expanded_spec and expanded_spec.get("duration_minutes"):
+                                    from datetime import timedelta as _timedelta
+                                    activated = datetime.now(timezone.utc)
+                                    next_expires_value = activated + _timedelta(
+                                        minutes=int(expanded_spec["duration_minutes"])
+                                    )
+                                    next_config_value = {
+                                        "duration_minutes": int(expanded_spec["duration_minutes"])
                                     }
-                            rounds.append(next_round_doc)
-                            next_question = question_payload["question"]
-                            sanitized_next = sanitize_round_for_client(dict(next_round_doc))
-                            next_question_context = sanitized_next.get("question_context") or {}
-                            next_config_json = next_config_value
-                            next_block_id = (expanded_spec or {}).get("block_id")
-                            next_block_position = (expanded_spec or {}).get("block_position")
-                            next_block_category = (expanded_spec or {}).get("category")
-                            # No write here: the appended round joins the single
-                            # commit below with the scored round and Elo.
+                                    next_expires_at = next_expires_value.isoformat()
+                                next_round_doc = {
+                                    "round": next_round,
+                                    "skill": next_skill,
+                                    "round_type": "technical_short_answer",
+                                    "artifact_json": {},
+                                    "config_json": next_config_value,
+                                    "question": question_payload["question"],
+                                    "answer_text": None,
+                                    "nlp_score": None,
+                                    "svm_label": None,
+                                    "kg_score": None,
+                                    "ner_entities": [],
+                                    "final_score": None,
+                                    "difficulty": next_round_difficulty,
+                                    "difficulty_change": None,
+                                    "feedback": {"content": [], "strengths": [], "next_step": ""},
+                                    "elo_before": next_skill_elo,
+                                    "elo_after": None,
+                                    "question_context": question_payload,
+                                    "started_at": datetime.now(timezone.utc),
+                                    "expires_at": next_expires_value,
+                                    "status": "in_progress",
+                                    "block_id": (expanded_spec or {}).get("block_id"),
+                                    "block_position": (expanded_spec or {}).get("block_position"),
+                                    "block_category": (expanded_spec or {}).get("category")
+                                    or (expanded_spec or {}).get("block_category"),
+                                    "block_index": (expanded_spec or {}).get("block_index"),
+                                    "block_total": (expanded_spec or {}).get("block_total"),
+                                }
+                                if expanded_spec and expanded_spec.get("is_follow_up"):
+                                    next_round_doc["is_follow_up"] = True
+                                    next_round_doc["follow_up_parent_round"] = (
+                                        expanded_spec.get("follow_up_parent_round")
+                                    )
+                                    next_round_doc["follow_up_identity"] = (
+                                        expanded_spec.get("follow_up_identity")
+                                    )
+                                    next_round_doc["follow_up_scoring"] = (
+                                        expanded_spec.get("follow_up_scoring")
+                                    )
+                                    next_round_doc["purpose"] = "follow_up"
+                                    cfg = dict(next_round_doc.get("config_json") or {})
+                                    cfg["is_follow_up"] = True
+                                    cfg["follow_up_parent_round"] = expanded_spec.get(
+                                        "follow_up_parent_round"
+                                    )
+                                    cfg["follow_up_identity"] = expanded_spec.get(
+                                        "follow_up_identity"
+                                    )
+                                    cfg["follow_up_scoring"] = expanded_spec.get(
+                                        "follow_up_scoring"
+                                    )
+                                    next_round_doc["config_json"] = cfg
+                                    if expanded_spec.get("follow_up_scoring") == "unreviewed":
+                                        prompt = (
+                                            expanded_spec.get("clarification_prompt")
+                                            or "Clarify the key idea from the previous question."
+                                        )
+                                        next_round_doc["question"] = prompt
+                                        next_round_doc["question_context"] = {
+                                            **dict(question_payload or {}),
+                                            "source": "follow_up_clarification",
+                                            "followups": [],
+                                        }
+                                rounds.append(next_round_doc)
+                                next_question = question_payload["question"]
+                                sanitized_next = sanitize_round_for_client(dict(next_round_doc))
+                                next_question_context = sanitized_next.get("question_context") or {}
+                                next_config_json = next_config_value
+                                next_block_id = (expanded_spec or {}).get("block_id")
+                                next_block_position = (expanded_spec or {}).get("block_position")
+                                next_block_category = (expanded_spec or {}).get("category")
+                                # No write here: the appended round joins the single
+                                # commit below with the scored round and Elo.
 
-            if progression_blocked_reason and session_status == "active":
-                session_status = "content_blocked"
+                if progression_blocked_reason and session_status == "active":
+                    session_status = "content_blocked"
 
-            # The single attempt commit: scored round (+ queued next round),
-            # measured Elo, narration job, and required learning effects
-            # (skill graph / mastery / Elo-delta signals) succeed or fail
-            # together. A 503 here leaves the claimed-but-unscored round
-            # behind, and the guard's stale-claim takeover makes the retry
-            # a clean resubmit.
-            # When progression is blocked, the scored answer is still committed
-            # and the session becomes content_blocked (no false next round).
-            session_update = {
-                "rounds": rounds,
-                "last_round": request.round,
-                "current_difficulty": response_next_difficulty,
-                "current_skill": next_skill or current_skill,
-                "status": session_status,
-            }
-            if progression_blocked_reason:
-                session_update["progression_blocked_reason"] = progression_blocked_reason
-            if session_status == "completed":
-                session_update["completed_at"] = datetime.now(timezone.utc)
-                session_update["overall_readiness_score"] = (
-                    round(sum(completed_scores) / len(completed_scores), 2)
-                    if completed_scores
-                    else None
-                )
-                session_update["overall_readiness_population"] = "assessment_eligible"
-            with atomic(db):
-                db["sessions"].update_one(
-                    {"session_id": request.session_id},
-                    {"$set": session_update},
-                )
-                if (
-                    not self_reported
-                    and not is_spaced_review
-                    and assessment_eligible
-                    and scoring_result.get("final_score") is not None
-                ):
-                    db["candidates"].update_one(
-                        {"candidate_id": session["candidate_id"]},
-                        {"$set": {f"elo_ratings.{current_skill}": elo_after}},
+                # The single attempt commit: scored round (+ queued next round),
+                # measured Elo, narration job, and required learning effects
+                # (skill graph / mastery / Elo-delta signals) succeed or fail
+                # together. A 503 here leaves the claimed-but-unscored round
+                # behind, and the guard's stale-claim takeover makes the retry
+                # a clean resubmit.
+                # When progression is blocked, the scored answer is still committed
+                # and the session becomes content_blocked (no false next round).
+                session_update = {
+                    "rounds": rounds,
+                    "last_round": request.round,
+                    "current_difficulty": response_next_difficulty,
+                    "current_skill": next_skill or current_skill,
+                    "status": session_status,
+                }
+                if progression_blocked_reason:
+                    session_update["progression_blocked_reason"] = progression_blocked_reason
+                if session_status == "completed":
+                    session_update["completed_at"] = datetime.now(timezone.utc)
+                    session_update["overall_readiness_score"] = (
+                        round(sum(completed_scores) / len(completed_scores), 2)
+                        if completed_scores
+                        else None
                     )
-                # The narration job joins the same commit: a scored round
-                # always has exactly one job, never zero, never two.
-                scored_snapshot = next(
-                    (item.get("attempt_snapshot") or {}
-                     for item in rounds if item.get("round") == request.round),
-                    {},
-                )
-                enqueue_narration_job(
-                    db,
-                    session_id=request.session_id,
-                    round_number=request.round,
-                    user_id=session.get("user_id"),
-                    skill=current_skill,
-                    final_score=scoring_result.get("final_score"),
-                    feedback=scoring_result["feedback"],
-                    snapshot_digest=scored_snapshot.get("digest"),
-                )
-                if (
-                    not self_reported
-                    and not is_spaced_review
-                    and assessment_eligible
-                    and scoring_result.get("final_score") is not None
-                ):
-                    _update_learning_state(
-                        session=session,
-                        skill=current_skill,
-                        final_score=float(scoring_result["final_score"]),
-                        difficulty=active_round.get("difficulty", "medium"),
-                        scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
-                        elo_before=elo_before,
-                        elo_after=elo_after,
+                    session_update["overall_readiness_population"] = "assessment_eligible"
+                with atomic(db):
+                    db["sessions"].update_one(
+                        {"session_id": request.session_id},
+                        {"$set": session_update},
+                        expected_revision=session.get("revision"),
+                    )
+                    if (
+                        not self_reported
+                        and not is_spaced_review
+                        and assessment_eligible
+                        and scoring_result.get("final_score") is not None
+                    ):
+                        db["candidates"].update_one(
+                            {"candidate_id": session["candidate_id"]},
+                            {"$set": {f"elo_ratings.{current_skill}": elo_after}},
+                        )
+                    # The narration job joins the same commit: a scored round
+                    # always has exactly one job, never zero, never two.
+                    scored_snapshot = next(
+                        (item.get("attempt_snapshot") or {}
+                         for item in rounds if item.get("round") == request.round),
+                        {},
+                    )
+                    enqueue_narration_job(
+                        db,
                         session_id=request.session_id,
-                        raise_on_error=True,
+                        round_number=request.round,
+                        user_id=session.get("user_id"),
+                        skill=current_skill,
+                        final_score=scoring_result.get("final_score"),
+                        feedback=scoring_result["feedback"],
+                        snapshot_digest=scored_snapshot.get("digest"),
                     )
-        except DatabaseConnectionError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-            ) from exc
-        except Exception as exc:
-            if is_database_exception(exc):
+                    if (
+                        not self_reported
+                        and not is_spaced_review
+                        and assessment_eligible
+                        and scoring_result.get("final_score") is not None
+                    ):
+                        _update_learning_state(
+                            session=session,
+                            skill=current_skill,
+                            final_score=float(scoring_result["final_score"]),
+                            difficulty=active_round.get("difficulty", "medium"),
+                            scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
+                            elo_before=elo_before,
+                            elo_after=elo_after,
+                            session_id=request.session_id,
+                            raise_on_error=True,
+                        )
+            except SessionWriteConflict:
+                # Lost a cross-worker write race inside the attempt commit:
+                # the ambient transaction rolled back before Elo, narration,
+                # or learning effects ran, so reloading and retrying is safe
+                # and cannot duplicate any of them.
+                continue
+            except DatabaseConnectionError as exc:
                 raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"MongoDB operation failed: {exc}",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
                 ) from exc
-            raise
+            except Exception as exc:
+                if is_database_exception(exc):
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=f"MongoDB operation failed: {exc}",
+                    ) from exc
+                raise
+            break
+        else:
+            logger.warning(
+                "Submit commit for session %s round %s exhausted %d attempts "
+                "under contention; returning 409.",
+                request.session_id,
+                request.round,
+                MAX_SUBMIT_COMMIT_ATTEMPTS,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Concurrent session update; retry the submission.",
+            )
 
         # Post-commit derived state that is not part of the assessment
         # learning unit: spaced-review schedule updates and draft cleanup.

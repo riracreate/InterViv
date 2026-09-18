@@ -138,7 +138,18 @@ class _Collection:
             self._docs.append(doc_copy)
             return _InsertResult(doc_copy.get("_id"))
 
-    def update_one(self, query: dict, update: dict, upsert: bool = False) -> _UpdateResult:
+    def update_one(
+        self,
+        query: dict,
+        update: dict,
+        upsert: bool = False,
+        *,
+        expected_revision: int | None = None,
+    ) -> _UpdateResult:
+        # expected_revision is accepted for backend parity and ignored: this
+        # adapter is single-process, mutations already merge only the named
+        # keys, and session routes serialize on the per-session submit lock.
+        # Cross-worker optimistic concurrency lives in the SQLAlchemy store.
         with self._lock:
             for doc in self._docs:
                 if _matches(doc, query):
