@@ -31,6 +31,68 @@ _MEMORY_GRAPHS: dict[str, dict[str, SkillNode]] = {}
 _MEMORY_RECENT_SCORES: dict[tuple[str, str], list[float]] = {}
 
 
+def reset_memory_store() -> None:
+    """Test helper — clears in-memory skill graphs and rolling windows."""
+    _MEMORY_GRAPHS.clear()
+    _MEMORY_RECENT_SCORES.clear()
+
+
+def snapshot_memory_store() -> dict[str, Any]:
+    """Deep snapshot for memory atomic rollback of learning effects."""
+    import copy
+
+    return {
+        "graphs": copy.deepcopy(_MEMORY_GRAPHS),
+        "recent": copy.deepcopy(_MEMORY_RECENT_SCORES),
+    }
+
+
+def restore_memory_store(snapshot: dict[str, Any] | None) -> None:
+    if not snapshot:
+        return
+    import copy
+
+    _MEMORY_GRAPHS.clear()
+    _MEMORY_GRAPHS.update(copy.deepcopy(snapshot.get("graphs") or {}))
+    _MEMORY_RECENT_SCORES.clear()
+    _MEMORY_RECENT_SCORES.update(copy.deepcopy(snapshot.get("recent") or {}))
+
+
+def _score_is_rolling_eligible(
+    *,
+    assessment_eligibility: str | None,
+    assisted: bool | None,
+    is_follow_up: bool | None,
+    round_type: str | None,
+    scoring_breakdown: dict[str, Any] | None,
+    artifact_json: dict[str, Any] | None = None,
+) -> bool:
+    """Whether a persisted round may enter the skill-graph rolling mean.
+
+    Filters the declared eligible population *before* last-five selection.
+    Self-reported and spaced-review rows stay out even if mislabeled eligible.
+    Older policy versions with decision ``eligible`` remain included.
+    """
+    breakdown = scoring_breakdown or {}
+    artifact = artifact_json or {}
+    evidence_kind = breakdown.get("evidence_kind")
+    evaluation_mode = breakdown.get("evaluation_mode") or artifact.get("evaluation_mode")
+    if str(round_type or "") == "system_design":
+        return False
+    if evidence_kind in ("self_reported", "practice_review"):
+        return False
+    if evaluation_mode == "structured_self_assessment":
+        return False
+    if assessment_eligibility == "eligible":
+        return True
+    if assessment_eligibility is None:
+        # Pre-4A legacy: unassisted non-follow-up only.
+        if assisted or is_follow_up:
+            return False
+        return True
+    return False
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -186,37 +248,67 @@ class StudentSkillGraph:
 
             from sqlalchemy import or_, and_
 
-            recent_scores = [
-                float(value)
-                for (value,) in (
-                    session.query(RoundRow.final_score)
-                    .join(SessionRow, RoundRow.session_id == SessionRow.id)
-                    .filter(SessionRow.user_id == self.user_id)
-                    .filter(RoundRow.skill_text == skill)
-                    .filter(RoundRow.final_score.isnot(None))
-                    # Phase 4A eligible, or pre-4A legacy unassisted non-follow-up.
-                    .filter(
-                        or_(
-                            RoundRow.assessment_eligibility == "eligible",
-                            and_(
-                                RoundRow.assessment_eligibility.is_(None),
-                                or_(
-                                    RoundRow.assisted.is_(None),
-                                    RoundRow.assisted.is_(False),
-                                ),
-                                or_(
-                                    RoundRow.is_follow_up.is_(None),
-                                    RoundRow.is_follow_up.is_(False),
-                                ),
-                            ),
-                        )
-                    )
-                    .order_by(RoundRow.created_at.desc(), RoundRow.id.desc())
-                    .limit(ROLLING_WINDOW)
-                    .all()
+            # Filter eligible population first, then take last five.
+            # Over-fetch then filter in Python so self-reported / spaced-review
+            # evidence_kind rows cannot displace earlier eligible attempts.
+            candidate_rows = (
+                session.query(
+                    RoundRow.final_score,
+                    RoundRow.assessment_eligibility,
+                    RoundRow.assisted,
+                    RoundRow.is_follow_up,
+                    RoundRow.round_type,
+                    RoundRow.scoring_breakdown_json,
+                    RoundRow.artifact_json,
                 )
-                if value is not None
-            ]
+                .join(SessionRow, RoundRow.session_id == SessionRow.id)
+                .filter(SessionRow.user_id == self.user_id)
+                .filter(RoundRow.skill_text == skill)
+                .filter(RoundRow.final_score.isnot(None))
+                .filter(
+                    or_(
+                        RoundRow.assessment_eligibility == "eligible",
+                        and_(
+                            RoundRow.assessment_eligibility.is_(None),
+                            or_(
+                                RoundRow.assisted.is_(None),
+                                RoundRow.assisted.is_(False),
+                            ),
+                            or_(
+                                RoundRow.is_follow_up.is_(None),
+                                RoundRow.is_follow_up.is_(False),
+                            ),
+                        ),
+                    )
+                )
+                .order_by(RoundRow.created_at.desc(), RoundRow.id.desc())
+                .limit(ROLLING_WINDOW * 8)
+                .all()
+            )
+            recent_scores: list[float] = []
+            for (
+                value,
+                eligibility,
+                assisted,
+                is_follow_up,
+                round_type,
+                breakdown,
+                artifact,
+            ) in candidate_rows:
+                if value is None:
+                    continue
+                if not _score_is_rolling_eligible(
+                    assessment_eligibility=eligibility,
+                    assisted=assisted,
+                    is_follow_up=is_follow_up,
+                    round_type=round_type,
+                    scoring_breakdown=breakdown if isinstance(breakdown, dict) else {},
+                    artifact_json=artifact if isinstance(artifact, dict) else {},
+                ):
+                    continue
+                recent_scores.append(float(value))
+                if len(recent_scores) >= ROLLING_WINDOW:
+                    break
             if not recent_scores:
                 recent_scores = [score]
 

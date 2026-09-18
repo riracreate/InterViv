@@ -9,7 +9,6 @@ from fastapi import APIRouter, Header, HTTPException, status
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.evidence_kind import (
     is_self_reported_round,
-    measured_scores,
     assessment_eligible_rounds,
     assessment_eligible_scores,
     scoring_mode_for_round,
@@ -92,7 +91,12 @@ def _sanitize_rounds(
         cleaned["question_type"] = question_context.get("question_type")
         cleaned["company"] = question_context.get("company")
         cleaned["role"] = question_context.get("role")
-        cleaned["followups"] = question_context.get("followups") or []
+        # Follow-up prompts are teaching content: only after assessment
+        # completion (same gate as ideals), never as "next topics".
+        if assessment_completed:
+            cleaned["followups"] = question_context.get("followups") or []
+        else:
+            cleaned["followups"] = []
         # Phase 3C: preserve sanitized MCQ review questions when policy allows.
         # Keys/explanations are already gated inside sanitize_round_for_client.
         if cleaned.get("round_type") == "mcq":
@@ -253,17 +257,64 @@ def _block_results(
     return results
 
 
+def _record_report_review_exposures(
+    session: dict[str, Any],
+    sanitized_rounds: list[dict[str, Any]],
+) -> None:
+    """Idempotent teaching exposures when report ideals/keys are revealed.
+
+    Completing an assessment and opening the report is a feedback_reveal /
+    explanation delivery for related-item eligibility. Failures are logged
+    and never block the report payload.
+    """
+    try:
+        from modules.teaching_exposures import record_teaching_exposure
+
+        db = get_database()
+        for item in sanitized_rounds:
+            if item.get("final_score") is None:
+                continue
+            round_number = item.get("round")
+            item_type = str(item.get("round_type") or "technical_short_answer")
+            item_id = (
+                str((item.get("config_json") or {}).get("bundle_id") or "")
+                or str(item.get("question") or "")[:80]
+                or f"round-{round_number}"
+            )
+            kind = "explanation" if item_type == "mcq" else "feedback_reveal"
+            record_teaching_exposure(
+                db,
+                kind=kind,
+                item_type=item_type,
+                item_id=item_id,
+                session=session,
+                user_id=session.get("user_id"),
+                round_number=int(round_number) if round_number is not None else None,
+                block_id=item.get("block_id"),
+                content_fingerprint=f"report:{session.get('session_id')}:{round_number}",
+                also_legacy_assistance=False,
+            )
+    except Exception:
+        # Report delivery must not fail because exposure accounting failed.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to record report-review teaching exposures.",
+            exc_info=True,
+        )
+
+
 def _compute_topic_scores(session: dict[str, Any]) -> dict[str, float]:
+    """Topic means over assessment-eligible rounds only (Phase 4A/4B)."""
     buckets: dict[str, list[float]] = {}
-    for round_document in session.get("rounds", []):
+    for round_document in assessment_eligible_rounds(session.get("rounds", []) or []):
         score = round_document.get("final_score")
         if score is None:
             continue
-        if is_self_reported_round(round_document):
-            continue
         context = round_document.get("question_context", {}) or {}
         label = (
-            context.get("topic")
+            round_document.get("topic")
+            or context.get("topic")
             or context.get("sub_topic")
             or context.get("sub_domain")
             or session.get("skill")
@@ -309,7 +360,7 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
     for session in owned:
         rounds = session.get("rounds") or []
         scored = [r for r in rounds if r.get("final_score") is not None]
-        measured = measured_scores(rounds)
+        eligible = assessment_eligible_scores(rounds)
         summary = {
             "session_id": session["session_id"],
             "created_at": _utc_date(session.get("created_at")),
@@ -319,9 +370,9 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             "completed_rounds": len(scored),
             "total_rounds": session.get("total_rounds") or len(rounds),
             "average_score": (
-                round(statistics.mean(measured), 2) if measured else None
+                round(statistics.mean(eligible), 2) if eligible else None
             ),
-            "average_score_population": "measured",
+            "average_score_population": "assessment_eligible",
             "self_reported_rounds": sum(
                 1 for r in scored if is_self_reported_round(r)
             ),
@@ -449,59 +500,73 @@ def get_dashboard(
     assert_session_access(session, authorization)
 
     assessment_completed = session_assessment_completed(session)
+    raw_rounds = list(session.get("rounds", []) or [])
     rounds = _sanitize_rounds(
-        session.get("rounds", []),
+        raw_rounds,
         assessment_completed=assessment_completed,
     )
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
-    measured_rounds = [item for item in completed_rounds if not is_self_reported_round(item)]
+    # Primary report averages use assessment-eligible population only.
+    eligible_rounds = assessment_eligible_rounds(raw_rounds)
+    # Re-apply performance bands from sanitized rounds for eligible ids.
+    eligible_by_round = {
+        int(r.get("round") or 0): r for r in rounds if r.get("final_score") is not None
+    }
+    eligible_sanitized = [
+        eligible_by_round[int(r.get("round") or 0)]
+        for r in eligible_rounds
+        if int(r.get("round") or 0) in eligible_by_round
+    ]
     self_reported_rounds = [
         item for item in completed_rounds if is_self_reported_round(item)
     ]
 
-    if measured_rounds:
+    if eligible_sanitized:
         # Phase 2 (MCQ/SQL) rounds persist None for NLP/KG layer scores;
         # coerce missing layer scores to 0.0 so the dashboard never crashes.
         averages = {
             "final_score": round(
-                sum(float(item.get("final_score") or 0) for item in measured_rounds)
-                / len(measured_rounds),
+                sum(float(item.get("final_score") or 0) for item in eligible_sanitized)
+                / len(eligible_sanitized),
                 2,
             ),
             "nlp_score": round(
-                sum(float(item.get("nlp_score") or 0) for item in measured_rounds)
-                / len(measured_rounds),
+                sum(float(item.get("nlp_score") or 0) for item in eligible_sanitized)
+                / len(eligible_sanitized),
                 2,
             ),
             "kg_score": round(
-                sum(float(item.get("kg_score") or 0) for item in measured_rounds)
-                / len(measured_rounds),
+                sum(float(item.get("kg_score") or 0) for item in eligible_sanitized)
+                / len(eligible_sanitized),
                 2,
             ),
-            "population": "measured",
+            "population": "assessment_eligible",
         }
     elif completed_rounds:
-        # Session only has self-reported scores: absence of measured average,
+        # Assisted/self-reported/unscored-only: absence of an eligible average,
         # not a fabricated zero.
         averages = {
             "final_score": None,
             "nlp_score": None,
             "kg_score": None,
-            "population": "measured",
+            "population": "assessment_eligible",
         }
     else:
         averages = {
             "final_score": None,
             "nlp_score": None,
             "kg_score": None,
-            "population": "measured",
+            "population": "assessment_eligible",
         }
 
     breakdown = {"Good": 0, "Average": 0, "Poor": 0}
-    for item in measured_rounds:
+    for item in eligible_sanitized:
         band = item.get("performance_band")
         if band in breakdown:
             breakdown[band] += 1
+
+    if assessment_completed:
+        _record_report_review_exposures(session, rounds)
 
     last_feedback = completed_rounds[-1].get("feedback", {}) if completed_rounds else {}
     # System-design (and some older rows) store feedback as a plain string.
@@ -528,7 +593,7 @@ def get_dashboard(
         item.get("elo_after") for item in completed_rounds if item.get("elo_after") is not None
     ]
     session["difficulty_progression"] = [item.get("difficulty") for item in completed_rounds]
-    session["topic_scores"] = _compute_topic_scores(session)
+    session["topic_scores"] = _compute_topic_scores({"rounds": raw_rounds, "skill": session.get("skill")})
     session["next_step"] = next_step
     unscored = _unscored_rounds(rounds)
     session["coverage"] = {

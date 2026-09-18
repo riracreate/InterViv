@@ -20,6 +20,8 @@ class BundleReferenceUnavailable(LookupError):
 
 
 # Fields that may appear in a candidate-safe technical question_context.
+# ``followups`` stay server-side until an explicit opt-in schedule
+# (POST /session/{id}/follow-ups); they are not pre-release teaching content.
 CANDIDATE_TECHNICAL_KEYS = (
     "question",
     "skill",
@@ -38,7 +40,6 @@ CANDIDATE_TECHNICAL_KEYS = (
     "adaptive_target",
     "llm_provider",
     "llm_model",
-    "followups",
 )
 
 # Solution-bearing / grading-only keys that must never leave the server pre-answer.

@@ -95,10 +95,10 @@ function missingKeywords(bd?: ScoringBreakdown): string[] {
 }
 
 function nextTopics(round: Round, bd?: ScoringBreakdown): string[] {
+  // Follow-up prompts are teaching content, not diagnosed missing concepts.
   const concepts = bd?.concepts?.missing || bd?.missing_concepts || [];
   const keywords = missingKeywords(bd);
-  const followups = round.followups || [];
-  const values = [...concepts, ...keywords, ...followups, round.topic || ""]
+  const values = [...concepts, ...keywords, round.topic || ""]
     .map(item => String(item).trim())
     .filter(Boolean);
   return Array.from(new Set(values)).slice(0, 5);
