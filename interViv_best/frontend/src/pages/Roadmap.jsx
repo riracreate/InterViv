@@ -214,11 +214,58 @@ export default function Roadmap() {
           <div className="grow" />
           <p className="hub-caption">
             Current readiness:{' '}
-            <span className="font-medium text-[var(--color-ink)]">
-              {Math.round(roadmap.overall_readiness_percentage)}%
+            <span className="font-medium text-[var(--color-ink)]" data-testid="roadmap-readiness">
+              {roadmap.overall_readiness_percentage == null
+                ? 'Not assessed yet'
+                : `${Math.round(roadmap.overall_readiness_percentage)}%`}
             </span>
           </p>
+          {roadmap.readiness_note && (
+            <p className="hub-caption w-full" data-testid="roadmap-readiness-note">
+              {roadmap.readiness_note}
+            </p>
+          )}
+          {roadmap.study_plan?.meta?.hours_per_week != null && (
+            <p className="hub-caption w-full">
+              Study budget: {roadmap.study_plan.meta.hours_per_week} h/week
+              {roadmap.study_plan.meta.hours_editable ? ' (editable via Coach)' : ''}
+            </p>
+          )}
         </div>
+
+        {roadmap.study_plan?.tasks?.length > 0 && (
+          <section className="hub-card mb-10" data-testid="roadmap-tasks">
+            <p className="hub-eyebrow">Versioned tasks · plan v{roadmap.study_plan.version}</p>
+            <p className="hub-caption mb-3">
+              Task progress {roadmap.study_plan.task_completion_pct}% — not an assessment metric.
+            </p>
+            <ul className="space-y-3">
+              {roadmap.study_plan.tasks.slice(0, 8).map((task) => (
+                <li key={task.task_id} className="text-sm">
+                  <div className="font-medium">{task.title}</div>
+                  <div className="text-[var(--color-ink-muted)]">{task.rationale}</div>
+                  <div className="mt-1 text-xs uppercase tracking-wide text-[var(--color-ink-muted)]">
+                    {task.population} · {task.status}
+                  </div>
+                  <button
+                    type="button"
+                    className="hub-button mt-2"
+                    style={{ padding: '4px 10px' }}
+                    onClick={() => navigate('/practice?mode=full', {
+                      state: {
+                        prefilledSkills: task.skill ? [task.skill] : [],
+                        prefillSource: 'study plan task',
+                        targetRoleId: roadmap.role_id || '',
+                      },
+                    })}
+                  >
+                    Start this task
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className="grid gap-6 md:grid-cols-2" data-testid="roadmap-weeks">
           {roadmap.weekly_blocks.map((b, i) => (
