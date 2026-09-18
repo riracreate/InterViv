@@ -20,6 +20,17 @@ MAX_FOLLOWUPS_PER_PARENT = 1
 MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK = 2
 
 
+def block_follow_up_limit(block: dict[str, Any] | None) -> int:
+    """Per-block follow-up cap: 2, or the lower configured ``max_follow_ups``."""
+    if isinstance(block, dict):
+        configured = block.get("max_follow_ups")
+        if isinstance(configured, bool):
+            pass
+        elif isinstance(configured, int) and configured >= 0:
+            return min(MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK, configured)
+    return MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK
+
+
 def block_allows_follow_ups(block: dict[str, Any] | None, session: dict[str, Any] | None = None) -> bool:
     if isinstance(block, dict) and block.get("allow_optional_follow_ups") is True:
         return True
@@ -63,9 +74,39 @@ def _block_for_id(session: dict[str, Any], block_id: str | None) -> dict[str, An
     return None
 
 
-def count_follow_ups_in_block(rounds: list[dict[str, Any]], block_id: str | None) -> int:
+def pending_follow_ups(session: dict[str, Any]) -> list[dict[str, Any]]:
+    """Scheduled-but-unmaterialized follow-up entries from ``expanded_plan``.
+
+    A scheduled follow-up only becomes a round row when progression reaches
+    it, so caps must count pending entries too — otherwise sequential or
+    concurrent schedules double-book the same parent/block budget. An entry
+    is pending while no materialized round carries its ``follow_up_identity``
+    (answer progression copies the identity onto the round row).
+    """
+    rounds = session.get("rounds") or []
+    materialized = {
+        str(r.get("follow_up_identity") or "")
+        for r in rounds
+        if r.get("is_follow_up") and r.get("follow_up_identity")
+    }
+    pending = []
+    for entry in session.get("expanded_plan") or []:
+        if not isinstance(entry, dict) or not entry.get("is_follow_up"):
+            continue
+        if str(entry.get("follow_up_identity") or "") in materialized:
+            continue
+        pending.append(entry)
+    return pending
+
+
+def count_follow_ups_in_block(
+    rounds: list[dict[str, Any]],
+    block_id: str | None,
+    *,
+    pending: list[dict[str, Any]] | None = None,
+) -> int:
     n = 0
-    for r in rounds:
+    for r in list(rounds or []) + list(pending or []):
         if not r.get("is_follow_up"):
             continue
         if block_id is None or str(r.get("block_id") or "") == str(block_id):
@@ -73,8 +114,13 @@ def count_follow_ups_in_block(rounds: list[dict[str, Any]], block_id: str | None
     return n
 
 
-def parent_already_has_follow_up(rounds: list[dict[str, Any]], parent_round: int) -> bool:
-    for r in rounds:
+def parent_already_has_follow_up(
+    rounds: list[dict[str, Any]],
+    parent_round: int,
+    *,
+    pending: list[dict[str, Any]] | None = None,
+) -> bool:
+    for r in list(rounds or []) + list(pending or []):
         if not r.get("is_follow_up"):
             continue
         if int(r.get("follow_up_parent_round") or -1) == int(parent_round):
@@ -122,7 +168,8 @@ def can_schedule_follow_up(
         return False, "recursive_follow_up_forbidden"
     parent_round = int(parent_round_doc.get("round") or 0)
     rounds = list(session.get("rounds") or [])
-    if parent_already_has_follow_up(rounds, parent_round):
+    pending = pending_follow_ups(session)
+    if parent_already_has_follow_up(rounds, parent_round, pending=pending):
         return False, "parent_follow_up_exists"
     block_id = parent_round_doc.get("block_id")
     block = _block_for_id(session, block_id)
@@ -135,13 +182,14 @@ def can_schedule_follow_up(
             return False, "follow_ups_disabled_for_block"
     if session.get("block_plan") and not block_allows_follow_ups(block, session):
         return False, "follow_ups_disabled_for_block"
-    # Interview-block cap.
+    # Interview-block cap (pending entries count: they hold budget).
+    limit = block_follow_up_limit(block)
     interview_ids = _interview_block_ids(session)
     if block_id and str(block_id) in interview_ids:
-        if count_follow_ups_in_block(rounds, str(block_id)) >= MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK:
+        if count_follow_ups_in_block(rounds, str(block_id), pending=pending) >= limit:
             return False, "block_follow_up_cap"
     elif block and str(block.get("category") or "") == "interview":
-        if count_follow_ups_in_block(rounds, str(block_id)) >= MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK:
+        if count_follow_ups_in_block(rounds, str(block_id), pending=pending) >= limit:
             return False, "block_follow_up_cap"
     if spare_capacity(session, parent_round) < 1:
         return False, "no_capacity"

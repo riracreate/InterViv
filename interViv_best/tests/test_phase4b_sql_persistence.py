@@ -84,7 +84,9 @@ def test_sql_conversation_survives_reopen(disposable_sql):
         update_goals,
     )
 
-    command.upgrade(_alembic_cfg(disposable_sql), PHASE4B_REVISION)
+    # Live store use requires the current schema (e.g. sessions.revision);
+    # the pinned 4B/4A chain is asserted by the migration test above.
+    command.upgrade(_alembic_cfg(disposable_sql), "head")
     _clear_database_caches()
     create_all_for_smoke()
     doc = get_or_create_conversation(user_id="sql-user", role_id="amazon_sde_intern")

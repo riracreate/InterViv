@@ -153,6 +153,10 @@ class SessionRow(Base):
     # Phase 4A: assessment vs coached practice; optional follow-ups opt-in.
     practice_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     allow_optional_follow_ups: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Acceptance: optimistic-concurrency revision for atomic follow-up
+    # allocation. Only the allocator reads/writes it; full-doc rewrites
+    # leave it untouched.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",
