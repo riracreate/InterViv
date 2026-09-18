@@ -9,7 +9,7 @@ Living phase tracker for the Cursor implementation plan. This is not a chat log.
 | 1B Concept evaluator / reference contract | **Implemented + verified (engineering)** on `phase1b/reviewed-evaluator`; gate OFF; **awaiting real human review**. Stopped before activation and Phase 2. |
 | 2 Standalone and composed practice | **Implemented + verified (engineering)** on `phase2/modular-practice`; gates OFF; **awaiting real human review**. Stopped before activation and Phase 3. |
 | 3 Persistence, feedback, shared UI | **3A + 3B + 3C implemented** on `phase3c/ui-reports`; gates OFF; live narration off |
-| 4 Follow-ups, assistance policies | Deferred |
+| 4 Follow-ups, assistance policies | **4A implemented + verified (engineering)** on `phase4a/assistance-followups`; gates OFF; browser QA pending |
 | Research Completeness / evaluation | Deferred; held-out ratings absent |
 
 Status vocabulary: implemented, verified, blocked by environment, awaiting real human review, deferred. Synthetic tests are not human or live-provider validation.
@@ -118,3 +118,14 @@ API shape (additive fields only). No new follow-ups; no scoring changes.
   dashboard MCQ review under completed+after_session, report presentation polish.
   Report: `docs/phase3c_implementation_report.md`.
   Gates remain off; no Phase 4.
+
+## Phase 4A
+
+Branch `phase4a/assistance-followups`, worktree `.worktrees/cursor-ai-design-phase4a`,
+base `e591f0b9` (Phase 3C). Policy: `docs/phase4a_assistance_policy.md`.
+Report: `docs/phase4a_implementation_report.md`. Migration `20260917_0014`.
+
+Teaching exposures, versioned eligibility (`assistance_v1`), primary-metric
+gating, bounded optional follow-ups, focused Practice/Interview/report UI.
+Gates remain off; 0 reviewed bundles → unscored clarification follow-ups only.
+Browser-rendered QA pending (checklist in 4A report). Stopped before roadmap/coach.
