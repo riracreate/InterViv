@@ -6,6 +6,9 @@ import {
   fetchJobPrepare,
   fetchJobPractice,
   saveInterviewState,
+  createCoachConversation,
+  patchCoachGoals,
+  saveTargetContext,
 } from '../lib/api';
 import { mapJobCard, jobApplyHref, formatSalary } from '../lib/jobsMapping';
 import AppNav from '../components/AppNav';
@@ -417,6 +420,49 @@ export default function Jobs() {
               <div className="hub-toolbar" style={{ justifyContent: 'flex-end' }}>
                 <button type="button" className="hub-button" onClick={() => setPrepare(null)}>
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="hub-button"
+                  data-testid="job-coach-handoff"
+                  onClick={async () => {
+                    try {
+                      setBusy(true);
+                      const skills = (prepare.skills || []).map((s) => (typeof s === 'string' ? s : s.skill || s)).filter(Boolean);
+                      await saveTargetContext({
+                        role_id: prepare.role_id || null,
+                        job_id: prepare.job_id || selectedJobId,
+                        jd_source: fullJd.trim() ? 'paste' : 'job',
+                        jd_text: fullJd.trim() || null,
+                      }).catch(() => {});
+                      const created = await createCoachConversation();
+                      const cid = created.conversation?.conversation_id;
+                      if (cid) {
+                        await patchCoachGoals(cid, {
+                          confirmed_goal: prepare.role_title || prepare.title || 'Target role from Jobs',
+                          role_id: prepare.role_id || null,
+                          planning_context_skills: skills,
+                          adzuna_context: {
+                            job_id: prepare.job_id || selectedJobId,
+                            role_title: prepare.role_title || prepare.title,
+                            company: prepare.company,
+                            snippet_is_incomplete: true,
+                            confirmed_skills: skills,
+                            full_jd_provided: Boolean(fullJd.trim()),
+                          },
+                        });
+                      }
+                      setPrepare(null);
+                      navigate('/coach');
+                    } catch (err) {
+                      setError(err.message || 'Could not open Coach with this job context.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Continue in Coach
                 </button>
                 <button
                   type="button"

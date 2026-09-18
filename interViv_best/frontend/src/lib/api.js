@@ -188,6 +188,54 @@ export function fetchCoachStartPractice(payload) {
   });
 }
 
+export function createCoachConversation() {
+  return request("/coach/conversations", { method: "POST" });
+}
+
+export function fetchCoachConversation(conversationId) {
+  return request(`/coach/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+export function patchCoachGoals(conversationId, payload) {
+  return request(`/coach/conversations/${encodeURIComponent(conversationId)}/goals`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postCoachMessage(conversationId, payload) {
+  return request(`/coach/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function ensureStudyPlan(payload) {
+  return request("/roadmap/plans/me", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function completeStudyTask(taskId, payload = {}) {
+  return request(`/roadmap/plans/me/tasks/${encodeURIComponent(taskId)}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchStudyPlan(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.roleId) qs.set("role_id", params.roleId);
+  if (params.confirmedGoal) qs.set("confirmed_goal", params.confirmedGoal);
+  const q = qs.toString();
+  return request(`/roadmap/plans/me${q ? `?${q}` : ""}`);
+}
+
 export function markRoadmapProgress(payload) {
   return request("/learning/roadmap-progress", {
     method: "POST",
