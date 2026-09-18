@@ -122,7 +122,7 @@ API shape (additive fields only). No new follow-ups; no scoring changes.
 ## Phase 4A
 
 Branch `phase4a/assistance-followups`, worktree `.worktrees/cursor-ai-design-phase4a`,
-base `e591f0b9` (Phase 3C). Policy: `docs/phase4a_assistance_policy.md`.
+base `e591f0b9` (Phase 3C), tip `fb8ed945`. Policy: `docs/phase4a_assistance_policy.md`.
 Report: `docs/phase4a_implementation_report.md`. Migration `20260917_0014`.
 
 Teaching exposures, versioned eligibility (`assistance_v1`), primary-metric
