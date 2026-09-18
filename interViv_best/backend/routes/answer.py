@@ -73,9 +73,9 @@ logger = logging.getLogger(__name__)
 # several store transactions on every backend, so the old check-then-claim
 # allowed two concurrent submits to both score. Serializing per session
 # closes that window for a single-process server. Different sessions never
-# block each other. Multi-worker deployments need a store-level conditional
-# claim instead; entries are intentionally never evicted so a waiter can
-# never miss a lock its session still holds.
+# block each other. Multi-worker deployments also use store-level conditional
+# claims (see backend.db.round_claim); entries are intentionally never
+# evicted so a waiter can never miss a lock its session still holds.
 _session_submit_locks: dict[str, threading.Lock] = {}
 _session_submit_locks_guard = threading.Lock()
 
@@ -198,7 +198,15 @@ def _update_learning_state(
     elo_before: float | None = None,
     elo_after: float | None = None,
     session_id: str | None = None,
+    raise_on_error: bool = True,
 ) -> None:
+    """Update skill graph / mastery / Elo-delta signals.
+
+    When ``raise_on_error`` is True (default), failures propagate so the
+    attempt ``atomic()`` block can roll back scored round + learning effects
+    together. Callers that intentionally keep best-effort semantics may pass
+    ``raise_on_error=False``.
+    """
     user_id = session.get("user_id")
     if not user_id:
         return
@@ -234,6 +242,8 @@ def _update_learning_state(
             )
     except Exception:
         logger.warning("Failed to update Phase 2 learning state.", exc_info=True)
+        if raise_on_error:
+            raise
 
 
 def _assistance_for_round(
@@ -535,26 +545,49 @@ def submit_answer(
                     detail=f"Assessment deadline expired at {expires_at.isoformat()}.",
                 )
 
-        # Concurrency guard: atomic finalization check
+        # Concurrency guard: store-level conditional claim (+ process lock).
+        from backend.db.round_claim import claim_round_finalizing
+
+        # Stale finalizing without a score: takeover is safe under the
+        # per-session lock (single-process). Cross-worker races rely on the
+        # SQL UPDATE rowcount instead.
         round_status = active_round.get("status")
         scored = bool(active_round.get("answer_text")) or active_round.get("final_score") is not None
-        if round_status == "finalizing" and not scored:
-            # Stale claim: a previous holder died between claim and commit
-            # without persisting a score. The per-session lock guarantees
-            # nobody else is in flight (single-process contract), so the
-            # retry takes the claim over instead of 409ing forever.
+        allow_takeover = round_status == "finalizing" and not scored
+        if allow_takeover:
             logger.warning(
                 "Taking over stale finalizing claim for session %s round %s.",
                 request.session_id, request.round,
             )
-        elif (
-            round_status in ("submitted", "finalizing", "expired")
-            or scored
-        ):
+        claim = claim_round_finalizing(
+            db,
+            session_id=request.session_id,
+            round_number=request.round,
+            allow_stale_takeover=allow_takeover,
+        )
+        if claim == "already_done":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This round has already been submitted or is finalizing.",
             )
+        if claim == "busy":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This round has already been submitted or is finalizing.",
+            )
+        if claim == "missing":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found.",
+            )
+        # Refresh local view after claim so status matches the store.
+        session = db["sessions"].find_one({"session_id": request.session_id}) or session
+        rounds = session.get("rounds", [])
+        active_round = next(
+            (item for item in rounds if item.get("round") == request.round),
+            active_round,
+        )
+        active_round["status"] = "finalizing"
 
         if round_type == "ml_primitives":
             from backend.routes.ml_primitives import store_unavailable_attempt
@@ -572,12 +605,6 @@ def submit_answer(
         if pre_submit_round.get("status") == "finalizing":
             # Takeover path: release must undo the claim, not re-persist it.
             pre_submit_round["status"] = "in_progress"
-        # Claim finalization
-        active_round["status"] = "finalizing"
-        db["sessions"].update_one(
-            {"session_id": request.session_id},
-            {"$set": {"rounds": rounds}},
-        )
 
         # Which skill does THIS round belong to?
         current_skill = _skill_for_round(session, request.round)
@@ -1011,13 +1038,12 @@ def submit_answer(
         # and assisted/repeated/follow-up attempts stay out of the mean.
         completed_scores = [] if is_spaced_review else assessment_eligible_scores(rounds)
         try:
-            # The next round is built in memory first. Expected inventory /
-            # topic exhaustion sets progression_blocked and still commits the
-            # scored answer (content_blocked). Unrelated DatabaseConnectionError
-            # during the attempt commit rolls the score back so retry can
-            # resubmit via stale-claim takeover. Derived skill-graph / concept
-            # mastery updates follow the successful commit best-effort; Elo and
-            # the narration job join the attempt transaction.
+            # Expected inventory / topic exhaustion sets progression_blocked and
+            # still commits the scored answer (content_blocked). Unrelated
+            # DatabaseConnectionError during the attempt commit rolls the score
+            # (and required learning effects) back so retry can resubmit via
+            # stale-claim takeover. Elo, narration job, and graph/mastery
+            # updates join the attempt transaction.
             # Queue the next round after recomputing the user's weakest skill
             # and concept from fresh learning state. Anonymous sessions keep the
             # existing rotation behavior. Block sessions honor the expanded plan
@@ -1340,10 +1366,12 @@ def submit_answer(
             if progression_blocked_reason and session_status == "active":
                 session_status = "content_blocked"
 
-            # The single attempt commit: scored round (+ queued next round)
-            # and measured Elo update succeed or fail together. A 503 here
-            # leaves the claimed-but-unscored round behind, and the guard's
-            # stale-claim takeover makes the retry a clean resubmit.
+            # The single attempt commit: scored round (+ queued next round),
+            # measured Elo, narration job, and required learning effects
+            # (skill graph / mastery / Elo-delta signals) succeed or fail
+            # together. A 503 here leaves the claimed-but-unscored round
+            # behind, and the guard's stale-claim takeover makes the retry
+            # a clean resubmit.
             # When progression is blocked, the scored answer is still committed
             # and the session becomes content_blocked (no false next round).
             session_update = {
@@ -1395,6 +1423,23 @@ def submit_answer(
                     feedback=scoring_result["feedback"],
                     snapshot_digest=scored_snapshot.get("digest"),
                 )
+                if (
+                    not self_reported
+                    and not is_spaced_review
+                    and assessment_eligible
+                    and scoring_result.get("final_score") is not None
+                ):
+                    _update_learning_state(
+                        session=session,
+                        skill=current_skill,
+                        final_score=float(scoring_result["final_score"]),
+                        difficulty=active_round.get("difficulty", "medium"),
+                        scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
+                        elo_before=elo_before,
+                        elo_after=elo_after,
+                        session_id=request.session_id,
+                        raise_on_error=True,
+                    )
         except DatabaseConnectionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -1407,27 +1452,9 @@ def submit_answer(
                 ) from exc
             raise
 
-        # Post-commit derived state (best-effort, unchanged semantics):
-        # measured rounds update learning state, spaced-review rounds update
-        # the review schedule, and the saved draft for a submitted round is
-        # cleared. None of these can fail the already-committed submit.
-        if (
-            not self_reported
-            and not is_spaced_review
-            and assessment_eligible
-            and scoring_result.get("final_score") is not None
-        ):
-            _update_learning_state(
-                session=session,
-                skill=current_skill,
-                final_score=float(scoring_result["final_score"]),
-                difficulty=active_round.get("difficulty", "medium"),
-                scoring_breakdown=scoring_result.get("scoring_breakdown", {}) or {},
-                elo_before=elo_before,
-                elo_after=elo_after,
-                session_id=request.session_id,
-            )
-        elif is_spaced_review:
+        # Post-commit derived state that is not part of the assessment
+        # learning unit: spaced-review schedule updates and draft cleanup.
+        if is_spaced_review:
             try:
                 from backend.routes.learning_hub import (
                     apply_review_outcome_for_session_round,

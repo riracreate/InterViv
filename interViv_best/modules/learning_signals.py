@@ -38,6 +38,26 @@ def reset_memory_store() -> None:
     _MEMORY_ROADMAP.clear()
 
 
+def snapshot_memory_store() -> dict[str, Any]:
+    import copy
+
+    return {
+        "events": copy.deepcopy(_MEMORY_EVENTS),
+        "roadmap": copy.deepcopy(_MEMORY_ROADMAP),
+    }
+
+
+def restore_memory_store(snapshot: dict[str, Any] | None) -> None:
+    if not snapshot:
+        return
+    import copy
+
+    _MEMORY_EVENTS.clear()
+    _MEMORY_EVENTS.extend(copy.deepcopy(snapshot.get("events") or []))
+    _MEMORY_ROADMAP.clear()
+    _MEMORY_ROADMAP.update(copy.deepcopy(snapshot.get("roadmap") or {}))
+
+
 def record_elo_delta(
     *,
     user_id: str,
