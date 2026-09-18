@@ -149,6 +149,9 @@ class SessionRow(Base):
     allow_unknown_topic_fallback: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Phase 3B: why next-question progression stopped (content_blocked sessions).
     progression_blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 4A: assessment vs coached practice; optional follow-ups opt-in.
+    practice_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    allow_optional_follow_ups: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",
@@ -207,6 +210,14 @@ class RoundRow(Base):
     assistance_kinds: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Phase 3A immutable attempt snapshot (nullable: pre-snapshot rounds).
     attempt_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 4A assessment eligibility (nullable: legacy → legacy_unknown at read).
+    assessment_eligibility: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    eligibility_policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    eligibility_exclusion_reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    eligibility_exposure_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    is_follow_up: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    follow_up_parent_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    follow_up_identity: Mapped[str | None] = mapped_column(String(96), nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -548,6 +559,32 @@ class AssistanceEventRow(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class TeachingExposureRow(Base):
+    """Phase 4A durable teaching-delivery record (authoritative for eligibility).
+
+    Distinct from generation or status polls. Idempotent on delivery_id.
+    """
+
+    __tablename__ = "teaching_exposures"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    content_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    block_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    item_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    item_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    content_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    concept_topic_scope_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    delivered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    delivery_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 

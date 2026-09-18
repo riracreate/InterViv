@@ -26,6 +26,7 @@ from .sqlalchemy_models import (
     SessionRow,
     SystemDesignAttemptRow,
     TargetContextRow,
+    TeachingExposureRow,
     UserRow,
 )
 
@@ -488,6 +489,8 @@ class _SessionCollection:
         row.expanded_plan_json = data.get("expanded_plan")
         row.allow_unknown_topic_fallback = data.get("allow_unknown_topic_fallback")
         row.progression_blocked_reason = data.get("progression_blocked_reason")
+        row.practice_mode = data.get("practice_mode")
+        row.allow_optional_follow_ups = data.get("allow_optional_follow_ups")
 
     @staticmethod
     def _replace_rounds(session, row: SessionRow, rounds: list[dict[str, Any]]) -> None:
@@ -542,6 +545,19 @@ class _SessionCollection:
                     assisted=round_doc.get("assisted"),
                     assistance_kinds=round_doc.get("assistance_kinds"),
                     attempt_snapshot_json=round_doc.get("attempt_snapshot"),
+                    assessment_eligibility=round_doc.get("assessment_eligibility"),
+                    eligibility_policy_version=round_doc.get(
+                        "eligibility_policy_version"
+                    ),
+                    eligibility_exclusion_reasons=round_doc.get(
+                        "eligibility_exclusion_reasons"
+                    ),
+                    eligibility_exposure_ids=round_doc.get(
+                        "eligibility_exposure_ids"
+                    ),
+                    is_follow_up=round_doc.get("is_follow_up"),
+                    follow_up_parent_round=round_doc.get("follow_up_parent_round"),
+                    follow_up_identity=round_doc.get("follow_up_identity"),
                 )
             )
 
@@ -597,6 +613,17 @@ class _SessionCollection:
                     "assisted": round_row.assisted,
                     "assistance_kinds": round_row.assistance_kinds or [],
                     "attempt_snapshot": round_row.attempt_snapshot_json,
+                    "assessment_eligibility": round_row.assessment_eligibility,
+                    "eligibility_policy_version": round_row.eligibility_policy_version,
+                    "eligibility_exclusion_reasons": (
+                        round_row.eligibility_exclusion_reasons or []
+                    ),
+                    "eligibility_exposure_ids": (
+                        round_row.eligibility_exposure_ids or []
+                    ),
+                    "is_follow_up": round_row.is_follow_up,
+                    "follow_up_parent_round": round_row.follow_up_parent_round,
+                    "follow_up_identity": round_row.follow_up_identity,
                 }
             )
         return {
@@ -632,6 +659,8 @@ class _SessionCollection:
                 else True
             ),
             "progression_blocked_reason": row.progression_blocked_reason,
+            "practice_mode": row.practice_mode,
+            "allow_optional_follow_ups": row.allow_optional_follow_ups,
             "rounds": rounds,
         }
 
@@ -1211,6 +1240,100 @@ class _AssistanceEventCollection:
         }
 
 
+class _TeachingExposureCollection:
+    """Phase 4A append-only teaching deliveries; idempotent on delivery_id."""
+
+    @staticmethod
+    def _field_columns() -> dict[str, Any]:
+        return {
+            "id": TeachingExposureRow.id,
+            "delivery_id": TeachingExposureRow.delivery_id,
+            "owner_key": TeachingExposureRow.owner_key,
+            "user_id": TeachingExposureRow.user_id,
+            "session_id": TeachingExposureRow.session_id,
+            "item_id": TeachingExposureRow.item_id,
+            "content_kind": TeachingExposureRow.content_kind,
+        }
+
+    def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        with session_scope() as session:
+            rows = _filtered_rows(
+                session, TeachingExposureRow, self._field_columns(), query
+            )
+            for row in rows:
+                doc = self._to_doc(row)
+                if _matches(doc, query):
+                    return _project(doc, projection)
+        return None
+
+    def find(self, query: dict | None = None) -> Iterator[dict]:
+        with session_scope() as session:
+            docs = [
+                self._to_doc(row)
+                for row in _filtered_rows(
+                    session, TeachingExposureRow, self._field_columns(), query
+                )
+            ]
+        return iter([doc for doc in docs if not query or _matches(doc, query)])
+
+    def insert_one(self, doc: dict) -> _InsertResult:
+        data = _json_ready(doc)
+        with session_scope() as session:
+            delivery_id = str(data.get("delivery_id") or "")
+            if delivery_id:
+                existing = (
+                    session.query(TeachingExposureRow)
+                    .filter(TeachingExposureRow.delivery_id == delivery_id)
+                    .first()
+                )
+                if existing is not None:
+                    return _InsertResult(existing.id)
+            row = TeachingExposureRow(
+                id=str(data.get("id") or ""),
+                delivery_id=delivery_id,
+                content_id=str(data.get("content_id") or ""),
+                owner_key=str(data.get("owner_key") or ""),
+                user_id=data.get("user_id"),
+                session_id=data.get("session_id"),
+                block_id=data.get("block_id"),
+                round=data.get("round"),
+                item_type=data.get("item_type"),
+                item_id=data.get("item_id"),
+                content_kind=str(data.get("content_kind") or ""),
+                policy_version=data.get("policy_version"),
+                concept_topic_scope_json=data.get("concept_topic_scope"),
+                delivered_at=_coerce_datetime(data.get("delivered_at")) or _now(),
+                delivery_order=int(data.get("delivery_order") or 0),
+                created_at=_coerce_datetime(data.get("created_at")) or _now(),
+            )
+            session.add(row)
+        return _InsertResult(data.get("id"))
+
+    def count_documents(self, query: dict) -> int:
+        return sum(1 for _ in self.find(query))
+
+    @staticmethod
+    def _to_doc(row: TeachingExposureRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "delivery_id": row.delivery_id,
+            "content_id": row.content_id,
+            "owner_key": row.owner_key,
+            "user_id": row.user_id,
+            "session_id": row.session_id,
+            "block_id": row.block_id,
+            "round": row.round,
+            "item_type": row.item_type,
+            "item_id": row.item_id,
+            "content_kind": row.content_kind,
+            "policy_version": row.policy_version,
+            "concept_topic_scope": row.concept_topic_scope_json or {},
+            "delivered_at": row.delivered_at,
+            "delivery_order": row.delivery_order,
+            "created_at": row.created_at,
+        }
+
+
 class _SystemDesignAttemptCollection:
     """Append-only view over system_design_attempts."""
 
@@ -1583,6 +1706,7 @@ class SQLAlchemyDatabase:
             "retry_sets": _RetrySetCollection(),
             "bookmarks": _BookmarkCollection(),
             "assistance_events": _AssistanceEventCollection(),
+            "teaching_exposures": _TeachingExposureCollection(),
             "review_schedules": _ReviewScheduleCollection(),
             "narration_jobs": _NarrationJobCollection(),
         }

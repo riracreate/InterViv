@@ -128,6 +128,12 @@ def evaluation_unavailable(round_type: str | None) -> bool:
 
 
 def measured_scores(rounds: list[dict[str, Any]]) -> list[float]:
+    """Measured (non-self-reported) scores. Does not apply assistance eligibility.
+
+    Prefer :func:`assessment_eligible_scores` for primary aggregates (block
+    averages, readiness, Elo-facing numerators). This helper remains for
+    surfaces that need the broader measured population.
+    """
     out: list[float] = []
     for item in rounds:
         if item.get("final_score") is None:
@@ -136,3 +142,36 @@ def measured_scores(rounds: list[dict[str, Any]]) -> list[float]:
             continue
         out.append(float(item["final_score"]))
     return out
+
+
+def assessment_eligible_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rounds that count toward primary assessment metrics under Phase 4A.
+
+    Excludes self-reported, spaced-review, and non-eligible assisted/repeated
+    /follow-up/legacy-unknown attempts. Legacy/unknown is not treated as
+    independently assessed.
+    """
+    from modules.assistance_policy import is_assessment_eligible, read_persisted_eligibility
+
+    out: list[dict[str, Any]] = []
+    for item in rounds:
+        if item.get("final_score") is None:
+            continue
+        if is_self_reported_round(item) or is_practice_review_round(item):
+            continue
+        info = read_persisted_eligibility(item)
+        # Pre-4A legacy rows: keep prior measured behaviour only when the
+        # round was not marked assisted and is not a follow-up. Assisted
+        # legacy stays out of primary metrics (matches Phase D split intent).
+        if info.get("legacy"):
+            if item.get("assisted") or item.get("is_follow_up"):
+                continue
+            out.append(item)
+            continue
+        if is_assessment_eligible(item):
+            out.append(item)
+    return out
+
+
+def assessment_eligible_scores(rounds: list[dict[str, Any]]) -> list[float]:
+    return [float(r["final_score"]) for r in assessment_eligible_rounds(rounds)]
