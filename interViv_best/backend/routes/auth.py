@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from backend.auth.security import create_access_token, decode_access_token, hash_password, verify_password
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.user_target import get_user_target
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -26,12 +27,13 @@ class LoginRequest(BaseModel):
 
 
 def _public_user(user: dict) -> dict[str, object]:
+    target = get_user_target(user)
     return {
         "id": user["id"],
         "email": user["email"],
         "name": user.get("name"),
-        "target_company_id": user.get("target_company_id"),
-        "target_role_id": user.get("target_role_id"),
+        "target_company_id": target["company_id"],
+        "target_role_id": target["role_id"],
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.user_target import get_user_target, storage_target_id
 from backend.db.transactions import atomic
 from backend.execution import (
     CodingRateLimitedError,
@@ -1462,12 +1463,11 @@ def start_session(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You cannot start a session for another user's candidate.",
                 )
-    target_company_id = (
-        str(user.get("target_company_id")) if user and user.get("target_company_id") else request.target_company_id
-    )
-    target_role_id = (
-        str(user.get("target_role_id")) if user and user.get("target_role_id") else request.target_role_id
-    )
+    saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
+    company_slug = saved["company_id"] or request.target_company_id
+    role_slug = saved["role_id"] or request.target_role_id
+    target_company_id = storage_target_id(company_slug, "company")
+    target_role_id = storage_target_id(role_slug, "role")
     candidate_is_new = False
     if not candidate:
         # Allow quick-start demo sessions without a resume upload. Resume uploads

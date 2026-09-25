@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from backend.db import get_database
+from backend.db.user_target import get_user_target
 from backend.routes.auth import require_authenticated, require_user
 from backend.routes.session import StartSessionRequest, start_session
 from modules.coach_conversation import (
@@ -84,7 +85,7 @@ def coach_plan(
         candidate = db["candidates"].find_one({"user_id": user["id"]})
         if candidate:
             role_id = candidate.get("target_role_id") or candidate.get("role_id")
-        role_id = role_id or user.get("target_role_id")
+        role_id = role_id or get_user_target(user)["role_id"]
 
     return build_coach_plan(
         jd_text=body.jd_text,
@@ -144,7 +145,7 @@ def create_conversation(authorization: str | None = Header(default=None)) -> dic
     user = require_user(authorization)
     doc = get_or_create_conversation(
         user_id=str(user["id"]),
-        role_id=user.get("target_role_id"),
+        role_id=get_user_target(user)["role_id"],
     )
     return {"conversation": doc}
 
@@ -173,7 +174,7 @@ def patch_goals(
             conversation_id,
             owner=owner_key(str(user["id"])),
             confirmed_goal=body.confirmed_goal,
-            role_id=body.role_id,
+            role_id=body.role_id or get_user_target(user)["role_id"],
             hours_per_week=body.hours_per_week,
             planning_context_skills=body.planning_context_skills,
             adzuna_context=body.adzuna_context,
