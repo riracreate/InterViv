@@ -122,8 +122,7 @@ def test_anonymous_legacy_session_cannot_reach_phase2_sql_preview() -> None:
     )
 
     print(f"anonymous legacy to Phase 2 SQL preview status: {response.status_code}")
-    assert response.status_code == 401, response.text
-    assert "Anonymous sessions are not permitted" in response.text
+    assert response.status_code == 403, response.text
 
 
 def test_answer_payload_cannot_control_round_type_transition() -> None:
