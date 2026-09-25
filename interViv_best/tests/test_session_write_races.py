@@ -395,8 +395,9 @@ def test_allocation_conflict_rolls_back_and_retries_without_duplicates(sql_db):
     from backend.db.sqlalchemy_store import SessionWriteConflict
     from modules.follow_ups import build_follow_up_plan_entry
 
+    from tests.user_fixtures import ensure_session_parents
     db, engine = sql_db
-    db["sessions"].insert_one({
+    doc = {
         "session_id": "race-alloc",
         "user_id": "u-alloc",
         "skills": ["DBMS"],
@@ -404,7 +405,9 @@ def test_allocation_conflict_rolls_back_and_retries_without_duplicates(sql_db):
         "practice_mode": "coached_practice",
         "allow_optional_follow_ups": True,
         "rounds": [_submitted_round(1)],
-    })
+    }
+    ensure_session_parents(db, doc)
+    db["sessions"].insert_one(doc)
     parent = db["sessions"].find_one({"session_id": "race-alloc"})["rounds"][0]
     entry = build_follow_up_plan_entry(
         parent_round_doc=parent,
@@ -454,8 +457,9 @@ def test_concurrent_allocations_for_distinct_parents_both_win(
     from backend.db.follow_up_allocate import allocate_follow_up
     from modules.follow_ups import build_follow_up_plan_entry
 
+    from tests.user_fixtures import ensure_session_parents
     db, engine = sql_db
-    db["sessions"].insert_one({
+    doc = {
         "session_id": "race-alloc-2",
         "user_id": "u-alloc-2",
         "skills": ["DBMS"],
@@ -463,7 +467,9 @@ def test_concurrent_allocations_for_distinct_parents_both_win(
         "practice_mode": "coached_practice",
         "allow_optional_follow_ups": True,
         "rounds": [_submitted_round(1), _submitted_round(2)],
-    })
+    }
+    ensure_session_parents(db, doc)
+    db["sessions"].insert_one(doc)
     live = db["sessions"].find_one({"session_id": "race-alloc-2"})
     entries = {
         n: build_follow_up_plan_entry(
@@ -554,14 +560,17 @@ def test_stale_write_fails_instead_of_clobbering(sql_db):
     """
     from backend.db.sqlalchemy_store import SessionWriteConflict
 
+    from tests.user_fixtures import ensure_session_parents
     db, engine = sql_db
-    db["sessions"].insert_one({
+    doc = {
         "session_id": "race-store",
         "user_id": "u-store",
         "skills": ["DBMS"],
         "total_rounds": 1,
         "rounds": [_submitted_round(1)],
-    })
+    }
+    ensure_session_parents(db, doc)
+    db["sessions"].insert_one(doc)
     stale = db["sessions"].find_one({"session_id": "race-store"})
     assert stale["revision"] == 0
 

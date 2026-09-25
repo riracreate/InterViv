@@ -171,7 +171,7 @@ def _session_doc(session_id="s1", rounds=(), blocks=(), total=None, expanded=Non
         for r in rounds
         if not r.get("is_follow_up")
     ]
-    return {
+    doc = {
         "session_id": session_id,
         "user_id": "u1",
         "practice_mode": "coached_practice",
@@ -181,6 +181,10 @@ def _session_doc(session_id="s1", rounds=(), blocks=(), total=None, expanded=Non
         "block_plan": list(blocks),
         "rounds": rounds,
     }
+    from backend.db import get_database
+    from tests.user_fixtures import ensure_session_parents
+    ensure_session_parents(get_database(), doc)
+    return doc
 
 
 def _entry_for(session_round, prompt="Clarify X"):
@@ -787,6 +791,8 @@ def test_migrated_schema_backfills_revision_zero(tmp_path, monkeypatch):
                 values.append("'2026-01-01T00:00:00+00:00'")
             elif "REAL" in ctype or "FLOA" in ctype or "DOUB" in ctype:
                 values.append("0.0")
+            elif "JSON" in ctype:
+                values.append("'[]'")
             else:
                 values.append("''")
         conn.execute(text(f"INSERT INTO sessions ({', '.join(names)}) "

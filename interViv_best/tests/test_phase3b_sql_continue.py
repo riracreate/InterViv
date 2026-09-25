@@ -38,10 +38,11 @@ def test_progression_blocked_reason_survives_sql_reopen(sql_db):
     from backend.db import get_database
     from backend.db.sqlalchemy_store import SQLAlchemyDatabase, get_engine
 
+    from tests.user_fixtures import ensure_session_parents
     db = get_database()
     assert isinstance(db, SQLAlchemyDatabase)
     session_id = "sess-phase3b-blocked"
-    db["sessions"].insert_one({
+    doc = {
         "session_id": session_id,
         "candidate_id": "cand-1",
         "status": "content_blocked",
@@ -59,7 +60,9 @@ def test_progression_blocked_reason_survives_sql_reopen(sql_db):
                 "content": ["ok"], "strengths": [], "weakness": [], "next_step": "",
             },
         }],
-    })
+    }
+    ensure_session_parents(db, doc)
+    db["sessions"].insert_one(doc)
 
     _clear_database_caches()
     db2 = get_database()
