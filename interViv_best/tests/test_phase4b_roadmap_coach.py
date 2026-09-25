@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
+from datetime import datetime, timezone  # noqa: E402
+
+from backend.auth.security import create_access_token, hash_password  # noqa: E402
+from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
 from modules import coach_conversation, roadmap_plans  # noqa: E402
 from modules.coach_conversation import (  # noqa: E402
@@ -250,7 +254,19 @@ def test_adzuna_context_survives_goals_handoff():
 
 
 def test_roadmap_route_nulls_readiness_without_eligible(client: TestClient):
-    resp = client.get("/roadmap/u-blank-route/amazon_sde_intern?days=30")
+    user_id = "u-blank-route"
+    get_database()["users"].insert_one({
+        "id": user_id,
+        "email": f"{user_id}@example.com",
+        "name": user_id,
+        "password_hash": hash_password("passw0rd123"),
+        "created_at": datetime.now(timezone.utc),
+        "last_active_at": datetime.now(timezone.utc),
+    })
+    resp = client.get(
+        "/roadmap/u-blank-route/amazon_sde_intern?days=30",
+        headers={"Authorization": f"Bearer {create_access_token(user_id)}"},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("overall_readiness_percentage") is None

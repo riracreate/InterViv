@@ -341,7 +341,7 @@ def test_av_capabilities_distinct_states_and_no_speech_score() -> None:
     assert report["video_recording"]["available"] is False
 
     client = TestClient(app)
-    resp = client.get("/av/capabilities")
+    resp = client.get("/av/capabilities", headers=_headers(_make_user("av")))
     assert resp.status_code == 200
     body = resp.json()
     assert "retention" in body

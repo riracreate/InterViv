@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-from backend.routes.auth import require_matching_user, require_user
+from backend.routes.auth import require_authenticated, require_matching_user, require_user
 from modules.concept_mastery import ConceptMastery
 from modules.learning_signals import (
     build_signals_payload,
@@ -16,7 +16,7 @@ from modules.roadmap_generator import SUPPORTED_DAYS
 from modules.skill_graph import StudentSkillGraph
 
 
-router = APIRouter(tags=["learning"])
+router = APIRouter(tags=["learning"], dependencies=[Depends(require_authenticated)])
 
 
 class RoadmapProgressRequest(BaseModel):

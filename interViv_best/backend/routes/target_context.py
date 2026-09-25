@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -24,12 +24,16 @@ from backend.db.company_seed import (
     company_slug_to_db_id,
     role_slug_to_db_id,
 )
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from modules.company_graph import get_company_graph
 from modules.guidance_coach import MAX_INPUT_CHARS
 from modules.jobs_explorer import get_job
 
-router = APIRouter(prefix="/target-context", tags=["target-context"])
+router = APIRouter(
+    prefix="/target-context",
+    tags=["target-context"],
+    dependencies=[Depends(require_authenticated)],
+)
 
 JD_SOURCES = ("job", "paste", "role")
 

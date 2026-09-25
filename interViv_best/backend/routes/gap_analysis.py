@@ -17,13 +17,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from backend.routes.auth import get_user_from_authorization, require_matching_user
+from backend.routes.auth import get_user_from_authorization, require_authenticated, require_matching_user
 from modules.gap_analysis import GapAnalysisError, GapAnalyzer
 
 
-router = APIRouter(prefix="/gap-analysis", tags=["gap-analysis"])
+router = APIRouter(
+    prefix="/gap-analysis",
+    tags=["gap-analysis"],
+    dependencies=[Depends(require_authenticated)],
+)
 
 
 # IMPORTANT: register the literal "/me/..." route BEFORE the catch-all

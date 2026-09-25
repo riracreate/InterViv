@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.db.follow_up_allocate import allocate_follow_up
 from backend.routes.answer import _submit_locked
+from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from modules.follow_ups import build_follow_up_plan_entry
 
@@ -22,7 +23,7 @@ class FollowUpRequest(BaseModel):
     accept_eligibility_consequence: bool = False
 
 
-@router.post("/{session_id}/follow-ups")
+@router.post("/{session_id}/follow-ups", dependencies=[Depends(require_authenticated)])
 def request_follow_up(
     session_id: str,
     body: FollowUpRequest,

@@ -4,7 +4,7 @@ import statistics
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.evidence_kind import (
@@ -14,7 +14,7 @@ from backend.evidence_kind import (
     scoring_mode_for_round,
     scoring_mode_label_for_display,
 )
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
 from modules.gap_analysis import GapAnalyzer, GapAnalysisError
 from modules.learning_signals import build_signals_payload
@@ -337,7 +337,7 @@ def _utc_date(value: Any) -> datetime | None:
         return None
 
 
-@router.get("/progress")
+@router.get("/progress", dependencies=[Depends(require_authenticated)])
 def get_account_progress(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     """Owned summaries only; never serialize questions, answers or artifacts.
 
@@ -465,7 +465,7 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
     }
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", dependencies=[Depends(require_authenticated)])
 def get_dashboard(
     session_id: str,
     authorization: str | None = Header(default=None),

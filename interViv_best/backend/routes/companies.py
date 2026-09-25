@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -21,7 +21,11 @@ from backend.db.company_seed import (
     company_slug_to_db_id,
     role_slug_to_db_id,
 )
-from backend.routes.auth import _public_user, get_user_from_authorization
+from backend.routes.auth import (
+    _public_user,
+    get_user_from_authorization,
+    require_authenticated,
+)
 from modules.company_graph import (
     Company,
     CompanyHiringGraph,
@@ -103,7 +107,7 @@ class TargetUpdate(BaseModel):
     target_role_id: str | None = None
 
 
-@router.patch("/auth/me/target")
+@router.patch("/auth/me/target", dependencies=[Depends(require_authenticated)])
 def patch_my_target(
     request: TargetUpdate,
     authorization: str | None = Header(default=None),

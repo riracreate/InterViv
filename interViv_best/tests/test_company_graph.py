@@ -98,8 +98,19 @@ companies:
         load_company_graph(bad_yaml)
 
 
+def _token(client: TestClient) -> str:
+    from uuid import uuid4
+
+    signup = client.post(
+        "/auth/signup",
+        json={"email": f"companies-{uuid4().hex[:8]}@example.com", "password": "StrongPass1!", "name": "Co"},
+    )
+    assert signup.status_code == 200
+    return signup.json()["access_token"]
+
+
 def test_get_companies_route(client: TestClient) -> None:
-    resp = client.get("/companies")
+    resp = client.get("/companies", headers={"Authorization": f"Bearer {_token(client)}"})
     assert resp.status_code == 200
     body = resp.json()
     assert "publicly available job descriptions" in body["disclaimer"]
@@ -107,7 +118,10 @@ def test_get_companies_route(client: TestClient) -> None:
 
 
 def test_get_company_roles_route(client: TestClient) -> None:
-    resp = client.get("/companies/amazon/roles")
+    resp = client.get(
+        "/companies/amazon/roles",
+        headers={"Authorization": f"Bearer {_token(client)}"},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["company"]["id"] == "amazon"
@@ -116,7 +130,10 @@ def test_get_company_roles_route(client: TestClient) -> None:
 
 
 def test_get_unknown_company_route_returns_404(client: TestClient) -> None:
-    resp = client.get("/companies/apple/roles")
+    resp = client.get(
+        "/companies/apple/roles",
+        headers={"Authorization": f"Bearer {_token(client)}"},
+    )
     assert resp.status_code == 404
 
 
