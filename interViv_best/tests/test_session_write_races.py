@@ -48,16 +48,36 @@ def _clear_db_caches() -> None:
 
 @pytest.fixture
 def sql_db(tmp_path, monkeypatch):
-    """Disposable SQLite store whose engine is safe for threaded use."""
+    """Disposable SQLite store whose engine is safe for threaded use.
+
+    When ``INTERVIV_TEST_DATABASE_URL`` is set, that database is used
+    instead and each test starts from ``alembic upgrade head``.
+    """
     from sqlalchemy import create_engine
 
-    url = f"sqlite:///{tmp_path / 'write-races.db'}"
+    from tests.sql_test_url import (
+        is_postgres,
+        reset_postgres_schema,
+        resolve_sql_url,
+        upgrade_head,
+    )
+
+    url = resolve_sql_url(tmp_path, "write-races.db")
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
     _clear_db_caches()
+    if is_postgres(url):
+        reset_postgres_schema(url)
+        upgrade_head(url)
+        _clear_db_caches()
+    connect_args = (
+        {}
+        if is_postgres(url)
+        else {"check_same_thread": False, "timeout": 30}
+    )
     engine = create_engine(
         url,
-        connect_args={"check_same_thread": False, "timeout": 30},
+        connect_args=connect_args,
         pool_pre_ping=True,
         future=True,
     )
@@ -82,6 +102,8 @@ def sql_db(tmp_path, monkeypatch):
         app_config.get_settings.cache_clear()
         sqlalchemy_store._sessionmaker.cache_clear()
         sqlalchemy_store.get_sqlalchemy_database.cache_clear()
+        if is_postgres(url):
+            reset_postgres_schema(url)
 
 
 @pytest.fixture
