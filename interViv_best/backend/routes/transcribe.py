@@ -4,10 +4,12 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from backend.routes.auth import require_authenticated
 from fastapi.responses import JSONResponse
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_authenticated)])
 
 _MODEL = None
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB

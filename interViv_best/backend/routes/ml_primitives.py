@@ -3,13 +3,17 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from backend.db import get_database, is_database_exception
 from backend.ml_primitives.catalog import UNAVAILABLE_MESSAGE
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 
-router = APIRouter(prefix="/ml-primitives", tags=["ml_primitives"])
+router = APIRouter(
+    prefix="/ml-primitives",
+    tags=["ml_primitives"],
+    dependencies=[Depends(require_authenticated)],
+)
 ATTEMPT_FIELDS = (
     "id", "session_id", "round", "block_id", "problem_id", "problem_version",
     "language", "source", "status", "error_code", "created_at",

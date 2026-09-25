@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
@@ -40,7 +40,12 @@ from backend.models.blocks import (
 )
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
-from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
+from backend.routes.auth import (
+    get_user_from_authorization,
+    require_authenticated,
+    require_matching_user,
+    require_user,
+)
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
@@ -1804,7 +1809,7 @@ def check_availability(
 # GET /session/practice-bank (MCQ + SQL catalog for Problem practice)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/practice-bank")
+@router.get("/practice-bank", dependencies=[Depends(require_authenticated)])
 def get_practice_bank(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
@@ -1875,7 +1880,7 @@ def get_session(
 # POST /session/sql/run (interactive preview runner against visible sample)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/sql/run")
+@router.post("/sql/run", dependencies=[Depends(require_authenticated)])
 def run_sql_preview(
     request: RunSQLPreviewRequest,
     authorization: str | None = Header(default=None),
@@ -1999,7 +2004,7 @@ def run_sql_preview(
 # POST /session/coding/run (visible-examples check; never final scoring)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/coding/run")
+@router.post("/coding/run", dependencies=[Depends(require_authenticated)])
 def run_coding_preview(
     request: RunCodingPreviewRequest,
     authorization: str | None = Header(default=None),
@@ -2218,7 +2223,7 @@ def _draft_round_or_error(
     return target
 
 
-@router.put("/{session_id}/draft")
+@router.put("/{session_id}/draft", dependencies=[Depends(require_authenticated)])
 def save_answer_draft(
     session_id: str,
     request: SaveAnswerDraftRequest,
@@ -2299,7 +2304,7 @@ def save_answer_draft(
             "updated_at": now.isoformat(), "draft": draft}
 
 
-@router.get("/{session_id}/draft")
+@router.get("/{session_id}/draft", dependencies=[Depends(require_authenticated)])
 def get_answer_draft(
     session_id: str,
     round: int,

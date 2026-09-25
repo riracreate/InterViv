@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, model_validator
 
 from backend.db import DatabaseConnectionError, get_database
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from modules.ats_scorer import (
     must_have_from_jd,
     must_have_from_role,
@@ -17,7 +17,7 @@ from modules.company_graph import get_company_graph
 from modules.resume_parser import analyze_resume_text
 
 
-router = APIRouter(prefix="/ats", tags=["ats"])
+router = APIRouter(prefix="/ats", tags=["ats"], dependencies=[Depends(require_authenticated)])
 
 
 class AtsScoreRequest(BaseModel):

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.coding_coach import build_hint, coach_status
@@ -23,9 +23,9 @@ from backend.db.phase_c_coding_bank import (
 )
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.execution import get_execution_status
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 
-router = APIRouter(prefix="/problems", tags=["problems"])
+router = APIRouter(prefix="/problems", tags=["problems"], dependencies=[Depends(require_authenticated)])
 
 ALLOWED_DIFFICULTIES = ("easy", "medium", "hard")
 
