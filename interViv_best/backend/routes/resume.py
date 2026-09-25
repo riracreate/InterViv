@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -15,10 +15,14 @@ from backend.integrations import (
     map_skills_to_domains,
 )
 from backend.models.candidate import CandidateDocument
-from backend.routes.auth import get_user_from_authorization
+from backend.routes.auth import get_user_from_authorization, require_authenticated
 from modules.skill_graph import StudentSkillGraph
 
-router = APIRouter(prefix="/resume", tags=["resume"])
+router = APIRouter(
+    prefix="/resume",
+    tags=["resume"],
+    dependencies=[Depends(require_authenticated)],
+)
 LOGGER = logging.getLogger(__name__)
 MAX_RESUME_BYTES = 5 * 1024 * 1024
 

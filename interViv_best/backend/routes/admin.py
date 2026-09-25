@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.config import get_settings
 from backend.integrations import IntegrationError
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from backend.scoring.pipeline import get_model_metadata
 from modules import bundle_store
 from modules.bundle_store import BundleStoreError
 from modules.question_bundles import reviewer_blind_view
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_authenticated)],
+)
 
 _STORE_STATUS = {
     "invalid": status.HTTP_422_UNPROCESSABLE_CONTENT,
