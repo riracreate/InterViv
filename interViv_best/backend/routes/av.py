@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from modules.av_capabilities import av_capability_report
 
-router = APIRouter(tags=["av"])
+router = APIRouter(tags=["av"], dependencies=[Depends(require_authenticated)])
 
 # Retention policy (documented for operators and candidates).
 AV_RETENTION = {

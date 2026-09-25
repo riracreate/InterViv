@@ -1,5 +1,6 @@
 import { normalizeSessionData } from './roundContractHelpers.js';
 import { LEGACY_BUILDER_DRAFT_KEY } from './practiceBuilder.js';
+import { loginHref } from './authRedirect.js';
 
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
@@ -20,6 +21,13 @@ async function request(path, options = {}) {
   const response = await fetch(requestPath, { ...options, headers });
   const data = await response.json().catch(() => ({}));
 
+  if (response.status === 401 && token && !path.startsWith("/auth/")) {
+    clearAuthToken();
+    const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.assign(loginHref(here, window.location.origin));
+    }
+  }
   if (!response.ok) {
     const error = new Error(data.detail || data.error || "Request failed.");
     error.status = response.status;
@@ -36,6 +44,10 @@ async function request(path, options = {}) {
 function clearUnscopedAccountState() {
   localStorage.removeItem(SESSION_STORAGE_KEY);
   localStorage.removeItem(LEGACY_BUILDER_DRAFT_KEY);
+}
+
+export function hasAuthToken() {
+  return Boolean(localStorage.getItem(AUTH_TOKEN_KEY));
 }
 
 export function saveAuthToken(token) {

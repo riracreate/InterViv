@@ -1,10 +1,7 @@
 """Shared session ownership checks for answer, continue, and feedback routes.
 
-Matches GET /session/{id} policy:
-- Phase-2 round types or a bound user_id require a valid JWT.
-- Bound sessions must match the token owner (403 otherwise).
-- Phase-2 types without user_id are rejected (401).
-- Legacy technical sessions with no user_id remain guest-accessible.
+A token is required. The session must have a user_id and it must match the
+token. Sessions with no owner, and tokens for someone else, are 403.
 """
 from __future__ import annotations
 
@@ -31,30 +28,24 @@ def assert_session_access(
     authorization: str | None,
     *,
     foreign_detail: str = "You cannot access another user's session.",
-) -> dict | None:
-    """Enforce ownership. Returns the authenticated user when JWT is required.
+) -> dict:
+    """Require the session owner.
 
-    Returns ``None`` only for genuinely anonymous legacy technical sessions.
+    No token is 401. A session with no ``user_id``, or a token for someone
+    else, is 403. There is no guest path.
     """
-    needs_auth = session_has_phase2_rounds(session) or bool(session.get("user_id"))
-    if not needs_auth:
-        return None
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication is required for this session.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     user = require_user(authorization)
-    if session.get("user_id"):
-        if str(session["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=foreign_detail,
-            )
-    else:
+    owner = session.get("user_id")
+    if not owner or str(owner) != str(user["id"]):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Anonymous sessions are not permitted for this round type.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=foreign_detail,
         )
     return user
 

@@ -18,6 +18,10 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
+from datetime import datetime, timezone  # noqa: E402
+
+from backend.auth.security import create_access_token, hash_password  # noqa: E402
+from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
 from modules.roadmap_generator import (  # noqa: E402
     RoadmapGenerationError,
@@ -100,9 +104,26 @@ def test_user_with_no_skill_graph_returns_untested_plan() -> None:
     assert len(rd.weekly_blocks) == 4
 
 
+def _owner(user_id: str) -> dict[str, str]:
+    users = get_database()["users"]
+    if users.find_one({"id": user_id}) is None:
+        users.insert_one({
+            "id": user_id,
+            "email": f"{user_id}@example.com",
+            "name": user_id,
+            "password_hash": hash_password("passw0rd123"),
+            "created_at": datetime.now(timezone.utc),
+            "last_active_at": datetime.now(timezone.utc),
+        })
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+
+
 def test_route_returns_200_for_seeded_user(client: TestClient) -> None:
     _seed_weak_dsa_sd("u-route-30")
-    resp = client.get("/roadmap/u-route-30/amazon_sde_intern?days=30")
+    resp = client.get(
+        "/roadmap/u-route-30/amazon_sde_intern?days=30",
+        headers=_owner("u-route-30"),
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["role_id"] == "amazon_sde_intern"
@@ -114,7 +135,7 @@ def test_route_returns_200_for_seeded_user(client: TestClient) -> None:
 
 
 def test_route_404_on_unknown_role(client: TestClient) -> None:
-    resp = client.get("/roadmap/u-route-30/unknown_role")
+    resp = client.get("/roadmap/u-route-30/unknown_role", headers=_owner("u-route-30"))
     assert resp.status_code == 404
 
 
@@ -129,7 +150,10 @@ def test_route_supports_7_and_14_day_query(client: TestClient) -> None:
         (7, "Days 1-2", "Day 7"),
         (14, "Days 1-4", "Days 13-14"),
     ]:
-        resp = client.get(f"/roadmap/u-route-multi/amazon_sde_intern?days={days}")
+        resp = client.get(
+            f"/roadmap/u-route-multi/amazon_sde_intern?days={days}",
+            headers=_owner("u-route-multi"),
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["days"] == days

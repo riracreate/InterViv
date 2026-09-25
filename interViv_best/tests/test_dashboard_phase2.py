@@ -160,13 +160,22 @@ def test_skill_graph_and_mastery_endpoints_serve_dashboard(client: TestClient) -
         missing_concepts=["heap"],
     )
 
-    sg_resp = client.get(f"/skill-graph/{user_id}")
+    get_database()["users"].insert_one({
+        "id": user_id,
+        "email": f"{user_id}@example.com",
+        "name": user_id,
+        "password_hash": "x",
+        "created_at": datetime.now(timezone.utc),
+        "last_active_at": datetime.now(timezone.utc),
+    })
+    headers = {"Authorization": f"Bearer {create_access_token(user_id)}"}
+    sg_resp = client.get(f"/skill-graph/{user_id}", headers=headers)
     assert sg_resp.status_code == 200
     sg_body = sg_resp.json()
     names = {row["name"] for row in sg_body["skills"]}
     assert {"DSA", "DBMS"} <= names
 
-    mastery_resp = client.get(f"/mastery/{user_id}")
+    mastery_resp = client.get(f"/mastery/{user_id}", headers=headers)
     assert mastery_resp.status_code == 200
     mastery_body = mastery_resp.json()
     assert "DSA" in mastery_body["mastery"]
@@ -233,9 +242,9 @@ def test_dashboard_requires_owner_jwt(client: TestClient) -> None:
     """The dashboard auth gate, asserted explicitly per case.
 
     Owned sessions: missing JWT -> 401, wrong user -> 403, invalid
-    token -> 401, owner -> 200. Anonymous Phase 2 data is never served
-    (401 with or without a token). Anonymous legacy sessions stay
-    guest-readable (200), matching GET /session/{id}.
+    token -> 401, owner -> 200. A session with no user_id is 401
+    without a token and 403 with any token. Unknown ids are 404
+    once a token is present.
     """
     owner = _make_user()
     stranger = _make_user()
@@ -264,20 +273,24 @@ def test_dashboard_requires_owner_jwt(client: TestClient) -> None:
     assert ok.status_code == 200, ok.text
     assert len(ok.json()["rounds"]) == 1
 
-    # Anonymous Phase 2 data is never served, token or not.
+    # No owner on the session: token required, then forbidden for everyone.
     anon_phase2 = f"dash-anonp2-{uuid4().hex[:8]}"
     _insert_anonymous_session(anon_phase2, round_type="mcq")
     assert client.get(f"/dashboard/{anon_phase2}").status_code == 401
     assert (
         client.get(f"/dashboard/{anon_phase2}", headers=owner_headers).status_code
-        == 401
+        == 403
     )
 
-    # Anonymous legacy sessions keep the guest-readable path.
     anon_legacy = f"dash-anon-{uuid4().hex[:8]}"
     _insert_anonymous_session(anon_legacy)
-    legacy = client.get(f"/dashboard/{anon_legacy}")
-    assert legacy.status_code == 200, legacy.text
+    assert client.get(f"/dashboard/{anon_legacy}").status_code == 401
+    assert (
+        client.get(f"/dashboard/{anon_legacy}", headers=owner_headers).status_code
+        == 403
+    )
 
-    # Unknown sessions still 404.
-    assert client.get("/dashboard/does-not-exist").status_code == 404
+    # Unknown sessions still 404 once the caller is authenticated.
+    assert client.get(
+        "/dashboard/does-not-exist", headers=owner_headers
+    ).status_code == 404

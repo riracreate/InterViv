@@ -624,14 +624,32 @@ def test_route_sequential_second_refused_and_conflict_is_409(memory_db, monkeypa
     db = memory_db
     parent = _round(1)
     session = _session_doc(rounds=[parent], blocks=[_block()])
-    session.pop("user_id")  # guest legacy session: no auth required
+    from backend.auth.security import create_access_token, hash_password
+
+    user_id = "follow-owner"
+    db["users"].insert_one({
+        "id": user_id,
+        "email": "follow-owner@example.com",
+        "name": "Owner",
+        "password_hash": hash_password("passw0rd123"),
+        "created_at": datetime.now(timezone.utc),
+        "last_active_at": datetime.now(timezone.utc),
+    })
+    session["user_id"] = user_id
     db["sessions"].insert_one(session)
+    token = f"Bearer {create_access_token(user_id)}"
 
     body = FollowUpRequest(parent_round=1, accept_eligibility_consequence=True)
-    first = request_follow_up("s1", body, None)
+    missing = None
+    try:
+        request_follow_up("s1", body, None)
+    except HTTPException as exc:
+        missing = exc.status_code
+    assert missing == 401
+    first = request_follow_up("s1", body, token)
     assert first["scheduled"] is True
     assert first["label"] == "Follow-up"
-    second = request_follow_up("s1", body, None)
+    second = request_follow_up("s1", body, token)
     assert second == {
         "scheduled": False,
         "reason": "parent_follow_up_exists",
@@ -647,7 +665,7 @@ def test_route_sequential_second_refused_and_conflict_is_409(memory_db, monkeypa
         "backend.routes.follow_ups.allocate_follow_up", _conflict
     )
     with pytest.raises(HTTPException) as excinfo:
-        request_follow_up("s1", body, None)
+        request_follow_up("s1", body, token)
     assert excinfo.value.status_code == 409
     assert "retry" in excinfo.value.detail.lower()
 

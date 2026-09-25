@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from backend.config import get_settings
@@ -40,7 +40,12 @@ from backend.models.blocks import (
 )
 from backend.models.candidate import CandidateDocument
 from backend.models.session import RoundDocument, SessionDocument
-from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
+from backend.routes.auth import (
+    get_user_from_authorization,
+    require_authenticated,
+    require_matching_user,
+    require_user,
+)
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
@@ -1340,7 +1345,7 @@ def _validate_block_content(
 # POST /session/start
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(require_authenticated)])
 def start_session(
     request: StartSessionRequest,
     authorization: str | None = Header(default=None),
@@ -1422,7 +1427,7 @@ def start_session(
 
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
-    user = get_user_from_authorization(authorization) if authorization else None
+    user = require_user(authorization)
 
     needs_phase2_auth = any(
         t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
@@ -1581,7 +1586,7 @@ def start_session(
     session_dict["rounds_per_skill"] = request.rounds_per_skill
     session_dict["total_rounds"] = total_rounds
     session_dict["current_skill"] = first_skill
-    session_dict["user_id"] = user["id"] if user else candidate.get("user_id")
+    session_dict["user_id"] = user["id"]
     session_dict["target_company_id"] = target_company_id
     session_dict["target_role_id"] = target_role_id
     session_dict["round_config"] = request.round_config or {}
@@ -1700,7 +1705,7 @@ def start_session(
 # POST /session/availability (pre-commit content probe; no writes)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/availability")
+@router.post("/availability", dependencies=[Depends(require_authenticated)])
 def check_availability(
     request: StartSessionRequest,
     authorization: str | None = Header(default=None),
@@ -1741,18 +1746,7 @@ def check_availability(
     expanded = expand_blocks(block_plan)
     plan = [spec["round_type"] for spec in expanded]
 
-    # Same auth rule as start: Phase 2 round types require a user;
-    # anonymous legacy-technical probes stay allowed.
-    needs_phase2_auth = any(
-        t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
-    )
-    if needs_phase2_auth:
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
-            )
-        require_user(authorization)
+    require_user(authorization)
 
     allow_unknown_fallback = request.blocks is None
     by_block: dict[str, list[dict[str, Any]]] = {}
@@ -1804,7 +1798,7 @@ def check_availability(
 # GET /session/practice-bank (MCQ + SQL catalog for Problem practice)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/practice-bank")
+@router.get("/practice-bank", dependencies=[Depends(require_authenticated)])
 def get_practice_bank(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
@@ -1816,7 +1810,7 @@ def get_practice_bank(
 # GET /session/{session_id} (resume / refresh)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", dependencies=[Depends(require_authenticated)])
 def get_session(
     session_id: str,
     authorization: str | None = Header(default=None),
@@ -1875,7 +1869,7 @@ def get_session(
 # POST /session/sql/run (interactive preview runner against visible sample)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/sql/run")
+@router.post("/sql/run", dependencies=[Depends(require_authenticated)])
 def run_sql_preview(
     request: RunSQLPreviewRequest,
     authorization: str | None = Header(default=None),
@@ -1893,23 +1887,9 @@ def run_sql_preview(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication is required for this session.",
-        )
-    user = require_user(authorization)
-    if session.get("user_id"):
-        if str(session["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot access another user's session.",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Anonymous sessions are not permitted for this round type.",
-        )
+    from backend.routes.session_access import assert_session_access
+
+    user = assert_session_access(session, authorization)
 
     rounds = session.get("rounds", [])
     target_round = next(
@@ -1999,7 +1979,7 @@ def run_sql_preview(
 # POST /session/coding/run (visible-examples check; never final scoring)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/coding/run")
+@router.post("/coding/run", dependencies=[Depends(require_authenticated)])
 def run_coding_preview(
     request: RunCodingPreviewRequest,
     authorization: str | None = Header(default=None),
@@ -2017,23 +1997,9 @@ def run_coding_preview(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication is required for this session.",
-        )
-    user = require_user(authorization)
-    if session.get("user_id"):
-        if str(session["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot access another user's session.",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Anonymous sessions are not permitted for this round type.",
-        )
+    from backend.routes.session_access import assert_session_access
+
+    user = assert_session_access(session, authorization)
 
     rounds = session.get("rounds", [])
     target_round = next(
@@ -2218,7 +2184,7 @@ def _draft_round_or_error(
     return target
 
 
-@router.put("/{session_id}/draft")
+@router.put("/{session_id}/draft", dependencies=[Depends(require_authenticated)])
 def save_answer_draft(
     session_id: str,
     request: SaveAnswerDraftRequest,
@@ -2299,7 +2265,7 @@ def save_answer_draft(
             "updated_at": now.isoformat(), "draft": draft}
 
 
-@router.get("/{session_id}/draft")
+@router.get("/{session_id}/draft", dependencies=[Depends(require_authenticated)])
 def get_answer_draft(
     session_id: str,
     round: int,

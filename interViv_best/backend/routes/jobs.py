@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.db import get_database
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from backend.routes.session import StartSessionRequest, start_session
 from modules.adzuna_client import AdzunaClientError, normalize_country, safe_redirect_url
 from modules.jobs_explorer import (
@@ -20,7 +20,7 @@ from modules.jobs_explorer import (
 )
 
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_authenticated)])
 
 
 class PracticeConfirmRequest(BaseModel):

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -15,9 +15,9 @@ from backend.models.blocks import (
     PRESET_VERSION,
     normalize_blocks,
 )
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 
-router = APIRouter(prefix="/practice", tags=["practice"])
+router = APIRouter(prefix="/practice", tags=["practice"], dependencies=[Depends(require_authenticated)])
 
 
 class PresetCreateRequest(BaseModel):

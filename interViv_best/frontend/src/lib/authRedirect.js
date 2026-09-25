@@ -22,3 +22,7 @@ export function safeNext(raw, origin) {
 export function authDestination(location, origin) {
   return safeNext(location.state?.next ?? new URLSearchParams(location.search).get('next'), origin);
 }
+
+export function loginHref(here, origin) {
+  return `/login?next=${encodeURIComponent(safeNext(here, origin))}`;
+}
