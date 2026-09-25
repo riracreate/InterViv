@@ -13,12 +13,14 @@ endpoint) so existing readiness consumers keep working.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
+from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.db.company_seed import (
     company_slug_to_db_id,
@@ -38,6 +40,26 @@ router = APIRouter(
 JD_SOURCES = ("job", "paste", "role")
 
 _UNSET: Any = object()
+_UNAVAILABLE = "Target context is temporarily unavailable."
+LOGGER = logging.getLogger(__name__)
+
+
+def _database_error(exc: Exception) -> HTTPException:
+    LOGGER.exception("target context database error")
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_UNAVAILABLE)
+
+
+def _stored_target_id(slug: str | None, kind: str) -> Any:
+    """Memory mode stores the slug. SQL mode stores the integer foreign key."""
+    if slug is None:
+        return None
+    if not get_settings().database_url:
+        return slug
+    resolved = company_slug_to_db_id(slug) if kind == "company" else role_slug_to_db_id(slug)
+    if resolved is None:
+        detail = "Unknown company" if kind == "company" else "Unknown role"
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+    return resolved
 
 
 class TargetContextUpdate(BaseModel):
@@ -54,9 +76,7 @@ def _context_or_none(db: Any, user_id: str) -> dict[str, Any] | None:
         return db["target_contexts"].find_one({"user_id": user_id})
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-            ) from exc
+            raise _database_error(exc) from exc
         raise
 
 
@@ -109,9 +129,7 @@ def get_my_target_context(
     try:
         db = get_database()
     except DatabaseConnectionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise _database_error(exc) from exc
     return _resolve_context(_context_or_none(db, str(user["id"])), db)
 
 
@@ -124,9 +142,7 @@ def put_my_target_context(
     try:
         db = get_database()
     except DatabaseConnectionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise _database_error(exc) from exc
 
     user_id = str(user["id"])
     payload = request.model_dump(exclude_unset=True)
@@ -224,25 +240,15 @@ def put_my_target_context(
             {"id": user_id},
             {
                 "$set": {
-                    "target_company_id": (
-                        company_slug_to_db_id(company_slug) or company_slug
-                        if company_slug is not None
-                        else None
-                    ),
-                    "target_role_id": (
-                        role_slug_to_db_id(role_slug) or role_slug
-                        if role_slug is not None
-                        else None
-                    ),
+                    "target_company_id": _stored_target_id(company_slug, "company"),
+                    "target_role_id": _stored_target_id(role_slug, "role"),
                     "last_active_at": datetime.now(timezone.utc),
                 }
             },
         )
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-            ) from exc
+            raise _database_error(exc) from exc
         raise
     return _resolve_context(_context_or_none(db, user_id), db)
 
@@ -255,9 +261,7 @@ def delete_my_target_context(
     try:
         db = get_database()
     except DatabaseConnectionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise _database_error(exc) from exc
     user_id = str(user["id"])
     try:
         db["target_contexts"].delete_one({"user_id": user_id})
@@ -273,8 +277,6 @@ def delete_my_target_context(
         )
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-            ) from exc
+            raise _database_error(exc) from exc
         raise
     return {"target": None}

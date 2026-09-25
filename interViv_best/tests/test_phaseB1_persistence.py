@@ -159,6 +159,8 @@ def test_session_plans_and_round_metadata_survive_write_read(sa_url) -> None:
                     "block_category": "oa", "block_index": 1,
                     "block_total": 1}],
     }
+    from tests.user_fixtures import ensure_session_parents
+    ensure_session_parents(db, doc)
     db["sessions"].insert_one(doc)
     back = db["sessions"].find_one({"session_id": "b1-plans"})
     assert back is not None
@@ -177,12 +179,14 @@ def test_session_plans_and_round_metadata_survive_write_read(sa_url) -> None:
 
     # Legacy session without Phase B keys still reads; the missing
     # fallback flag defaults to the old always-fill behavior.
-    db["sessions"].insert_one({
+    legacy_doc = {
         "session_id": "b1-legacy", "candidate_id": "b1-cand", "skill": "DBMS",
         "rounds": [{"round": 1, "question": "q",
                     "round_type": "technical_short_answer",
                     "difficulty": "medium"}],
-    })
+    }
+    ensure_session_parents(db, legacy_doc)
+    db["sessions"].insert_one(legacy_doc)
     legacy = db["sessions"].find_one({"session_id": "b1-legacy"})
     assert legacy["round_plan"] is None
     assert legacy["block_plan"] is None
@@ -612,7 +616,7 @@ def test_alembic_migration_supports_phaseB_persistence(tmp_path, monkeypatch) ->
     _clear_db_caches()
     try:
         db = get_database()
-        db["sessions"].insert_one({
+        mig_doc = {
             "session_id": "b1-mig", "candidate_id": "b1-mig-cand",
             "skill": "DBMS", "round_plan": ["mcq"],
             "block_plan": [{"id": "b1", "position": 1}],
@@ -622,10 +626,15 @@ def test_alembic_migration_supports_phaseB_persistence(tmp_path, monkeypatch) ->
                         "status": "in_progress", "block_id": "b1",
                         "block_position": 1, "block_category": "oa",
                         "block_index": 1, "block_total": 1}],
-        })
+        }
+        from tests.user_fixtures import ensure_session_parents
+        ensure_session_parents(db, mig_doc)
+        db["sessions"].insert_one(mig_doc)
         back = db["sessions"].find_one({"session_id": "b1-mig"})
         assert back["round_plan"] == ["mcq"]
         assert back["rounds"][0]["block_category"] == "oa"
+        from tests.user_fixtures import ensure_user
+        ensure_user(db, "u1")
         db["practice_presets"].insert_one({
             "id": "p1", "user_id": "u1", "name": "n", "version": 1,
             "blocks": [], "created_at": datetime.now(timezone.utc),
@@ -677,7 +686,8 @@ def test_legacy_session_without_plans_still_progresses(sa_url) -> None:
     # Phase B keys must still submit and progress to SQL.
     from backend.db.phase2_content_bank import PHASE2_MCQ_BANK
     assigned = [{**q, "options": q["options_json"]} for q in PHASE2_MCQ_BANK[:2]]
-    db["sessions"].insert_one({
+    from tests.user_fixtures import ensure_session_parents
+    mixed = {
         "session_id": "b1-leg-mixed", "candidate_id": "b1-leg-cand",
         "user_id": user["id"], "skill": "DBMS", "skills": ["DBMS"],
         "rounds_per_skill": 1, "total_rounds": 2, "status": "active",
@@ -692,7 +702,9 @@ def test_legacy_session_without_plans_still_progresses(sa_url) -> None:
                                     "negative_marking": 0.25,
                                     "attempt_policy": "single_submission_final",
                                     "review_policy": "none"}}],
-    })
+    }
+    ensure_session_parents(db, mixed)
+    db["sessions"].insert_one(mixed)
     ans = client.post("/session/answer", headers=headers, json={
         "session_id": "b1-leg-mixed", "round": 1,
         "answers": _mcq_answers(assigned),

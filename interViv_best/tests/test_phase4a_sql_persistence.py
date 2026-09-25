@@ -94,8 +94,9 @@ def test_teaching_exposure_and_eligibility_survive_sql_reopen(disposable_sql):
     create_all_for_smoke()
     db = get_database()
     assert isinstance(db, SQLAlchemyDatabase)
+    from tests.user_fixtures import ensure_session_parents
     session_id = "sess-phase4a"
-    db["sessions"].insert_one({
+    doc = {
         "session_id": session_id,
         "candidate_id": "cand-4a",
         "user_id": "user-4a",
@@ -120,7 +121,9 @@ def test_teaching_exposure_and_eligibility_survive_sql_reopen(disposable_sql):
                 "content": ["ok"], "strengths": [], "weakness": [], "next_step": "",
             },
         }],
-    })
+    }
+    ensure_session_parents(db, doc)
+    db["sessions"].insert_one(doc)
     record_teaching_exposure(
         db,
         kind="hint",
