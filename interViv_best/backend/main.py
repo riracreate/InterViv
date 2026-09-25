@@ -7,12 +7,14 @@ from backend.runtime_env import apply_runtime_env
 apply_runtime_env()
 
 from contextlib import asynccontextmanager
+import json
 import logging
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from backend.config import get_settings
 from backend.observability import init_sentry
@@ -67,6 +69,39 @@ class DashboardLatencyMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class PublicTargetSlugMiddleware(BaseHTTPMiddleware):
+    """Company and role identifiers leave the API as slugs, whatever row stored them."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        media = response.headers.get("content-type", "")
+        if "application/json" not in media:
+            return response
+        chunks: list[bytes] = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return Response(
+                content=raw,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
+        from backend.db.user_target import expose_target_slugs
+
+        encoded = json.dumps(expose_target_slugs(payload)).encode()
+        headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
+        return Response(
+            content=encoded,
+            status_code=response.status_code,
+            headers=headers,
+            media_type="application/json",
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global WARMUP_STATUS
@@ -116,6 +151,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(DashboardLatencyMiddleware)
+app.add_middleware(PublicTargetSlugMiddleware)
 
 app.include_router(resume_router)
 app.include_router(auth_router)
