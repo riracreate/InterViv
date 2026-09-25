@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
@@ -36,12 +35,18 @@ def _alembic_cfg(url: str) -> Config:
 
 @pytest.fixture()
 def disposable_sql(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path / 'phase4b.db'}"
+    from tests.sql_test_url import is_postgres, reset_postgres_schema, resolve_sql_url
+
+    url = resolve_sql_url(tmp_path, "phase4b.db")
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
     _clear_database_caches()
+    if is_postgres(url):
+        reset_postgres_schema(url)
     yield url
     _clear_database_caches()
+    if is_postgres(url):
+        reset_postgres_schema(url)
 
 
 def test_phase4b_migration_upgrade_downgrade(disposable_sql):
@@ -50,12 +55,9 @@ def test_phase4b_migration_upgrade_downgrade(disposable_sql):
     from backend.db.sqlalchemy_store import get_engine
 
     with get_engine().connect() as conn:
-        tables = {
-            row[0]
-            for row in conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-        }
+        from tests.sql_test_url import table_names
+
+        tables = table_names(conn)
         assert "study_plans" in tables
         assert "coach_conversations" in tables
 
@@ -64,12 +66,9 @@ def test_phase4b_migration_upgrade_downgrade(disposable_sql):
     from backend.db.sqlalchemy_store import get_engine as get_engine2
 
     with get_engine2().connect() as conn:
-        tables = {
-            row[0]
-            for row in conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-        }
+        from tests.sql_test_url import table_names
+
+        tables = table_names(conn)
         assert "study_plans" not in tables
         assert "coach_conversations" not in tables
 
