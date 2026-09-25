@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.user_target import get_user_target
 from backend.evidence_kind import is_self_reported_round
 from backend.review_schedule import (
     INTERVAL_LADDER,
@@ -1311,7 +1312,7 @@ def get_my_next_steps(
     # Target weak areas next (only when a target role is set and the gap
     # engine can compute it); each cites tested/untested evidence.
     context = db["target_contexts"].find_one({"user_id": user_id}) or {}
-    role_id = context.get("role_id") or user.get("target_role_id")
+    role_id = context.get("role_id") or get_user_target(user)["role_id"]
     if role_id:
         try:
             from modules.gap_analysis import GapAnalyzer

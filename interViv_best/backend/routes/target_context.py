@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.transactions import atomic
 from backend.db.company_seed import (
     company_slug_to_db_id,
     role_slug_to_db_id,
@@ -231,21 +232,20 @@ def put_my_target_context(
         "updated_at": datetime.now(timezone.utc),
     }
     try:
-        db["target_contexts"].update_one(
-            {"user_id": user_id}, {"$set": doc}, upsert=True
-        )
-        # Mirror company/role onto the users row so readiness, gap, and ATS
-        # consumers (which read users.target_*) keep working unchanged.
-        db["users"].update_one(
-            {"id": user_id},
-            {
-                "$set": {
-                    "target_company_id": _stored_target_id(company_slug, "company"),
-                    "target_role_id": _stored_target_id(role_slug, "role"),
-                    "last_active_at": datetime.now(timezone.utc),
-                }
-            },
-        )
+        with atomic(db):
+            db["target_contexts"].update_one(
+                {"user_id": user_id}, {"$set": doc}, upsert=True
+            )
+            db["users"].update_one(
+                {"id": user_id},
+                {
+                    "$set": {
+                        "target_company_id": _stored_target_id(company_slug, "company"),
+                        "target_role_id": _stored_target_id(role_slug, "role"),
+                        "last_active_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
             raise _database_error(exc) from exc
@@ -264,17 +264,18 @@ def delete_my_target_context(
         raise _database_error(exc) from exc
     user_id = str(user["id"])
     try:
-        db["target_contexts"].delete_one({"user_id": user_id})
-        db["users"].update_one(
-            {"id": user_id},
-            {
-                "$set": {
-                    "target_company_id": None,
-                    "target_role_id": None,
-                    "last_active_at": datetime.now(timezone.utc),
-                }
-            },
-        )
+        with atomic(db):
+            db["target_contexts"].delete_one({"user_id": user_id})
+            db["users"].update_one(
+                {"id": user_id},
+                {
+                    "$set": {
+                        "target_company_id": None,
+                        "target_role_id": None,
+                        "last_active_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
             raise _database_error(exc) from exc

@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from backend.db.user_target import get_user_target
 from backend.routes.auth import (
     get_user_from_authorization,
     require_authenticated,
@@ -60,7 +61,7 @@ def get_my_plan(
     user = require_user(authorization)
     plan = get_active_plan(
         str(user["id"]),
-        role_id=role_id or user.get("target_role_id"),
+        role_id=role_id or get_user_target(user)["role_id"],
         confirmed_goal=confirmed_goal,
     )
     if plan is None:
@@ -71,7 +72,7 @@ def get_my_plan(
         }
     return {"plan": plan, "versions": list_plan_versions(
         str(user["id"]),
-        role_id=role_id or user.get("target_role_id"),
+        role_id=role_id or get_user_target(user)["role_id"],
         confirmed_goal=confirmed_goal,
     )}
 
@@ -82,7 +83,7 @@ def ensure_my_plan(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     user = require_user(authorization)
-    role_id = body.role_id or user.get("target_role_id")
+    role_id = body.role_id or get_user_target(user)["role_id"]
     plan = ensure_plan(
         str(user["id"]),
         role_id=str(role_id) if role_id else None,
@@ -106,7 +107,7 @@ def complete_my_task(
         plan = complete_task(
             str(user["id"]),
             task_id,
-            role_id=body.role_id or user.get("target_role_id"),
+            role_id=body.role_id or get_user_target(user)["role_id"],
             confirmed_goal=body.confirmed_goal,
             completed=bool(body.completed),
         )

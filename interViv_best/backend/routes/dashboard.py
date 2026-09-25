@@ -418,16 +418,24 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             continue
         resumable = {**summary, "expires_at": deadline}
     graph = StudentSkillGraph(user_id).to_api_payload()
+    from backend.db.user_target import get_user_target
+
+    saved_target = get_user_target(user)
     target = None
-    if user.get("target_role_id"):
+    if saved_target["role_id"]:
         try:
-            target = GapAnalyzer().compute_gap(user_id, user["target_role_id"]).to_dict()
+            target = GapAnalyzer().compute_gap(user_id, saved_target["role_id"]).to_dict()
         except GapAnalysisError:
             pass  # A removed/unknown target is unavailable, not a measured zero.
     from backend.routes.learning_hub import assistance_breakdown_for_user
 
     return {
-        "user": {key: user.get(key) for key in ("id", "name", "target_company_id", "target_role_id")},
+        "user": {
+            "id": user.get("id"),
+            "name": user.get("name"),
+            "target_company_id": saved_target["company_id"],
+            "target_role_id": saved_target["role_id"],
+        },
         "server_time": now,
         "target": target,
         "readiness": target["overall_readiness_percentage"] if target and target["tested_skill_count"] > 0 else None,
