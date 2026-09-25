@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { safeNext, authDestination } from '../src/lib/authRedirect.js';
+import { safeNext, authDestination, loginHref } from '../src/lib/authRedirect.js';
 import { displayScore, interviewStateFromSession } from '../src/lib/accountOverview.js';
 
 const origin = 'http://127.0.0.1:5173';
@@ -10,7 +10,11 @@ test('auth returns to supported static and dynamic destinations after normalizat
   assert.equal(safeNext('/%70ractice?mode=full', origin), '/practice?mode=full');
 });
 test('auth rejects external destinations, escaped separators, loops and unsupported paths', () => {
-  for (const path of [null, {}, '', 'https://evil.test', '//evil.test', '/\\evil.test', '/%5cevil.test', '/%2f%2fevil.test', '/%255cevil.test', '/interview/a%2Fb', '/interview/%252e%252e', '/login', '/signup', '/register', '/practice/../login', '/%6cogin?next=/login', '/unknown', '/home\n', ' /home', 'javascript:alert(1)']) assert.equal(safeNext(path, origin), '/home', String(path));
+  for (const path of [null, {}, '', 'https://evil.test', 'https://example.com', 'http://example.com', '//evil.test', '/\\', '/\\evil.test', '/%5cevil.test', '/%2f%2fevil.test', '/%255cevil.test', '/interview/a%2Fb', '/interview/%252e%252e', '/login', '/signup', '/register', '/practice/../login', '/%6cogin?next=/login', '/unknown', '/home\n', ' /home', 'javascript:alert(1)']) assert.equal(safeNext(path, origin), '/home', String(path));
+  assert.equal(loginHref('/upload?step=1#resume', origin), '/login?next=%2Fupload%3Fstep%3D1%23resume');
+  assert.equal(loginHref('https://example.com', origin), '/login?next=%2Fhome');
+  assert.equal(loginHref('//evil.test', origin), '/login?next=%2Fhome');
+  assert.equal(loginHref('/\\evil.test', origin), '/login?next=%2Fhome');
 });
 test('query destinations and login/signup state use the same safe rules', () => {
   assert.equal(authDestination({ search: '?next=%2Fjobs%3Fq%3DPython' }, origin), '/jobs?q=Python');
