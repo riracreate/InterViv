@@ -36,13 +36,29 @@ LOGGER = logging.getLogger(__name__)
 _COMPANY_SLUG_TO_DB_ID: dict[str, int] = {}
 _ROLE_SLUG_TO_DB_ID: dict[str, int] = {}
 _SKILL_NAME_TO_DB_ID: dict[str, int] = {}
+_LOADED_FOR: str | None = None
+
+
+def clear_slug_cache() -> None:
+    """Drop the in-memory slug cache. The next lookup refills it from the database."""
+    global _LOADED_FOR
+    _COMPANY_SLUG_TO_DB_ID.clear()
+    _ROLE_SLUG_TO_DB_ID.clear()
+    _SKILL_NAME_TO_DB_ID.clear()
+    _LOADED_FOR = None
 
 
 def company_slug_to_db_id(slug: str) -> int | None:
+    if not get_settings().database_url:
+        return None
+    _refill_slug_maps()
     return _COMPANY_SLUG_TO_DB_ID.get(slug)
 
 
 def role_slug_to_db_id(slug: str) -> int | None:
+    if not get_settings().database_url:
+        return None
+    _refill_slug_maps()
     return _ROLE_SLUG_TO_DB_ID.get(slug)
 
 
@@ -53,6 +69,8 @@ def company_db_id_to_slug(db_id: int | str | None) -> str | None:
         target = int(db_id)
     except (TypeError, ValueError):
         return str(db_id)
+    if get_settings().database_url:
+        _refill_slug_maps()
     for slug, mapped_id in _COMPANY_SLUG_TO_DB_ID.items():
         if mapped_id == target:
             return slug
@@ -66,6 +84,8 @@ def role_db_id_to_slug(db_id: int | str | None) -> str | None:
         target = int(db_id)
     except (TypeError, ValueError):
         return str(db_id)
+    if get_settings().database_url:
+        _refill_slug_maps()
     for slug, mapped_id in _ROLE_SLUG_TO_DB_ID.items():
         if mapped_id == target:
             return slug
@@ -104,9 +124,7 @@ def seed_company_graph(graph: CompanyHiringGraph | None = None) -> dict[str, int
 
     counts = {"companies": 0, "roles": 0, "skills": 0, "requirements": 0}
 
-    _COMPANY_SLUG_TO_DB_ID.clear()
-    _ROLE_SLUG_TO_DB_ID.clear()
-    _SKILL_NAME_TO_DB_ID.clear()
+    clear_slug_cache()
 
     with session_scope() as session:
         # Skills first (FK target for requirements)
@@ -155,8 +173,53 @@ def seed_company_graph(graph: CompanyHiringGraph | None = None) -> dict[str, int
                 _ROLE_SLUG_TO_DB_ID[role.id] = db_role.id
                 _upsert_role_requirements(session, db_role.id, role.skill_requirements, counts)
 
+    global _LOADED_FOR
+    _LOADED_FOR = settings.database_url
     LOGGER.info("Company graph seed counts: %s", counts)
     return counts
+
+
+def _refill_slug_maps() -> None:
+    """Load slug → id from companies.public_info and matching role rows.
+
+    The in-memory maps are a cache. A new process, or a cleared cache, still
+    resolves against rows the seeder already wrote. No-op without a database.
+    """
+    global _LOADED_FOR
+    settings = get_settings()
+    url = settings.database_url or ""
+    if _LOADED_FOR == url:
+        return
+    _COMPANY_SLUG_TO_DB_ID.clear()
+    _ROLE_SLUG_TO_DB_ID.clear()
+    if not url:
+        _LOADED_FOR = url
+        return
+
+    from sqlalchemy import select
+
+    from backend.db.sqlalchemy_models import CompanyRow, RoleRow
+    from backend.db.sqlalchemy_store import session_scope
+
+    graph = get_company_graph()
+    with session_scope() as session:
+        company_rows = list(session.scalars(select(CompanyRow)))
+        role_rows = list(session.scalars(select(RoleRow)))
+    for row in company_rows:
+        info = row.public_info if isinstance(row.public_info, dict) else {}
+        slug = info.get("slug")
+        if slug:
+            _COMPANY_SLUG_TO_DB_ID[str(slug)] = row.id
+    role_index = {(row.company_id, row.title, row.level): row.id for row in role_rows}
+    for company in graph.list_companies():
+        company_id = _COMPANY_SLUG_TO_DB_ID.get(company.id)
+        if company_id is None:
+            continue
+        for role in company.roles:
+            role_id = role_index.get((company_id, role.title, role.level))
+            if role_id is not None:
+                _ROLE_SLUG_TO_DB_ID[role.id] = role_id
+    _LOADED_FOR = url
 
 
 def _public_info_with_slug(slug: str, public_info: dict[str, Any]) -> dict[str, Any]:
@@ -226,6 +289,7 @@ def _upsert_role_requirements(
 
 
 __all__ = [
+    "clear_slug_cache",
     "company_db_id_to_slug",
     "company_slug_to_db_id",
     "role_db_id_to_slug",
