@@ -465,7 +465,7 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
     }
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", dependencies=[Depends(require_authenticated)])
 def get_dashboard(
     session_id: str,
     authorization: str | None = Header(default=None),

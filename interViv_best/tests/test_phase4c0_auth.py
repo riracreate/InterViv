@@ -26,19 +26,10 @@ PUBLIC_ROUTES = {
     ("GET", "/docs"): "Swagger UI for the documented surface.",
     ("GET", "/docs/oauth2-redirect"): "Swagger OAuth redirect, part of the docs UI.",
     ("GET", "/redoc"): "ReDoc UI for the documented surface.",
-}
-
-# Intentionally anonymous. Not public product surface; listed so the audit
-# does not treat a preserved guest path as an auth pass.
-ANONYMOUS_BY_DESIGN = {
-    ("POST", "/session/start"): "Legacy technical start stays guest-accessible.",
-    ("POST", "/session/availability"): "Same guest policy as session start.",
-    ("GET", "/session/{session_id}"): "Legacy technical session read stays guest-accessible.",
-    ("POST", "/session/answer"): "Legacy technical submit stays guest-accessible.",
-    ("POST", "/session/{session_id}/continue"): "Guest continue follows session ownership.",
-    ("POST", "/session/{session_id}/follow-ups"): "Guest follow-up follows session ownership.",
-    ("GET", "/session/{session_id}/rounds/{round_number}/feedback"): "Guest feedback follows session ownership.",
-    ("GET", "/dashboard/{session_id}"): "Guest dashboard follows session ownership.",
+    ("GET", "/companies"): "Public catalog, no user data.",
+    ("GET", "/companies/{company_id}"): "Public catalog, no user data.",
+    ("GET", "/companies/{company_id}/roles"): "Public catalog, no user data.",
+    ("GET", "/companies/{company_id}/roles/{role_id}"): "Public catalog, no user data.",
 }
 
 _PARAM = re.compile(r"\{([^}]+)\}")
@@ -76,7 +67,7 @@ def _assert_closed(application) -> None:
     failures = []
     for method, path in _mounted(application):
         key = (method, path)
-        if key in PUBLIC_ROUTES or key in ANONYMOUS_BY_DESIGN:
+        if key in PUBLIC_ROUTES:
             continue
         if method == "WEBSOCKET":
             failures.append(f"{method} {path} is mounted and not allowlisted")
