@@ -67,16 +67,32 @@ def memory_db(monkeypatch):
 
 @pytest.fixture
 def sql_db(tmp_path, monkeypatch):
-    """Disposable SQLite store whose engine is safe for threaded use."""
+    """Disposable SQLite store whose engine is safe for threaded use.
+
+    When ``INTERVIV_TEST_DATABASE_URL`` is set, that database is used
+    instead and each test starts from ``alembic upgrade head``.
+    """
     from sqlalchemy import create_engine
 
-    url = f"sqlite:///{tmp_path / 'followup.db'}"
+    from tests.sql_test_url import (
+        is_postgres,
+        reset_postgres_schema,
+        resolve_sql_url,
+        upgrade_head,
+    )
+
+    url = resolve_sql_url(tmp_path, "followup.db")
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
     _clear_db_caches()
+    if is_postgres(url):
+        reset_postgres_schema(url)
+        upgrade_head(url)
+        _clear_db_caches()
+    connect_args = {} if is_postgres(url) else {"check_same_thread": False}
     engine = create_engine(
         url,
-        connect_args={"check_same_thread": False},
+        connect_args=connect_args,
         pool_pre_ping=True,
         future=True,
     )
@@ -103,6 +119,8 @@ def sql_db(tmp_path, monkeypatch):
         app_config.get_settings.cache_clear()
         sqlalchemy_store._sessionmaker.cache_clear()
         sqlalchemy_store.get_sqlalchemy_database.cache_clear()
+        if is_postgres(url):
+            reset_postgres_schema(url)
 
 
 @pytest.fixture
@@ -697,15 +715,21 @@ def test_migration_0016_revision_upgrade_downgrade(tmp_path, monkeypatch):
 
     from tests.alembic_helpers import parent_revision
 
-    url = f"sqlite:///{tmp_path / 'followup-mig.db'}"
+    from tests.sql_test_url import (
+        is_postgres,
+        reset_postgres_schema,
+        table_info,
+        resolve_sql_url,
+    )
+
+    url = resolve_sql_url(tmp_path, "followup-mig.db")
+    if is_postgres(url):
+        reset_postgres_schema(url)
     cfg = _alembic_cfg(url, monkeypatch)
     command.upgrade(cfg, "head")
     engine = create_engine(url)
     with engine.connect() as conn:
-        info = {
-            row[1]: row
-            for row in conn.execute(text("PRAGMA table_info(sessions)"))
-        }
+        info = {row[1]: row for row in table_info(conn, "sessions")}
         assert "revision" in info
         assert info["revision"][3] == 1  # NOT NULL
         assert str(info["revision"][4]).strip("'\"") == "0"  # backfill default
@@ -714,16 +738,18 @@ def test_migration_0016_revision_upgrade_downgrade(tmp_path, monkeypatch):
     command.downgrade(cfg, parent_revision("20260918_0016"))
     engine = create_engine(url)
     with engine.connect() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(sessions)"))}
+        cols = {row[1] for row in table_info(conn, "sessions")}
         assert "revision" not in cols
     engine.dispose()
 
     command.upgrade(cfg, "head")
     engine = create_engine(url)
     with engine.connect() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(sessions)"))}
+        cols = {row[1] for row in table_info(conn, "sessions")}
         assert "revision" in cols
     engine.dispose()
+    if is_postgres(url):
+        reset_postgres_schema(url)
 
 
 def test_migrated_schema_backfills_revision_zero(tmp_path, monkeypatch):
@@ -732,14 +758,23 @@ def test_migrated_schema_backfills_revision_zero(tmp_path, monkeypatch):
 
     from tests.alembic_helpers import parent_revision
 
-    url = f"sqlite:///{tmp_path / 'followup-backfill.db'}"
+    from tests.sql_test_url import (
+        is_postgres,
+        reset_postgres_schema,
+        table_info,
+        resolve_sql_url,
+    )
+
+    url = resolve_sql_url(tmp_path, "followup-backfill.db")
+    if is_postgres(url):
+        reset_postgres_schema(url)
     cfg = _alembic_cfg(url, monkeypatch)
     command.upgrade(cfg, parent_revision("20260918_0016"))
     engine = create_engine(url)
     with engine.begin() as conn:
         # Insert a legacy row satisfying every NOT NULL column without a
         # database default, whatever the pre-0016 schema requires.
-        info = list(conn.execute(text("PRAGMA table_info(sessions)")))
+        info = list(table_info(conn, "sessions"))
         names, values = ["id"], ["'legacy-s'"]
         for _, name, ctype, notnull, dflt, _pk in info:
             if name == "id" or not notnull or dflt is not None:
@@ -763,6 +798,8 @@ def test_migrated_schema_backfills_revision_zero(tmp_path, monkeypatch):
         ).scalar()
         assert value == 0
     engine.dispose()
+    if is_postgres(url):
+        reset_postgres_schema(url)
 
 
 def test_route_requires_eligibility_consent(memory_db):
