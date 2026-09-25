@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
+from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.db.company_seed import (
     company_slug_to_db_id,
@@ -107,6 +108,15 @@ class TargetUpdate(BaseModel):
     target_role_id: str | None = None
 
 
+def _stored_target_id(slug: str, lookup, unknown: str) -> Any:
+    if not get_settings().database_url:
+        return slug
+    resolved = lookup(slug)
+    if resolved is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=unknown)
+    return resolved
+
+
 @router.patch("/auth/me/target", dependencies=[Depends(require_authenticated)])
 def patch_my_target(
     request: TargetUpdate,
@@ -129,7 +139,7 @@ def patch_my_target(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown company '{company_slug}'."
             )
-        target_company_id_value = company_slug_to_db_id(company_slug) or company_slug
+        target_company_id_value = _stored_target_id(company_slug, company_slug_to_db_id, "Unknown company")
 
         if role_slug is not None:
             role = graph.get_role(company_slug, role_slug)
@@ -138,7 +148,7 @@ def patch_my_target(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Role '{role_slug}' not found for company '{company_slug}'.",
                 )
-            target_role_id_value = role_slug_to_db_id(role_slug) or role_slug
+            target_role_id_value = _stored_target_id(role_slug, role_slug_to_db_id, "Unknown role")
 
     update_payload: dict[str, Any] = {
         "target_company_id": target_company_id_value,

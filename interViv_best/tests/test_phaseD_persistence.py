@@ -92,6 +92,9 @@ def _headers(user) -> dict[str, str]:
 
 
 def test_target_context_survives_dispose_and_reopen(sa_url) -> None:
+    from backend.db.company_seed import seed_company_graph
+
+    seed_company_graph()
     client = TestClient(app)
     user = _make_user("d-target")
     headers = _headers(user)
@@ -126,6 +129,65 @@ def test_target_context_survives_dispose_and_reopen(sa_url) -> None:
     for key in ("company_id", "role_id", "job_id", "jd_source", "jd_text",
                 "resume_ref", "updated_at"):
         assert key in row, key
+
+
+def test_unknown_company_slug_is_422(sa_url) -> None:
+    client = TestClient(app)
+    user = _make_user("d-unknown")
+    saved = client.put(
+        "/target-context/me",
+        headers=_headers(user),
+        json={"company_id": "tcs", "role_id": "tcs_swe"},
+    )
+    assert saved.status_code == 422
+    assert saved.json()["detail"] == "Unknown company"
+    assert "SQL" not in saved.text
+    assert "users" not in saved.text.lower()
+
+
+def test_save_after_empty_slug_cache_on_seeded_database(sa_url) -> None:
+    from backend.db.company_seed import clear_slug_cache, seed_company_graph
+
+    seed_company_graph()
+    clear_slug_cache()
+    client = TestClient(app)
+    user = _make_user("d-restart")
+    saved = client.put(
+        "/target-context/me",
+        headers=_headers(user),
+        json={"company_id": "tcs", "role_id": "tcs_swe", "jd_text": "Build APIs.", "jd_source": "paste"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["target"]["company_id"] == "tcs"
+    assert saved.json()["target"]["role_id"] == "tcs_swe"
+    stored = get_database()["users"].find_one({"id": user["id"]})
+    assert isinstance(stored["target_company_id"], int)
+    assert isinstance(stored["target_role_id"], int)
+
+
+def test_target_context_database_error_hides_sql(sa_url) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    from backend.db.company_seed import seed_company_graph
+
+    seed_company_graph()
+    client = TestClient(app)
+    user = _make_user("d-sqlerr")
+    users = get_database()["users"]
+
+    def boom(*_args, **_kwargs):
+        raise IntegrityError("UPDATE users SET target_company_id=?", {}, Exception("fk"))
+
+    users.update_one = boom
+    saved = client.put(
+        "/target-context/me",
+        headers=_headers(user),
+        json={"company_id": "tcs", "role_id": "tcs_swe"},
+    )
+    assert saved.status_code == 503
+    assert saved.json()["detail"] == "Target context is temporarily unavailable."
+    assert "UPDATE" not in saved.text
+    assert "target_company_id" not in saved.text
 
 
 def test_learning_collections_round_trip_on_sqlalchemy(sa_url) -> None:
