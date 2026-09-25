@@ -10,10 +10,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
+from backend.routes.auth import (
+    get_user_from_authorization,
+    require_authenticated,
+    require_matching_user,
+    require_user,
+)
 from modules.roadmap_generator import RoadmapGenerationError, RoadmapGenerator
 from modules.roadmap_plans import (
     DEFAULT_HOURS_PER_WEEK,
@@ -24,7 +29,11 @@ from modules.roadmap_plans import (
 )
 
 
-router = APIRouter(prefix="/roadmap", tags=["roadmap"])
+router = APIRouter(
+    prefix="/roadmap",
+    tags=["roadmap"],
+    dependencies=[Depends(require_authenticated)],
+)
 
 
 class EnsurePlanRequest(BaseModel):

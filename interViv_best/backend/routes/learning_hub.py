@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -31,10 +31,10 @@ from backend.review_schedule import (
     is_due,
     ladder_days_at,
 )
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from backend.routes.session import StartSessionRequest, start_session
 
-router = APIRouter(tags=["learning"])
+router = APIRouter(tags=["learning"], dependencies=[Depends(require_authenticated)])
 
 ITEM_TYPES = ("mcq", "sql", "coding")
 ASSISTANCE_KINDS = ("hint", "explanation", "solution", "editorial")

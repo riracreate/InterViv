@@ -20,6 +20,10 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
+from datetime import datetime, timezone  # noqa: E402
+
+from backend.auth.security import create_access_token, hash_password  # noqa: E402
+from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
 from modules.company_graph import get_company_graph  # noqa: E402
 from modules.gap_analysis import (  # noqa: E402
@@ -96,6 +100,18 @@ def test_unknown_role_raises() -> None:
         GapAnalyzer().compute_gap(user_id="anyone", role_id="not_a_real_role")
 
 
+def _owner(user_id: str) -> dict[str, str]:
+    get_database()["users"].insert_one({
+        "id": user_id,
+        "email": f"{user_id}@example.com",
+        "name": user_id,
+        "password_hash": hash_password("passw0rd123"),
+        "created_at": datetime.now(timezone.utc),
+        "last_active_at": datetime.now(timezone.utc),
+    })
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+
+
 def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> None:
     sg = StudentSkillGraph("u-route-spec")
     sg.initialize_from_resume(["Python", "DSA", "DBMS"])
@@ -103,7 +119,10 @@ def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> Non
     sg.update_after_round("DSA", 45.0, "medium")
     sg.update_after_round("DBMS", 60.0, "medium")
 
-    resp = client.get("/gap-analysis/u-route-spec/amazon_sde_intern")
+    resp = client.get(
+        "/gap-analysis/u-route-spec/amazon_sde_intern",
+        headers=_owner("u-route-spec"),
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["company_id"] == "amazon"
@@ -113,7 +132,7 @@ def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> Non
 
 
 def test_route_404_on_unknown_role(client: TestClient) -> None:
-    resp = client.get("/gap-analysis/anyone/no_such_role")
+    resp = client.get("/gap-analysis/anyone/no_such_role", headers=_owner("anyone"))
     assert resp.status_code == 404
 
 
