@@ -6,6 +6,23 @@ const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
 const AUTH_TOKEN_KEY = "interviv-auth-token";
 
+export function apiErrorMessage(data) {
+  const detail = data && data.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const lines = detail.map((item) => {
+      if (typeof item === "string") return item;
+      if (!item || typeof item !== "object") return "Invalid value";
+      const loc = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body") : [];
+      const field = loc.join(".");
+      const message = item.msg || item.message || "Invalid value";
+      return field ? `${field}: ${message}` : message;
+    });
+    return lines.filter(Boolean).join("\n") || "Something went wrong";
+  }
+  return "Something went wrong";
+}
+
 export function fetchCodingExecutionStatus() { return request('/problems/execution/status'); }
 export function fetchCodingCoach(payload) {
   return request('/problems/coach/hint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -29,7 +46,7 @@ async function request(path, options = {}) {
     }
   }
   if (!response.ok) {
-    const error = new Error(data.detail || data.error || "Request failed.");
+    const error = new Error(apiErrorMessage(data));
     error.status = response.status;
     error.detail = data.detail;
     throw error;
