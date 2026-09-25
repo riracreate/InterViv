@@ -115,6 +115,7 @@ def test_unique_skill_url_constraint_sqlalchemy(monkeypatch: pytest.MonkeyPatch)
             )
             with pytest.raises(IntegrityError):
                 session.flush()
+            session.rollback()
     finally:
         get_settings.cache_clear()
 
