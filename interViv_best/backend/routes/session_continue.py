@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -24,6 +24,7 @@ from backend.routes.session import (
     _verify_served_topic,
     build_round_document,
 )
+from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
@@ -41,7 +42,7 @@ def _asked_questions(rounds: list[dict]) -> list[str]:
     return [str(item.get("question") or "") for item in rounds if item.get("question")]
 
 
-@router.post("/{session_id}/continue")
+@router.post("/{session_id}/continue", dependencies=[Depends(require_authenticated)])
 def continue_session(
     session_id: str,
     authorization: str | None = Header(default=None),

@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.integrations import normalize_feedback
+from backend.routes.auth import require_authenticated
 from backend.routes.session_access import (
     assert_session_access,
     session_assessment_completed,
@@ -124,7 +125,10 @@ def _narration_payload(
     }
 
 
-@router.get("/{session_id}/rounds/{round_number}/feedback")
+@router.get(
+    "/{session_id}/rounds/{round_number}/feedback",
+    dependencies=[Depends(require_authenticated)],
+)
 def get_round_feedback(
     session_id: str,
     round_number: int,

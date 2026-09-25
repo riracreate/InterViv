@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from modules.learning_resources import list_resources
 
 
-router = APIRouter(tags=["resources"])
+router = APIRouter(tags=["resources"], dependencies=[Depends(require_authenticated)])
 
 
 @router.get("/resources")

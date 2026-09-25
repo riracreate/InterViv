@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from backend.db import get_database
-from backend.routes.auth import require_user
+from backend.routes.auth import require_authenticated, require_user
 from backend.routes.session import StartSessionRequest, start_session
 from modules.coach_conversation import (
     MAX_MESSAGE_CHARS,
@@ -27,7 +27,7 @@ from modules.guidance_coach import (
 from modules.jobs_explorer import build_practice_start_payload
 
 
-router = APIRouter(prefix="/coach", tags=["coach"])
+router = APIRouter(prefix="/coach", tags=["coach"], dependencies=[Depends(require_authenticated)])
 
 
 class CoachPlanRequest(BaseModel):

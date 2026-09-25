@@ -516,22 +516,38 @@ def test_legacy_snapshot_v1_still_verifies() -> None:
 
 
 def test_guest_legacy_technical_answer_without_token() -> None:
+    """A technical answer without a token is refused. The owner still scores."""
     client = TestClient(app)
-    start = client.post("/session/start", json={
+    refused = client.post("/session/start", json={
+        "skills": ["DBMS"],
+        "rounds_per_skill": 1,
+    })
+    assert refused.status_code == 401, refused.text
+    user = _make_user("t3b-guest")
+    headers = _headers(user)
+    start = client.post("/session/start", headers=headers, json={
         "skills": ["DBMS"],
         "rounds_per_skill": 1,
     })
     assert start.status_code == 200, start.text
     session_id = start.json()["session_id"]
     stored = get_database()["sessions"].find_one({"session_id": session_id})
-    assert not stored.get("user_id")
-    answer = client.post("/session/answer", json={
+    assert stored.get("user_id") == user["id"]
+    missing = client.post("/session/answer", json={
+        "session_id": session_id,
+        "round": 1,
+        "answer_text": "ACID keeps related writes atomic across a transaction.",
+    })
+    assert missing.status_code == 401, missing.text
+    answer = client.post("/session/answer", headers=headers, json={
         "session_id": session_id,
         "round": 1,
         "answer_text": "ACID keeps related writes atomic across a transaction.",
     })
     assert answer.status_code == 200, answer.text
-    feedback = client.get(f"/session/{session_id}/rounds/1/feedback")
+    feedback = client.get(
+        f"/session/{session_id}/rounds/1/feedback", headers=headers
+    )
     assert feedback.status_code == 200, feedback.text
 
 

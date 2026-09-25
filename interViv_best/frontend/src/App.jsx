@@ -17,6 +17,11 @@ import Resources from './pages/Resources.jsx';
 import Home from './pages/Home.jsx';
 import Progress from './pages/Progress.jsx';
 import InterviewRoute from './components/InterviewRoute.jsx';
+import RequireAuth from './components/RequireAuth.jsx';
+
+function guarded(page) {
+  return <RequireAuth>{page}</RequireAuth>;
+}
 
 export default function App() {
   return (
@@ -25,20 +30,20 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/register" element={<Signup />} />
-      <Route path="/home" element={<Home />} />
-      <Route path="/upload" element={<Upload />} />
-      <Route path="/practice" element={<Practice />} />
-      <Route path="/problems" element={<Problems />} />
-      <Route path="/learn" element={<Learn />} />
-      <Route path="/ats" element={<Ats />} />
-      <Route path="/jobs" element={<Jobs />} />
-      <Route path="/coach" element={<Coach />} />
-      <Route path="/resources" element={<Resources />} />
-      <Route path="/interview/:sessionId" element={<InterviewRoute />} />
-      <Route path="/dashboard/:sessionId" element={<Dashboard />} />
-      <Route path="/dashboard" element={<Progress />} />
-      <Route path="/gap-analysis/:userId/:roleId" element={<GapAnalysis />} />
-      <Route path="/roadmap/:userId/:roleId" element={<Roadmap />} />
+      <Route path="/home" element={guarded(<Home />)} />
+      <Route path="/upload" element={guarded(<Upload />)} />
+      <Route path="/practice" element={guarded(<Practice />)} />
+      <Route path="/problems" element={guarded(<Problems />)} />
+      <Route path="/learn" element={guarded(<Learn />)} />
+      <Route path="/ats" element={guarded(<Ats />)} />
+      <Route path="/jobs" element={guarded(<Jobs />)} />
+      <Route path="/coach" element={guarded(<Coach />)} />
+      <Route path="/resources" element={guarded(<Resources />)} />
+      <Route path="/interview/:sessionId" element={guarded(<InterviewRoute />)} />
+      <Route path="/dashboard/:sessionId" element={guarded(<Dashboard />)} />
+      <Route path="/dashboard" element={guarded(<Progress />)} />
+      <Route path="/gap-analysis/:userId/:roleId" element={guarded(<GapAnalysis />)} />
+      <Route path="/roadmap/:userId/:roleId" element={guarded(<Roadmap />)} />
     </Routes>
   );
 }
