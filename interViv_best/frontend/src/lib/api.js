@@ -20,6 +20,14 @@ async function request(path, options = {}) {
   const response = await fetch(requestPath, { ...options, headers });
   const data = await response.json().catch(() => ({}));
 
+  if (response.status === 401 && token && !path.startsWith("/auth/")) {
+    clearAuthToken();
+    const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (!window.location.pathname.startsWith("/login")) {
+      const next = encodeURIComponent(here);
+      window.location.assign(`/login?next=${next}`);
+    }
+  }
   if (!response.ok) {
     const error = new Error(data.detail || data.error || "Request failed.");
     error.status = response.status;

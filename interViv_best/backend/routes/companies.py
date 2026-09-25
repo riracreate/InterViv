@@ -34,7 +34,7 @@ from modules.company_graph import (
 )
 
 
-router = APIRouter(tags=["companies"], dependencies=[Depends(require_authenticated)])
+router = APIRouter(tags=["companies"])
 
 
 def _graph() -> CompanyHiringGraph:
@@ -107,7 +107,7 @@ class TargetUpdate(BaseModel):
     target_role_id: str | None = None
 
 
-@router.patch("/auth/me/target")
+@router.patch("/auth/me/target", dependencies=[Depends(require_authenticated)])
 def patch_my_target(
     request: TargetUpdate,
     authorization: str | None = Header(default=None),

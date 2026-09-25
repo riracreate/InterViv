@@ -1,8 +1,8 @@
 """Phase 2: access matrix for block practice paths.
 
-- Anonymous legacy-technical start stays available (guest); everything
-  Phase 2 (MCQ/SQL blocks, drafts, presets, bank, previews) requires a
-  user, and cross-user access is denied or isolated.
+- Every start requires a user. Phase 2 (MCQ/SQL blocks, drafts,
+  presets, bank, previews) requires a user, and cross-user access is
+  denied or isolated.
 """
 
 from __future__ import annotations
@@ -42,19 +42,28 @@ def _headers(user) -> dict[str, str]:
 
 
 def test_anonymous_legacy_technical_start_preserved() -> None:
+    """Guest start is closed. A technical session is stored under the caller."""
     client = TestClient(app)
-    start = client.post("/session/start", json={
+    refused = client.post("/session/start", json={
+        "skills": ["DBMS"], "rounds_per_skill": 1,
+        "round_type": "technical_short_answer",
+    })
+    assert refused.status_code == 401, refused.text
+
+    owner = _make_user("access-technical")
+    start = client.post("/session/start", headers=_headers(owner), json={
         "skills": ["DBMS"], "rounds_per_skill": 1,
         "round_type": "technical_short_answer",
     })
     assert start.status_code == 200, start.text
     body = start.json()
-    assert body.get("user_id") is None
+    assert body.get("user_id") == owner["id"]
     session_id = body["session_id"]
 
-    fetched = client.get(f"/session/{session_id}")
+    assert client.get(f"/session/{session_id}").status_code == 401
+    fetched = client.get(f"/session/{session_id}", headers=_headers(owner))
     assert fetched.status_code == 200, fetched.text
-    report = client.get(f"/dashboard/{session_id}")
+    report = client.get(f"/dashboard/{session_id}", headers=_headers(owner))
     assert report.status_code == 200, report.text
 
 

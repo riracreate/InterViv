@@ -286,8 +286,9 @@ def test_gate_on_anonymous_legacy_probe_mirrors_start_policy(
     monkeypatch.setenv("REVIEWED_BUNDLES_ONLY", "true")
     _clear_settings()
     client = TestClient(app)
-    # No auth header: same rule as start (legacy technical stays probed).
-    probe = client.post("/session/availability", json={
+    # Same rule as start: a token is required before the probe runs.
+    headers = _headers(_make_user("avail-anon"))
+    probe = client.post("/session/availability", headers=headers, json={
         "skills": ["DBMS"], "rounds_per_skill": 1,
         "round_type": "technical_short_answer",
     })

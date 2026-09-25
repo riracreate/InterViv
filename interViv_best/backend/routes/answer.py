@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import json
 from typing import Any
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, model_validator
 
 from backend.config import get_settings
@@ -32,7 +32,12 @@ from backend.execution import (
     assert_coding_exec_allowed,
 )
 from backend.integrations import IntegrationError
-from backend.routes.auth import get_user_from_authorization, require_matching_user, require_user
+from backend.routes.auth import (
+    get_user_from_authorization,
+    require_authenticated,
+    require_matching_user,
+    require_user,
+)
 from backend.routes.session_access import assert_session_access
 from backend.routes.session import (
     _expanded_spec_for_round,
@@ -501,7 +506,7 @@ def _record_system_design_attempt(
         logger.warning("Failed to record system-design attempt.", exc_info=True)
 
 
-@router.post("/answer")
+@router.post("/answer", dependencies=[Depends(require_authenticated)])
 def submit_answer(
     request: SubmitAnswerRequest,
     authorization: str | None = Header(default=None),

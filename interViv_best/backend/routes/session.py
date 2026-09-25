@@ -1345,7 +1345,7 @@ def _validate_block_content(
 # POST /session/start
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(require_authenticated)])
 def start_session(
     request: StartSessionRequest,
     authorization: str | None = Header(default=None),
@@ -1427,7 +1427,7 @@ def start_session(
 
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
-    user = get_user_from_authorization(authorization) if authorization else None
+    user = require_user(authorization)
 
     needs_phase2_auth = any(
         t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
@@ -1586,7 +1586,7 @@ def start_session(
     session_dict["rounds_per_skill"] = request.rounds_per_skill
     session_dict["total_rounds"] = total_rounds
     session_dict["current_skill"] = first_skill
-    session_dict["user_id"] = user["id"] if user else candidate.get("user_id")
+    session_dict["user_id"] = user["id"]
     session_dict["target_company_id"] = target_company_id
     session_dict["target_role_id"] = target_role_id
     session_dict["round_config"] = request.round_config or {}
@@ -1705,7 +1705,7 @@ def start_session(
 # POST /session/availability (pre-commit content probe; no writes)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/availability")
+@router.post("/availability", dependencies=[Depends(require_authenticated)])
 def check_availability(
     request: StartSessionRequest,
     authorization: str | None = Header(default=None),
@@ -1746,18 +1746,7 @@ def check_availability(
     expanded = expand_blocks(block_plan)
     plan = [spec["round_type"] for spec in expanded]
 
-    # Same auth rule as start: Phase 2 round types require a user;
-    # anonymous legacy-technical probes stay allowed.
-    needs_phase2_auth = any(
-        t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
-    )
-    if needs_phase2_auth:
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required for this session.",
-            )
-        require_user(authorization)
+    require_user(authorization)
 
     allow_unknown_fallback = request.blocks is None
     by_block: dict[str, list[dict[str, Any]]] = {}
@@ -1821,7 +1810,7 @@ def get_practice_bank(
 # GET /session/{session_id} (resume / refresh)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", dependencies=[Depends(require_authenticated)])
 def get_session(
     session_id: str,
     authorization: str | None = Header(default=None),
@@ -1898,23 +1887,9 @@ def run_sql_preview(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication is required for this session.",
-        )
-    user = require_user(authorization)
-    if session.get("user_id"):
-        if str(session["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot access another user's session.",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Anonymous sessions are not permitted for this round type.",
-        )
+    from backend.routes.session_access import assert_session_access
+
+    user = assert_session_access(session, authorization)
 
     rounds = session.get("rounds", [])
     target_round = next(
@@ -2022,23 +1997,9 @@ def run_coding_preview(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found."
         )
 
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication is required for this session.",
-        )
-    user = require_user(authorization)
-    if session.get("user_id"):
-        if str(session["user_id"]) != str(user["id"]):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot access another user's session.",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Anonymous sessions are not permitted for this round type.",
-        )
+    from backend.routes.session_access import assert_session_access
+
+    user = assert_session_access(session, authorization)
 
     rounds = session.get("rounds", [])
     target_round = next(
