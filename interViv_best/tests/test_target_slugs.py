@@ -136,3 +136,87 @@ def test_both_write_paths_store_the_same_slugs(mode, memory_client, sql_client):
     assert _stored_slugs(via_put["id"]) == ("tcs", "tcs_swe")
     assert _stored_slugs(via_patch["id"]) == ("tcs", "tcs_swe")
     assert client.get("/auth/me", headers=_headers(via_patch)).json()["user"]["target_role_id"] == "tcs_swe"
+
+
+def _integer_identifiers(value, path="$"):
+    found = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            here = f"{path}.{key}"
+            if (
+                isinstance(key, str)
+                and (key == "company_id" or key.endswith("company_id") or key == "role_id" or key.endswith("role_id"))
+                and isinstance(item, int)
+                and not isinstance(item, bool)
+            ):
+                found.append(f"{here}={item}")
+            else:
+                found.extend(_integer_identifiers(item, here))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found.extend(_integer_identifiers(item, f"{path}[{index}]"))
+    return found
+
+
+def _walk(response, label: str) -> None:
+    try:
+        body = response.json()
+    except Exception:
+        return
+    leaked = _integer_identifiers(body)
+    assert not leaked, f"{label} {response.status_code}: {leaked}"
+
+
+@pytest.mark.parametrize("mode", ["memory", "sql"])
+def test_api_payloads_never_return_integer_target_ids(mode, memory_client, sql_client):
+    client = memory_client if mode == "memory" else sql_client
+    user = _user(f"contract-{mode}")
+    headers = _headers(user)
+    saved = client.put(
+        "/target-context/me",
+        headers=headers,
+        json={"company_id": "tcs", "role_id": "tcs_swe"},
+    )
+    assert saved.status_code == 200, saved.text
+    started = client.post("/session/start", headers=headers, json={"blocks": [
+        {"round_type": "technical_short_answer", "category": "interview", "skills": ["DBMS"], "count": 1},
+    ]})
+    assert started.status_code == 200, started.text
+    session_id = started.json()["session_id"]
+    answered = client.post("/session/answer", headers=headers, json={
+        "session_id": session_id,
+        "round": 1,
+        "answer_text": "A primary key uniquely identifies each row.",
+    })
+    assert answered.status_code == 200, answered.text
+
+    calls = [
+        ("PUT /target-context/me", saved),
+        ("POST /session/start", started),
+        ("POST /session/answer", answered),
+        ("GET /auth/me", client.get("/auth/me", headers=headers)),
+        ("GET /target-context/me", client.get("/target-context/me", headers=headers)),
+        ("GET /session", client.get(f"/session/{session_id}", headers=headers)),
+        ("GET /dashboard/session", client.get(f"/dashboard/{session_id}", headers=headers)),
+        ("GET /dashboard/progress", client.get("/dashboard/progress", headers=headers)),
+        ("GET feedback", client.get(f"/session/{session_id}/rounds/1/feedback", headers=headers)),
+        ("GET /practice/presets", client.get("/practice/presets", headers=headers)),
+        ("GET /practice/builder-draft", client.get("/practice/builder-draft", headers=headers)),
+        ("GET /jobs", client.get("/jobs", headers=headers)),
+        ("POST /coach/plan", client.post("/coach/plan", headers=headers, json={"goal_text": "TCS", "include_dashboard": False})),
+        ("POST /coach/conversations", client.post("/coach/conversations", headers=headers)),
+        ("GET /roadmap/plans/me", client.get("/roadmap/plans/me", headers=headers)),
+        ("GET /gap-analysis/me/tcs_swe", client.get("/gap-analysis/me/tcs_swe", headers=headers)),
+        ("GET /roadmap/me/tcs_swe", client.get("/roadmap/me/tcs_swe?days=30", headers=headers)),
+        ("GET /learning/next-steps/me", client.get("/learning/next-steps/me", headers=headers)),
+        ("GET /learning/roadmap-completion/me", client.get("/learning/roadmap-completion/me", headers=headers)),
+        ("GET /ats/runs", client.get("/ats/runs", headers=headers)),
+        ("GET /ml-primitives/attempts", client.get("/ml-primitives/attempts", headers=headers)),
+        ("GET /av/system-design-attempts", client.get("/av/system-design-attempts", headers=headers)),
+    ]
+    for label, response in calls:
+        _walk(response, label)
+    dashboard = client.get(f"/dashboard/{session_id}", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["target_role_id"] == "tcs_swe"
+    assert dashboard.json()["target_company_id"] == "tcs"
