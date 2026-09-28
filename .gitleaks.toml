@@ -1,0 +1,5 @@
+title = "interViv publish allowlist"
+
+[allowlist]
+description = "Baseline SHA-256 manifests are file checksums, not credentials."
+paths = ['''interViv_best/data/baselines/v1/SHA256SUMS\.json''']
