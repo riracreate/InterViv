@@ -443,6 +443,235 @@ def _check_off_topic(
     return None
 
 
+# ── Entity-swap detection ─────────────────────────────────────────────────────
+# Comparison questions ("difference between TCP and UDP") are where embedding
+# similarity and keyword coverage are blind: an answer that gives TCP's
+# properties to UDP and vice versa scores like a correct one. This check reads
+# the reference answer to learn which properties belong to which side, then
+# counts how often the candidate attaches them to the other side.
+#
+# Deliberately conservative: it is a no-op unless the question names a clear
+# A/B pair and the reference gives each side at least one distinctive property.
+# Clauses that mention both sides or contain a negation are not counted.
+
+ENTITY_SWAP_CAP = 35
+ENTITY_SWAP_MIN_CROSSED = 2
+ENTITY_SWAP_RATIO = 2.0
+
+_CONTRAST_PATTERNS = (
+    re.compile(r"\bdifferences?\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|with|for|and\s+when|and\s+how|and\s+why)\b|$)", re.I),
+    re.compile(r"\bdistinguish\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|with|for)\b|$)", re.I),
+    re.compile(r"\bcompare\s+(?:and\s+contrast\s+)?(?P<a>.+?)\s+(?:and|with|to|vs\.?|versus)\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|for)\b|$)", re.I),
+    re.compile(r"\bhow\s+(?:does|do|is|are)\s+(?P<a>.+?)\s+differ(?:ent)?\s+from\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|for)\b|$)", re.I),
+    re.compile(r"(?P<a>[\w+#\-/ ]+?)\s+(?:vs\.?|versus)\s+(?P<b>[\w+#\-/ ]+?)(?=[?.,:;(]|$)", re.I),
+)
+
+# Leading words a question wraps around the entity phrase.
+_PHRASE_FILLER = frozenset({
+    "the", "a", "an", "between", "of", "what", "is", "are", "explain",
+    "describe", "difference", "differences", "key", "main", "major",
+})
+
+# Parentheses are not split points: a parenthetical elaborates its own clause
+# ("use copy.deepcopy() for deep copies").
+_CLAUSE_SPLIT = re.compile(
+    r"[;\n]+|[.!?]+(?=\s|$)|,|\b(?:whereas|while|but|however|unlike|in\s+contrast|on\s+the\s+other\s+hand|compared\s+(?:to|with)|as\s+opposed\s+to)\b",
+    re.I,
+)
+
+# A clause that opens with one of these refers back to the previous subject,
+# even if it later uses a side's name as an ordinary noun ("It guarantees
+# ordered pod deployment" is still about the StatefulSet).
+_PRONOUN_OPENERS = frozenset({"it", "its", "they", "their", "this", "these", "such"})
+
+_SWAP_NEGATION = re.compile(
+    r"\b(?:not|no|never|isn't|isnt|aren't|arent|doesn't|doesnt|don't|dont|without|cannot|can't|cant|neither|nor|lacks?)\b",
+    re.I,
+)
+
+# Words that carry no side-specific property. Comparative words are excluded
+# because "more"/"less" flip meaning depending on which side is the subject.
+_SWAP_STOPWORDS = _STOPWORDS | frozenset({
+    "has", "have", "had", "its", "their", "they", "them", "there", "these",
+    "those", "than", "more", "less", "both", "also", "only", "each", "other",
+    "same", "such", "used", "use", "uses", "using", "like", "into", "from",
+    "between", "difference", "differences", "whereas", "while", "however",
+    "unlike", "because", "since", "then", "than", "one", "two", "very",
+    "much", "many", "most", "some", "any", "all", "will", "may", "might",
+    "must", "not", "never", "without", "which", "where", "while", "example",
+    "examples", "case", "cases", "typically", "usually", "generally", "often",
+    "way", "ways", "thing", "things", "type", "types", "called",
+    "new", "make", "makes", "made", "create", "creates", "created",
+    "good", "better", "work", "works", "based", "need", "needs",
+    "provide", "provides", "allow", "allows", "support", "supports",
+    "handle", "handles", "completely", "fully", "just", "still",
+})
+
+
+def _swap_stem(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if token.endswith("sses"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith(("ches", "shes", "xes", "zes")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def _swap_tokens(text: str) -> list[str]:
+    return [_swap_stem(t) for t in re.findall(r"[a-z0-9+#]+", text.lower())]
+
+
+def _clean_entity_phrase(phrase: str) -> list[str]:
+    tokens = _swap_tokens(phrase)
+    while tokens and tokens[0] in _PHRASE_FILLER:
+        tokens.pop(0)
+    return tokens
+
+
+def _contrast_pair(question_text: str) -> tuple[set[str], set[str], set[str]] | None:
+    """Return (side A tokens, side B tokens, shared tokens) for a comparison question.
+
+    "shallow copy and deep copy" -> ({"shallow"}, {"deep"}, {"copy"}); the
+    shared head noun identifies neither side. "supervised and unsupervised
+    learning" is read as "supervised learning" vs "unsupervised learning".
+    """
+    if not question_text:
+        return None
+    for pattern in _CONTRAST_PATTERNS:
+        match = pattern.search(question_text)
+        if not match:
+            continue
+        a = _clean_entity_phrase(match.group("a"))
+        b = _clean_entity_phrase(match.group("b"))
+        if not a or not b or len(a) > 4 or len(b) > 4:
+            return None
+        # Elided shared head: "supervised and unsupervised learning".
+        if len(a) == 1 and len(b) > 1:
+            a = a + b[1:]
+        elif len(b) == 1 and len(a) > 1:
+            b = b + a[1:]
+        shared = set(a) & set(b)
+        ident_a = {t for t in a if t not in shared and t not in _SWAP_STOPWORDS and len(t) > 1}
+        ident_b = {t for t in b if t not in shared and t not in _SWAP_STOPWORDS and len(t) > 1}
+        if not ident_a or not ident_b or ident_a & ident_b:
+            return None
+        return ident_a, ident_b, shared
+    return None
+
+
+def _side_clauses(
+    text: str, ident_a: set[str], ident_b: set[str], shared: set[str]
+) -> list[tuple[str, set[str], bool]]:
+    """Split text into clauses and assign each one to side "a" or "b".
+
+    A clause that names one side belongs to it. A clause that names neither,
+    or that opens with a pronoun, inherits the previous clause's side. A clause
+    that names both is ambiguous and resets the inherited side.
+    Returns (side, content_tokens, negated) for every assigned clause.
+    """
+    out: list[tuple[str, set[str], bool]] = []
+    current: str | None = None
+    for raw in _CLAUSE_SPLIT.split(text or ""):
+        if not raw or not raw.strip():
+            continue
+        tokens = _swap_tokens(raw)
+        if not tokens:
+            continue
+        has_a = any(t in ident_a for t in tokens)
+        has_b = any(t in ident_b for t in tokens)
+        if tokens[0] in _PRONOUN_OPENERS and current is not None:
+            pass
+        elif has_a and has_b:
+            current = None
+            continue
+        elif has_a:
+            current = "a"
+        elif has_b:
+            current = "b"
+        if current is None:
+            continue
+        content = {
+            t for t in tokens
+            if len(t) > 2
+            and not t.isdigit()
+            and t not in _SWAP_STOPWORDS
+            and t not in ident_a
+            and t not in ident_b
+            and t not in shared
+        }
+        out.append((current, content, bool(_SWAP_NEGATION.search(raw))))
+    return out
+
+
+def entity_swap_evidence(
+    answer_text: str, question_text: str, ideal_answer: str
+) -> dict | None:
+    """Count side-consistent vs side-crossed property mentions.
+
+    Returns None when the check does not apply (no A/B pair in the question, or
+    the reference answer gives no distinctive property for one side).
+    """
+    pair = _contrast_pair(question_text)
+    if pair is None or not ideal_answer:
+        return None
+    ident_a, ident_b, shared = pair
+
+    profile: dict[str, set[str]] = {"a": set(), "b": set()}
+    for side, content, negated in _side_clauses(ideal_answer, ident_a, ident_b, shared):
+        if not negated:
+            profile[side] |= content
+    attrs_a = profile["a"] - profile["b"]
+    attrs_b = profile["b"] - profile["a"]
+    if not attrs_a or not attrs_b:
+        return None
+
+    consistent: set[tuple[str, str]] = set()
+    crossed: set[tuple[str, str]] = set()
+    for side, content, negated in _side_clauses(answer_text, ident_a, ident_b, shared):
+        if negated:
+            continue
+        own, other = (attrs_a, attrs_b) if side == "a" else (attrs_b, attrs_a)
+        for token in content:
+            if token in own:
+                consistent.add((side, token))
+            elif token in other:
+                crossed.add((side, token))
+    return {
+        "consistent": len(consistent),
+        "crossed": len(crossed),
+        "crossed_sides": len({side for side, _ in crossed}),
+        "crossed_terms": sorted(t for _, t in crossed),
+    }
+
+
+def entity_swap_fires(
+    evidence: dict | None,
+    min_crossed: int = ENTITY_SWAP_MIN_CROSSED,
+    ratio: float = ENTITY_SWAP_RATIO,
+) -> bool:
+    """A swap moves properties both ways: each side must carry the other's."""
+    if evidence is None:
+        return False
+    crossed = evidence["crossed"]
+    return (
+        evidence["crossed_sides"] == 2
+        and crossed >= min_crossed
+        and crossed > ratio * evidence["consistent"]
+    )
+
+
+def _check_entity_swap(
+    answer_text: str, question_text: str, ideal_answer: str
+) -> dict | None:
+    evidence = entity_swap_evidence(answer_text, question_text, ideal_answer)
+    if entity_swap_fires(evidence):
+        return _cap("entity_swap", ENTITY_SWAP_CAP)
+    return None
+
+
 def check_answer_quality_v2(
     answer_text: str,
     question_text: str = "",
@@ -453,7 +682,7 @@ def check_answer_quality_v2(
     Extended guard. Order:
       1 empty, 2 gibberish, 3 repetition, 3.5 question_parroting,
       4 truncated_fragment, 5 keyword_stuffing, 6 too_short,
-      7 low_density, 8 off_topic
+      6.5 entity_swap, 7 low_density, 8 off_topic
     First match wins.
     """
     cap = _check_basic_rules(
@@ -464,6 +693,10 @@ def check_answer_quality_v2(
     )
     if cap is not None:
         return cap
+
+    swap = _check_entity_swap(answer_text or "", question_text or "", ideal_answer or "")
+    if swap is not None:
+        return swap
 
     answer_tokens = _word_tokens(answer_text or "")
 

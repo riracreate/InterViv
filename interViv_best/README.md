@@ -1,6 +1,8 @@
 # interViv - Interview Readiness Platform
 
-interViv is an **Interview Readiness Platform**. LLMs are used only for interview question generation; scoring, feedback, readiness calculations, roadmaps, and gap analysis are deterministic Python.
+interViv is an **Interview Readiness Platform**. Core scoring, readiness calculations, roadmaps, and gap analysis run in Python. Optional LLM integrations provide question generation and coaching; offline practice works without provider credentials.
+
+Start with the persistent local launcher below. See the [current maintenance results](docs/maintenance_2026-11-02.md) and [improvement roadmap](docs/IMPROVEMENT_ROADMAP.md) for verified behavior, remaining limitations, and next priorities. The winner map below records the project's assembly history rather than the current setup contract.
 
 This folder is a curated assembly of the **best files** from all versions of the project.
 Every file was chosen by reading and comparing its equivalent across all four codebases:
@@ -45,41 +47,52 @@ Every file was chosen by reading and comparing its equivalent across all four co
 
 ## Setup
 
-```bash
-# 1. Python backend
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env. Set DATABASE_URL for PostgreSQL persistence, or leave it blank for demo memory mode.
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+For this checkout, with dependencies already installed:
 
-# 2. Frontend
-cd frontend
-npm install
-npm run dev -- --host 127.0.0.1 --port 5175
-# Opens at http://127.0.0.1:5175
+```bash
+# From interViv_best/
+.venv/bin/python scripts/run_local.py
 ```
 
-### Running locally (unified shell)
+Open <http://127.0.0.1:5173>. This starts both services, applies migrations,
+and persists accounts and progress in `local-data/interviv-local.sqlite3`.
+The launcher selects this local database even if a different `DATABASE_URL`
+is present in your shell. It disables live LLM and job fetching, requires no
+downloads at startup, and leaves logs in `local-data/local-run/`.
+Cached semantic models are used when available; a fresh machine may use the
+existing lexical fallback until the model has been provisioned.
+
+For a fresh checkout, install dependencies first (network access required):
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+(cd frontend && npm ci)
+cp .env.example .env
+.venv/bin/python scripts/run_local.py
+```
+
+`requirements-tested.txt` captures versions from the tested Python 3.12
+environment. It is a constraints file, not a complete cross-platform hash
+lock; fresh Linux/container installation still needs verification in CI.
+
+### Local services
 
 | Port | Process | Start | Required |
 |------|---------|-------|----------|
-| `8000` | FastAPI backend (uvicorn) | command above | yes |
-| `5175` | Vite frontend | command above | yes |
+| `8000` | FastAPI backend (uvicorn) | local launcher | yes |
+| `5173` | Vite frontend | local launcher | yes |
 | `19000` | Piston coding executor (Docker, loopback only) | `docker compose -f compose.coding.yml up executor` | only for Run/Submit on `/problems` |
 | `11434` | Ollama (`gemma2:2b`) for coding hints | system Ollama | no; curated hints are the fallback |
 
-Sign in with any account created via `/signup` (or `POST /auth/signup`). There is
-no built-in demo account; with the in-memory DB, accounts disappear when the
-backend restarts.
+Create an account via `/signup`. There is no built-in demo account.
+The local launcher keeps accounts across restarts. Starting uvicorn directly
+without a `DATABASE_URL` instead uses disposable in-memory storage in
+development; production configuration now rejects a missing database.
 
-Stop everything:
-
-```bash
-# Ctrl+C the uvicorn and vite terminals, or:
-kill $(lsof -nP -tiTCP:8000,5175 -sTCP:LISTEN)
-docker stop interviv-coding-executor-1 interviv-coding-runtime-cache-1
-lsof -nP -iTCP:8000,5175,19000 -sTCP:LISTEN   # should print nothing
-```
+Press Ctrl+C in the launcher's terminal to stop its backend and frontend.
+If you separately started the coding executor, stop it with
+`docker compose -f compose.coding.yml stop`.
 
 ### Coding practice executor (Piston)
 
@@ -111,7 +124,10 @@ Security evidence: `docs/coding_execution_security.md`.
 
 ### PostgreSQL and Auth
 
-Task 1 adds SQLAlchemy/Alembic persistence and JWT auth:
+For a separately configured PostgreSQL backend, set `DATABASE_URL` in `.env`
+and apply migrations before starting uvicorn. Start the frontend separately
+with `npm run dev -- --host 127.0.0.1 --port 5173` from `frontend/`.
+The convenience local launcher always selects its local SQLite database.
 
 ```bash
 docker compose up postgres
@@ -125,7 +141,12 @@ Auth endpoints:
 - `POST /auth/login`
 - `GET /auth/me`
 
-If `DATABASE_URL` is missing, the backend keeps the in-memory fallback for local demos and CI.
+If `DATABASE_URL` is missing, the backend keeps the in-memory fallback only
+for local demos and tests. Production also requires an explicit JWT secret
+and allowed CORS origins. `/health` checks liveness; `/ready` checks database
+connectivity, migration state, practice packs, and configured Redis access.
+Use Redis for authentication limits shared across multiple backend workers;
+without Redis, counters are local to each process.
 
 The SQLAlchemy path is exercised end-to-end (signup → login → session →
 answer → dashboard, plus company seeding and the skill graph) by
@@ -152,10 +173,13 @@ Evidence is tracked in `docs/post_phase2_task_1.md` through
 
 ### Question Generation
 
-Live interview questions are generated by an LLM by default:
+The example configuration defaults to offline CSV questions. To opt into live
+generation when starting a separately configured backend:
 
 ```bash
 QUESTION_GENERATION_MODE=llm
+QUESTION_REQUIRE_LLM=true
+LLM_LIVE_FETCH=1
 QUESTION_LLM_PROVIDER=auto
 OPENAI_API_KEY=...
 # or

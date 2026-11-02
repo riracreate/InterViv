@@ -241,10 +241,10 @@ export default function Coach() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-3xl px-[var(--space-4)] py-[var(--space-6)] sm:px-[var(--space-6)]">
+      <div className="app-container">
         <AppNav userId={userId} roleId={roleId || null} />
 
-        <header className="mt-8 border-b border-[var(--color-border)] pb-6">
+        <header className="app-page-hero">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Guidance coach</p>
           <h1 className="mt-2 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
             Don’t know where to start?
@@ -255,7 +255,7 @@ export default function Coach() {
         </header>
 
         {error && (
-          <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <div role="alert" className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
           </div>
         )}

@@ -5,10 +5,11 @@ from uuid import uuid4
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from backend.auth.security import create_access_token, decode_access_token, hash_password, verify_password
+from backend.auth.security import MAX_PASSWORD_CHARACTERS, create_access_token, decode_access_token, hash_password, verify_password
+from backend.auth.throttling import check_auth_rate_limit
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.db.user_target import get_user_target
 
@@ -16,14 +17,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class SignupRequest(BaseModel):
-    email: str
-    password: str = Field(min_length=8)
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_CHARACTERS)
     name: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=MAX_PASSWORD_CHARACTERS)
 
 
 def _public_user(user: dict) -> dict[str, object]:
@@ -120,8 +121,9 @@ def require_matching_user(user_id: str, authorization: str | None) -> dict:
 
 
 @router.post("/signup")
-def signup(request: SignupRequest) -> dict[str, object]:
+def signup(request: SignupRequest, http_request: Request) -> dict[str, object]:
     email = _normalize_email(request.email)
+    check_auth_rate_limit(http_request, email, action="signup")
     _validate_password(request.password)
     now = datetime.now(timezone.utc)
     try:
@@ -152,8 +154,9 @@ def signup(request: SignupRequest) -> dict[str, object]:
 
 
 @router.post("/login")
-def login(request: LoginRequest) -> dict[str, object]:
+def login(request: LoginRequest, http_request: Request) -> dict[str, object]:
     email = _normalize_email(request.email)
+    check_auth_rate_limit(http_request, email, action="login")
     try:
         users = get_database()["users"]
         user = users.find_one({"email": email})

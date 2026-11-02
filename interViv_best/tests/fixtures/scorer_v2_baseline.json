@@ -1,0 +1,366 @@
+{
+  "scorer_version": "v2",
+  "label": "v1 + entity_swap guard",
+  "source_commit": "uncommitted working tree on upgrade/verified-blueprint (parent af82b24adb2355628eaf42e20fc9a43491e45c81)",
+  "captured_at": "2026-11-02T13:29:08+00:00",
+  "pipeline": "backend.scoring.pipeline.run_scoring_pipeline",
+  "length_ratio_multiplier_enabled": false,
+  "semantic_runtime_mode": "full",
+  "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "semantic_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "append_protected": true,
+  "never_regenerate_to_absorb_changed_result": true,
+  "known_script_assertion_failures": [
+    {
+      "id": "gibberish",
+      "observed_guard": "repetition",
+      "script_expected_guard": "gibberish",
+      "final_score": 6.06
+    },
+    {
+      "id": "keyword_stuffing",
+      "observed_guard": "gibberish",
+      "script_expected_guard": "keyword_stuffing",
+      "final_score": 10.0
+    }
+  ],
+  "items": [
+    {
+      "id": "excellent",
+      "answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind public methods so callers depend only on the interface. Inheritance lets a subclass reuse behaviour from a base class. Polymorphism allows method overriding so subtypes can be substituted at runtime. Abstraction exposes only the essential operations and is reinforced by SOLID design principles.",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 57,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        70.0,
+        100.0
+      ],
+      "expected_guard_by_script": "",
+      "notes": "Full ideal coverage with explanations — should score in the upper band.",
+      "result": {
+        "final_score": 91.39,
+        "guard_applied": null,
+        "nlp_score": 78.43,
+        "kg_score": 9.09
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "paraphrase",
+      "answer": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 57,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        45.0,
+        100.0
+      ],
+      "expected_guard_by_script": "",
+      "notes": "Same meaning as the ideal but expressed without naming the four pillars (zero shared content tokens). The 45-floor is cleanly separated from every gaming-attack case (all ≤35), so this regression confirms the L1 semantic blend rescues paraphrases from the attack-vector floor — the property the Task 3 calibration (kept 60/40 per Δ=+0.0061<0.05) preserves.",
+      "result": {
+        "final_score": 49.62,
+        "guard_applied": null,
+        "nlp_score": 45.79,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "partial",
+      "answer": "OOP is built on encapsulation and inheritance. Encapsulation is about wrapping data and methods together so the internal state stays hidden. Inheritance lets one class reuse another.",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 27,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        30.0,
+        70.0
+      ],
+      "expected_guard_by_script": "",
+      "notes": "Covers two of four pillars correctly — should land in the middle band.",
+      "result": {
+        "final_score": 56.1,
+        "guard_applied": null,
+        "nlp_score": 45.18,
+        "kg_score": 9.09
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "empty",
+      "answer": "",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 0,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        10.0
+      ],
+      "expected_guard_by_script": "empty",
+      "notes": "Guard v1 — empty answer must short-circuit.",
+      "result": {
+        "final_score": 5.0,
+        "guard_applied": "empty",
+        "nlp_score": 0.0,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "gibberish",
+      "answer": "qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 9,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        25.0
+      ],
+      "expected_guard_by_script": "gibberish",
+      "notes": "Guard v1 — low vowel ratio / not real words should cap hard.",
+      "result": {
+        "final_score": 6.06,
+        "guard_applied": "repetition",
+        "nlp_score": 11.77,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": false,
+        "failures": [
+          "guard_applied='repetition', expected 'gibberish'"
+        ]
+      }
+    },
+    {
+      "id": "excessive_repetition",
+      "answer": "really really really really really really really really really really really really really really good answer.",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 16,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        30.0
+      ],
+      "expected_guard_by_script": "repetition",
+      "notes": "Guard v1 — single token dominates >40% of tokens; the rule's label is 'repetition' (see modules/answer_guard.py).",
+      "result": {
+        "final_score": 8.4,
+        "guard_applied": "repetition",
+        "nlp_score": 12.6,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "keyword_stuffing",
+      "answer": "encapsulation inheritance polymorphism abstraction encapsulation inheritance polymorphism abstraction encapsulation inheritance polymorphism abstraction",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 12,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        40.0
+      ],
+      "expected_guard_by_script": "keyword_stuffing",
+      "notes": "Guard v1 — high keyword density without sentence structure should not earn a high score from coverage alone.",
+      "result": {
+        "final_score": 10.0,
+        "guard_applied": "gibberish",
+        "nlp_score": 52.29,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": false,
+        "failures": [
+          "guard_applied='gibberish', expected 'keyword_stuffing'"
+        ]
+      }
+    },
+    {
+      "id": "off_topic",
+      "answer": "I spent the weekend cooking risotto. The trick is to add warm stock one ladle at a time and stir constantly over a low flame for about thirty minutes until the rice releases its starch.",
+      "question": "Explain the four pillars of OOP.",
+      "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+      "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+      "keywords": [
+        "encapsulation",
+        "inheritance",
+        "polymorphism",
+        "abstraction"
+      ],
+      "skill": "OOP",
+      "difficulty": "medium",
+      "word_count": 35,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        35.0
+      ],
+      "expected_guard_by_script": "off_topic",
+      "notes": "Guard v2 (Task 2) — off-topic answer with zero keyword overlap and low semantic similarity must be capped.",
+      "result": {
+        "final_score": 12.5,
+        "guard_applied": "off_topic",
+        "nlp_score": 22.13,
+        "kg_score": 0.0
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "entity_swap",
+      "answer": "UDP is connection-oriented: it does a three-way handshake, then guarantees reliable ordered delivery with acknowledgements and retransmission, plus flow control and congestion control. TCP is connectionless and best-effort, with no handshake and no ordering guarantee, so it has lower overhead and latency, which suits streaming, gaming and DNS.",
+      "question": "What is the difference between TCP and UDP?",
+      "ideal_answer": "TCP is a connection-oriented protocol that establishes a connection with a three-way handshake and guarantees reliable, ordered delivery using acknowledgements, retransmission, flow control and congestion control. UDP is connectionless and best-effort: it has no handshake, no ordering or delivery guarantee, and lower overhead, so it suits latency-sensitive uses like video streaming, gaming and DNS.",
+      "ideal_keywords": "connection-oriented, connectionless, handshake, reliable, ordered, best-effort, latency, overhead",
+      "keywords": [
+        "connection-oriented",
+        "connectionless",
+        "handshake",
+        "reliable"
+      ],
+      "skill": "CN",
+      "difficulty": "medium",
+      "word_count": 51,
+      "engagement_label": "engaged",
+      "wpm": 140.0,
+      "pause_count": 2,
+      "candidate_baseline": null,
+      "band": [
+        0.0,
+        35.0
+      ],
+      "expected_guard_by_script": "entity_swap",
+      "notes": "TCP and UDP properties exchanged. Before the guard this scored 88 (correct version: 90) because embeddings and keywords ignore which side a property is attached to.",
+      "result": {
+        "final_score": 35.0,
+        "guard_applied": "entity_swap",
+        "nlp_score": 75.58,
+        "kg_score": 16.67
+      },
+      "script_assertions": {
+        "score_ok": true,
+        "guard_ok": true,
+        "failures": []
+      }
+    }
+  ]
+}

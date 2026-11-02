@@ -46,6 +46,10 @@ frontend/dist/
 .interviv_model_lab_runtime/
 .interviv-build.*/
 .interviv-speaker.*/
+.chart-data-*/
+.ppt-*-review/
+.worktrees/
+output/
 tmp/
 
 # Local assistant/editor state

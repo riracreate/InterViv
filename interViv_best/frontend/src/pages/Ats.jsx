@@ -11,6 +11,7 @@ import {
 import { mapAtsResultToView } from '../lib/atsMapping';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
+import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
 export default function AtsChecker() {
   const navigate = useNavigate();
@@ -104,6 +105,8 @@ export default function AtsChecker() {
   const onUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const problem = resumeFileError(file);
+    if (problem) { setError(problem); return; }
     setBusy(true);
     setError('');
     try {
@@ -152,16 +155,16 @@ export default function AtsChecker() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-3xl px-[var(--space-4)] py-[var(--space-6)] sm:px-[var(--space-6)]">
+      <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId || roleId || null} />
 
-        <header className="mt-8 border-b border-[var(--color-border)] pb-6">
+        <header className="app-page-hero">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ATS checker</p>
           <h1 className="mt-2 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
             Explainable resume ↔ role score
           </h1>
           <p className="mt-3 text-sm leading-6 text-[var(--color-ink-muted)]">
-            Deterministic parse + section + keyword + heuristics. No LLM resume judge. Layout multi-column detection is not claimed.
+            Deterministic parse + section + keyword + heuristics. No LLM resume judge. Two-column PDFs are read column by column; tables are not classified.
           </p>
           {lastTotal != null && (
             <p className="mt-2 text-sm text-[var(--color-ink)]">
@@ -171,7 +174,7 @@ export default function AtsChecker() {
         </header>
 
         {error && (
-          <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <div role="alert" className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
           </div>
         )}
@@ -179,6 +182,7 @@ export default function AtsChecker() {
         <section className="mt-6 space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <label className="block text-sm">
             Resume PDF
+            <span className="mt-1 block text-xs text-[var(--color-ink-muted)]">PDF only, up to {MAX_RESUME_LABEL}.</span>
             <input
               type="file"
               accept="application/pdf,.pdf"
@@ -297,6 +301,16 @@ export default function AtsChecker() {
                 </p>
               </div>
             </div>
+
+            {result.unsubstantiatedSkills?.length > 0 && (
+              <div className="rounded-[var(--radius-card)] border border-[var(--color-warn)]/30 bg-[var(--color-warn-soft)] p-5" data-testid="ats-unsubstantiated">
+                <h2 className="text-sm font-semibold">Listed but not shown in Experience or Projects</h2>
+                <p className="mt-2 text-sm text-[var(--color-ink)]">{result.unsubstantiatedSkills.join(', ')}</p>
+                <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
+                  Expect interviewers to probe these. Add a bullet that shows where you used each one. This does not change the score.
+                </p>
+              </div>
+            )}
 
             {firstMissing && (
               <div className="flex flex-wrap gap-3">

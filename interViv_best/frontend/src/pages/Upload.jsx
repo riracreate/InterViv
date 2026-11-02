@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadResume, startSession, saveInterviewState, fetchMe, saveTargetContext } from '../lib/api';
 import CompanySelector from '../components/CompanySelector';
+import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
 const ROUNDS_PER_SKILL = 3;
 
@@ -141,8 +142,9 @@ export default function Upload() {
   }, []);
 
   const handleFile = (f) => {
-    if (f && f.type === 'application/pdf') { setFile(f); setError(''); }
-    else setError('Please upload a PDF file.');
+    const problem = resumeFileError(f);
+    if (problem) { setFile(null); setError(problem); return; }
+    setFile(f); setError('');
   };
 
   const handleDrop = useCallback((e) => {
@@ -153,6 +155,8 @@ export default function Upload() {
 
   const processResume = async () => {
     if (!file) return;
+    const problem = resumeFileError(file);
+    if (problem) { setError(problem); return; }
     setIsProcessing(true);
     setError('');
     try {
@@ -329,7 +333,7 @@ export default function Upload() {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </div>
                   <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "var(--font-body)" }}>Drag and drop your PDF resume</p>
-                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "var(--font-body)" }}>Maximum file size 10MB</p>
+                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "var(--font-body)" }}>Maximum file size {MAX_RESUME_LABEL}</p>
                   <input type="file" accept=".pdf" className="hidden" id="fileInput" onChange={(e) => handleFile(e.target.files[0])} />
                   <label htmlFor="fileInput"
                     className="rounded-full px-6 py-2.5 text-sm text-black cursor-pointer border border-black/15 hover:border-black/30 transition-colors"
@@ -340,7 +344,7 @@ export default function Upload() {
               )}
             </div>
 
-            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }}>{error}</p>}
+            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }} role="alert">{error}</p>}
 
             {/* Quick start without resume */}
             <div className="mt-8">
@@ -504,7 +508,7 @@ export default function Upload() {
               ))}
             </div>
 
-            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }}>{error}</p>}
+            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }} role="alert">{error}</p>}
 
             <button disabled={isStarting} onClick={startInterview}
               className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"

@@ -126,7 +126,7 @@ def jd_hash(jd_text: str) -> str:
 
 
 def parse_health_score(analysis: dict[str, Any]) -> tuple[float, list[str]]:
-    """Layout detection is not implemented — score 100 with extract_layout_unchecked when text extracted."""
+    """Extraction health. Layout is advisory: it adds flags, never points."""
     flags: list[str] = []
     score = 100.0
     if not analysis.get("extract_ok"):
@@ -135,10 +135,25 @@ def parse_health_score(analysis: dict[str, Any]) -> tuple[float, list[str]]:
     if analysis.get("likely_garbage"):
         score -= 25
         flags.append("non_selectable_or_garbage_text")
-    # Honest limitation: no multi-column / table layout classifier in resume_parser.
+    # Layout is only checked for pdfplumber PDF extraction (not pasted text or
+    # the PyMuPDF fallback); tables are never classified.
     if analysis.get("extract_ok") and not analysis.get("layout_checked"):
         flags.append("extract_layout_unchecked")
+    if analysis.get("layout") == "two_column":
+        flags.append("two_column_reconstructed")
     return _clamp(score), flags
+
+
+def unsubstantiated_skills(analysis: dict[str, Any], present: list[str]) -> list[str] | None:
+    """Matched skills never mentioned in Experience / Projects.
+
+    Advisory only (no points). None when the resume has no Experience or
+    Projects header, because absence can't be judged then.
+    """
+    if not analysis.get("evidence_sections_found"):
+        return None
+    evidence = expand_skill_set(list(analysis.get("evidence_skills") or []))
+    return [skill for skill in present if not (expand_skill_token(skill) & evidence)]
 
 
 def section_complete_score(analysis: dict[str, Any]) -> tuple[float, list[str]]:
@@ -257,6 +272,8 @@ def score_ats(
         "flags": flags,
         "present_skills": present,
         "missing_skills": missing,
+        "unsubstantiated_skills": unsubstantiated_skills(analysis, present),
+        "layout": analysis.get("layout"),
         "suggested_practice_skills": missing[:5],
         "resume_skills": resume_skills,
         "must_have": must_have,

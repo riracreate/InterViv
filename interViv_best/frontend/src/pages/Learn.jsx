@@ -210,7 +210,7 @@ export default function Learn() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-5xl px-[var(--space-4)] py-[var(--space-6)]">
+      <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
         <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
           Learn
@@ -223,7 +223,7 @@ export default function Learn() {
         </p>
 
         {error && (
-          <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <div role="alert" className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
           </div>
         )}

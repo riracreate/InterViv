@@ -35,8 +35,18 @@ export function HomeContent({ data, reload }) {
       <a className="hub-button" href="#target">{target ? 'Change company & role' : 'Choose company & role'}</a>
     </div>
 
-    <section className="hub-section" aria-labelledby="prepare-heading">
-      <div className="hub-section-heading"><span>01</span><h2 id="prepare-heading">Prepare</h2><p>Choose a focused practice session or configure your own.</p></div>
+    <section className="hub-target-picker" id="target" aria-labelledby="target-picker-heading">
+      <h2 id="target-picker-heading" className="hub-target-picker-title">Choose company &amp; role</h2>
+      <p className="hub-caption">Save a target to unlock gap analysis and a roadmap. You can practice without one.</p>
+      <CompanySelector key={`${user.target_company_id}-${user.target_role_id}`} isAuthenticated initialCompanyId={user.target_company_id} initialRoleId={user.target_role_id} onSaved={reload} />
+      {target && <div className="hub-target-links">
+        {targetPath && <Link className="hub-text-link" to={targetPath}>See your gaps →</Link>}
+        <Link className="hub-text-link" to={`/roadmap/${encodeURIComponent(user.id)}/${encodeURIComponent(target.role_id)}?days=30`}>Open your roadmap →</Link>
+      </div>}
+    </section>
+
+    <section className="hub-section" aria-labelledby="practice-heading">
+      <div className="hub-section-heading"><span>01</span><h2 id="practice-heading">Practice</h2><p>Choose a focused practice session or configure your own.</p></div>
       <div className="hub-prepare-grid">
         <div className="hub-featured">
           <BookOpen size={26} aria-hidden="true" /><h3>Interview practice</h3>
@@ -48,23 +58,12 @@ export function HomeContent({ data, reload }) {
           <FeatureLink to="/problems" title="Coding platform" icon={<Code2 size={20} aria-hidden="true" />}>Python problems with the local runner, examples, and coach hints.</FeatureLink>
           <FeatureLink to="/practice?mode=sql" title="SQL practice" icon={<FileText size={20} aria-hidden="true" />}>SQL problems with schemas and execution-based evaluation.</FeatureLink>
           <FeatureLink to="/practice?mode=custom" title="Custom interview" icon={<FileText size={20} aria-hidden="true" />}>Configure interview, OA, SQL, coding and more in the block builder.</FeatureLink>
-          <FeatureLink to="/resources" title="Resources" icon={<BookOpen size={20} aria-hidden="true" />}>Curated study links by category — DSA, system design, behavioral, and more.</FeatureLink>
         </div>
       </div>
     </section>
 
-    <section className="hub-section" aria-labelledby="target-heading">
-      <div className="hub-section-heading"><span>02</span><h2 id="target-heading">Target</h2><p>Focus your preparation around a company and role.</p></div>
-      <div className="hub-columns hub-columns-three">
-        <div className="hub-detail"><h3>Company & role</h3><p>Explore curated hiring profiles and save a target for your preparation.</p><a className="hub-text-link" href="#target">{target ? 'Review your target' : 'Select a target'} →</a></div>
-        <div className="hub-detail"><h3>Gap analysis</h3><p>Compare role requirements with skills you have actually practiced.</p>{targetPath ? <Link className="hub-text-link" to={targetPath}>See your gaps →</Link> : <p className="hub-caption">Choose a target role to begin.</p>}</div>
-        <div className="hub-detail"><h3>Roadmap</h3><p>Build a 7, 14 or 30 day preparation plan from your skill gaps.</p>{target ? <Link className="hub-text-link" to={`/roadmap/${encodeURIComponent(user.id)}/${encodeURIComponent(target.role_id)}?days=30`}>Open your roadmap →</Link> : <p className="hub-caption">Choose a target role to begin.</p>}</div>
-      </div>
-      <details className="hub-target-picker" id="target"><summary>Choose company & role</summary><CompanySelector key={`${user.target_company_id}-${user.target_role_id}`} isAuthenticated initialCompanyId={user.target_company_id} initialRoleId={user.target_role_id} onSaved={reload} /></details>
-    </section>
-
     <section className="hub-section" aria-labelledby="apply-heading">
-      <div className="hub-section-heading"><span>03</span><h2 id="apply-heading">Apply</h2><p>Connect preparation with your next opportunity.</p></div>
+      <div className="hub-section-heading"><span>02</span><h2 id="apply-heading">Apply</h2><p>Connect preparation with your next opportunity.</p></div>
       <div className="hub-columns">
         <FeatureLink to="/ats" title="Resume check" icon={<FileText size={20} aria-hidden="true" />}>Check parsing, resume structure and skill coverage against a role or job description. This is not an employer ATS score or hiring probability.</FeatureLink>
         <FeatureLink to="/jobs" title="Jobs" icon={<ArrowUpRight size={20} aria-hidden="true" />}>Explore listings and practice relevant skills. The Jobs page identifies sample listings and the source of available results.</FeatureLink>
@@ -72,7 +71,7 @@ export function HomeContent({ data, reload }) {
     </section>
 
     <section className="hub-guide" aria-labelledby="guide-heading">
-      <div><p className="hub-eyebrow">04 · Guide</p><h2 id="guide-heading">Find your next step.<br /><em>Start with the goal.</em></h2><p>Describe what you want to work toward. The coach maps your goal to supported skills and useful practice.</p></div>
+      <div><p className="hub-eyebrow">03 · Guide</p><h2 id="guide-heading">Find your next step.<br /><em>Start with the goal.</em></h2><p>Describe what you want to work toward. The coach maps your goal to supported skills and useful practice.</p></div>
       <div className="hub-guide-actions"><Link className="hub-button" to="/coach">Ask the coach<ArrowUpRight size={17} aria-hidden="true" /></Link><Link className="hub-button" to="/learn">Mistakes and retry sets</Link><Link className="hub-button" to="/resources">Resources by skill</Link></div>
     </section>
     <footer className="hub-footer"><p>Your measured readiness, skill mastery and practice history live in Progress.</p><Link className="hub-button" to="/dashboard">Open Progress →</Link></footer>

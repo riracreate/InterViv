@@ -206,7 +206,7 @@ function DashboardHome() {
 
   return (
     <main className="dashboard-home min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-7xl px-[var(--space-4)] py-[var(--space-6)] sm:px-[var(--space-6)] lg:px-[var(--space-8)]">
+      <div className="app-container">
         <AppNav
           brandTo="/home"
           userId={navUser.userId}
@@ -338,13 +338,27 @@ export default function Dashboard() {
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(Boolean(sessionId));
   const [err, setErr] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+  const [copyStatus, setCopyStatus] = useState('');
 
   useEffect(() => {
     if (!sessionId) { setLoading(false); return; }
+    setLoading(true);
+    setErr('');
     fetchDashboard(sessionId)
       .then(data => { setRaw(data); setLoading(false); })
       .catch(e => { setErr(e.message); setLoading(false); });
-  }, [sessionId]);
+  }, [sessionId, retryCount]);
+
+  async function copyReportLink() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyStatus('Report link copied. Anyone opening it must sign in to view the report.');
+    } catch {
+      setCopyStatus('Copying failed. Copy the link from your browser address bar instead.');
+    }
+  }
 
   const data = useMemo(() => raw ? mapRealDataToDashboard(raw) : null, [raw]);
   const accent = data ? scoreAccent(data.overall.score) : { ring: "from-cyan-400/70 to-blue-500/70", text: "text-cyan-200" };
@@ -368,14 +382,21 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-sm text-white/60 mb-4" style={{ fontFamily: "var(--font-body)" }}>
+          <p role="alert" className="text-sm text-white/60 mb-4" style={{ fontFamily: "var(--font-body)" }}>
             {err || "Session not found."}
           </p>
-          <button onClick={() => navigate('/upload')}
-            className="rounded-full px-6 py-2.5 text-sm text-white bg-white/10 border border-white/15 hover:bg-white/15 transition-all"
-            style={{ fontFamily: "var(--font-body)" }}>
-            Start New Session
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button onClick={() => setRetryCount((value) => value + 1)}
+              className="rounded-full px-6 py-2.5 text-sm text-white bg-white/10 border border-white/15 hover:bg-white/15 transition-all"
+              style={{ fontFamily: "var(--font-body)" }}>
+              Try again
+            </button>
+            <button onClick={() => navigate('/upload')}
+              className="rounded-full px-6 py-2.5 text-sm text-white bg-white/10 border border-white/15 hover:bg-white/15 transition-all"
+              style={{ fontFamily: "var(--font-body)" }}>
+              Start New Session
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -499,13 +520,18 @@ export default function Dashboard() {
                     Next moves
                   </div>
                   <p className="mt-1 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
-                    Export your report, share your run, or jump into another adaptive session.
+                    Export your report, copy its link, or jump into another adaptive session.
                   </p>
                 </div>
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-                  <GlassButton variant="primary"   icon={<Download className="h-4 w-4 text-cyan-200" />}   label="Download Report" onClick={() => window.print()} />
-                  <GlassButton variant="secondary" icon={<Share2    className="h-4 w-4 text-white/85" />}   label="Share Results"  onClick={() => navigator.clipboard?.writeText(window.location.href)} />
-                  <GlassButton variant="secondary" icon={<Sparkles  className="h-4 w-4 text-white/85" />}   label="New Interview"  onClick={() => navigate('/upload')} />
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                  <div className="report-actions flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                    <GlassButton variant="primary"   icon={<Download className="h-4 w-4 text-cyan-200" />}   label="Download Report" onClick={() => window.print()} />
+                    <GlassButton variant="secondary" icon={<Share2    className="h-4 w-4 text-white/85" />}   label="Copy report link"  onClick={copyReportLink} />
+                    <GlassButton variant="secondary" icon={<Sparkles  className="h-4 w-4 text-white/85" />}   label="New Interview"  onClick={() => navigate('/upload')} />
+                  </div>
+                  <p aria-live="polite" className="text-sm text-white/70 sm:text-right">
+                    {copyStatus || 'Reports require sign-in. Copying this link does not grant access on its own.'}
+                  </p>
                 </div>
               </div>
             </div>

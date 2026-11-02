@@ -14,7 +14,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from backend.config import get_settings
 from backend.observability import init_sentry
@@ -209,3 +209,11 @@ def healthcheck() -> dict[str, object]:
         },
         "question_source": question_source_health(),
     }
+
+
+@app.get("/ready")
+def readiness():
+    from backend.readiness import readiness_status
+
+    ready, payload = readiness_status()
+    return JSONResponse(payload, status_code=200 if ready else 503)

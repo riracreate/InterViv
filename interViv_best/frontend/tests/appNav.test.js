@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  DESKTOP_NAV_ITEMS,
   PRIMARY_NAV_ITEMS,
   contextualNavItems,
+  moreNavItems,
   navDestinations,
 } from '../src/lib/appNav.js';
 import { mapCoachPlan } from '../src/lib/coachMapping.js';
@@ -34,6 +36,27 @@ test('nav destinations always include Gap and Roadmap', () => {
   const withTarget = contextualNavItems({ userId: 'u1', roleId: 'r1' });
   assert.match(withTarget[0].to, /\/gap-analysis\/u1\/r1/);
   assert.match(withTarget[1].to, /\/roadmap\/u1\/r1/);
+});
+
+test('desktop nav shows Home, Practice, Progress and Jobs inline', () => {
+  assert.deepEqual(
+    DESKTOP_NAV_ITEMS.map((i) => `${i.label}:${i.to}`),
+    ['Home:/home', 'Practice:/practice', 'Progress:/dashboard', 'Jobs:/jobs'],
+  );
+});
+
+test('More menu keeps Problems findable alongside the other destinations', () => {
+  const labels = moreNavItems({}).map((i) => i.label);
+  assert.ok(labels.includes('Problems'));
+  assert.ok(labels.includes('Learn'));
+  assert.ok(labels.includes('Resources'));
+  assert.ok(labels.includes('Resume check'));
+  assert.ok(labels.includes('Coach'));
+  assert.ok(labels.includes('Resume upload'));
+  assert.ok(labels.includes('Gap'));
+  assert.ok(labels.includes('Roadmap'));
+  const desktopLabels = DESKTOP_NAV_ITEMS.map((i) => i.label);
+  assert.ok(!desktopLabels.includes('Problems'));
 });
 
 test('coach steps hrefs include /practice or /jobs', () => {

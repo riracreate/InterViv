@@ -37,6 +37,30 @@ export function contextualNavItems({ userId, roleId } = {}) {
   ];
 }
 
+/** Destinations shown inline on desktop, in brief order. */
+export const DESKTOP_NAV_ITEMS = [
+  { to: '/home', label: 'Home' },
+  { to: '/practice', label: 'Practice' },
+  { to: '/dashboard', label: 'Progress' },
+  { to: '/jobs', label: 'Jobs' },
+];
+
+/**
+ * Destinations grouped under the desktop "More" menu. Coding Problems is
+ * listed here as well as through Home and Practice so it stays findable.
+ */
+export function moreNavItems({ userId, roleId } = {}) {
+  return [
+    { to: '/problems', label: 'Problems' },
+    { to: '/learn', label: 'Learn' },
+    { to: '/resources', label: 'Resources' },
+    { to: '/ats', label: 'Resume check' },
+    { to: '/coach', label: 'Coach' },
+    { to: '/upload', label: 'Resume upload' },
+    ...contextualNavItems({ userId, roleId }),
+  ];
+}
+
 export function isNavActive(pathname, itemTo) {
   const path = (pathname || '/').split('?')[0];
   const base = (itemTo || '').split('?')[0].split('#')[0];

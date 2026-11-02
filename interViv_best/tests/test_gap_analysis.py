@@ -163,3 +163,50 @@ def test_me_route_returns_my_readiness(client: TestClient) -> None:
     body = resp.json()
     assert body["user_id"] == uid
     assert 40 <= body["overall_readiness_percentage"] <= 70
+
+
+# ── Conservative readiness ────────────────────────────────────────────────────
+
+from modules.gap_analysis import ESTABLISHED_MIN_ATTEMPTS, conservative_level  # noqa: E402
+
+
+def test_conservative_level_shrinks_thin_high_evidence() -> None:
+    assert abs(conservative_level(100.0, 1) - 66.67) < 0.01
+    assert abs(conservative_level(80.0, 3) - 68.0) < 0.01
+    assert abs(conservative_level(80.0, 5) - 71.43) < 0.01
+    # Only the rolling window's scores stand behind the mean.
+    assert conservative_level(80.0, 40) == conservative_level(80.0, 5)
+
+
+def test_conservative_level_never_exceeds_observed() -> None:
+    assert conservative_level(20.0, 1) == 20.0
+    assert conservative_level(50.0, 1) == 50.0
+
+
+def test_single_lucky_attempt_is_provisional_and_discounted() -> None:
+    role = _amazon_role()
+    report = compute_gap_for_levels(role, {"DSA": (100.0, 1)})
+    dsa = next(g for g in report.per_skill_gap if g.skill == "DSA")
+    assert dsa.per_skill_readiness == 100.0
+    assert dsa.evidence_level == "provisional"
+    assert dsa.conservative_readiness < 80.0
+    assert report.overall_readiness_conservative < report.overall_readiness_percentage
+    assert report.provisional_skill_count == 1
+
+
+def test_established_skill_after_min_attempts() -> None:
+    role = _amazon_role()
+    report = compute_gap_for_levels(role, {"DSA": (45.0, ESTABLISHED_MIN_ATTEMPTS)})
+    dsa = next(g for g in report.per_skill_gap if g.skill == "DSA")
+    assert dsa.evidence_level == "established"
+    assert dsa.conservative_level <= dsa.student_level
+    assert report.provisional_skill_count == 0
+
+
+def test_untested_skills_have_no_conservative_figure() -> None:
+    report = compute_gap_for_levels(_amazon_role(), {})
+    assert all(g.evidence_level == "untested" and g.conservative_readiness == 0.0 for g in report.per_skill_gap)
+    assert report.overall_readiness_conservative == 0.0
+    payload = report.to_dict()
+    assert payload["overall_readiness_conservative"] == 0.0
+    assert payload["established_min_attempts"] == ESTABLISHED_MIN_ATTEMPTS

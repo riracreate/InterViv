@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchMe, fetchProblems, startSession, saveInterviewState, fetchItemStatus, fetchBookmarks, saveBookmark, removeBookmark } from '../lib/api';
+import { fetchMe, fetchProblems, startSession, saveInterviewState, fetchItemStatus, fetchBookmarks, saveBookmark, removeBookmark, fetchCodingExecutionStatus } from '../lib/api';
 import { mapStandaloneToStartPayload } from '../lib/practiceBuilder';
 import AppNav from '../components/AppNav';
 
@@ -19,6 +19,7 @@ export default function Problems() {
   const [statusFilter, setStatusFilter] = useState('');
   const [states, setStates] = useState({});
   const [bookmarked, setBookmarked] = useState(new Set());
+  const [execution, setExecution] = useState(null);
 
   const statusLabel = (state) => {
     if (state === 'solved') return 'solved';
@@ -46,6 +47,15 @@ export default function Problems() {
       cancelled = true;
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!authReady) return undefined;
+    let cancelled = false;
+    fetchCodingExecutionStatus()
+      .then((data) => { if (!cancelled) setExecution(data); })
+      .catch(() => { if (!cancelled) setExecution({ available: false, unknown: true }); });
+    return () => { cancelled = true; };
+  }, [authReady]);
 
   useEffect(() => {
     if (!authReady) return undefined;
@@ -161,7 +171,7 @@ export default function Problems() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-5xl px-[var(--space-4)] py-[var(--space-6)]">
+      <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
         <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
           Problems
@@ -170,9 +180,10 @@ export default function Problems() {
           Python coding problems with visible examples. Final scoring adds hidden tests
           (60% visible, 40% hidden); a compile or runtime failure caps the score at 25.
         </p>
+        {execution && <ExecutorStatus execution={execution} />}
 
         {error && (
-          <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <div role="alert" className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
           </div>
         )}
@@ -319,5 +330,23 @@ export default function Problems() {
         </div>
       </div>
     </main>
+  );
+}
+
+export function ExecutorStatus({ execution }) {
+  const ready = (execution.languages || []).filter((item) => item.available);
+  const on = Boolean(execution.available && ready.length);
+  const tone = on
+    ? 'border-[var(--color-success)]/30 bg-[var(--color-success-soft)] text-[var(--color-success)]'
+    : 'border-[var(--color-warn)]/30 bg-[var(--color-warn-soft)] text-[var(--color-warn)]';
+  let text;
+  if (on) text = `Code execution on: ${ready.map((item) => item.label).join(', ')}.`;
+  else if (execution.unknown) text = 'Could not check code execution. Run and Submit may fail; drafts are still saved.';
+  else text = 'Code execution is off: you can write and save drafts, but Run and Submit need the local executor (scripts/run_local.py --with-executor).';
+  return (
+    <p data-testid="executor-status" role="status" className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${tone}`}>
+      <span aria-hidden="true" className="h-2 w-2 rounded-full bg-current" />
+      {text}
+    </p>
   );
 }

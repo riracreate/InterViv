@@ -9,12 +9,15 @@ from backend.db import get_database
 from backend.routes.auth import require_authenticated, require_user
 from backend.routes.session import StartSessionRequest, start_session
 from modules.adzuna_client import AdzunaClientError, normalize_country, safe_redirect_url
+from modules.greenhouse_client import safe_greenhouse_url
 from modules.jobs_explorer import (
+    PROVIDER_GREENHOUSE,
     build_practice_prepare_payload,
     build_practice_start_payload,
     get_job,
     missing_skills_for_job,
     rate_limit_ok,
+    search_greenhouse_jobs,
     search_jobs,
     user_skills_for_overlay,
 )
@@ -57,6 +60,7 @@ def list_jobs(
     where: str = Query(default=""),
     page: int = Query(default=1, ge=1, le=20),
     country: str = Query(default="in"),
+    source: str = Query(default="adzuna"),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     user = require_user(authorization)
@@ -65,7 +69,20 @@ def list_jobs(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Jobs search rate limit exceeded. Try again shortly.",
         )
+    selected = (source or "adzuna").strip().lower()
+    if selected not in {"adzuna", "greenhouse"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Job source must be adzuna or greenhouse.",
+        )
     try:
+        if selected == "greenhouse":
+            return search_greenhouse_jobs(
+                q=q,
+                where=where,
+                page=page,
+                user_id=str(user["id"]),
+            )
         normalize_country(country)
         return search_jobs(
             q=q,
@@ -90,7 +107,10 @@ def get_job_detail(
     user_skills = user_skills_for_overlay(str(user["id"]))
     from modules.jobs_explorer import match_pct
 
-    redirect = safe_redirect_url(job.get("redirect_url"))
+    if job.get("provider") == PROVIDER_GREENHOUSE:
+        redirect = safe_greenhouse_url(job.get("redirect_url"))
+    else:
+        redirect = safe_redirect_url(job.get("redirect_url"))
     return {
         "id": job["id"],
         "title": job["title"],

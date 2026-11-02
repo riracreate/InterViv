@@ -685,6 +685,8 @@ def run_scoring_pipeline(
             "question_parroting": "Your answer mostly repeats the question. Explain the concept in your own words.",
             "low_density":        "Your answer looks incomplete or gibberish. Please write a meaningful explanation.",
             "off_topic":          "Your answer doesn't seem to address the question. Re-read the question and focus on its specific topic.",
+            "truncated_fragment": "Your answer stops mid-sentence. Finish the explanation so it can be scored fully.",
+            "entity_swap":        "Your answer gives each side the other side's properties. Check which properties belong to which.",
         }
         msg = _guard_messages.get(effective_guard["reason"], "Your answer quality was flagged by the scoring guard.")
         feedback.setdefault("content", []).insert(0, msg)

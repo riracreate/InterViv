@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import pytest
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -20,3 +21,12 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 # 32+ bytes so PyJWT does not warn about insecure HMAC key length (RFC 7518 §3.2).
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
+
+
+@pytest.fixture(autouse=True)
+def isolated_auth_rate_limits(monkeypatch):
+    # TestClient instances reuse the same client address across independent
+    # tests; each test still exercises normal throttling within its own window.
+    from backend.auth import throttling
+
+    monkeypatch.setattr(throttling, "_windows", {})

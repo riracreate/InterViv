@@ -188,6 +188,40 @@ CASES: list[Case] = [
             "and low semantic similarity must be capped."
         ),
     ),
+    Case(
+        name="entity_swap",
+        answer=(
+            "UDP is connection-oriented: it does a three-way handshake, then "
+            "guarantees reliable ordered delivery with acknowledgements and "
+            "retransmission, plus flow control and congestion control. TCP is "
+            "connectionless and best-effort, with no handshake and no ordering "
+            "guarantee, so it has lower overhead and latency, which suits "
+            "streaming, gaming and DNS."
+        ),
+        min_score=0.0,
+        max_score=35.0,
+        expect_guard="entity_swap",
+        notes=(
+            "TCP and UDP properties exchanged. Before the guard this scored "
+            "88 (correct version: 90) because embeddings and keywords ignore "
+            "which side a property is attached to."
+        ),
+        context=_ctx({
+            "question": "What is the difference between TCP and UDP?",
+            "ideal_answer": (
+                "TCP is a connection-oriented protocol that establishes a "
+                "connection with a three-way handshake and guarantees reliable, "
+                "ordered delivery using acknowledgements, retransmission, flow "
+                "control and congestion control. UDP is connectionless and "
+                "best-effort: it has no handshake, no ordering or delivery "
+                "guarantee, and lower overhead, so it suits latency-sensitive "
+                "uses like video streaming, gaming and DNS."
+            ),
+            "ideal_keywords": "connection-oriented, connectionless, handshake, reliable, ordered, best-effort, latency, overhead",
+            "keywords": ["connection-oriented", "connectionless", "handshake", "reliable"],
+            "skill": "CN",
+        }),
+    ),
 ]
 
 

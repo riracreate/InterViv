@@ -30,6 +30,8 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
   const closed = currentScore !== null;
   const expired = remaining <= 0;
   const activeLanguage = execution?.languages?.find(item => item.id === language);
+  // Only block when the status endpoint says so; an unknown status keeps Run/Submit enabled.
+  const executionDown = Boolean(activeLanguage && !activeLanguage.available);
   const tests = questionContext.visible_tests || [];
 
   useEffect(() => {
@@ -66,14 +68,14 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
   }, [sources, language, draftReady, closed, expired, isScoring, sessionId, round]);
 
   const run = async () => {
-    if (running || isScoring || closed || expired || !draftReady || !source.trim()) return;
+    if (running || isScoring || closed || expired || executionDown || !draftReady || !source.trim()) return;
     setRunning(true); setError(''); setResult(null);
     try { setResult(await runCodingPreview({ session_id: sessionId, round, source, language })); }
     catch (err) { setError(err.message || 'Execution failed. Your solution remains in the editor.'); }
     finally { setRunning(false); }
   };
   const submit = () => {
-    if (!running && !isScoring && !closed && !expired && draftReady && source.trim()) onSubmit({ answer_text: source, language });
+    if (!running && !isScoring && !closed && !expired && !executionDown && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
   const requestHint = async () => {
     setCoachBusy(true); setError('');
@@ -89,8 +91,8 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
       <div className="coding-title"><Code2 size={19} /><span>Coding practice</span><span className="coding-round-label">Round {round}</span></div>
       <div className="coding-actions">
         <span className={`coding-clock ${expired ? 'is-expired' : ''}`}><Clock3 size={15} />{String(Math.floor(remaining / 60)).padStart(2, '0')}:{String(remaining % 60).padStart(2, '0')}</span>
-        <button className="coding-button" onClick={run} disabled={running || isScoring || closed || expired || !draftReady}><Play size={15} />{running ? 'Running…' : 'Run'}</button>
-        <button className="coding-button coding-submit" onClick={submit} disabled={running || isScoring || closed || expired || !draftReady}><Send size={14} />{isScoring ? 'Submitting…' : closed ? 'Submitted' : 'Submit'}</button>
+        <button className="coding-button" onClick={run} disabled={running || isScoring || closed || expired || executionDown || !draftReady}><Play size={15} />{running ? 'Running…' : 'Run'}</button>
+        <button className="coding-button coding-submit" onClick={submit} disabled={running || isScoring || closed || expired || executionDown || !draftReady}><Send size={14} />{isScoring ? 'Submitting…' : closed ? 'Submitted' : 'Submit'}</button>
       </div>
     </div>
     <div className="coding-panes">
@@ -114,7 +116,7 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
           </> : <>
             <span className="coding-eyebrow">Build the reasoning</span><h2>A nudge, when you need it.</h2>
             <p>Reveal one hint at a time. Hints are recorded as assistance; they do not change the test verdict.</p>
-            {coach && <div className="coding-hint"><span>{coach.kind === 'ai' ? 'AI explanation' : 'Curated hint'} · {coach.level}/3</span><p>{coach.hint}</p></div>}
+            {coach && <div className="coding-hint"><span>{coach.kind === 'ai' ? 'AI explanation' : 'Curated hint'} · {coach.level}/3</span><p>{coach.hint}</p>{coach.ai_withheld && <p className="coding-muted">The local model's hint contained solution code, so a curated hint is shown instead.</p>}</div>}
             <button className="coding-button" disabled={coachBusy || coach?.level === 3} onClick={requestHint}><Lightbulb size={15} />{coachBusy ? 'Loading…' : coach ? 'Next hint' : 'Get a hint'}</button>
             <p className="coding-attribution">AI coaching requires a separately configured local model. Scores always come from execution results.</p>
           </>}
@@ -137,7 +139,7 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
           <div className="coding-console-title"><Terminal size={15} /><span>Test results</span>{result && <strong>{result.visible_passed}/{result.visible_total} passed</strong>}</div>
           <div className="coding-console-body">
             {expired && !closed && <p className="coding-warning" role="alert">This round has ended. Your code remains available to copy; start a new practice round to run it.</p>}
-            {activeLanguage && !activeLanguage.available && <p className="coding-warning">{LABELS[language]} execution is unavailable. Your draft can still be saved.</p>}
+            {executionDown && !closed && <p className="coding-warning" data-testid="coding-execution-down">{LABELS[language]} execution is unavailable, so Run and Submit are off. Your draft is still saved.</p>}
             {(error || (!closed && currentFeedback)) && <p className="coding-error" role="alert">{error || currentFeedback}</p>}
             {running && <p className="coding-muted">Running visible examples in the execution service…</p>}
             {!result && !error && !running && !closed && <div className="coding-console-empty"><Terminal size={25} /><p>Your next idea starts here.</p><span>Run checks the examples. Submit also runs hidden tests.</span></div>}

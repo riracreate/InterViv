@@ -45,6 +45,22 @@ Weak-area ranking:
     skills so high-importance untested entries surface near the top even
     though we don't yet have a student level.
 
+Conservative readiness (shown beside the observed figure):
+
+    n = min(attempts, ROLLING_WINDOW)          # scores behind the rolling mean
+    shrunk = (n * student_level + PRIOR_WEIGHT * PRIOR_LEVEL) / (n + PRIOR_WEIGHT)
+    conservative_level = min(student_level, shrunk)
+    conservative_readiness = min(conservative_level / required_level, 1.0) * 100
+
+    PRIOR_LEVEL = 50 and PRIOR_WEIGHT = 2 act as two "average" pseudo-attempts,
+    so one lucky 100 reads as 66.7 rather than 100, and the figure converges on
+    the observed mean as eligible attempts accumulate. It never exceeds the
+    observed level: shrinkage must not lift a low score toward the prior. A skill is "provisional"
+    below ESTABLISHED_MIN_ATTEMPTS eligible attempts. Only eligible
+    (unassisted, measured) rounds count, because the skill graph only records
+    those. ``overall_readiness_conservative`` uses the same tested-skill
+    weighting as ``overall_readiness``.
+
 The function ``compute_gap_for_levels`` is the pure, side-effect-free core
 that callers can use directly with a ``{skill: student_level}`` dict (e.g.
 for tests or "what-if" UI scenarios that don't write to the skill graph).
@@ -60,11 +76,15 @@ from modules.company_graph import (
     SkillRequirement,
     get_company_graph,
 )
-from modules.skill_graph import StudentSkillGraph
+from modules.skill_graph import ROLLING_WINDOW, StudentSkillGraph
 
 
 SEVERITY_HIGH_THRESHOLD = 25
 SEVERITY_MEDIUM_THRESHOLD = 10
+
+READINESS_PRIOR_LEVEL = 50.0
+READINESS_PRIOR_WEIGHT = 2.0
+ESTABLISHED_MIN_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -78,6 +98,9 @@ class SkillGap:
     per_skill_readiness: float  # 0-100, 0.0 for Untested
     attempts: int
     tested: bool
+    conservative_level: float | None = None
+    conservative_readiness: float = 0.0  # 0-100, 0.0 for Untested
+    evidence_level: str = "untested"  # "untested" | "provisional" | "established"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -107,6 +130,8 @@ class GapAnalysisReport:
     company_name: str
     overall_readiness_percentage: float
     per_skill_gap: list[SkillGap] = field(default_factory=list)
+    overall_readiness_conservative: float = 0.0
+    provisional_skill_count: int = 0
     ranked_weak_areas: list[WeakArea] = field(default_factory=list)
     tested_skill_count: int = 0
     required_skill_count: int = 0
@@ -120,6 +145,9 @@ class GapAnalysisReport:
             "company_id": self.company_id,
             "company_name": self.company_name,
             "overall_readiness_percentage": self.overall_readiness_percentage,
+            "overall_readiness_conservative": self.overall_readiness_conservative,
+            "provisional_skill_count": self.provisional_skill_count,
+            "established_min_attempts": ESTABLISHED_MIN_ATTEMPTS,
             "tested_skill_count": self.tested_skill_count,
             "required_skill_count": self.required_skill_count,
             "per_skill_gap": [g.to_dict() for g in self.per_skill_gap],
@@ -154,6 +182,24 @@ def _student_level_lookup(
     return (float(getattr(node, "current_score", 0.0)), attempts)
 
 
+def conservative_level(student_level: float, attempts: int) -> float:
+    """Observed mean shrunk toward an average prior while evidence is thin.
+
+    Capped at the observed level, so thin evidence can only lower a claim.
+    """
+    n = max(0, min(int(attempts), ROLLING_WINDOW))
+    shrunk = (n * float(student_level) + READINESS_PRIOR_WEIGHT * READINESS_PRIOR_LEVEL) / (
+        n + READINESS_PRIOR_WEIGHT
+    )
+    return min(float(student_level), shrunk)
+
+
+def _readiness(level: float, required_level: float) -> float:
+    if required_level <= 0:
+        return 100.0
+    return min(level / required_level, 1.0) * 100.0
+
+
 def _build_skill_gap(req: SkillRequirement, student_level: float | None, attempts: int) -> SkillGap:
     if student_level is None:
         return SkillGap(
@@ -169,11 +215,11 @@ def _build_skill_gap(req: SkillRequirement, student_level: float | None, attempt
         )
 
     if req.required_level <= 0:
-        readiness = 100.0
         severity = "Low"
     else:
-        readiness = min(student_level / req.required_level, 1.0) * 100.0
         severity = _severity_for_gap(req.required_level - student_level)
+    readiness = _readiness(student_level, req.required_level)
+    cautious = conservative_level(student_level, attempts)
 
     return SkillGap(
         skill=req.skill,
@@ -185,6 +231,9 @@ def _build_skill_gap(req: SkillRequirement, student_level: float | None, attempt
         per_skill_readiness=round(readiness, 2),
         attempts=int(attempts),
         tested=True,
+        conservative_level=round(cautious, 2),
+        conservative_readiness=round(_readiness(cautious, req.required_level), 2),
+        evidence_level="established" if attempts >= ESTABLISHED_MIN_ATTEMPTS else "provisional",
     )
 
 
@@ -230,6 +279,7 @@ def compute_gap_for_levels(
     """
     per_skill_gap: list[SkillGap] = []
     weighted_sum = 0.0
+    weighted_conservative = 0.0
     weight_total = 0.0
 
     for req in role.skill_requirements:
@@ -238,9 +288,11 @@ def compute_gap_for_levels(
         per_skill_gap.append(gap)
         if gap.tested:
             weighted_sum += gap.importance_weight * gap.per_skill_readiness
+            weighted_conservative += gap.importance_weight * gap.conservative_readiness
             weight_total += gap.importance_weight
 
     overall = round(weighted_sum / weight_total, 2) if weight_total > 0 else 0.0
+    overall_conservative = round(weighted_conservative / weight_total, 2) if weight_total > 0 else 0.0
 
     return GapAnalysisReport(
         user_id=user_id,
@@ -250,6 +302,8 @@ def compute_gap_for_levels(
         company_name=company_name,
         overall_readiness_percentage=overall,
         per_skill_gap=per_skill_gap,
+        overall_readiness_conservative=overall_conservative,
+        provisional_skill_count=sum(1 for g in per_skill_gap if g.evidence_level == "provisional"),
         ranked_weak_areas=_rank_weak_areas(per_skill_gap),
         tested_skill_count=sum(1 for g in per_skill_gap if g.tested),
         required_skill_count=len(per_skill_gap),
@@ -297,4 +351,5 @@ __all__ = [
     "SkillGap",
     "WeakArea",
     "compute_gap_for_levels",
+    "conservative_level",
 ]

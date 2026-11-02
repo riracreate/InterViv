@@ -78,12 +78,21 @@ async def parse_resume(
                 parsed_skills = (analysis or {}).get("skills") or []
             else:
                 parsed_skills = parser_module.parse_resume(str(temp_path))
-        except Exception:
-            LOGGER.warning("Resume parsing failed; using safe fallback skills.")
-            parsed_skills = ["Python"]
-            analysis = None
+        except Exception as exc:
+            LOGGER.warning("Resume text extraction failed.")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="We could not read this PDF. Upload a text-based PDF or choose your skills manually.",
+            ) from exc
 
-        skills = _normalize_skills(parsed_skills) or ["Python"]
+        if analysis is not None and (
+            not analysis.get("extract_ok") or analysis.get("likely_garbage")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="We could not read this PDF. Upload a text-based PDF or choose your skills manually.",
+            )
+        skills = _normalize_skills(parsed_skills)
         domain_profile = map_skills_to_domains(skills)
         candidate_id = str(uuid4())
         user = get_user_from_authorization(authorization) if authorization else None
@@ -107,6 +116,9 @@ async def parse_resume(
                 "extract_ok": analysis.get("extract_ok"),
                 "likely_garbage": analysis.get("likely_garbage"),
                 "layout_checked": analysis.get("layout_checked", False),
+                "layout": analysis.get("layout"),
+                "evidence_skills": analysis.get("evidence_skills"),
+                "evidence_sections_found": analysis.get("evidence_sections_found", False),
                 "text_hash": analysis.get("text_hash"),
                 "char_count": analysis.get("char_count"),
             }
@@ -114,7 +126,7 @@ async def parse_resume(
             candidate_doc["ats_snapshot"] = {
                 "skills": skills,
                 "sections": {},
-                "extract_ok": True,
+                "extract_ok": None,
                 "layout_checked": False,
                 "experience_bullets": [],
                 "text_hash": None,

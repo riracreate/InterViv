@@ -172,12 +172,13 @@ export function fetchAtsRuns(limit = 20) {
   return request(`/ats/runs?limit=${encodeURIComponent(limit)}`);
 }
 
-export function fetchJobs({ q = "", where = "", page = 1, country = "in" } = {}) {
+export function fetchJobs({ q = "", where = "", page = 1, country = "in", source = "adzuna" } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (where) params.set("where", where);
   if (country) params.set("country", country);
   params.set("page", String(page));
+  params.set("source", source === "greenhouse" ? "greenhouse" : "adzuna");
   return request(`/jobs?${params.toString()}`);
 }
 

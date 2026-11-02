@@ -990,6 +990,12 @@ export default function Interview({ sessionState = null }) {
     submitAnswer({ force: true });
   }, [currentScore, isScoring, roundType, sessionComplete, showCalibrationScreen, submitAnswer, timeLeft]);
 
+  const leaveSession = () => {
+    if (!confirm('Exit? Progress will be lost.')) return;
+    clearInterviewState();
+    navigate(roundType === 'coding' ? '/problems' : '/home');
+  };
+
   const handleNext = () => {
     if (sessionComplete) {
       clearInterviewState();
@@ -1095,7 +1101,7 @@ export default function Interview({ sessionState = null }) {
       <div className="h-screen bg-white flex flex-col overflow-hidden">
         <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0">
           <div className="flex items-center gap-4">
-            <button onClick={() => { if (confirm('Exit? Progress will be lost.')) { clearInterviewState(); navigate('/'); } }}
+            <button onClick={leaveSession}
               className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
               style={{ fontFamily: "var(--font-body)" }}>
               ← Exit
@@ -1208,7 +1214,7 @@ export default function Interview({ sessionState = null }) {
     <div className="h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden">
       <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
-          <button onClick={() => { if (confirm('Exit? Progress will be lost.')) { clearInterviewState(); navigate('/'); } }}
+          <button onClick={leaveSession}
             className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
             style={{ fontFamily: "var(--font-body)" }}>
             ← Exit

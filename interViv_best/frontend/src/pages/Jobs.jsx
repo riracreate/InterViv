@@ -16,6 +16,26 @@ import '../styles/hub.css';
 
 const ADZUNA_LOGO = 'https://www.adzuna.co.in/images/logo.png';
 
+function JobSourceToggle({ source, disabled, onChange }) {
+  const greenhouse = source === 'greenhouse';
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={greenhouse}
+      aria-label="Job source. Adzuna or Greenhouse."
+      data-testid="jobs-source-toggle"
+      disabled={disabled}
+      className={`jobs-source-toggle ${greenhouse ? 'is-greenhouse' : 'is-adzuna'}`}
+      onClick={() => onChange(greenhouse ? 'adzuna' : 'greenhouse')}
+    >
+      <span className="jobs-source-knob" aria-hidden="true" />
+      <span className={greenhouse ? '' : 'is-active'}>Adzuna</span>
+      <span className={greenhouse ? 'is-active' : ''}>Greenhouse</span>
+    </button>
+  );
+}
+
 function AdzunaAttribution({ attribution }) {
   const href = attribution?.jobs_href || attribution?.logo_href || 'https://www.adzuna.co.in/';
   return (
@@ -49,6 +69,9 @@ export default function Jobs() {
   const [q, setQ] = useState(searchParams.get('q') || 'software intern OR backend OR data');
   const [where, setWhere] = useState(searchParams.get('where') || 'Pune');
   const [country, setCountry] = useState(searchParams.get('country') || 'in');
+  const [source, setSource] = useState(
+    searchParams.get('source') === 'greenhouse' ? 'greenhouse' : 'adzuna',
+  );
   const [page, setPage] = useState(Number(searchParams.get('page') || 1));
   const [jobs, setJobs] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -81,7 +104,13 @@ export default function Jobs() {
     };
   }, [navigate]);
 
-  const load = async (nextQ = q, nextWhere = where, nextPage = page, nextCountry = country) => {
+  const load = async (
+    nextQ = q,
+    nextWhere = where,
+    nextPage = page,
+    nextCountry = country,
+    nextSource = source,
+  ) => {
     setBusy(true);
     setError('');
     try {
@@ -90,6 +119,7 @@ export default function Jobs() {
         where: nextWhere,
         page: nextPage,
         country: nextCountry,
+        source: nextSource,
       });
       setMeta(data);
       setJobs((data.jobs || []).map(mapJobCard).filter(Boolean));
@@ -98,6 +128,7 @@ export default function Jobs() {
       if (nextWhere) params.set('where', nextWhere);
       if (nextCountry) params.set('country', nextCountry);
       if (nextPage > 1) params.set('page', String(nextPage));
+      if (nextSource === 'greenhouse') params.set('source', 'greenhouse');
       setSearchParams(params, { replace: true });
     } catch (err) {
       setJobs([]);
@@ -199,11 +230,25 @@ export default function Jobs() {
             {meta?.disclaimer ||
               'Listings from Adzuna. View job opens the original listing. Ordinary Practice stays available without a job handoff.'}
           </p>
+          {meta?.note && (
+            <p className="hub-notice hub-notice-info" data-testid="jobs-source-note" role="status">
+              {meta.note}
+            </p>
+          )}
           {meta?.empty_reason && (
             <p className="hub-notice hub-notice-warn" data-testid="jobs-sample-banner" role="status">
               {meta.empty_reason}
             </p>
           )}
+          <JobSourceToggle
+            source={source}
+            disabled={busy}
+            onChange={(next) => {
+              setSource(next);
+              setPage(1);
+              load(q, where, 1, country, next);
+            }}
+          />
           {meta?.fetched_at && (
             <p className="hub-caption" data-testid="jobs-fetched-at">
               Results obtained {meta.fetched_at}
@@ -224,7 +269,7 @@ export default function Jobs() {
           onSubmit={(e) => {
             e.preventDefault();
             setPage(1);
-            load(q, where, 1, country);
+            load(q, where, 1, country, source);
           }}
         >
           <input
@@ -319,7 +364,13 @@ export default function Jobs() {
                     </button>
                   </div>
                 </div>
-                <AdzunaAttribution attribution={job.attribution} />
+                {job.provenance === 'greenhouse' ? (
+                  <p className="hub-caption" data-testid="jobs-by-greenhouse">
+                    Public Greenhouse board
+                  </p>
+                ) : (
+                  <AdzunaAttribution attribution={job.attribution} />
+                )}
               </article>
             );
           })}
@@ -333,7 +384,7 @@ export default function Jobs() {
             onClick={() => {
               const next = Math.max(1, page - 1);
               setPage(next);
-              load(q, where, next, country);
+              load(q, where, next, country, source);
             }}
           >
             Previous
@@ -346,7 +397,7 @@ export default function Jobs() {
             onClick={() => {
               const next = page + 1;
               setPage(next);
-              load(q, where, next, country);
+              load(q, where, next, country, source);
             }}
           >
             Next

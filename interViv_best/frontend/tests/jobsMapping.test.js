@@ -22,7 +22,20 @@ test('job card View href comes from redirect_url', () => {
   assert.match(formatSalary(card), /Jobsworth/);
 });
 
-test('rejects non-Adzuna redirect hosts', () => {
+test('rejects hosts that are not Adzuna or Greenhouse', () => {
   assert.equal(jobApplyHref({ redirectUrl: 'https://evil.example/x' }), '');
+  assert.equal(jobApplyHref({ redirectUrl: 'https://evilgreenhouse.io/phish' }), '');
+  assert.equal(jobApplyHref({ redirectUrl: 'https://greenhouse.io.evil.com/x' }), '');
   assert.equal(jobApplyHref({ redirectUrl: 'javascript:alert(1)' }), '');
+});
+
+test('allows a Greenhouse board posting', () => {
+  const href = 'https://boards.greenhouse.io/stripe/jobs/1';
+  assert.equal(jobApplyHref({ redirectUrl: href }), href);
+});
+
+test('allows the company career site on a Greenhouse card', () => {
+  const href = 'https://stripe.com/jobs/listing/backend/1';
+  assert.equal(jobApplyHref({ redirectUrl: href, provenance: 'greenhouse' }), href);
+  assert.equal(jobApplyHref({ redirectUrl: href }), '');
 });

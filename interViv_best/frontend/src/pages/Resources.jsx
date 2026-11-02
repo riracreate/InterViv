@@ -50,7 +50,7 @@ export default function Resources() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-3xl px-[var(--space-4)] py-[var(--space-6)]">
+      <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
         <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
           Learning resources

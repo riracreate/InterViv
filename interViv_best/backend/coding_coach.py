@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -19,6 +20,19 @@ DEFAULT_COACH_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "gemma2:2b"
 MAX_SOURCE_CHARS = 4000
 MAX_HINT_CHARS = 1200
+MAX_HINT_CODE_LINES = 3
+
+# Model output is checked before it reaches the candidate: the prompt asks for
+# no solution code, but a small local model does not always comply.
+_FENCED_BLOCK = re.compile(r"```[^\n]*\n(.*?)(?:```|\Z)", re.S)
+_SOLUTION_SIGNATURES = (
+    re.compile(r"^\s*(?:async\s+)?def\s+\w+\s*\(", re.M),
+    re.compile(r"^\s*class\s+\w+", re.M),
+    re.compile(r"\bpublic\s+(?:static\s+)?[\w<>\[\],]+\s+\w+\s*\("),
+    re.compile(r"\bfunction\s+\w+\s*\("),
+    re.compile(r"^\s*(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>", re.M),
+    re.compile(r"#include\s*<"),
+)
 
 
 def coach_endpoint() -> str:
@@ -113,7 +127,21 @@ def _ollama_hint(
     text = (message or {}).get("content") if isinstance(message, dict) else None
     if not isinstance(text, str) or not text.strip():
         return None
-    return text.strip()[:MAX_HINT_CHARS]
+    return text.strip()
+
+
+def leaks_solution(text: str) -> bool:
+    """True when a hint contains solution-shaped code.
+
+    Flags a fenced block longer than MAX_HINT_CODE_LINES non-blank lines, or a
+    function/class definition anywhere. Short inline snippets
+    (`seen = set()`) are allowed.
+    """
+    for match in _FENCED_BLOCK.finditer(text or ""):
+        lines = [line for line in match.group(1).splitlines() if line.strip()]
+        if len(lines) > MAX_HINT_CODE_LINES:
+            return True
+    return any(pattern.search(text or "") for pattern in _SOLUTION_SIGNATURES)
 
 
 def build_hint(
@@ -125,23 +153,29 @@ def build_hint(
     prefer_ai: bool = True,
 ) -> dict[str, Any]:
     level = max(1, min(3, int(level)))
+    withheld = False
     if prefer_ai:
         ai = _ollama_hint(problem=problem, level=level, source=source, last_error=last_error)
-        if ai:
+        if ai and leaks_solution(ai):
+            withheld = True
+        elif ai:
             return {
                 "level": level,
                 "kind": "ai",
-                "hint": ai,
+                "hint": ai[:MAX_HINT_CHARS],
                 "model": coach_model(),
                 "endpoint": coach_endpoint(),
             }
-    return {
+    payload = {
         "level": level,
         "kind": "curated",
         "hint": curated_hint(problem, level),
         "model": None,
         "endpoint": None,
     }
+    if withheld:
+        payload["ai_withheld"] = "solution_code"
+    return payload
 
 
 def coach_status() -> dict[str, Any]:

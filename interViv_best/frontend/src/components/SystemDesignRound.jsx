@@ -231,6 +231,7 @@ export default function SystemDesignRound({
               {currentArtifact.evaluation_mode}
             </p>
           ) : null}
+          <CalibrationPanel calibration={currentArtifact?.calibration} />
           {!sessionComplete ? (
             <button
               type="button"
@@ -256,4 +257,37 @@ function listRubric(ctx) {
     name: c.name || c.id,
     description: c.description || '',
   }));
+}
+
+export function CalibrationPanel({ calibration }) {
+  if (!calibration) return null;
+  if (!calibration.available) {
+    return calibration.reason
+      ? <p className="text-xs text-[#6F6F6F]" data-testid="sd-calibration-unavailable">{calibration.reason}</p>
+      : null;
+  }
+  const rows = calibration.criteria || [];
+  const flagged = rows.filter((row) => row.overconfident);
+  return (
+    <div className="space-y-2 rounded-lg border border-black/10 bg-black/[0.02] p-3" data-testid="sd-calibration">
+      <div className="text-sm font-medium">Your ratings vs. what your notes mention</div>
+      <ul className="space-y-2 text-sm">
+        {rows.map((row) => (
+          <li key={row.id} className={row.overconfident ? 'text-amber-800' : 'text-[#444]'}>
+            <span className="font-medium">{row.name}</span>
+            {`: you rated ${row.self_rating} · notes show ${row.evidence_level}`}
+            {row.overconfident && row.not_mentioned?.length > 0 && (
+              <span className="block text-xs">Not mentioned: {row.not_mentioned.join(', ')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-[#6F6F6F]">
+        {flagged.length > 0
+          ? 'Highlighted criteria are rated well above what the notes show. Try covering them in your next design.'
+          : 'Your notes back up your ratings.'}
+        {' '}{calibration.note}
+      </p>
+    </div>
+  );
 }

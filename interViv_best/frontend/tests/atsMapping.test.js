@@ -33,3 +33,12 @@ test('ATS mapping exposes component scores for the result UI', () => {
   assert.deepEqual(view.missingSkills, ['HR']);
   assert.equal(view.components[2].label, 'Keyword coverage');
 });
+
+test('ATS mapping keeps unsubstantiated skills, and null when they cannot be judged', () => {
+  const judged = mapAtsResultToView({ total: 60, components: {}, unsubstantiated_skills: ['Kubernetes'], layout: 'two_column' });
+  assert.deepEqual(judged.unsubstantiatedSkills, ['Kubernetes']);
+  assert.equal(judged.layout, 'two_column');
+  const unknown = mapAtsResultToView({ total: 60, components: {}, unsubstantiated_skills: null });
+  assert.equal(unknown.unsubstantiatedSkills, null);
+  assert.equal(unknown.layout, null);
+});

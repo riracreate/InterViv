@@ -112,3 +112,109 @@ if __name__ == "__main__":
             print(f"  FAIL  {t.__name__}: {e}")
             failed += 1
     print(f"\n{passed}/{passed+failed} passed")
+
+
+# ── Entity-swap guard (check_answer_quality_v2) ──────────────────────────────
+
+from modules.answer_guard import (  # noqa: E402
+    _contrast_pair,
+    check_answer_quality_v2,
+    entity_swap_evidence,
+)
+
+_TCP_Q = "What is the difference between TCP and UDP?"
+_TCP_IDEAL = (
+    "TCP is a connection-oriented protocol that establishes a connection with a "
+    "three-way handshake and guarantees reliable, ordered delivery using "
+    "acknowledgements and retransmission. UDP is connectionless and best-effort: "
+    "it has no handshake, no ordering guarantee, and lower overhead, so it suits "
+    "latency-sensitive uses like video streaming, gaming and DNS."
+)
+_TCP_CORRECT = (
+    "TCP is connection-oriented: it does a three-way handshake, then guarantees "
+    "reliable ordered delivery with acknowledgements and retransmission. UDP is "
+    "connectionless and best-effort with lower overhead, which suits streaming, "
+    "gaming and DNS."
+)
+_TCP_SWAPPED = (
+    "UDP is connection-oriented: it does a three-way handshake, then guarantees "
+    "reliable ordered delivery with acknowledgements and retransmission. TCP is "
+    "connectionless and best-effort with lower overhead, which suits streaming, "
+    "gaming and DNS."
+)
+
+
+def _v2(answer: str, question: str = _TCP_Q, ideal: str = _TCP_IDEAL) -> dict:
+    return check_answer_quality_v2(answer, question_text=question, ideal_answer=ideal)
+
+
+def test_entity_swap_caps_swapped_comparison():
+    result = _v2(_TCP_SWAPPED)
+    assert result["cap_required"] is True
+    assert result["reason"] == "entity_swap"
+    assert result["score_cap"] == 35
+
+
+def test_entity_swap_allows_correct_comparison():
+    assert _v2(_TCP_CORRECT)["reason"] != "entity_swap"
+
+
+def test_entity_swap_allows_paraphrase():
+    paraphrase = (
+        "TCP first sets up a session between the two hosts and then makes sure "
+        "every byte arrives in sequence, resending anything that gets lost. UDP "
+        "just fires off datagrams with no setup and no promise they arrive, which "
+        "makes it cheaper and faster for live video, games or DNS lookups."
+    )
+    assert _v2(paraphrase)["reason"] != "entity_swap"
+
+
+def test_entity_swap_ignores_negated_statements():
+    negated = (
+        "UDP is not connection-oriented and does not guarantee ordered delivery. "
+        "TCP is not connectionless; it uses a three-way handshake and "
+        "acknowledgements for reliable delivery."
+    )
+    assert _v2(negated)["reason"] != "entity_swap"
+
+
+def test_entity_swap_needs_both_directions():
+    # Only one side carries the other's properties: not a clear swap.
+    one_way = (
+        "TCP is connection-oriented with a three-way handshake and reliable "
+        "ordered delivery. UDP also does a handshake and retransmission."
+    )
+    assert _v2(one_way)["reason"] != "entity_swap"
+
+
+def test_entity_swap_noop_without_comparison_question():
+    assert _contrast_pair("Explain the four pillars of OOP.") is None
+    assert entity_swap_evidence(_TCP_SWAPPED, "Explain the four pillars of OOP.", _TCP_IDEAL) is None
+
+
+def test_contrast_pair_handles_shared_and_elided_heads():
+    assert _contrast_pair("What is the difference between shallow copy and deep copy?") == (
+        {"shallow"}, {"deep"}, {"copy"},
+    )
+    assert _contrast_pair("Explain the difference between supervised and unsupervised learning.") == (
+        {"supervised"}, {"unsupervised"}, {"learning"},
+    )
+    assert _contrast_pair("Explain the difference between lists and tuples in Python.")[:2] == (
+        {"list"}, {"tuple"},
+    )
+
+
+def test_entity_swap_pronoun_clause_keeps_subject():
+    # "It guarantees ordered pod deployment" is about the StatefulSet even
+    # though it uses the word "deployment"; a correct answer must not fire.
+    question = "Explain the difference between a Deployment and a StatefulSet in Kubernetes."
+    ideal = (
+        "A Deployment manages stateless applications. Pods are interchangeable. "
+        "A StatefulSet manages stateful applications like databases. It guarantees "
+        "ordered pod deployment, stable network identities, and persistent storage per pod."
+    )
+    answer = (
+        "Deployment is for stateless apps and StatefulSet is for stateful ones like "
+        "databases. StatefulSet keeps persistent storage and stable pod names."
+    )
+    assert _v2(answer, question, ideal)["reason"] != "entity_swap"

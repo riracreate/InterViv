@@ -22,6 +22,7 @@ PUBLIC_ROUTES = {
     ("POST", "/auth/signup"): "Account creation has no prior token.",
     ("POST", "/auth/login"): "Login exchanges credentials for a token.",
     ("GET", "/health"): "Liveness probe; no user records.",
+    ("GET", "/ready"): "Readiness probe; sanitized dependency status only, no user records.",
     ("GET", "/openapi.json"): "API schema for the documented surface.",
     ("GET", "/docs"): "Swagger UI for the documented surface.",
     ("GET", "/docs/oauth2-redirect"): "Swagger OAuth redirect, part of the docs UI.",

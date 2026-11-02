@@ -492,7 +492,7 @@ export default function Practice() {
 
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="mx-auto w-full max-w-5xl px-[var(--space-4)] py-[var(--space-6)] sm:px-[var(--space-6)]">
+      <div className="app-container">
         <AppNav
           userId={user?.id || user?.user_id || null}
           roleId={target.roleId || user?.target_role_id || null}
@@ -503,7 +503,7 @@ export default function Practice() {
           }
         />
 
-        <header className="mt-8 border-b border-[var(--color-border)] pb-6">
+        <header className="app-page-hero">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
             Practice Hub
           </p>
@@ -516,6 +516,12 @@ export default function Practice() {
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-ink-muted)]">
             Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, coding, and interview practice.
             Coding practice runs Python with visible examples and hidden-test scoring; SQL practice uses the sandboxed SQL runner only.
+          </p>
+          <p className="mt-3 text-sm">
+            <Link to="/problems" className="font-semibold text-[var(--color-ink)] underline-offset-2 hover:underline">
+              Open coding Problems →
+            </Link>
+            <span className="text-[var(--color-ink-muted)]"> Python problems with examples and coach hints.</span>
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-6">
             <label className="flex flex-col gap-1 text-sm">

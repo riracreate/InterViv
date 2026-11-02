@@ -459,3 +459,75 @@ def test_self_assessment_does_not_raise_measured_mastery(sa_url) -> None:
         if row.get("session_id") == started.json()["session_id"]:
             assert row.get("average_score") is None
             assert row.get("self_reported_rounds", 0) >= 1
+
+
+# ── Calibration: self-rating vs what the design notes mention (advisory) ─────
+
+from backend.db.phase_e_system_design_bank import (  # noqa: E402
+    SYSTEM_DESIGN_EVIDENCE,
+    get_system_design_prompt,
+    public_system_design_prompt,
+)
+from modules.scoring.system_design import (  # noqa: E402
+    evidence_coverage,
+    score_system_design_round,
+)
+
+_LIMITER_THIN = (
+    "I would put a rate limiter in front of the API and return 429 when a client "
+    "sends too many requests per second. Each API key gets its own limit and the "
+    "service should be distributed across several nodes."
+)
+_LIMITER_RICH = (
+    _LIMITER_THIN + " Use a token bucket in Redis with an atomic INCR via a Lua "
+    "script and a TTL on each key; send Retry-After headers. Race conditions are "
+    "avoided by the atomic update, keys are sharded with consistent hashing, and a "
+    "local in-memory counter covers a Redis outage. If the store is down we fail "
+    "open for reads; we accept approximate accuracy to save memory and note clock skew."
+)
+_ALL_FIVES = {"requirements": 5, "api_data": 5, "scale": 5, "tradeoffs": 5}
+
+
+def _limiter_ctx() -> dict:
+    return public_system_design_prompt(get_system_design_prompt("sd_rate_limiter"))
+
+
+def test_evidence_concepts_stay_server_side() -> None:
+    public = _limiter_ctx()
+    public_text = str(public).lower()
+    prompt_text = public["prompt"].lower()
+    for concepts in SYSTEM_DESIGN_EVIDENCE["sd_rate_limiter"].values():
+        for label, _ in concepts:
+            if label.lower() not in prompt_text:  # the prompt itself may name a concept
+                assert label.lower() not in public_text, label
+    assert set(SYSTEM_DESIGN_EVIDENCE["sd_rate_limiter"]) == {"requirements", "api_data", "scale", "tradeoffs"}
+
+
+def test_overconfident_ratings_are_flagged_without_changing_score() -> None:
+    result = score_system_design_round(answer=_LIMITER_THIN, rubric_ratings=_ALL_FIVES, question_context=_limiter_ctx())
+    assert result["final_score"] == 100.0  # score is still the self-assessment
+    calibration = result["artifact_json"]["calibration"]
+    assert calibration["available"] is True
+    rows = {row["id"]: row for row in calibration["criteria"]}
+    assert rows["requirements"]["overconfident"] is False  # 429, per second, API key, distributed
+    assert rows["scale"]["overconfident"] is True
+    assert rows["tradeoffs"]["overconfident"] is True
+    assert "fail open vs closed" in rows["tradeoffs"]["not_mentioned"]
+
+
+def test_rich_notes_back_the_ratings() -> None:
+    result = score_system_design_round(answer=_LIMITER_RICH, rubric_ratings=_ALL_FIVES, question_context=_limiter_ctx())
+    rows = result["artifact_json"]["calibration"]["criteria"]
+    assert not any(row["overconfident"] for row in rows), rows
+
+
+def test_short_notes_give_no_calibration() -> None:
+    coverage = evidence_coverage("token bucket redis", "sd_rate_limiter")
+    assert coverage["available"] is False
+    result = score_system_design_round(answer="", rubric_ratings=_ALL_FIVES, question_context=_limiter_ctx())
+    assert result["artifact_json"]["calibration"]["available"] is False
+    assert result["final_score"] == 100.0
+
+
+def test_unknown_prompt_gives_no_calibration() -> None:
+    assert evidence_coverage(_LIMITER_RICH, "sd_unknown")["available"] is False

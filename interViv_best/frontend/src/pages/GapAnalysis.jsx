@@ -24,7 +24,7 @@ function SeverityBadge({ severity }) {
   );
 }
 
-function SkillBar({ gap }) {
+function SkillBar({ gap, minAttempts = 3 }) {
   const colors = SEVERITY_COLORS[gap.gap_severity] || SEVERITY_COLORS.Low;
   const studentPct = gap.tested && gap.required_level > 0
     ? Math.min(100, (gap.student_level / gap.required_level) * 100)
@@ -39,6 +39,13 @@ function SkillBar({ gap }) {
             {gap.display_name}
           </span>
           <SeverityBadge severity={gap.gap_severity} />
+          {gap.evidence_level === 'provisional' && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full border border-black/10 text-[#6F6F6F]"
+                  title="Fewer measured attempts than needed for a settled level; readiness is discounted."
+                  data-testid="provisional-chip">
+              provisional · {gap.attempts}/{minAttempts}
+            </span>
+          )}
         </div>
         <span className="text-xs text-[#6F6F6F] whitespace-nowrap"
               style={{ fontFamily: "var(--font-body)" }}>
@@ -128,7 +135,12 @@ export default function GapAnalysis() {
 
   if (!report) return null;
 
-  const readiness = Math.round(report.overall_readiness_percentage);
+  // Headline is the conservative figure: thin evidence (few measured attempts)
+  // is discounted toward an average level, never inflated. Observed is shown beside it.
+  const observed = Math.round(report.overall_readiness_percentage);
+  const hasConservative = typeof report.overall_readiness_conservative === 'number';
+  const readiness = hasConservative ? Math.round(report.overall_readiness_conservative) : observed;
+  const minAttempts = report.established_min_attempts || 3;
 
   return (
     <main className="hub-page" data-testid="gap-analysis-page">
@@ -156,11 +168,22 @@ export default function GapAnalysis() {
           </h1>
           <p className="text-base text-[#6F6F6F]"
              style={{ fontFamily: "var(--font-body)" }}>
-            readiness against {report.company_name} {report.role_title}
+            {hasConservative ? 'conservative readiness' : 'readiness'} against {report.company_name} {report.role_title}
             <br />
             <span className="text-xs">
               over {report.tested_skill_count}/{report.required_skill_count} required skills tested
             </span>
+            {hasConservative && (
+              <>
+                <br />
+                <span className="text-xs" data-testid="observed-readiness">
+                  Observed average {observed}%
+                  {report.provisional_skill_count > 0
+                    ? ` · ${report.provisional_skill_count} skill${report.provisional_skill_count === 1 ? '' : 's'} still provisional (fewer than ${minAttempts} measured attempts)`
+                    : ''}
+                </span>
+              </>
+            )}
           </p>
         </div>
 
@@ -188,7 +211,7 @@ export default function GapAnalysis() {
               Severity = required − your level (High &gt; 25, Medium 11–25, Low ≤ 10).
             </p>
             <div>
-              {report.per_skill_gap.map((g) => <SkillBar key={g.skill} gap={g} />)}
+              {report.per_skill_gap.map((g) => <SkillBar key={g.skill} gap={g} minAttempts={minAttempts} />)}
             </div>
           </div>
 

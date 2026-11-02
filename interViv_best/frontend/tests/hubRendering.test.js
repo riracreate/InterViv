@@ -36,7 +36,8 @@ const fresh = { user: { id: 'u1', name: 'Test User' }, skills: [], history: [], 
 
 test('new-user Home renders connected actions without a false continue button or sample statistics', () => {
   const html = render('home', fresh);
-  for (const phrase of ['Hello,', 'Test.', 'Start practicing', 'Help me choose a path', 'Prepare', 'Target', 'Apply', 'Guide']) assert.ok(html.includes(phrase), phrase);
+  for (const phrase of ['Hello,', 'Test.', 'Start practicing', 'Help me choose a path', 'Practice', 'Apply', 'Guide', 'Choose company']) assert.ok(html.includes(phrase), phrase);
+  assert.doesNotMatch(html, /<details/);
   assert.doesNotMatch(html, /Continue practice|Aditya|64%|round_plan|POST \/|Try next/);
   for (const match of html.matchAll(/href="([^"]+)"/g)) {
     const href = match[1].replaceAll('&amp;', '&');

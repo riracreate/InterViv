@@ -38,6 +38,9 @@ export function mapAtsResultToView(payload) {
     flags: Array.isArray(payload.flags) ? payload.flags : [],
     presentSkills: Array.isArray(payload.present_skills) ? payload.present_skills : [],
     missingSkills: Array.isArray(payload.missing_skills) ? payload.missing_skills : [],
+    // null = no Experience/Projects section found, so it can't be judged.
+    unsubstantiatedSkills: Array.isArray(payload.unsubstantiated_skills) ? payload.unsubstantiated_skills : null,
+    layout: payload.layout || null,
     suggestedPractice: Array.isArray(payload.suggested_practice_skills)
       ? payload.suggested_practice_skills
       : [],

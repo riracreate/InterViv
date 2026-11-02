@@ -68,6 +68,8 @@ def _validate_security_settings(settings: Settings) -> Settings:
             )
         if "*" in settings.cors_origins:
             raise RuntimeError("Production CORS_ORIGINS must not contain '*'.")
+        if not settings.database_url:
+            raise RuntimeError("Production requires DATABASE_URL; in-memory storage is for development only.")
     return settings
 
 
@@ -109,7 +111,7 @@ def get_settings() -> Settings:
         project_root=project_root,
         modules_dir=modules_dir,
         environment=(os.getenv("ENVIRONMENT") or "development").strip().lower(),
-        database_url=os.getenv("DATABASE_URL") or None,
+        database_url=(os.getenv("DATABASE_URL") or "").strip() or None,
         mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
         mongodb_db=os.getenv("MONGODB_DB", "adaptive_mock_interview"),
         mongodb_timeout_ms=int(os.getenv("MONGODB_TIMEOUT_MS", "2000")),

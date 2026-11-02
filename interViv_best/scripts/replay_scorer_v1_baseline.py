@@ -1,6 +1,7 @@
-"""Replay frozen scorer v1 items. Never writes the fixture."""
+"""Replay a frozen scorer baseline (v1 by default; --version v2). Never writes the fixture."""
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -16,8 +17,16 @@ apply_runtime_env()
 
 from backend.scoring.pipeline import run_scoring_pipeline  # noqa: E402
 
-SUMS_PATH = PROJECT_ROOT / "data" / "baselines" / "v1" / "SHA256SUMS.json"
-FIXTURE_PATH = PROJECT_ROOT / "tests" / "fixtures" / "scorer_v1_baseline.json"
+VERSIONS = ("v1", "v2")
+
+
+def _paths(version: str) -> tuple[Path, Path]:
+    return (
+        PROJECT_ROOT / "data" / "baselines" / version / "SHA256SUMS.json",
+        PROJECT_ROOT / "tests" / "fixtures" / f"scorer_{version}_baseline.json",
+    )
+
+
 TOL = 1e-9
 
 
@@ -66,11 +75,15 @@ def _score_item(item: dict) -> dict:
 
 
 def main() -> int:
-    if not SUMS_PATH.is_file() or not FIXTURE_PATH.is_file():
-        print("v1 baseline artifacts missing", file=sys.stderr)
+    parser = argparse.ArgumentParser(description="Replay a frozen scorer baseline.")
+    parser.add_argument("--version", choices=VERSIONS, default="v1")
+    version = parser.parse_args().version
+    sums_path, fixture_path = _paths(version)
+    if not sums_path.is_file() or not fixture_path.is_file():
+        print(f"{version} baseline artifacts missing", file=sys.stderr)
         return 2
-    manifest = json.loads(SUMS_PATH.read_text())
-    fixture = json.loads(FIXTURE_PATH.read_text())
+    manifest = json.loads(sums_path.read_text())
+    fixture = json.loads(fixture_path.read_text())
     if not fixture.get("append_protected"):
         print("fixture is not marked append-protected", file=sys.stderr)
         return 2
@@ -82,7 +95,7 @@ def main() -> int:
     from modules.semantic_scorer import SemanticScorer, fallback_reason
 
     if length_ratio_multiplier_enabled():
-        failures.append("LENGTH_RATIO_MULTIPLIER_ENABLED is on; v1 capture was off")
+        failures.append(f"LENGTH_RATIO_MULTIPLIER_ENABLED is on; {version} capture was off")
     probe = SemanticScorer().score("Encapsulation hides state.", "Encapsulation hides state.")
     expected_mode = fixture.get("semantic_runtime_mode")
     actual_mode = "full" if probe is not None else "lexical_fallback_degraded"

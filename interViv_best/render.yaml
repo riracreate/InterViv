@@ -3,7 +3,7 @@ services:
     name: interviv-backend
     env: docker
     dockerfilePath: ./backend/Dockerfile
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: DATABASE_URL
         fromDatabase:

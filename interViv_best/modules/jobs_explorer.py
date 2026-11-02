@@ -25,11 +25,19 @@ from modules.adzuna_client import (
     safe_redirect_url,
     _sanitize_text,
 )
+from modules.greenhouse_client import (
+    PAGE_SIZE as GREENHOUSE_PAGE_SIZE,
+    attach_descriptions,
+    filter_jobs,
+    load_board_jobs,
+    safe_greenhouse_url,
+)
 from modules.resume_parser import extract_skills_from_text
 
 LOGGER = logging.getLogger(__name__)
 
 PROVIDER_ADZUNA = "adzuna"
+PROVIDER_GREENHOUSE = "greenhouse"
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = ROOT / "data" / "jobs_fixture_adzuna.json"
 
@@ -493,6 +501,149 @@ def search_jobs(
     }
 
 
+def _greenhouse_card(job: dict[str, Any]) -> dict[str, Any]:
+    snippet = _sanitize_text(job.get("snippet") or "")
+    skills = extract_skills_from_text(f"{job.get('title') or ''}\n{snippet}")
+    external_id = f"{job['token']}:{job['external_id']}"
+    redirect = safe_greenhouse_url(job.get("redirect_url")) or ""
+    return {
+        "id": f"{PROVIDER_GREENHOUSE}:{external_id}",
+        "provider": PROVIDER_GREENHOUSE,
+        "external_id": external_id,
+        "title": job.get("title") or "",
+        "company": job.get("company") or "",
+        "location": job.get("location") or "",
+        "created": job.get("updated_at"),
+        "salary_min": None,
+        "salary_max": None,
+        "salary_is_predicted": None,
+        "salary_currency": None,
+        "snippet": snippet,
+        "redirect_url": redirect,
+        "skills": skills,
+        "payload": {
+            "title": job.get("title") or "",
+            "company": job.get("company") or "",
+            "location": job.get("location") or "",
+            "description": snippet,
+            "redirect_url": redirect,
+            "id": external_id,
+            "skills": skills,
+        },
+        "provenance": "greenhouse",
+    }
+
+
+def search_greenhouse_jobs(
+    *,
+    q: str,
+    where: str,
+    page: int,
+    user_id: str,
+) -> dict[str, Any]:
+    """Public Greenhouse boards, filtered by the same keyword and city fields."""
+    page = max(1, int(page or 1))
+    q = (q or "").strip()
+    where = (where or "").strip()
+    key = f"greenhouse|{(q or '').lower()}|{where.lower()}|{page}"
+    cached = _SEARCH_MEMORY.get(key)
+    cache_hit = False
+    note = None
+    if cached and _now() - _as_utc(cached["fetched_at"]) <= _cache_ttl():
+        cache_hit = True
+        jobs = cached["jobs"]
+        fetched_at = cached["fetched_at"]
+        note = cached.get("note")
+    else:
+        listed = load_board_jobs()
+        if not listed:
+            fetched_at = _now()
+            return {
+                "jobs": [],
+                "count": 0,
+                "page": page,
+                "q": q,
+                "where": where,
+                "country": None,
+                "source": "greenhouse",
+                "provenance": "greenhouse",
+                "cache_hit": False,
+                "fetched_at": fetched_at.isoformat(),
+                "empty_reason": "Greenhouse boards could not be loaded. Try again shortly.",
+                "note": None,
+                "disclaimer": (
+                    "Listings from public Greenhouse company boards. "
+                    "View job opens the original Greenhouse posting. "
+                    "interViv is not affiliated with Greenhouse."
+                ),
+            }
+        matched, note = filter_jobs(listed, q=q, where=where)
+        start = (page - 1) * GREENHOUSE_PAGE_SIZE
+        page_jobs = attach_descriptions(matched[start : start + GREENHOUSE_PAGE_SIZE])
+        jobs = [_greenhouse_card(job) for job in page_jobs]
+        fetched_at = _now()
+        stamped = _stamp_provenance(jobs, provenance="greenhouse", fetched_at=fetched_at)
+        for job in stamped:
+            _upsert_job(job, fetched_at=fetched_at)
+        _SEARCH_MEMORY[key] = {
+            "fetched_at": fetched_at,
+            "jobs": list(stamped),
+            "provenance": "greenhouse",
+            "note": note,
+        }
+        jobs = stamped
+
+    user_skills = user_skills_for_overlay(user_id)
+    cards = []
+    for job in jobs:
+        cards.append(
+            {
+                "id": job["id"],
+                "title": job["title"],
+                "company": job["company"],
+                "location": job["location"],
+                "salary_min": None,
+                "salary_max": None,
+                "salary_is_predicted": None,
+                "salary_currency": None,
+                "created": job.get("created"),
+                "skills": job.get("skills") or [],
+                "match_pct": match_pct(job.get("skills") or [], user_skills),
+                "redirect_url": job.get("redirect_url"),
+                "snippet": job.get("snippet"),
+                "provenance": "greenhouse",
+                "attribution": {
+                    "label": "Greenhouse",
+                    "jobs_href": job.get("redirect_url") or "https://www.greenhouse.com/",
+                    "logo_href": "https://www.greenhouse.com/",
+                },
+            }
+        )
+    fetched_iso = (
+        fetched_at.isoformat() if isinstance(fetched_at, datetime) else str(fetched_at)
+    )
+    empty_reason = None if cards else "No Greenhouse openings matched this search."
+    return {
+        "jobs": cards,
+        "count": len(cards),
+        "page": page,
+        "q": q,
+        "where": where,
+        "country": None,
+        "source": "greenhouse",
+        "provenance": "greenhouse",
+        "cache_hit": cache_hit,
+        "fetched_at": fetched_iso,
+        "empty_reason": empty_reason,
+        "note": note,
+        "disclaimer": (
+            "Listings from public Greenhouse company boards. "
+            "View job opens the original Greenhouse posting. "
+            "interViv is not affiliated with Greenhouse."
+        ),
+    }
+
+
 def _adzuna_home(country: str) -> str:
     # Local domains per Adzuna ToS branding guidance.
     mapping = {
@@ -660,6 +811,20 @@ def _get_job_sql(provider: str, external_id: str) -> dict[str, Any] | None:
         if row is None:
             return None
         payload = dict(row.payload or {})
+        if provider != PROVIDER_ADZUNA:
+            return {
+                "id": f"{provider}:{row.external_id}",
+                "provider": provider,
+                "external_id": row.external_id,
+                "title": payload.get("title") or "",
+                "company": payload.get("company") or "",
+                "location": payload.get("location") or "",
+                "snippet": row.snippet or payload.get("description") or "",
+                "redirect_url": row.redirect_url or payload.get("redirect_url") or "",
+                "skills": payload.get("skills") or [],
+                "payload": payload,
+                "provenance": "greenhouse",
+            }
         payload.setdefault("id", row.external_id)
         payload.setdefault("description", row.snippet)
         payload.setdefault("redirect_url", row.redirect_url)

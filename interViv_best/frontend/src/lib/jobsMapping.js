@@ -18,6 +18,7 @@ export function mapJobCard(job) {
     salaryCurrency: job.salary_currency || null,
     snippet: job.snippet || '',
     attribution: job.attribution || null,
+    provenance: job.provenance || '',
   };
 }
 
@@ -28,8 +29,14 @@ export function jobApplyHref(card) {
     const u = new URL(href);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
     const host = u.hostname.toLowerCase();
-    if (!host.includes('adzuna.')) return '';
-    return href;
+    const adzuna = host === 'adzuna.com' || host.includes('.adzuna.') || host.startsWith('adzuna.');
+    const greenhouseHost = host === 'greenhouse.io' || host.endsWith('.greenhouse.io');
+    if (adzuna || greenhouseHost) return href;
+    // Board feeds link to the company's own career site.
+    if (card?.provenance === 'greenhouse' && u.protocol === 'https:' && host && host !== 'localhost') {
+      return href;
+    }
+    return '';
   } catch {
     return '';
   }

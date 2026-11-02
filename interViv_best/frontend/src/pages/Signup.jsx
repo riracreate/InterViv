@@ -3,18 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 import { signup } from '../lib/api';
 import { authDestination } from '../lib/authRedirect';
-
-function validate({ name, email, password, confirmPassword }) {
-  if (!name.trim()) return 'Name is required.';
-  if (!email.trim()) return 'Email is required.';
-  if (!email.includes('@')) return 'Enter a valid email address.';
-  if (password.length < 8) return 'Password must be at least 8 characters.';
-  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-    return 'Password must contain at least one letter and one number.';
-  }
-  if (password !== confirmPassword) return 'Passwords do not match.';
-  return '';
-}
+import { hasFieldErrors, validateSignupFields } from '../lib/authForm';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -26,6 +15,7 @@ export default function Signup() {
     password: '',
     confirmPassword: '',
   });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,9 +25,10 @@ export default function Signup() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    const validation = validate(form);
-    if (validation) {
-      setError(validation);
+    const validation = validateSignupFields(form);
+    setFieldErrors(validation);
+    if (hasFieldErrors(validation)) {
+      setError('');
       return;
     }
     setError('');
@@ -77,6 +68,7 @@ export default function Signup() {
 
           <form
             onSubmit={handleSubmit}
+            noValidate
             className="w-full rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-8"
           >
             <div className="flex items-center justify-between gap-4">
@@ -90,62 +82,102 @@ export default function Signup() {
             </div>
 
             {error && (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div role="alert" className="app-form-error mt-5">
                 {error}
               </div>
             )}
 
-            <label className="mt-6 block text-sm font-medium text-slate-700">
-              Name
+            <div className="mt-6">
+              <label htmlFor="signup-name" className="block text-sm font-medium text-slate-700">
+                Name
+              </label>
               <input
+                id="signup-name"
                 type="text"
                 value={form.name}
                 onChange={update('name')}
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                className="app-field mt-2"
                 placeholder="Your name"
                 autoComplete="name"
+                aria-invalid={fieldErrors.name ? 'true' : undefined}
+                aria-describedby={fieldErrors.name ? 'signup-name-error' : undefined}
               />
-            </label>
+              {fieldErrors.name && (
+                <p id="signup-name-error" role="alert" className="app-field-error-text">
+                  {fieldErrors.name}
+                </p>
+              )}
+            </div>
 
-            <label className="mt-4 block text-sm font-medium text-slate-700">
-              Email
+            <div className="mt-4">
+              <label htmlFor="signup-email" className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
               <input
+                id="signup-email"
                 type="email"
                 value={form.email}
                 onChange={update('email')}
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                className="app-field mt-2"
                 placeholder="you@example.com"
                 autoComplete="email"
+                aria-invalid={fieldErrors.email ? 'true' : undefined}
+                aria-describedby={fieldErrors.email ? 'signup-email-error' : undefined}
               />
-            </label>
+              {fieldErrors.email && (
+                <p id="signup-email-error" role="alert" className="app-field-error-text">
+                  {fieldErrors.email}
+                </p>
+              )}
+            </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm font-medium text-slate-700">
-                Password
+              <div>
+                <label htmlFor="signup-password" className="block text-sm font-medium text-slate-700">
+                  Password
+                </label>
                 <input
+                  id="signup-password"
                   type="password"
                   value={form.password}
                   onChange={update('password')}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                  className="app-field mt-2"
                   placeholder="8+ characters"
                   autoComplete="new-password"
+                  aria-invalid={fieldErrors.password ? 'true' : undefined}
+                  aria-describedby={fieldErrors.password ? 'signup-password-error signup-password-hint' : 'signup-password-hint'}
                 />
-              </label>
+                {fieldErrors.password && (
+                  <p id="signup-password-error" role="alert" className="app-field-error-text">
+                    {fieldErrors.password}
+                  </p>
+                )}
+              </div>
 
-              <label className="block text-sm font-medium text-slate-700">
-                Confirm password
+              <div>
+                <label htmlFor="signup-confirm-password" className="block text-sm font-medium text-slate-700">
+                  Confirm password
+                </label>
                 <input
+                  id="signup-confirm-password"
                   type="password"
                   value={form.confirmPassword}
                   onChange={update('confirmPassword')}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                  className="app-field mt-2"
                   placeholder="Repeat password"
                   autoComplete="new-password"
+                  aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined}
+                  aria-describedby={fieldErrors.confirmPassword ? 'signup-confirm-password-error' : undefined}
                 />
-              </label>
+                {fieldErrors.confirmPassword && (
+                  <p id="signup-confirm-password-error" role="alert" className="app-field-error-text">
+                    {fieldErrors.confirmPassword}
+                  </p>
+                )}
+              </div>
             </div>
 
-            <p className="mt-3 text-xs leading-5 text-slate-500">
+            <p id="signup-password-hint" className="mt-3 text-xs leading-5 text-slate-500">
               Password must be at least 8 characters and include at least one letter and one number.
             </p>
 

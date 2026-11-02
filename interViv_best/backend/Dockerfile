@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY requirements.txt ./requirements.txt
+COPY requirements-tested.txt ./requirements-tested.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic ./alembic
@@ -13,7 +14,8 @@ COPY alembic.ini ./alembic.ini
 COPY backend ./backend
 COPY modules ./modules
 COPY data ./data
+COPY ml_primitives ./ml_primitives
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then alembic upgrade head; fi; uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-ec", "if [ -n \"$DATABASE_URL\" ]; then alembic upgrade head; fi; exec uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

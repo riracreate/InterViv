@@ -1,0 +1,128 @@
+{
+  "algorithm": "sha256",
+  "source_commit": "uncommitted working tree on upgrade/verified-blueprint (parent af82b24adb2355628eaf42e20fc9a43491e45c81)",
+  "captured_at": "2026-11-02T13:29:08+00:00",
+  "note": "Hashes of scoring implementation, classifier artifacts, and established-eval inputs for scorer v2 (v1 + entity_swap guard). Do not regenerate to absorb a later result.",
+  "files": {
+    "backend/scoring/pipeline.py": {
+      "sha256": "f234c65090f67fcb3d43f13ec3bc3b65e4daf735166f91d685c121b03da1722b",
+      "bytes": 35097
+    },
+    "modules/nlp_scorer.py": {
+      "sha256": "498fc7f9490612d764bb7d3abf88866251939cf9300348e046581c29b2cc7a04",
+      "bytes": 35804
+    },
+    "modules/nlp_scorer_patch.py": {
+      "sha256": "0e7e4a7893855498c2319175a375df5e2ba3d14024c5d42d28b6be09cabca2f1",
+      "bytes": 6449
+    },
+    "modules/answer_guard.py": {
+      "sha256": "43745ae83fea69374a475c919c93a205221274f33d66f53421abd00478d11a78",
+      "bytes": 25434
+    },
+    "modules/semantic_scorer.py": {
+      "sha256": "813f49368fdb94a96336ed454cbe42f25e8e3883ae0e24d5e7cb34bed40c3ba7",
+      "bytes": 4387
+    },
+    "modules/knowledge_graph.py": {
+      "sha256": "bc1e80a0d17ded7e296a6529dbc039822c9ce25b2cc51df5a7a86ef2a18b93ed",
+      "bytes": 16143
+    },
+    "modules/ner_scorer.py": {
+      "sha256": "a1c957c5ae91736f999be1785820c227b85e4cb867008850725558a519f5b29b",
+      "bytes": 8579
+    },
+    "modules/c4_feedback.py": {
+      "sha256": "11e27a67fa5741fe254026b5d9ba8a95b72a81321ba54bf4e63fcbc2f9b84a9c",
+      "bytes": 5835
+    },
+    "modules/question_bank.py": {
+      "sha256": "83978b8608bebad5defb0520381e2f9eef602a678ccc1c05f26ca5c2d0d1d18c",
+      "bytes": 44716
+    },
+    "modules/model_metadata.json": {
+      "sha256": "979c0d2ba8e946029edc18dc74fc0ff817c0f5424ccc384031b8fb8cdf444b4e",
+      "bytes": 1858
+    },
+    "modules/length_ratio_completeness.py": {
+      "sha256": "2f85c09058bc52a7051c58c0f414e77e9f9da7a7154d2217c6b2a5d388e8417c",
+      "bytes": 1543
+    },
+    "modules/scoring_schema.py": {
+      "sha256": "7fe20c4b0b89694fb0ff7cc78701f9d0d76b7230c93433923d8683e9be79ea4d",
+      "bytes": 5010
+    },
+    "modules/answer_quality_lr.joblib": {
+      "sha256": "2897c8cc6283cbdb4815a78182188ea60c17b39876feefa2d67919f065f16dd7",
+      "bytes": 1649
+    },
+    "modules/answer_quality_rf.joblib": {
+      "sha256": "b9406759d4967cedbc0cdac783e7752358f4fef57e4d45ec5c35a9db8b8083a1",
+      "bytes": 527754
+    },
+    "modules/answer_quality_gb.joblib": {
+      "sha256": "1d17ed6696b745d799bbd3290d8ccf1bff35a9cdfdebd9e2578a60dafc2ee2fe",
+      "bytes": 272450
+    },
+    "data/baseline_v2_system_scores.csv": {
+      "sha256": "ee5c2c415b47bb7cbdd384491dc75df4b132f246754c5f4e69ff002e66bf00f8",
+      "bytes": 3614
+    },
+    "data/baseline_v2_key.csv": {
+      "sha256": "b4c7c0df0f35fd5f56413ef64b5887500b53ae0a4bd66ca5c0acf3e3c92689a0",
+      "bytes": 28302
+    },
+    "data/baseline_v2_blank.xlsx": {
+      "sha256": "efb82abb69f21526ecc6161cc83e01b2310b51bf4c4e1f0d15f7b5dc7864a1af",
+      "bytes": 25093
+    },
+    "data/ml_training_data.csv": {
+      "sha256": "73cd98ef096a3e7a2808da1f66427c79d596531c9084a558e192dc04938fd104",
+      "bytes": 698085
+    },
+    "data/interview_dataset_v6.csv": {
+      "sha256": "ee0dc87058da17067589f39c438c9df129c6cc0161fe84591dd76b4bf1803812",
+      "bytes": 1067475
+    },
+    "data/human_baseline_real_combined.xlsx": {
+      "sha256": "a8cd3caa8590a6b47d77850e76f32b72111f3a2daf12bf1134c66a9007ff0b3d",
+      "bytes": 12214
+    },
+    "tests/fixtures/scoring_calibration.json": {
+      "sha256": "ab700fe78b0ecaf40ed7e954b24443b010fd9bfb422d564c3a61a6c33e029f8a",
+      "bytes": 28430
+    },
+    "scripts/scoring_regression.py": {
+      "sha256": "fdd66899853b7af2ea49b7abbf4a60099c164f506aae3c4f1a168c0a5661a26d",
+      "bytes": 12691
+    },
+    "scripts/score_baseline_v2.py": {
+      "sha256": "df1726257b5218adca5fa6f8a89b955c0505d9ac5ec47eb09cd23ba227189916",
+      "bytes": 7713
+    },
+    "docs/human_baseline_report.md": {
+      "sha256": "eb69fdb59cbf35250bdfe96492ba6b37fe8ac4bce9994fd71f25d57c65d3d2ea",
+      "bytes": 15690
+    }
+  },
+  "external_assets": {
+    "sentence_transformers/all-MiniLM-L6-v2": {
+      "hub_ref_main": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "local_snapshot": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "files": {
+        "1_Pooling/config.json": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+        "README.md": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
+        "config.json": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+        "config_sentence_transformers.json": "061ca9d39661d6c6d6de5ba27f79a1cd5770ea247f8d46412a68a498dc5ac9f3",
+        "model.safetensors": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+        "modules.json": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+        "sentence_bert_config.json": "fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7",
+        "special_tokens_map.json": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3",
+        "tokenizer.json": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+        "tokenizer_config.json": "acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b",
+        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+      },
+      "note": "Not vendored in git. Local Hugging Face hub cache on the capture machine. A second snapshot directory c9745ed1d9f207416be6d2e6f8de32d1f16199bf exists beside it; refs/main points at 1110a243."
+    }
+  }
+}
