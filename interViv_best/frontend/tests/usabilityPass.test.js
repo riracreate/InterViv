@@ -76,3 +76,45 @@ test('navigation keeps a small-screen menu and a desktop More menu', () => {
   assert.match(nav, /app-nav-menu-button/);
   assert.match(nav, /More/);
 });
+
+test('landing shows one way back in when signed in, login and sign up otherwise', () => {
+  const src = read('src/pages/Landing.jsx');
+  assert.match(src, /hasAuthToken\(\)/);
+  assert.match(src, /signedIn \?/);
+  assert.match(src, /navigate\('\/home'\)[^\n]*\n\s*Go to Home/);
+  assert.match(src, /navigate\('\/login'\)/);
+  assert.match(src, /navigate\('\/signup'\)/);
+  assert.doesNotMatch(src, /backgroundColor: '#000000'/);
+});
+
+test('session complete logo returns to home and actions use shared buttons', () => {
+  const src = read('src/pages/Interview.jsx');
+  const start = src.indexOf('if (sessionComplete && roundType !== \'coding\')');
+  assert.ok(start > 0);
+  const block = src.slice(start, src.indexOf('\n  }\n', start));
+  assert.match(block, /href="\/home" onClick=\{\(e\) => \{ e\.preventDefault\(\); navigate\('\/home'\); \}\}/);
+  assert.doesNotMatch(block, /navigate\('\/'\)/);
+  assert.match(block, /app-button app-button-primary">\s*View Dashboard/);
+  assert.match(block, /navigate\('\/upload'\)\} className="app-button">\s*New Session/);
+});
+
+test('upload actions use shared buttons and the danger status style', () => {
+  const src = read('src/pages/Upload.jsx');
+  assert.doesNotMatch(src, /backgroundColor: '#000', fontFamily/);
+  assert.doesNotMatch(src, /text-red-600/);
+  assert.match(src, /app-form-error/);
+  assert.equal((src.match(/app-button app-button-primary w-full/g) || []).length, 3);
+});
+
+test('progress and dashboard show the observed average beside the conservative readiness', async () => {
+  const { observedReadinessNote } = await import('../src/lib/accountOverview.js');
+  const overview = {
+    readiness: 66.7, readiness_observed: 100, readiness_provisional_skill_count: 1,
+    target: { established_min_attempts: 3 },
+  };
+  assert.equal(observedReadinessNote(overview), 'Observed average 100% · 1 skill still provisional (fewer than 3 measured attempts)');
+  assert.equal(observedReadinessNote({ readiness: 80, readiness_observed: 80, readiness_provisional_skill_count: 0 }), '');
+  assert.equal(observedReadinessNote({ readiness: null, readiness_observed: null }), '');
+  assert.match(read('src/pages/Progress.jsx'), /observedReadinessNote\(data\)/);
+  assert.match(read('src/pages/Dashboard.tsx'), /observedReadinessNote\(overview\)/);
+});

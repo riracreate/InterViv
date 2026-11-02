@@ -4,6 +4,22 @@ export function displayScore(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not measured';
 }
 
+/**
+ * Observed-average note shown beside the conservative readiness headline, in
+ * the same words as the Gap Analysis page. Displays server values only.
+ */
+export function observedReadinessNote(overview) {
+  const observed = overview?.readiness_observed;
+  if (typeof observed !== 'number' || !Number.isFinite(observed)) return '';
+  const provisional = overview?.readiness_provisional_skill_count || 0;
+  if (provisional === 0 && Math.round(observed) === Math.round(overview?.readiness ?? observed)) return '';
+  const minAttempts = overview?.target?.established_min_attempts;
+  const tail = provisional > 0
+    ? ` · ${provisional} skill${provisional === 1 ? '' : 's'} still provisional${minAttempts ? ` (fewer than ${minAttempts} measured attempts)` : ''}`
+    : '';
+  return `Observed average ${Math.round(observed)}%${tail}`;
+}
+
 /** Reason wording for a round that was never evaluated (Progress and the session report). */
 export function unscoredReasonLabel(item) {
   if (item.reason !== 'execution_unavailable') return item.reason;

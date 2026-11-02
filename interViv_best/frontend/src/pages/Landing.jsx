@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { hasAuthToken } from '../lib/api';
 
 /* ═══════════════════════════════════════════════════════════
    PREMIUM NON-NATURE BACKGROUND
@@ -82,6 +83,7 @@ function PremiumBackground() {
    ═══════════════════════════════════════════════════════════ */
 function Navbar() {
   const navigate = useNavigate();
+  const signedIn = hasAuthToken();
 
   const menuItems = [
     { label: 'Home', to: '/home' },
@@ -109,10 +111,10 @@ function Navbar() {
               <a
                 href={item.to}
                 onClick={(e) => { e.preventDefault(); navigate(item.to); }}
-                className="text-sm transition-colors duration-200 hover:text-black"
+                className="text-sm transition-colors duration-200 hover:!text-black"
                 style={{
                   fontFamily: "var(--font-body)",
-                  color: item.active ? '#000000' : '#6F6F6F',
+                  color: 'var(--color-muted)',
                 }}
               >
                 {item.label}
@@ -121,17 +123,23 @@ function Navbar() {
           ))}
         </ul>
 
-        {/* CTA Button */}
-        <div className="flex items-center gap-3"><button type="button" onClick={() => navigate('/login')} className="rounded-full border border-black/15 px-4 py-2.5 text-sm text-black">Login</button><button
-          onClick={() => navigate('/signup')}
-          className="rounded-full px-6 py-2.5 text-sm text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
-          style={{
-            backgroundColor: '#000000',
-            fontFamily: "var(--font-body)",
-          }}
-        >
-          Sign up
-        </button></div>
+        {/* Account actions: one way back in when signed in */}
+        <div className="flex items-center gap-3">
+          {signedIn ? (
+            <button type="button" onClick={() => navigate('/home')} className="app-button app-button-primary">
+              Go to Home
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => navigate('/login')} className="app-button">
+                Login
+              </button>
+              <button type="button" onClick={() => navigate('/signup')} className="app-button app-button-primary">
+                Sign up
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </nav>
   );
@@ -155,14 +163,14 @@ function HeroSection() {
           fontFamily: "var(--font-display)",
           lineHeight: 0.95,
           letterSpacing: 0,
-          color: '#000000',
+          color: 'var(--color-foreground)',
         }}
       >
         Beyond{' '}
-        <em style={{ color: '#6F6F6F', fontStyle: 'italic' }}>preparation,</em>
+        <em style={{ color: 'var(--color-muted)', fontStyle: 'italic' }}>preparation,</em>
         <br />
         we build{' '}
-        <em style={{ color: '#6F6F6F', fontStyle: 'italic' }}>confidence.</em>
+        <em style={{ color: 'var(--color-muted)', fontStyle: 'italic' }}>confidence.</em>
       </h1>
 
       {/* Description */}
@@ -181,12 +189,10 @@ function HeroSection() {
 
       {/* CTA Button */}
       <button
+        type="button"
         onClick={() => navigate('/upload')}
-        className="animate-fade-rise-delay-2 rounded-full px-14 py-5 text-base mt-20 text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
-        style={{
-          backgroundColor: '#000000',
-          fontFamily: "var(--font-body)",
-        }}
+        className="animate-fade-rise-delay-2 app-button app-button-primary mt-20"
+        style={{ padding: '20px 56px', fontSize: 'var(--text-base)' }}
       >
         Start Interview
       </button>

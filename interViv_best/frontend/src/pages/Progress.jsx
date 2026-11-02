@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import AccountPage, { useAccountOverview } from '../components/AccountPage';
-import { displayScore, sessionLabel, unscoredReasonLabel } from '../lib/accountOverview';
+import { displayScore, observedReadinessNote, sessionLabel, unscoredReasonLabel } from '../lib/accountOverview';
 
 function fraction(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Not available';
@@ -18,6 +18,7 @@ export function ProgressContent({ data }) {
     <header className="hub-progress-hero">
       <div><p className="hub-eyebrow">Progress{data.target ? ` · ${data.target.company_name} · ${data.target.role_title}` : ''}</p><h1>Readiness<br /><em>{displayScore(data.readiness)}</em></h1>
         <p>{data.readiness == null ? 'Readiness is measured against a target role after you practice its required skills.' : `Based on ${data.target.tested_skill_count} of ${data.target.required_skill_count} required skills. Untested skills are excluded from this score.`}</p>
+        {observedReadinessNote(data) && <p className="hub-caption" data-testid="observed-readiness">{observedReadinessNote(data)}</p>}
       </div>
       <dl className="hub-stats"><div><dt>Scored sessions</dt><dd>{data.scored_session_count}</dd></div><div><dt>Skills measured</dt><dd>{measured.length}</dd></div></dl>
     </header>

@@ -130,3 +130,20 @@ def test_signup_login_practice_completion_updates_progress_without_a_fake_resume
     assert completed["scored_session_count"] == 1
     assert completed["history"][0]["average_score"] == 0
     assert client.get(f"/dashboard/{session_id}", headers=headers).status_code == 200
+
+
+def test_progress_readiness_matches_gap_analysis_conservative_figure():
+    uid, headers = make_user(target=True)
+    graph = StudentSkillGraph(uid)
+    graph.initialize_from_resume(["DBMS"])
+    graph.update_after_round("DBMS", 70, "easy")
+    client = TestClient(app)
+    progress = client.get("/dashboard/progress", headers=headers).json()
+    gap = client.get("/gap-analysis/me/tcs_swe", headers=headers).json()
+    # One attempt is provisional: the headline is discounted (70 alone already
+    # meets the role's DBMS level, the shrunk level does not), the raw average
+    # is still reported, and both equal the Gap Analysis values.
+    assert progress["readiness"] == gap["overall_readiness_conservative"]
+    assert progress["readiness_observed"] == gap["overall_readiness_percentage"]
+    assert progress["readiness"] < progress["readiness_observed"]
+    assert progress["readiness_provisional_skill_count"] == gap["provisional_skill_count"] >= 1

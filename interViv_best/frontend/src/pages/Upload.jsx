@@ -256,10 +256,10 @@ export default function Upload() {
           <button onClick={() => {
             if (step === 'domains') setStep('skills');
             else if (step === 'skills') setStep('upload');
-            else navigate('/');
+            else navigate('/home');
           }}
-            className="text-sm text-[#6F6F6F] hover:text-black transition-colors cursor-pointer"
-            style={{ fontFamily: "var(--font-body)" }}>
+            type="button"
+            className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
             ← {step === 'upload' ? 'Home' : 'Back'}
           </button>
         </div>
@@ -344,7 +344,7 @@ export default function Upload() {
               )}
             </div>
 
-            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }} role="alert">{error}</p>}
+            {error && <p className="app-form-error mt-4" role="alert">{error}</p>}
 
             {/* Quick start without resume */}
             <div className="mt-8">
@@ -365,9 +365,8 @@ export default function Upload() {
             </div>
 
             {file && (
-              <button disabled={isProcessing} onClick={processResume}
-                className="w-full mt-6 rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+              <button type="button" disabled={isProcessing} onClick={processResume}
+                className="app-button app-button-primary w-full mt-6" style={{ padding: '16px 20px' }}>
                 {isProcessing ? 'Extracting Intelligence...' : 'Continue →'}
               </button>
             )}
@@ -474,9 +473,8 @@ export default function Upload() {
               />
             </div>
 
-            <button onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
-              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-30"
-              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+            <button type="button" onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
+              className="app-button app-button-primary w-full" style={{ padding: '16px 20px' }}>
               Choose Interview Domains →
             </button>
           </div>
@@ -508,11 +506,10 @@ export default function Upload() {
               ))}
             </div>
 
-            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "var(--font-body)" }} role="alert">{error}</p>}
+            {error && <p className="app-form-error mb-4" role="alert">{error}</p>}
 
-            <button disabled={isStarting} onClick={startInterview}
-              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+            <button type="button" disabled={isStarting} onClick={startInterview}
+              className="app-button app-button-primary w-full" style={{ padding: '16px 20px' }}>
               {isStarting ? 'Starting Session...' : `Start Interview · ${(selectedSkills.length || 1) * ROUNDS_PER_SKILL} Rounds →`}
             </button>
           </div>

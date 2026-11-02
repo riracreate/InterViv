@@ -438,7 +438,15 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
         },
         "server_time": now,
         "target": target,
-        "readiness": target["overall_readiness_percentage"] if target and target["tested_skill_count"] > 0 else None,
+        # Same headline figure as the Gap Analysis page: the conservative
+        # readiness (provisional skills discounted), with the observed average
+        # alongside. Both come from GapAnalyzer; nothing is recomputed here.
+        "readiness": (
+            target.get("overall_readiness_conservative", target["overall_readiness_percentage"])
+            if target and target["tested_skill_count"] > 0 else None
+        ),
+        "readiness_observed": target["overall_readiness_percentage"] if target and target["tested_skill_count"] > 0 else None,
+        "readiness_provisional_skill_count": target.get("provisional_skill_count", 0) if target else 0,
         # Readiness math is unchanged; the split sits alongside so
         # assisted evidence is never silently mixed into the signal.
         "readiness_assistance": assistance_breakdown_for_user(user_id),

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { fetchDashboard, fetchLearningSignals, fetchAtsRuns, fetchMe, fetchAccountOverview } from "../lib/api";
 import { mapRealDataToDashboard, scoreAccent } from "../lib/dashboardMapping";
-import { displayScore, sessionLabel } from "../lib/accountOverview";
+import { displayScore, observedReadinessNote, sessionLabel } from "../lib/accountOverview";
 import AppNav from "../components/AppNav";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
@@ -278,7 +278,7 @@ function DashboardHome() {
                 ? overviewError
                 : overview?.readiness == null
                   ? "Readiness is measured against a target role after you practice its required skills."
-                  : `Based on ${overview.target?.tested_skill_count ?? 0} of ${overview.target?.required_skill_count ?? 0} required skills.`
+                  : [`Based on ${overview.target?.tested_skill_count ?? 0} of ${overview.target?.required_skill_count ?? 0} required skills.`, observedReadinessNote(overview)].filter(Boolean).join(' ')
             }
             action={<Link to="/dashboard">Open Progress</Link>}
           />

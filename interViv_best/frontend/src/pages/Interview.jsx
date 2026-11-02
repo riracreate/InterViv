@@ -1101,9 +1101,7 @@ export default function Interview({ sessionState = null }) {
       <div className="h-screen bg-white flex flex-col overflow-hidden">
         <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0">
           <div className="flex items-center gap-4">
-            <button onClick={leaveSession}
-              className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
-              style={{ fontFamily: "var(--font-body)" }}>
+            <button type="button" onClick={leaveSession} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
               ← Exit
             </button>
             <div className="h-4 w-px bg-black/10" />
@@ -1167,7 +1165,7 @@ export default function Interview({ sessionState = null }) {
       <div className="min-h-screen bg-white flex flex-col">
         <nav className="border-b border-black/5">
           <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-            <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
+            <a href="/home" onClick={(e) => { e.preventDefault(); navigate('/home'); }}
               className="text-2xl tracking-tight text-black" style={{ fontFamily: "var(--font-display)" }}>
               interViv<sup className="text-xs align-super">©</sup>
             </a>
@@ -1179,7 +1177,7 @@ export default function Interview({ sessionState = null }) {
               <h1 className="text-5xl tracking-tight mb-3" style={{ fontFamily: "var(--font-display)", letterSpacing: '-1.5px' }}>
                 Session Complete
               </h1>
-              <p className="text-base" style={{ fontFamily: "var(--font-body)", color: '#6F6F6F' }}>
+              <p className="text-base" style={{ fontFamily: "var(--font-body)", color: 'var(--color-muted)' }}>
                 {scores.length} rounds · Average{' '}
                 <span style={{ color: scoreColor(avg), fontWeight: 600 }}>{avg}%</span>
               </p>
@@ -1188,19 +1186,16 @@ export default function Interview({ sessionState = null }) {
               {[{ v: elo, l: 'Final Elo' }, { v: `${avg}%`, l: 'Average Score' }].map(s => (
                 <div key={s.l} className="rounded-2xl border border-black/8 py-5 text-center">
                   <div className="text-2xl font-normal text-black mb-1" style={{ fontFamily: "var(--font-display)" }}>{s.v}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>{s.l}</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wider" style={{ fontFamily: "var(--font-body)", color: 'var(--color-muted)' }}>{s.l}</div>
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-center gap-3">
-              <button onClick={() => { clearInterviewState(); navigate(`/dashboard/${sessionId}`); }}
-                className="rounded-full px-8 py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.02] transition-transform"
-                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button type="button" onClick={() => { clearInterviewState(); navigate(`/dashboard/${sessionId}`); }}
+                className="app-button app-button-primary">
                 View Dashboard
               </button>
-              <button onClick={() => navigate('/upload')}
-                className="rounded-full px-8 py-3 text-sm font-medium text-[#6F6F6F] cursor-pointer hover:text-black transition-colors border border-black/10"
-                style={{ fontFamily: "var(--font-body)" }}>
+              <button type="button" onClick={() => navigate('/upload')} className="app-button">
                 New Session
               </button>
             </div>
@@ -1214,9 +1209,7 @@ export default function Interview({ sessionState = null }) {
     <div className="h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden">
       <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
-          <button onClick={leaveSession}
-            className="text-[#6F6F6F] hover:text-black transition-colors cursor-pointer text-sm"
-            style={{ fontFamily: "var(--font-body)" }}>
+          <button type="button" onClick={leaveSession} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
             ← Exit
           </button>
           <div className="h-4 w-px bg-black/10" />
