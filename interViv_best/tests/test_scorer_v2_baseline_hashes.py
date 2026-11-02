@@ -1,11 +1,10 @@
-"""Fast check that frozen v2 asset hashes match the working tree.
+"""Fast check that the frozen v2 baseline record is intact (the tree is v3 now).
 
-v2 = v1 + the entity_swap guard. The eight v1 items must score identically
-under v2; only the new entity_swap item is added.
+v2 = v1 + the entity_swap guard. The eight v1 items scored identically under
+v2; only the entity_swap item was added.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -25,19 +24,14 @@ def test_v2_baseline_artifacts_exist() -> None:
     assert len(fixture["items"]) == 9
 
 
-def test_v2_sha256sums_match_working_tree() -> None:
+def test_v2_manifest_is_frozen_record() -> None:
+    # The working tree is scorer v3 now (see docs/scorer_versions.md and
+    # tests/test_scorer_v3_baseline_hashes.py). v2 stays as the historical
+    # record of commit 071284b; it is replayable only from that commit.
     manifest = json.loads(SUMS_PATH.read_text())
     assert manifest["algorithm"] == "sha256"
-    mismatches = []
-    for rel, meta in manifest["files"].items():
-        path = ROOT / rel
-        if not path.is_file():
-            mismatches.append(f"missing {rel}")
-            continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if digest != meta["sha256"]:
-            mismatches.append(f"{rel}: {digest} != {meta['sha256']}")
-    assert mismatches == []
+    assert "af82b24adb2355628eaf42e20fc9a43491e45c81" in manifest["source_commit"]
+    assert all(len(meta["sha256"]) == 64 for meta in manifest["files"].values())
 
 
 def test_v2_keeps_every_v1_result() -> None:

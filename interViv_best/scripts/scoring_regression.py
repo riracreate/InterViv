@@ -138,11 +138,27 @@ CASES: list[Case] = [
     ),
     Case(
         name="gibberish",
-        answer="qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+        answer="xqoizv pfuejq zvoykx jwiqpz kxuevb qopzjx wuvkqi",
         min_score=0.0,
         max_score=25.0,
         expect_guard="gibberish",
-        notes="Guard v1 — low vowel ratio / not real words should cap hard.",
+        notes=(
+            "Guard — letter strings that are not words should cap hard. The "
+            "vowel share (0.26) clears the whole-text vowel rule, so the "
+            "per-word nonsense check is what fires."
+        ),
+    ),
+    Case(
+        name="repeated_characters",
+        answer="qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+        min_score=0.0,
+        max_score=25.0,
+        expect_guard="repetition",
+        notes=(
+            "Guard — tokens built from repeated characters are caught by the "
+            "repeated-character rule, which runs before the gibberish rule. "
+            "This text was the original 'gibberish' case."
+        ),
     ),
     Case(
         name="excessive_repetition",

@@ -218,3 +218,78 @@ def test_entity_swap_pronoun_clause_keeps_subject():
         "databases. StatefulSet keeps persistent storage and stable pod names."
     )
     assert _v2(answer, question, ideal)["reason"] != "entity_swap"
+
+
+# ── v3: nonsense detection that does not flag ordinary words ────────────────
+
+from modules import answer_guard as _guard  # noqa: E402
+from modules.answer_guard import check_answer_quality_v2  # noqa: E402
+
+
+def test_common_words_are_not_nonsense():
+    for word in ("solves", "optimal", "global", "allows", "objects", "patterns",
+                 "reusable", "solutions", "polymorphism", "abstraction",
+                 "instruction", "constructor", "branch", "deadlock"):
+        assert not _guard._looks_like_nonsense_token(word), word
+
+
+def test_letter_strings_are_still_nonsense():
+    for token in ("qzqzqz", "zzzz", "asdfgh", "xqoizv", "pfuejq", "zvoykx", "kxuevb"):
+        assert _guard._looks_like_nonsense_token(token), token
+
+
+def test_real_comparison_answer_is_not_gibberish():
+    answer = ("DP solves subproblems and stores results for optimal global solution; "
+              "Greedy makes locally optimal choices hoping for a global optimum.")
+    result = check_answer_quality_v2(
+        answer,
+        question_text="What is the difference between dynamic programming and greedy algorithms?",
+        ideal_keywords="subproblems, optimal substructure, memoization, greedy choice",
+        ideal_answer=("Dynamic programming solves overlapping subproblems once and stores "
+                      "their results; greedy algorithms make the locally optimal choice at "
+                      "each step and never revisit it."),
+    )
+    assert result["reason"] != "gibberish", result
+
+
+def test_reference_terms_are_never_nonsense():
+    # Names a letter-pair table cannot know still count when the question uses them.
+    question = "Compare Dijkstra and Kruskal."
+    ideal = "Dijkstra finds shortest paths from a source; Kruskal builds a minimum spanning tree."
+    assert _guard._looks_like_nonsense_token("kruskal")
+    known = _guard._reference_vocabulary(question, "", ideal)
+    assert _guard._nonsense_token_ratio(["dijkstra", "kruskal"], known) == 0.0
+
+
+def test_short_fragment_of_long_reference_is_too_short():
+    result = check_answer_quality_v2(
+        "Deadlock occurs when processes are permanently.",
+        question_text="What is a deadlock?",
+        ideal_answer=("A deadlock is a state where each process in a set waits for a resource "
+                      "held by another process in the set, so none of them can proceed."),
+    )
+    assert result["reason"] == "too_short"
+    assert result["score_cap"] == 20
+
+
+def test_short_answer_to_short_reference_is_not_capped():
+    # The length rule compares with the reference answer, so a complete short
+    # answer to a short question passes. (With these words also listed as
+    # keywords, the separate keyword_stuffing rule would still apply.)
+    result = check_answer_quality_v2(
+        "Atomicity, Consistency, Isolation, Durability.",
+        question_text="What does ACID stand for?",
+        ideal_answer="Atomicity, Consistency, Isolation and Durability.",
+    )
+    assert result["cap_required"] is False, result
+
+
+def test_bigram_table_matches_reference_text():
+    import subprocess
+
+    root = os.path.join(os.path.dirname(__file__), "..")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(root, "scripts", "build_guard_bigrams.py")],
+        capture_output=True, text=True, cwd=root,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr

@@ -1,4 +1,4 @@
-"""Replay a frozen scorer baseline (v1 by default; --version v2). Never writes the fixture."""
+"""Replay a frozen scorer baseline (v1 by default; --version v2 or v3). Never writes the fixture."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +17,7 @@ apply_runtime_env()
 
 from backend.scoring.pipeline import run_scoring_pipeline  # noqa: E402
 
-VERSIONS = ("v1", "v2")
+VERSIONS = ("v1", "v2", "v3")
 
 
 def _paths(version: str) -> tuple[Path, Path]:

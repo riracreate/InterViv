@@ -67,15 +67,67 @@ _TECHNICAL_OR_MEANINGFUL = frozenset({
     "node", "python", "react", "redis", "rest", "sql",
 })
 
+# Letter pairs that occur in at least 10 distinct words (6+ letters) of the
+# question bank's own reference text: every question and ideal answer in
+# data/interview_dataset_v6.csv and data/ml_training_data.csv. Candidate
+# answers were not used. Frozen here so the guard does not drift with the data;
+# scripts/build_guard_bigrams.py regenerates and checks both tables (scorer v3).
 _COMMON_BIGRAMS = frozenset({
-    "al", "an", "ar", "at", "ay", "be", "bi", "by", "ce", "ch", "ck",
-    "co", "da", "de", "di", "du", "ea", "ed", "em", "en", "er", "es",
-    "et", "fo", "gh", "ha", "he", "hi", "ic", "id", "ig", "il", "in",
-    "io", "is", "it", "iv", "le", "li", "me", "mi", "mp", "na", "nd",
-    "ne", "ng", "ni", "no", "nt", "on", "oo", "or", "ou", "pe", "pr",
-    "qu", "ra", "rc", "re", "ri", "ro", "ry", "sc", "se", "ss", "st",
-    "ta", "te", "th", "ti", "to", "uc", "ul", "ur", "ve", "vi", "wo",
+    "ab", "ac", "ad", "ag", "ai", "ak", "al", "am", "an", "ap", "ar", "as",
+    "at", "au", "av", "ay", "ba", "be", "bi", "bl", "bo", "br", "bs", "bu",
+    "ca", "cc", "ce", "ch", "ci", "ck", "cl", "co", "cr", "ct", "cu", "cy",
+    "da", "dd", "de", "di", "dl", "do", "dr", "ds", "du", "ea", "eb", "ec",
+    "ed", "ee", "ef", "eg", "eh", "ei", "el", "em", "en", "eo", "ep", "eq",
+    "er", "es", "et", "eu", "ev", "ew", "ex", "fa", "fe", "ff", "fi", "fl",
+    "fo", "fr", "fu", "fy", "ga", "ge", "gg", "gh", "gi", "gl", "gm", "gn",
+    "go", "gr", "gs", "gu", "ha", "he", "hi", "hm", "ho", "hr", "ht", "hy",
+    "ia", "ib", "ic", "id", "ie", "if", "ig", "il", "im", "in", "io", "ip",
+    "ir", "is", "it", "iv", "iz", "je", "ke", "ki", "ks", "la", "ld", "le",
+    "li", "ll", "lo", "ls", "lt", "lu", "lv", "ly", "ma", "mb", "me", "mi",
+    "mm", "mo", "mp", "ms", "mu", "na", "nc", "nd", "ne", "nf", "ng", "ni",
+    "nl", "nn", "no", "ns", "nt", "nu", "nv", "oa", "ob", "oc", "od", "of",
+    "og", "oi", "ok", "ol", "om", "on", "oo", "op", "or", "os", "ot", "ou",
+    "ov", "ow", "pa", "pe", "ph", "pi", "pl", "po", "pp", "pr", "ps", "pt",
+    "pu", "qu", "ra", "rc", "rd", "re", "rf", "rg", "ri", "rk", "rl", "rm",
+    "rn", "ro", "rp", "rr", "rs", "rt", "ru", "rv", "ry", "sa", "sc", "se",
+    "sf", "sh", "si", "sl", "sm", "so", "sp", "ss", "st", "su", "sy", "ta",
+    "tc", "te", "th", "ti", "tl", "to", "tr", "ts", "tt", "tu", "ty", "ua",
+    "ub", "uc", "ud", "ue", "ug", "ui", "ul", "um", "un", "up", "ur", "us",
+    "ut", "va", "ve", "vi", "vo", "wa", "we", "wi", "wn", "wo", "xc", "xe",
+    "xi", "xp", "xt", "yi", "yn", "yp", "ys", "za", "ze", "zi",
 })
+
+# Letter pairs that occur in no 6+ letter word of that same reference text.
+# Two of them in one word mark it as nonsense ("gctcititxi": gc, tx).
+_UNSEEN_BIGRAMS = frozenset({
+    "aa", "ah", "ao", "aq", "bf", "bg", "bk", "bq", "bv", "bw", "bx", "bz",
+    "cb", "cd", "cf", "cj", "cn", "cv", "cw", "cx", "cz", "dk", "dn", "dq",
+    "dx", "dz", "ej", "fb", "fd", "fg", "fh", "fj", "fk", "fn", "fp", "fq",
+    "fv", "fw", "fx", "fz", "gc", "gd", "gj", "gk", "gp", "gv", "gw", "gx",
+    "gz", "hc", "hd", "hg", "hh", "hj", "hk", "hl", "hv", "hx", "hz", "ih",
+    "ii", "iw", "iy", "jb", "jc", "jd", "jf", "jg", "jh", "ji", "jj", "jl",
+    "jm", "jn", "jp", "jq", "jr", "js", "jt", "jv", "jw", "jx", "jy", "jz",
+    "kb", "kd", "kh", "kj", "kk", "km", "kq", "kv", "kx", "kz", "lj", "lk",
+    "lq", "lx", "lz", "md", "mg", "mh", "mj", "mk", "mr", "mt", "mv", "mx",
+    "mz", "nx", "nz", "oq", "pb", "pj", "pn", "pq", "pv", "px", "pz", "qa",
+    "qb", "qc", "qd", "qe", "qf", "qg", "qh", "qi", "qj", "qk", "qm", "qn",
+    "qo", "qp", "qq", "qr", "qs", "qt", "qv", "qw", "qx", "qy", "qz", "rj",
+    "rq", "rx", "rz", "sb", "sr", "sv", "sx", "sz", "tj", "tq", "tx", "uh",
+    "uj", "uk", "uq", "uv", "uw", "ux", "uy", "uz", "vb", "vc", "vd", "vf",
+    "vg", "vh", "vj", "vk", "vl", "vm", "vp", "vq", "vr", "vs", "vv", "vw",
+    "vx", "vy", "vz", "wc", "wd", "wg", "wj", "wk", "wm", "wp", "wq", "wu",
+    "wv", "ww", "wx", "wy", "wz", "xb", "xd", "xj", "xk", "xl", "xm", "xn",
+    "xo", "xq", "xs", "xu", "xv", "xw", "xx", "xz", "yd", "yf", "yh", "yj",
+    "yk", "yq", "yu", "yv", "yx", "yy", "zb", "zc", "zd", "zf", "zg", "zh",
+    "zj", "zk", "zl", "zm", "zn", "zp", "zq", "zs", "zt", "zu", "zv", "zw",
+    "zx", "zy", "zz",
+})
+
+# A 6+ letter word is English-like when at least this share of its letter
+# pairs is common. Unusual vowel/consonant shape counts against a word only
+# when its share is also below the softer limit.
+_COMMON_BIGRAM_MIN_SHARE = 0.60
+_ODD_SHAPE_MAX_SHARE = 0.75
 
 # Function words that signal a cut-off mid-clause when they end the answer.
 _DANGLING_ENDINGS = frozenset({
@@ -170,12 +222,14 @@ def _repeated_pattern(token: str) -> bool:
     return False
 
 
-def _is_meaningful_token(token: str) -> bool:
+def _is_meaningful_token(token: str, known: frozenset[str] = frozenset()) -> bool:
     token = token.lower()
     if token in _TECHNICAL_OR_MEANINGFUL:
         return True
     if len(token) <= 2 or token in _STOPWORDS or token in _FLUFF_VOCAB:
         return False
+    if token in known:
+        return True
     if _looks_like_nonsense_token(token):
         return False
     return True
@@ -191,22 +245,41 @@ def _looks_like_nonsense_token(token: str) -> bool:
         return True
     if _max_char_run(token) >= 4:
         return True
-    if len(token) >= 8 and _max_consonant_run(token) >= 4:
+    if len(token) < 6 or token in _TECHNICAL_OR_MEANINGFUL:
+        return False
+    share = _common_bigram_ratio(token)
+    if share < _COMMON_BIGRAM_MIN_SHARE:
         return True
-    if len(token) >= 6:
-        vowel_ratio = _vowel_ratio(token)
-        if vowel_ratio < 0.24 or vowel_ratio > 0.82:
-            return True
-        if token not in _TECHNICAL_OR_MEANINGFUL and _common_bigram_ratio(token) < 0.45:
-            return True
-    return False
+    if sum(token[i : i + 2] in _UNSEEN_BIGRAMS for i in range(len(token) - 1)) >= 2:
+        return True
+    # Real words such as "branch" or "abstraction" have one vowel or four
+    # consonants in a row; that shape alone is not evidence of nonsense.
+    vowel_ratio = _vowel_ratio(token)
+    odd_shape = (
+        vowel_ratio < 0.24
+        or vowel_ratio > 0.82
+        or (len(token) >= 8 and _max_consonant_run(token) >= 4)
+    )
+    return odd_shape and share < _ODD_SHAPE_MAX_SHARE
 
 
-def _nonsense_token_ratio(tokens: list[str]) -> float:
+def _reference_vocabulary(*texts: str) -> frozenset[str]:
+    """Words the question itself uses (question, ideal answer, keywords).
+
+    A word the reference material uses is never counted as nonsense, which
+    protects domain terms ("dijkstra", "kruskal") that letter statistics miss.
+    """
+    return frozenset(word for text in texts if text for word in _alpha_tokens(text))
+
+
+def _nonsense_token_ratio(tokens: list[str], known: frozenset[str] = frozenset()) -> float:
     alpha = [token for token in tokens if token.isalpha()]
     if not alpha:
         return 0.0
-    return sum(1 for token in alpha if _looks_like_nonsense_token(token)) / len(alpha)
+    return sum(
+        1 for token in alpha
+        if token.lower() not in known and _looks_like_nonsense_token(token)
+    ) / len(alpha)
 
 
 # ── Shared rule helpers ──────────────────────────────────────────────────────
@@ -225,6 +298,7 @@ def _check_basic_rules(
 
     tokens = _word_tokens(text)
     alpha_tokens = _alpha_tokens(text)
+    known = _reference_vocabulary(question_text, ideal_keywords, ideal_answer)
 
     if len(text) < 5:
         return _cap("too_short", 20)
@@ -242,7 +316,7 @@ def _check_basic_rules(
     if (
         _vowel_ratio(text) < 0.24
         or _GIBBERISH_PATTERNS.search(text.lower())
-        or _nonsense_token_ratio(alpha_tokens) >= 0.50
+        or _nonsense_token_ratio(alpha_tokens, known) >= 0.50
     ):
         return _cap("gibberish", 10)
 
@@ -284,10 +358,15 @@ def _check_basic_rules(
             if kw_ratio > 0.45 and len(non_kw_tokens) < 8:
                 return _cap("keyword_stuffing", 35)
 
-    meaningful_tokens = [token for token in alpha_tokens if _is_meaningful_token(token)]
+    meaningful_tokens = [token for token in alpha_tokens if _is_meaningful_token(token, known)]
     if len(tokens) < 4:
         return _cap("too_short", 20)
     if len(tokens) < 8 and len(meaningful_tokens) < 4:
+        return _cap("too_short", 20)
+    # Under eight words and under half the reference answer: a fragment, even
+    # when every word is real ("Deadlock occurs when processes are permanently.").
+    # Questions whose reference answer is itself short are unaffected.
+    if ideal_answer and len(tokens) < 8 and len(tokens) < 0.5 * len(_word_tokens(ideal_answer)):
         return _cap("too_short", 20)
     if len(tokens) >= 8 and len(meaningful_tokens) < 3:
         return _cap("gibberish", 10)
