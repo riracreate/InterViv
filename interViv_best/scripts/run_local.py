@@ -4,12 +4,22 @@
 Usage:
   .venv/bin/python scripts/run_local.py                  # offline app
   .venv/bin/python scripts/run_local.py --fetch-models   # one-time model download, then run
+  .venv/bin/python scripts/run_local.py --trusted-local-execution  # Python coding + ML, no Docker
   .venv/bin/python scripts/run_local.py --with-executor  # also start the Docker coding executor
+  .venv/bin/python scripts/run_local.py --with-executor --live-jobs  # live jobs and coding
 
-Ctrl+C stops only the processes started by this launcher. The app itself always
-runs offline; downloads happen only with --fetch-models. Coding Run/Submit needs
-the local Piston executor (--with-executor, Docker required); the executor keeps
-running after Ctrl+C (stop it with `docker compose -f compose.coding.yml down`).
+Ctrl+C stops only the processes started by this launcher. Interview questions
+stay offline; --live-jobs explicitly enables provider requests. Model downloads
+happen only with --fetch-models.
+
+Coding and ML execution, in order of preference:
+- --with-executor starts the isolated local Piston executor (Docker required)
+  for Python, JavaScript, Java and C++; it keeps running after Ctrl+C.
+- --trusted-local-execution runs Python coding and NumPy ML submissions in a
+  fresh local worker process when Piston is not running. It is a trusted
+  local demo mode for your own code, not a security sandbox; the backend
+  honours it only in development on 127.0.0.1.
+Without either flag, coding and ML submissions are stored but not run or scored.
 """
 from __future__ import annotations
 
@@ -98,7 +108,8 @@ def _start_executor() -> bool:
         return True
     docker = shutil.which("docker")
     if not docker:
-        print("Docker is not installed. Coding Run/Submit stays unavailable.", flush=True)
+        print("Docker is not installed. The Docker executor stays off "
+              "(--trusted-local-execution can still run Python).", flush=True)
         return False
     if subprocess.run([docker, "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         print("Docker is not running. Start Docker Desktop, then run this again.", flush=True)
@@ -135,12 +146,54 @@ def _start_executor() -> bool:
     return True
 
 
+def _runtime_environment(
+    state: Path,
+    *,
+    executor_on: bool,
+    live_jobs: bool,
+    trusted_local: bool = False,
+) -> dict[str, str]:
+    """Build a local, persistent runtime with network access explicitly selected."""
+    env = dict(os.environ)
+    env.update({
+        "DATABASE_URL": f"sqlite:///{state / 'interviv-local.sqlite3'}",
+        "ENVIRONMENT": "development",
+        "REDIS_URL": "",
+        "LLM_LIVE_FETCH": "0",
+        "JOBS_LIVE_FETCH": "1" if live_jobs else "0",
+        "QUESTION_GENERATION_MODE": "csv",
+        "QUESTION_REQUIRE_LLM": "false",
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "VITE_API_BASE_URL": "/api",
+    })
+    if executor_on:
+        env["CODING_EXECUTOR_URL"] = EXECUTOR_URL
+    else:
+        # Do not accidentally connect to a stale or externally supplied executor.
+        env.pop("CODING_EXECUTOR_URL", None)
+    # The backend honours the trusted local runner only in development on
+    # loopback; the launcher binds 127.0.0.1 and says so explicitly.
+    env["INTERVIV_BIND_HOST"] = "127.0.0.1"
+    if trusted_local:
+        env["INTERVIV_TRUSTED_LOCAL_EXECUTION"] = "1"
+    else:
+        env.pop("INTERVIV_TRUSTED_LOCAL_EXECUTION", None)
+    return env
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run interViv locally (offline, persistent SQLite).")
     parser.add_argument("--fetch-models", action="store_true",
                         help="download the MiniLM and faster-whisper models once before starting")
     parser.add_argument("--with-executor", action="store_true",
                         help="start the Docker coding executor so Run/Submit work")
+    parser.add_argument("--live-jobs", action="store_true",
+                        help="enable live Adzuna and Greenhouse searches (Adzuna needs credentials in .env)")
+    parser.add_argument("--trusted-local-execution", action="store_true",
+                        help="run Python coding and NumPy ML submissions in a local worker process "
+                             "when no executor is running (trusted local demo only, not a sandbox)")
     args = parser.parse_args()
 
     npm = shutil.which("npm")
@@ -167,21 +220,8 @@ def main() -> int:
     state.mkdir(exist_ok=True)
     run = state / "local-run"
     run.mkdir(exist_ok=True)
-    env = dict(os.environ)
-    # This launcher is deliberately local and offline. The existing custom
-    # run_current.sh remains available for separately configured live services.
-    env.update({
-        "DATABASE_URL": f"sqlite:///{state / 'interviv-local.sqlite3'}",
-        "ENVIRONMENT": "development",
-        "REDIS_URL": "",
-        "LLM_LIVE_FETCH": "0", "JOBS_LIVE_FETCH": "0",
-        "QUESTION_GENERATION_MODE": "csv", "QUESTION_REQUIRE_LLM": "false",
-        "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
-        "HF_HUB_DISABLE_TELEMETRY": "1",
-        "VITE_API_BASE_URL": "/api",
-    })
-    if executor_on:
-        env["CODING_EXECUTOR_URL"] = EXECUTOR_URL
+    env = _runtime_environment(state, executor_on=executor_on, live_jobs=args.live_jobs,
+                               trusted_local=args.trusted_local_execution)
     children = []
     handles = []
 
@@ -216,10 +256,16 @@ def main() -> int:
             time.sleep(0.3)
         print("App ready: http://127.0.0.1:5173", flush=True)
         print(f"Accounts and progress are saved in {state / 'interviv-local.sqlite3'}", flush=True)
+        print("Question generation uses the offline bank.", flush=True)
+        print("Live job search is enabled." if args.live_jobs else "Jobs use sample listings; pass --live-jobs for live results.", flush=True)
         if executor_on:
-            print("Offline practice is enabled. Coding Run/Submit use the local executor.", flush=True)
-        else:
-            print("Offline practice is enabled. Coding Run/Submit need the executor: rerun with --with-executor.", flush=True)
+            print("Coding Run/Submit use the local executor.", flush=True)
+        if args.trusted_local_execution:
+            print("Trusted local runner is on: Python coding and NumPy ML run in a local "
+                  "worker process (not a security sandbox; use only with your own code).", flush=True)
+        elif not executor_on:
+            print("Coding and ML need an executor: rerun with --with-executor or "
+                  "--trusted-local-execution.", flush=True)
         print("Press Ctrl+C to stop.", flush=True)
         while all(child.poll() is None for child in children):
             time.sleep(0.5)

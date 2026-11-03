@@ -13,6 +13,7 @@ Helper export:
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
@@ -56,6 +57,7 @@ from backend.round_lifecycle import (
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/session", tags=["session"])
 
 
@@ -707,10 +709,15 @@ def build_round_document(
             elo_before=elo_before, question_context=public,
             config_json={
                 "duration_minutes": duration_mins,
-                "attempt_policy": "retryable_unavailable",
+                # Graded submissions are final like coding; without an
+                # executor the stored-source retry policy applies.
+                "attempt_policy": (
+                    "single_submission_final" if public["scoring_available"]
+                    else "retryable_unavailable"
+                ),
                 "review_policy": cfg.get("review_policy", "none"),
                 "problem_id": public["id"], "problem_version": public["version"],
-                "language": "python", "scoring_available": False,
+                "language": "python", "scoring_available": public["scoring_available"],
             },
             started_at=now, expires_at=now + timedelta(minutes=duration_mins),
             status="in_progress", block_id=block_id,
@@ -2170,6 +2177,8 @@ def run_coding_preview(
             detail=str(exc),
         ) from exc
     except ExecutionUnavailableError as exc:
+        # Nothing ran: give the reserved run slot back.
+        _release_exec_slot(db, request.session_id, request.round)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -2188,6 +2197,36 @@ def run_coding_preview(
         "visible_passed": sum(1 for v in visible if v["passed"]),
         "visible_total": len(visible),
     }
+
+
+def _release_exec_slot(db: Any, session_id: str, round_number: int) -> None:
+    """Return a run slot reserved for an execution that never happened.
+
+    Candidate syntax/runtime errors and timeouts did execute and keep their
+    slot; only infrastructure failures (executor unavailable) release it.
+    """
+    from backend.db.sqlalchemy_store import SessionWriteConflict
+
+    for _ in range(3):
+        fresh = db["sessions"].find_one({"session_id": session_id})
+        if not fresh:
+            return
+        rounds = list(fresh.get("rounds") or [])
+        target = next((r for r in rounds if r.get("round") == round_number), None)
+        count = int((target or {}).get("coding_exec_count") or 0)
+        if target is None or count <= 0:
+            return
+        target["coding_exec_count"] = count - 1
+        try:
+            db["sessions"].update_one(
+                {"session_id": session_id},
+                {"$set": {"rounds": rounds}},
+                expected_revision=fresh.get("revision"),
+            )
+            return
+        except SessionWriteConflict:
+            continue
+    logger.warning("Could not release a coding run slot for %s round %s.", session_id, round_number)
 
 
 def _draft_round_or_error(

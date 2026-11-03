@@ -121,7 +121,9 @@ def evaluation_unavailable(round_type: str | None) -> bool:
     for categories this predicate has never heard of.
     """
     if round_type == "ml_primitives":
-        return True  # No evaluator exists; every submit 503s.
+        from backend.ml_primitives.catalog import scoring_available
+
+        return not scoring_available()
     if round_type == "coding":
         return not get_execution_status().get("available", False)
     return False

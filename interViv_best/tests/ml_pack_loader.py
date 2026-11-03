@@ -1,4 +1,4 @@
-"""Trusted pack loader for tests. Production routes never import this."""
+"""Test helpers over the production pack loader (backend/ml_primitives/packs.py)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ import numpy as np
 import yaml
 
 from backend.ml_primitives.catalog import PACK_ROOT
-from backend.ml_primitives.grading import OracleCase, OracleSuite, Tolerance
+from backend.ml_primitives.grading import OracleSuite
+from backend.ml_primitives.packs import as_output, build_suite
 
 
 def pack_roots() -> list[Path]:
@@ -22,12 +23,6 @@ def _load_module(path: Path, name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def as_output(value):
-    if isinstance(value, dict):
-        return {key: as_output(item) for key, item in value.items()}
-    return np.asarray(value)
 
 
 def call_function(function, inputs: dict):
@@ -76,34 +71,16 @@ def _bugs(root: Path, function_name: str, token: str) -> tuple[Bug, ...]:
 
 
 def load_pack(root: Path) -> Pack:
+    """Suite comes from the production loader; tests add the buggy variants."""
     token = f"mlpack_{root.parent.name}_{root.name}"
-    properties = _load_module(root / "properties.py", f"{token}_properties")
-    reference = _load_module(root / "reference.py", f"{token}_reference")
-    manifest = yaml.safe_load((root / "manifest.json").read_text(encoding="utf-8"))
-    function = getattr(reference, manifest["function"])
-    cases = []
-    outputs = {}
-    rng = np.random.default_rng(properties.SEED)
-    for raw in properties.generate_cases(rng):
-        output = call_function(function, raw["inputs"])
-        cases.append(OracleCase(raw["id"], raw["inputs"], output))
-        outputs[raw["id"]] = output
-    suite = OracleSuite(
-        problem_id=manifest["id"],
-        version=int(manifest["version"]),
-        seed=int(properties.SEED),
-        tolerance=Tolerance(**properties.TOLERANCE),
-        cases=tuple(cases),
-        properties=dict(properties.PROPERTIES),
-        static_rules=yaml.safe_load((root / "static_rules.yaml").read_text(encoding="utf-8")),
-    )
+    manifest, function, suite = build_suite(root)
     return Pack(
         root=root,
         problem_id=manifest["id"],
         source=(root / "reference.py").read_text(encoding="utf-8"),
         function=function,
         suite=suite,
-        outputs=outputs,
+        outputs={case.id: case.reference_output for case in suite.cases},
         bugs=_bugs(root, manifest["function"], token),
     )
 

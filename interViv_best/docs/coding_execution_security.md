@@ -62,3 +62,36 @@ Memory: allocate ~200 MiB under `run_memory_limit=67108864` → process killed, 
 - No distributed rate limit (in-process only; fine for single local API worker).
 - Fine-tuning deferred: ship stock Gemma + curated fallback; collect Socratic pairs before QLoRA/DPO.
 - Full browser Monaco verification not re-run in this security interrupt.
+
+## Trusted local runner (Docker-free demo mode)
+
+Added 2026-11-03. Started only by
+`.venv/bin/python scripts/run_local.py --trusted-local-execution`, which sets
+`INTERVIV_TRUSTED_LOCAL_EXECUTION=1` and `INTERVIV_BIND_HOST=127.0.0.1`. The
+backend honours the flag only when `ENVIRONMENT=development` and the bind host
+is loopback (`backend/local_runner.py:trusted_local_execution_enabled`); every
+other deployment keeps the Piston-only requirement above.
+
+**This is a trusted local runner, not a security sandbox.** Use it only with
+your own code on your own machine. Restricted builtins and import hooks can be
+bypassed by determined code; nothing here isolates the filesystem or network
+the way the Piston container does.
+
+| Control | Implementation |
+|---------|----------------|
+| Selection | Piston first when configured and its runtime exists; else Python only through the local runner. JavaScript, Java and C++ stay unavailable. |
+| Process | Fresh `sys.executable -I` worker per job, temporary working directory (deleted afterwards), minimal environment, own process group killed on exit. |
+| Concurrency | Shares `BoundedSemaphore(2)` with Piston jobs: at most two workers. |
+| Time | 2.5 s wall budget for candidate code, measured after a separate startup handshake (8 s). `RLIMIT_CPU` backstop. |
+| Memory | RSS watchdog (psutil) on every platform: 256 MiB Python, 512 MiB NumPy. Linux also gets `RLIMIT_AS` (limit + 1 GiB headroom for NumPy reservations); macOS does not enforce `RLIMIT_AS`. |
+| Output | 256 KB stdout cap; `RLIMIT_FSIZE` 1 MB. |
+| Imports | Candidate module (`solution` / `candidate`) may import a small stdlib allowlist (+ `numpy` for ML). `open`, `input`, `breakpoint` are replaced. |
+| Quota | Per-round run quota is reserved before execution and released when the executor never ran; candidate syntax/runtime errors and timeouts count. |
+| Data | Expected outputs and hidden tests stay in the API process; hidden outcomes are aggregate only. ML arrays cross the boundary as JSON with explicit dtype/shape, never pickle. |
+
+ML primitives (`backend/ml_primitives/evaluate.py`, scorer `v1-ml-primitives`)
+run only through this runner: score = 100 × cases passing every numerical
+check ÷ cases. Imports outside the pack allowlist and syntax errors are
+candidate errors and are not executed. Static/vectorization findings are
+reported separately and do not change the score. Tests:
+`tests/test_local_runner.py`, `tests/test_ml_execution.py`.

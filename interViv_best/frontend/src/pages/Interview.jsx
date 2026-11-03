@@ -764,8 +764,8 @@ export default function Interview({ sessionState = null }) {
       if (isSystemDesign) {
         payload.rubric_ratings = rubricRatings || {};
       }
-      if (roundType === 'coding') {
-        payload.language = options.language || configJson.language || 'python';
+      if (roundType === 'coding' || roundType === 'ml_primitives') {
+        if (roundType === 'coding') payload.language = options.language || configJson.language || 'python';
         delete payload.engagement_label;
         delete payload.engagement_confidence;
         delete payload.engagement_delta;
@@ -1170,9 +1170,7 @@ export default function Interview({ sessionState = null }) {
         </div>
       ) : roundType === 'ml_primitives' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <MLPrimitivesRound key={roundKey}
-            sessionId={sessionId} round={round} questionContext={questionContext}
-            configJson={configJson} expiresAt={expiresAt} />
+          <MLPrimitivesRound key={roundKey} {...roundProps} />
         </div>
       ) : roundType === 'system_design' ? (
         <div className="flex-1 overflow-y-auto min-h-0">

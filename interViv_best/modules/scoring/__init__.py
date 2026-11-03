@@ -6,6 +6,7 @@ Routes an answered round to the scorer for its ``round_type``:
 - ``sql``: sandboxed multi-case SQLite evaluation.
 - ``coding``: execution-outcome aggregation over visible/hidden pass rates.
 - ``system_design``: structured self-assessment aggregation (no diagram judge).
+- ``ml_primitives``: executed NumPy cases vs the pack oracle (v1-ml-primitives).
 
 Deterministic like everything it calls: no LLM, no reviewer, no tie-breaker
 (see AGENTS.md section 6). Unknown types raise; they never fall back.
@@ -23,6 +24,7 @@ MCQ = "mcq"
 SQL = "sql"
 CODING = "coding"
 SYSTEM_DESIGN = "system_design"
+ML_PRIMITIVES = "ml_primitives"
 
 
 class UnsupportedRoundTypeError(ValueError):
@@ -121,6 +123,15 @@ def score_round(
             answer=answer_text or "",
             rubric_ratings=rubric_ratings,
             question_context=question_context or {},
+            config=config or {},
+            **kwargs,
+        )
+
+    if round_type == ML_PRIMITIVES:
+        from modules.scoring.ml_primitives import score_ml_primitives_round
+
+        return score_ml_primitives_round(
+            candidate_source=answer_text or "",
             config=config or {},
             **kwargs,
         )

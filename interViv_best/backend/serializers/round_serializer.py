@@ -114,6 +114,22 @@ def sanitize_round_for_client(
         )
         result = {key: cleaned[key] for key in safe_keys if key in cleaned}
         result.update(question=public["title"], question_context=public, final_score=None)
+        artifact = cleaned.get("artifact_json") or {}
+        if artifact.get("evaluation") == "ml_primitives" and cleaned.get("final_score") is not None:
+            # Graded result: public fields only (case ids, pass/fail, error
+            # kinds, property names, static findings). No inputs or oracle.
+            result["final_score"] = cleaned["final_score"]
+            for key in ("feedback", "answer_text", "evaluation_mode", "evidence_kind",
+                        "assessment_eligibility", "elo_before", "elo_after"):
+                if key in cleaned:
+                    result[key] = cleaned[key]
+            result["artifact_json"] = {
+                key: artifact[key] for key in (
+                    "evaluation", "problem_id", "grader_version", "status", "cases",
+                    "cases_passed", "cases_total", "properties", "static_findings",
+                    "execution_status", "final_score",
+                ) if key in artifact
+            }
         result["config_json"] = {
             key: config[key] for key in (
                 "duration_minutes", "attempt_policy", "review_policy",

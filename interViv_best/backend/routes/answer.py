@@ -738,28 +738,6 @@ def submit_answer(
             # Takeover path: release must undo the claim, not re-persist it.
             pre_submit_round["status"] = "in_progress"
 
-        if round_type == "ml_primitives":
-            from backend.routes.ml_primitives import store_unavailable_attempt
-
-            # Persist before returning 503. No scorer, executor, or aggregate
-            # update runs on this path, and an unsuccessful write is never
-            # represented as an accepted submission. The claim is always
-            # released (attempt stored or store failure): like the coding
-            # unavailable seam, the round stays openly resubmittable instead
-            # of stuck in "finalizing".
-            try:
-                detail = store_unavailable_attempt(db, session, active_round, request.answer_text)
-            finally:
-                _release_claim_to_pre_submit(
-                    db,
-                    request.session_id,
-                    rounds,
-                    request.round,
-                    pre_submit_round,
-                    expected_revision=session.get("revision"),
-                )
-            raise HTTPException(status_code=503, detail=detail)
-
         # Which skill does THIS round belong to?
         current_skill = _skill_for_round(session, request.round)
 
@@ -827,6 +805,27 @@ def submit_answer(
                     executor=partial(execute_python_tests, language=language, problem=problem),
                 )
                 active_round["config_json"] = {**coding_config, "language": language}
+            elif round_type == "ml_primitives":
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Authentication is required for ML primitives rounds.",
+                    )
+                from backend.ml_primitives.catalog import scoring_available as ml_available
+
+                if not ml_available():
+                    # No executor: nothing is run or scored; source is stored below.
+                    raise ExecutionUnavailableError(
+                        "ML execution is unavailable in this environment."
+                    )
+                # Same per-user and per-round execution quota as coding; an
+                # infrastructure failure releases it with the claim below.
+                assert_coding_exec_allowed(str(user["id"]), active_round)
+                scoring_result = score_round(
+                    round_type="ml_primitives",
+                    answer_text=request.answer_text,
+                    config=active_round.get("config_json", {}),
+                )
             elif round_type == "system_design":
                 scoring_result = score_round(
                     round_type="system_design",
@@ -893,6 +892,15 @@ def submit_answer(
                         error=str(exc),
                         language=request.language,
                     )
+                if round_type == "ml_primitives":
+                    from backend.routes.ml_primitives import store_unavailable_attempt
+
+                    # Source stored as unevaluated history; the round stays
+                    # open and the retry is a plain resubmit.
+                    detail = store_unavailable_attempt(
+                        db, session, active_round, request.answer_text
+                    )
+                    raise HTTPException(status_code=503, detail=detail) from exc
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
                 ) from exc
@@ -926,6 +934,11 @@ def submit_answer(
                 hidden_total=explanation.get("hidden_total"),
                 error=None,
             )
+
+        if round_type == "ml_primitives":
+            from backend.routes.ml_primitives import store_graded_attempt
+
+            store_graded_attempt(db, session, active_round, request.answer_text, scoring_result)
 
         if round_type == "system_design":
             incomplete = bool(scoring_result.get("incomplete"))

@@ -1,9 +1,14 @@
-"""Local Piston client. Candidate code runs only in the external sandbox.
+"""Coding execution: local Piston first, trusted local Python as a demo fallback.
 
 The server compares returned values with private expectations. Infrastructure
-failure stays retryable and never becomes a candidate score. Disabled by
-default; set ``CODING_EXECUTOR_URL=http://127.0.0.1:19000`` only after isolation
-probes pass. Public executors (emkc.org and similar) are rejected.
+failure stays retryable and never becomes a candidate score. Piston is disabled
+by default; set ``CODING_EXECUTOR_URL=http://127.0.0.1:19000`` only after
+isolation probes pass. Public executors (emkc.org and similar) are rejected.
+
+When Piston is unavailable and ``scripts/run_local.py --trusted-local-execution``
+enabled the trusted local runner (backend/local_runner.py: development only,
+loopback only), Python solutions run in a fresh local worker process. That
+runner is not a security sandbox; other languages stay unavailable.
 """
 
 from __future__ import annotations
@@ -21,6 +26,17 @@ from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 from backend.coding_languages import LANGUAGES, build_driver, normalize_language
+from backend.local_runner import (
+    CANDIDATE_BUDGET_SECONDS,
+    LocalRunnerUnavailable,
+    describe_mode as describe_local_mode,
+    run_python_job,
+    trusted_local_execution_enabled,
+)
+
+MODE_PISTON = "piston"
+MODE_TRUSTED_LOCAL = "trusted_local"
+MODE_UNAVAILABLE = "unavailable"
 
 # Only this loopback URL is accepted. Never emkc.org / public Piston.
 ALLOWED_EXECUTOR_URL = "http://127.0.0.1:19000"
@@ -224,6 +240,58 @@ def _equal(actual: Any, expected: Any) -> bool:
     return type(actual) is type(expected) and actual == expected
 
 
+def _select_backend(language: str) -> tuple[str, dict | None]:
+    """Piston when configured and its runtime exists; else trusted local Python."""
+    try:
+        return MODE_PISTON, _runtime(language)
+    except ExecutionUnavailableError:
+        if language == "python" and trusted_local_execution_enabled():
+            return MODE_TRUSTED_LOCAL, None
+        raise
+
+
+def _run_piston(files: list[dict], runtime: dict, limits: CodingLimits) -> tuple[bool, str, str, str]:
+    response = _service_request("execute", {
+        "language": runtime["language"], "version": runtime["version"],
+        "files": files, "stdin": "", "args": [],
+        "compile_timeout": 15000, "run_timeout": int(limits.wall_seconds * 1000),
+        "compile_cpu_time": 10000, "run_cpu_time": 3000,
+        "compile_memory_limit": 768 * 1024 * 1024,
+        "run_memory_limit": limits.memory_mb * 1024 * 1024,
+    })
+    if not isinstance(response, dict):
+        raise ExecutionUnavailableError()
+    compile_result = response.get("compile") or {}
+    run = response.get("run") or {}
+    if compile_result.get("status") == "XX" or run.get("status") == "XX":
+        raise ExecutionUnavailableError()
+    compile_failed = bool(compile_result and (compile_result.get("code") != 0 or compile_result.get("signal")))
+    if not compile_failed and not run:
+        raise ExecutionUnavailableError()
+    failure = ("compile" if compile_failed else
+               "timeout" if run.get("status") == "TO" else "runtime")
+    diagnostics = str((compile_result if compile_failed else run).get("stderr") or "")[:4000]
+    return compile_failed, failure, str(run.get("stdout") or ""), diagnostics
+
+
+_LOCAL_NOTES = {
+    "memory": "Memory limit exceeded.",
+    "output_limit": "Output limit exceeded.",
+    "timeout": f"Time limit of {CANDIDATE_BUDGET_SECONDS:g}s exceeded.",
+}
+
+
+def _run_trusted_local(files: list[dict]) -> tuple[bool, str, str, str]:
+    try:
+        result = run_python_job({f["name"]: f["content"] for f in files}, driver="main.py")
+    except LocalRunnerUnavailable as exc:
+        raise ExecutionUnavailableError() from exc
+    failure = "timeout" if result.status == "timeout" else "runtime"
+    note = _LOCAL_NOTES.get(result.status, "")
+    diagnostics = "\n".join(part for part in (note, result.stderr.strip()) if part)[:4000]
+    return False, failure, result.stdout, diagnostics
+
+
 def execute_tests(*, source: str, function: str, visible_tests: list[dict],
                   hidden_tests: list[dict], language: str = "python",
                   problem: dict | None = None, limits: CodingLimits | None = None) -> dict:
@@ -233,7 +301,7 @@ def execute_tests(*, source: str, function: str, visible_tests: list[dict],
     if not _JOBS.acquire(blocking=False):
         raise ExecutionUnavailableError("Both execution slots are busy. Nothing was scored; retry shortly.")
     try:
-        runtime = _runtime(language)
+        mode, runtime = _select_backend(language)
         tests = visible_tests + hidden_tests
         limits = limits or DEFAULT_LIMITS
         marker = "INTERVIV_" + uuid4().hex + ":"
@@ -244,26 +312,10 @@ def execute_tests(*, source: str, function: str, visible_tests: list[dict],
             outcomes = [{"passed": False, "error": "compile",
                          "message": f"Line {exc.lineno}: {exc.msg}"} for _ in tests]
             return _public_outcomes(outcomes, len(visible_tests))
-        response = _service_request("execute", {
-            "language": runtime["language"], "version": runtime["version"],
-            "files": files, "stdin": "", "args": [],
-            "compile_timeout": 15000, "run_timeout": int(limits.wall_seconds * 1000),
-            "compile_cpu_time": 10000, "run_cpu_time": 3000,
-            "compile_memory_limit": 768 * 1024 * 1024,
-            "run_memory_limit": limits.memory_mb * 1024 * 1024,
-        })
-        if not isinstance(response, dict):
-            raise ExecutionUnavailableError()
-        compile_result = response.get("compile") or {}
-        run = response.get("run") or {}
-        if compile_result.get("status") == "XX" or run.get("status") == "XX":
-            raise ExecutionUnavailableError()
-        compile_failed = bool(compile_result and (compile_result.get("code") != 0 or compile_result.get("signal")))
-        if not compile_failed and not run:
-            raise ExecutionUnavailableError()
-        failure = ("compile" if compile_failed else
-                   "timeout" if run.get("status") == "TO" else "runtime")
-        output = str(run.get("stdout") or "")
+        if mode == MODE_PISTON:
+            compile_failed, failure, output, diagnostics = _run_piston(files, runtime, limits)
+        else:
+            compile_failed, failure, output, diagnostics = _run_trusted_local(files)
         records = {}
         for line in output.splitlines():
             if not line.startswith(marker):
@@ -277,7 +329,6 @@ def execute_tests(*, source: str, function: str, visible_tests: list[dict],
             except (ValueError, KeyError, TypeError):
                 records = {}
                 break
-        diagnostics = str((compile_result if compile_failed else run).get("stderr") or "")[:4000]
         outcomes = []
         for i, case in enumerate(tests):
             record = records.get(i, {})
@@ -288,7 +339,9 @@ def execute_tests(*, source: str, function: str, visible_tests: list[dict],
                 outcome.update({"actual": record.get("value"),
                                 "message": str(record.get("message") or diagnostics)[:4000]})
             outcomes.append(outcome)
-        return _public_outcomes(outcomes, len(visible_tests))
+        result = _public_outcomes(outcomes, len(visible_tests))
+        result["mode"] = mode
+        return result
     finally:
         _JOBS.release()
 
@@ -300,21 +353,37 @@ def _public_outcomes(outcomes: list[dict], visible_count: int) -> dict:
 
 
 def get_execution_status() -> dict[str, Any]:
-    """Machine-readable execution availability for honest UI affordances."""
+    """Machine-readable execution availability for honest UI affordances.
+
+    ``languages[]`` keeps its shape and adds ``mode`` per language:
+    ``piston``, ``trusted_local`` (Python only, local demo) or ``unavailable``.
+    """
     try:
         runtimes = _service_request("runtimes")
     except ExecutionUnavailableError:
         runtimes = []
     if not isinstance(runtimes, list):
         runtimes = []
+    local = trusted_local_execution_enabled()
     languages = []
     for language, spec in LANGUAGES.items():
-        available = any(isinstance(r, dict) and r.get("language") == spec["runtime"]
+        on_piston = any(isinstance(r, dict) and r.get("language") == spec["runtime"]
                         and r.get("version") == spec["version"] for r in runtimes)
-        languages.append({"id": language, **spec, "available": available})
+        mode = (MODE_PISTON if on_piston
+                else MODE_TRUSTED_LOCAL if (local and language == "python")
+                else MODE_UNAVAILABLE)
+        languages.append({"id": language, **spec, "available": mode != MODE_UNAVAILABLE,
+                          "mode": mode})
     available = any(item["available"] for item in languages)
-    return {"available": available, "reason": None if available else UNAVAILABLE_REASON,
-            "missing": [] if available else list(MISSING_INFRASTRUCTURE),
-            "languages": languages, "limits": asdict(DEFAULT_LIMITS), "provider": "piston",
-            "executor_url_policy": ALLOWED_EXECUTOR_URL,
-            "scoring": "Deterministic visible and hidden test comparison; no AI judge."}
+    modes = {item["mode"] for item in languages if item["available"]}
+    provider = (MODE_PISTON if MODE_PISTON in modes
+                else MODE_TRUSTED_LOCAL if MODE_TRUSTED_LOCAL in modes
+                else MODE_PISTON)
+    status = {"available": available, "reason": None if available else UNAVAILABLE_REASON,
+              "missing": [] if available else list(MISSING_INFRASTRUCTURE),
+              "languages": languages, "limits": asdict(DEFAULT_LIMITS), "provider": provider,
+              "executor_url_policy": ALLOWED_EXECUTOR_URL,
+              "scoring": "Deterministic visible and hidden test comparison; no AI judge."}
+    if local:
+        status["trusted_local"] = describe_local_mode()
+    return status

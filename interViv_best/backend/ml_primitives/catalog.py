@@ -14,7 +14,15 @@ UNAVAILABLE_MESSAGE = (
 )
 
 
+def scoring_available() -> bool:
+    """Computed from the executor actually configured (trusted local runner)."""
+    from backend.local_runner import trusted_local_execution_enabled
+
+    return trusted_local_execution_enabled()
+
+
 def list_problems():
+    available = scoring_available()
     items = []
     for path in sorted(PACK_ROOT.glob("*/v*/manifest.json")):
         metadata = json.loads(path.read_text(encoding="utf-8"))
@@ -25,7 +33,7 @@ def list_problems():
         item.update(
             statement=(path.parent / "statement.md").read_text(encoding="utf-8"),
             category="ml_primitives", type="ml_primitives", language="python",
-            scoring_available=False,
+            scoring_available=available,
         )
         items.append(item)
     return items
