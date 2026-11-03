@@ -16,7 +16,11 @@ export default function MCQRound({
   onSubmit,
   onNextRound,
   sessionComplete = false,
+  submitted = null,
+  nextBusy = false,
 }) {
+  // Result view follows the submission status, scored or not.
+  const closed = submitted ?? (currentScore !== null);
   const questions = questionContext?.questions || [];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -30,7 +34,7 @@ export default function MCQRound({
   // Safe recovery: restore owned draft once per session/round.
   useEffect(() => {
     const key = `${sessionId}:${round}`;
-    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
+    if (!sessionId || closed || draftLoadedFor.current === key) return undefined;
     draftLoadedFor.current = key;
     let cancelled = false;
     fetchAnswerDraft(sessionId, round)
@@ -54,11 +58,11 @@ export default function MCQRound({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, round, currentScore, questions]);
+  }, [sessionId, round, closed, questions]);
 
   // Autosave selections (debounced); expired/submitted rounds reject safely.
   useEffect(() => {
-    if (!sessionId || currentScore !== null || Object.keys(answers).length === 0) return undefined;
+    if (!sessionId || closed || Object.keys(answers).length === 0) return undefined;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
       const formatted = formatMCQSubmission(questions, answers);
@@ -67,11 +71,11 @@ export default function MCQRound({
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
     };
-  }, [answers, sessionId, round, questions, currentScore]);
+  }, [answers, sessionId, round, questions, closed]);
 
   // Countdown timer
   useEffect(() => {
-    if (currentScore !== null || isScoring || secondsRemaining <= 0) return undefined;
+    if (closed || isScoring || secondsRemaining <= 0) return undefined;
     const interval = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
@@ -84,14 +88,14 @@ export default function MCQRound({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [currentScore, isScoring, secondsRemaining]);
+  }, [closed, isScoring, secondsRemaining]);
 
   const currentQ = questions[currentIndex] || null;
   const totalQuestions = questions.length;
   const answeredCount = Object.keys(answers).length;
 
   const handleSelectOption = (optId) => {
-    if (currentScore !== null || isScoring || !currentQ) return;
+    if (closed || isScoring || !currentQ) return;
     setAnswers(prev => {
       // Toggle if already selected, or select new
       if (prev[currentQ.id] === optId) {
@@ -104,7 +108,7 @@ export default function MCQRound({
   };
 
   const handleSubmit = () => {
-    if (isScoring || currentScore !== null) return;
+    if (isScoring || closed) return;
     const formatted = formatMCQSubmission(questions, answers);
     onSubmit({ answers: formatted });
   };
@@ -116,7 +120,7 @@ export default function MCQRound({
   };
 
   // Review Summary View after scoring
-  if (currentScore !== null) {
+  if (closed) {
     const artifactQuestions =
       currentArtifact?.questions ||
       currentArtifact?.question_results ||
@@ -149,15 +153,16 @@ export default function MCQRound({
           </div>
           <div className="flex items-center gap-6">
             <div className="text-center">
-              <span className="block text-3xl font-extrabold text-blue-600">{currentScore.toFixed(1)}%</span>
+              <span className="block text-3xl font-extrabold text-blue-600">{currentScore == null ? 'Not scored' : `${currentScore.toFixed(1)}%`}</span>
               <span className="text-xs text-gray-500 uppercase font-medium">Final Score</span>
             </div>
             {onNextRound && (
               <button
                 onClick={onNextRound}
+                disabled={nextBusy}
                 className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
               >
-                {sessionComplete ? 'View Summary' : 'Next Round'}
+                {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next Round')}
               </button>
             )}
           </div>

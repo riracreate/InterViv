@@ -13,6 +13,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 
 
@@ -68,9 +69,12 @@ def test_round_plan_mcq_then_sql_session() -> None:
     data = ans.json()
     assert data["session_complete"] is False
     assert data["next_round_type"] == "sql"
-    assert data.get("next_question")
-    assert data.get("next_question_context")
-    assert "schema_ddl" in (data.get("next_question_context") or {})
+    assert data["next_round"] == 2 and data["next_round_status"] == "ready"
+    # The SQL prompt is revealed only when the round is opened.
+    assert data.get("next_question") is None
+    opened = activate(client, headers, body["session_id"], 2)
+    assert opened.get("question")
+    assert "schema_ddl" in (opened.get("question_context") or {})
 
 
 def test_practice_bank_lists_mcq_and_sql_without_answers() -> None:

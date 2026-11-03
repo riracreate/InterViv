@@ -35,6 +35,7 @@ from backend.db.sqlalchemy_store import (
     get_engine,
     get_sqlalchemy_database,
 )
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 from tests.alembic_helpers import parent_revision
 
@@ -284,10 +285,13 @@ def test_mixed_repeated_blocks_progress_through_sqlalchemy(sa_url) -> None:
     assert ans1.status_code == 200, ans1.text
     assert ans1.json()["next_round_type"] == "mcq"
     assert ans1.json()["next_block_category"] == "verbal"
-    verbal_questions = ans1.json()["next_question_context"]["questions"]
-    assert all(q["skill"] == "Verbal Ability" for q in verbal_questions)
+    assert ans1.json()["next_question_context"] is None  # revealed on activation
     _assert_candidate_safe(ans1.json())
 
+    opened2 = activate(client, headers, session_id, 2)
+    verbal_questions = opened2["question_context"]["questions"]
+    assert all(q["skill"] == "Verbal Ability" for q in verbal_questions)
+    _assert_candidate_safe(opened2)
     ans2 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 2,
         "answers": _mcq_answers(verbal_questions),
@@ -296,6 +300,7 @@ def test_mixed_repeated_blocks_progress_through_sqlalchemy(sa_url) -> None:
     assert ans2.json()["next_round_type"] == "technical_short_answer"
     assert ans2.json()["next_block_category"] == "interview"
 
+    activate(client, headers, session_id, 3)
     ans3 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 3,
         "answer_text": "A primary key uniquely identifies each row in a table.",
@@ -303,11 +308,13 @@ def test_mixed_repeated_blocks_progress_through_sqlalchemy(sa_url) -> None:
     assert ans3.status_code == 200, ans3.text
     assert ans3.json()["next_round_type"] == "mcq"
     assert ans3.json()["next_block_position"] == 4
-    python_questions = ans3.json()["next_question_context"]["questions"]
-    assert len(python_questions) == 2
-    assert all(q["skill"] == "Python" for q in python_questions)
     _assert_candidate_safe(ans3.json())
 
+    opened4 = activate(client, headers, session_id, 4)
+    python_questions = opened4["question_context"]["questions"]
+    assert len(python_questions) == 2
+    assert all(q["skill"] == "Python" for q in python_questions)
+    _assert_candidate_safe(opened4)
     ans4 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 4,
         "answers": _mcq_answers(python_questions),
@@ -319,6 +326,7 @@ def test_mixed_repeated_blocks_progress_through_sqlalchemy(sa_url) -> None:
     raw = get_database()["sessions"].find_one({"session_id": session_id})
     ref_query = raw["rounds"][4]["question_context"].get("reference_query")
     assert ref_query
+    activate(client, headers, session_id, 5)
     ans5 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 5, "answer_text": ref_query,
     })
@@ -731,4 +739,5 @@ def test_legacy_session_without_plans_still_progresses(sa_url) -> None:
     })
     assert ans2.status_code == 200, ans2.text
     assert ans2.json()["next_round_type"] == "mcq"
-    assert len(ans2.json()["next_question_context"]["questions"]) == 15
+    opened = activate(client, headers, "b1-leg-fallback", 2)
+    assert len(opened["question_context"]["questions"]) == 15

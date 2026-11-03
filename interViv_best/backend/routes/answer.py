@@ -60,6 +60,13 @@ from backend.evidence_kind import (
 from modules import adaptive_question_selector
 from modules.attempt_snapshot import freeze_attempt_snapshot
 from modules.narration_jobs import enqueue_narration_job
+from backend.round_lifecycle import (
+    DURATION_SECONDS_KEY,
+    ROUND_STATUS_READY,
+    is_ready,
+    prepare_round,
+    round_not_active_detail,
+)
 from modules.scoring import UnsupportedRoundTypeError, score_round
 from modules.concept_mastery import ConceptMastery
 from modules.skill_graph import StudentSkillGraph
@@ -331,6 +338,29 @@ def _assistance_for_round(
         return False, []
 
 
+def _settle_narration(db: Any, session_id: str, round_number: int) -> str | None:
+    """Return the round's narration job status, rendering it now when possible.
+
+    With live narration off, the worker's only output is the deterministic
+    rules script, so it is rendered here (post-commit, no network) instead of
+    leaving the job queued for a worker that the local app never runs. With
+    live narration on, the job stays queued for the worker.
+    """
+    from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.narration_jobs import narration_job_id, process_narration_job
+
+    job_id = narration_job_id(session_id, round_number)
+    try:
+        if llm_live_fetch_enabled():
+            job = db["narration_jobs"].find_one({"id": job_id})
+        else:
+            job = process_narration_job(db, job_id)
+    except Exception:
+        logger.warning("Narration settle failed for %s.", job_id, exc_info=True)
+        return None
+    return (job or {}).get("status")
+
+
 def _release_claim_to_pre_submit(
     db: Any,
     session_id: str,
@@ -572,6 +602,12 @@ def submit_answer(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Round type '{round_type}' rejects 'answers'.",
                 )
+
+        if is_ready(active_round):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=round_not_active_detail(active_round),
+            )
 
         now = datetime.now(timezone.utc)
 
@@ -1229,17 +1265,15 @@ def submit_answer(
 
             total_rounds = _total_rounds(session, settings)
 
-            next_question: str | None = None
             next_skill: str | None = None
             next_target: dict[str, object] | None = None
             response_next_difficulty = next_difficulty
             next_round_type: str | None = None
-            next_question_context: dict[str, object] | None = None
-            next_config_json: dict[str, object] | None = None
-            next_expires_at: str | None = None
             next_block_id: str | None = None
             next_block_position: int | None = None
             next_block_category: str | None = None
+            next_round_number: int | None = None
+            next_round_status: str | None = None
             # When the next question cannot be supplied after a successful
             # evaluation, keep the scored result and mark the session blocked
             # instead of rolling the answer back.
@@ -1272,19 +1306,11 @@ def submit_answer(
                         None,
                     )
                     if existing_next is not None:
-                        sanitized_existing = sanitize_round_for_client(dict(existing_next))
-                        next_question = existing_next.get("question")
                         next_skill = existing_next.get("skill") or _skill_for_round(session, next_round)
                         next_round_type = existing_next.get("round_type")
                         response_next_difficulty = existing_next.get("difficulty", next_difficulty)
-                        next_question_context = sanitized_existing.get("question_context") or {}
-                        next_config_json = dict(existing_next.get("config_json") or {})
-                        raw_expires = existing_next.get("expires_at")
-                        next_expires_at = (
-                            raw_expires.isoformat()
-                            if hasattr(raw_expires, "isoformat")
-                            else (raw_expires if isinstance(raw_expires, str) else None)
-                        )
+                        next_round_number = next_round
+                        next_round_status = existing_next.get("status")
                         next_block_id = existing_next.get("block_id")
                         next_block_position = existing_next.get("block_position")
                         next_block_category = existing_next.get("block_category")
@@ -1398,18 +1424,15 @@ def submit_answer(
                             if next_doc is None:
                                 pass
                             else:
-                                next_payload = next_doc.model_dump()
+                                # Prepared, not started: the clock runs from
+                                # POST /session/{id}/rounds/{n}/activate.
+                                next_payload = prepare_round(next_doc.model_dump())
                                 rounds.append(next_payload)
-                                next_question = next_doc.question
                                 next_skill = rotation_skill
                                 next_round_type = planned_type
                                 response_next_difficulty = next_doc.difficulty
-                                sanitized = sanitize_round_for_client(next_payload)
-                                next_question_context = sanitized.get("question_context") or {}
-                                next_config_json = next_doc.config_json or {}
-                                next_expires_at = (
-                                    next_doc.expires_at.isoformat() if next_doc.expires_at else None
-                                )
+                                next_round_number = next_round
+                                next_round_status = next_payload["status"]
                                 next_block_id = next_doc.block_id
                                 next_block_position = next_doc.block_position
                                 next_block_category = next_doc.block_category
@@ -1491,18 +1514,13 @@ def submit_answer(
                                 next_target = target.to_dict()
                                 next_round_type = "technical_short_answer"
 
-                                next_expires_value = None
                                 next_config_value: dict[str, Any] = {}
                                 if expanded_spec and expanded_spec.get("duration_minutes"):
-                                    from datetime import timedelta as _timedelta
-                                    activated = datetime.now(timezone.utc)
-                                    next_expires_value = activated + _timedelta(
-                                        minutes=int(expanded_spec["duration_minutes"])
-                                    )
+                                    minutes = int(expanded_spec["duration_minutes"])
                                     next_config_value = {
-                                        "duration_minutes": int(expanded_spec["duration_minutes"])
+                                        "duration_minutes": minutes,
+                                        DURATION_SECONDS_KEY: minutes * 60,
                                     }
-                                    next_expires_at = next_expires_value.isoformat()
                                 next_round_doc = {
                                     "round": next_round,
                                     "skill": next_skill,
@@ -1522,9 +1540,10 @@ def submit_answer(
                                     "elo_before": next_skill_elo,
                                     "elo_after": None,
                                     "question_context": question_payload,
-                                    "started_at": datetime.now(timezone.utc),
-                                    "expires_at": next_expires_value,
-                                    "status": "in_progress",
+                                    # Prepared, not started (see backend/round_lifecycle.py).
+                                    "started_at": None,
+                                    "expires_at": None,
+                                    "status": ROUND_STATUS_READY,
                                     "block_id": (expanded_spec or {}).get("block_id"),
                                     "block_position": (expanded_spec or {}).get("block_position"),
                                     "block_category": (expanded_spec or {}).get("category")
@@ -1568,10 +1587,8 @@ def submit_answer(
                                             "followups": [],
                                         }
                                 rounds.append(next_round_doc)
-                                next_question = question_payload["question"]
-                                sanitized_next = sanitize_round_for_client(dict(next_round_doc))
-                                next_question_context = sanitized_next.get("question_context") or {}
-                                next_config_json = next_config_value
+                                next_round_number = next_round
+                                next_round_status = ROUND_STATUS_READY
                                 next_block_id = (expanded_spec or {}).get("block_id")
                                 next_block_position = (expanded_spec or {}).get("block_position")
                                 next_block_category = (expanded_spec or {}).get("category")
@@ -1719,6 +1736,8 @@ def submit_answer(
         except Exception:
             logger.warning("Failed to clear answer draft.", exc_info=True)
 
+        narration_status = _settle_narration(db, request.session_id, request.round)
+
         resp_artifact = scoring_result.get("artifact_json")
         if round_type == "sql" and resp_artifact:
             resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)
@@ -1751,11 +1770,16 @@ def submit_answer(
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
             "artifact_json": resp_artifact,
             "guard_applied": scoring_result.get("guard_applied"),
-            "next_question": next_question,
-            "next_round_type": next_round_type or ("technical_short_answer" if next_question else None),
-            "next_question_context": next_question_context,
-            "next_config_json": next_config_json,
-            "next_expires_at": next_expires_at,
+            # The next prompt is revealed only by activation, so reading time
+            # is never free; these keys stay for compatibility and are null.
+            "next_question": None,
+            "next_round_type": next_round_type,
+            "next_question_context": None,
+            "next_config_json": None,
+            "next_expires_at": None,
+            "next_round": next_round_number,
+            "next_round_status": next_round_status,
+            "narration_status": narration_status,
             "next_difficulty": response_next_difficulty,
             "next_skill": next_skill,
             "next_block_id": next_block_id,

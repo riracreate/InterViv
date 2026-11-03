@@ -163,7 +163,9 @@ def test_gate_off_shared_topic_multi_skill_block_starts() -> None:
     assert _round_sub_domain(start.json()["session_id"], 1) == "concurrency"
 
 
-def test_gate_off_topic_exhaustion_preserves_scored_answer() -> None:
+def test_gate_off_topic_exhaustion_preserves_scored_answer(monkeypatch) -> None:
+    # Pin the gate: other modules set LLM_LIVE_FETCH at import time.
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
     client = TestClient(app)
     headers = _headers(_make_user("t3a-exhaust"))
     # One transactions/medium row exists: round 2 cannot be supplied.
@@ -208,7 +210,8 @@ def test_gate_off_topic_exhaustion_preserves_scored_answer() -> None:
     from modules.narration_jobs import narration_job_id
     job = db["narration_jobs"].find_one({"id": narration_job_id(session_id, 1)})
     assert job is not None
-    assert job["status"] == "queued"
+    # Live narration is off here, so the rules script is rendered at submit.
+    assert job["status"] == "skipped"
     assert job["snapshot_digest"] == snapshot["digest"]
     assert job["final_score"] == body["final_score"]
 

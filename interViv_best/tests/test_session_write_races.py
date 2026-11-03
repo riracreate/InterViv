@@ -34,6 +34,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!
 from backend.auth.security import create_access_token, hash_password  # noqa: E402
 from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
+from tests.round_helpers import activate  # noqa: E402
 
 
 def _clear_db_caches() -> None:
@@ -246,6 +247,8 @@ def test_submit_racing_schedule_both_effects_survive(
         "answer_text": "A primary key uniquely identifies each row.",
     })
     assert first.status_code == 200, first.text
+    # Open round 2 (the UI's "Next Question") before the gated race.
+    activate(client, headers, sid, 2)
 
     from backend.routes import answer as answer_module
 
@@ -293,17 +296,25 @@ def test_submit_racing_schedule_both_effects_survive(
     from modules.follow_ups import pending_follow_ups
 
     pending = pending_follow_ups(final)
-    assert len(pending) == 1
-    assert pending[0]["follow_up_parent_round"] == 1
     # Either serialization is valid, and each is self-consistent.
     if len(rounds) == 2:
+        # Submit won: the session finished first; the follow-up stays
+        # scheduled but was never reached.
         assert final["status"] == "completed"
+        assert len(pending) == 1
+        assert pending[0]["follow_up_parent_round"] == 1
     else:
+        # Schedule won: progression materialized the follow-up as round 3,
+        # prepared and opened by the candidate.
         assert final["status"] == "active"
-        assert rounds[2]["status"] == "in_progress"
-    # Exactly three session writes happened (round-1 submit, schedule,
-    # round-2 submit); the rolled-back attempt left no trace.
-    assert final["revision"] == 3
+        assert rounds[2]["status"] == "ready"
+        assert rounds[2]["is_follow_up"] is True
+        assert rounds[2]["follow_up_parent_round"] == 1
+        assert pending == []
+    # Exactly four session writes happened (round-1 submit, round-2
+    # activation, schedule, round-2 submit); the rolled-back attempt left
+    # no trace.
+    assert final["revision"] == 4
     assert len(_narrations_for(db, sid, 2)) == 1
     assert len(_exposures_for(db, sid, 1)) == 1
     assert len(_elo_deltas_for(sid)) == 2

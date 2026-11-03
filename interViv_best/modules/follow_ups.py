@@ -269,10 +269,12 @@ def schedule_follow_up_in_session(
     # Prefer appending after all currently assigned mandatory+optional so we
     # never renumber already materialized rounds.
     insert_at = len(expanded)
-    expanded.append(plan_entry)
-    new_total = max(int(session.get("total_rounds") or 0) + 1, len(expanded))
+    new_total = max(int(session.get("total_rounds") or 0) + 1, len(expanded) + 1)
     if new_total > MAX_TOTAL_ROUNDS:
         return {"scheduled": False, "reason": "no_capacity"}
+    # Progression finds a round's spec by its ``round`` number; without it
+    # the follow-up was built as an ordinary question.
+    expanded.append({**plan_entry, "round": new_total})
     return {
         "scheduled": True,
         "reason": "",

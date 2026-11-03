@@ -39,6 +39,7 @@ from backend.db.sqlalchemy_store import (
     get_sqlalchemy_database,
 )
 from backend.main import app
+from tests.round_helpers import activate  # noqa: E402
 from modules.attempt_snapshot import (
     regenerate_rules_feedback,
     verify_attempt_snapshot,
@@ -81,6 +82,9 @@ def _stored_round(session_id: str, number: int) -> dict:
 
 
 def _submit_interview(client, headers, session_id, number, text):
+    if number > 1:
+        # Later rounds are prepared on submit and opened like "Next Question".
+        activate(client, headers, session_id, number)
     return client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": number, "answer_text": text,
     })

@@ -87,15 +87,19 @@ test('landing shows one way back in when signed in, login and sign up otherwise'
   assert.doesNotMatch(src, /backgroundColor: '#000000'/);
 });
 
-test('session complete logo returns to home and actions use shared buttons', () => {
+test('the final round keeps its own result and offers View report; exit saves', () => {
   const src = read('src/pages/Interview.jsx');
-  const start = src.indexOf('if (sessionComplete && roundType !== \'coding\')');
-  assert.ok(start > 0);
-  const block = src.slice(start, src.indexOf('\n  }\n', start));
-  assert.match(block, /href="\/home" onClick=\{\(e\) => \{ e\.preventDefault\(\); navigate\('\/home'\); \}\}/);
-  assert.doesNotMatch(block, /navigate\('\/'\)/);
-  assert.match(block, /app-button app-button-primary">\s*View Dashboard/);
-  assert.match(block, /navigate\('\/upload'\)\} className="app-button">\s*New Session/);
+  // No separate summary screen replaces the last round's result.
+  assert.doesNotMatch(src, /if \(sessionComplete && roundType !== 'coding'\)/);
+  assert.match(src, /'View report →'/);
+  assert.match(src, /navigate\(`\/dashboard\/\$\{sessionId\}`\)/);
+  assert.match(src, /Save &amp; Exit/);
+  assert.doesNotMatch(src, /Progress will be lost/);
+  assert.match(src, /const saveAndExit = async/);
+  assert.match(src, /navigate\('\/home'\)/);
+  for (const component of ['MCQRound', 'SQLRound', 'SystemDesignRound', 'CodingRound']) {
+    assert.match(read(`src/components/${component}.jsx`), /'View report'/);
+  }
 });
 
 test('upload actions use shared buttons and the danger status style', () => {

@@ -23,7 +23,11 @@ export default function SystemDesignRound({
   onSubmit,
   onNextRound,
   sessionComplete = false,
+  submitted = null,
+  nextBusy = false,
 }) {
+  // Result view follows the submission status, scored or not.
+  const closed = submitted ?? (currentScore !== null);
   const rubric = useMemo(
     () => listRubric(questionContext),
     [questionContext],
@@ -40,7 +44,7 @@ export default function SystemDesignRound({
 
   useEffect(() => {
     const key = `${sessionId}:${round}`;
-    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
+    if (!sessionId || closed || draftLoadedFor.current === key) return undefined;
     draftLoadedFor.current = key;
     let cancelled = false;
     fetchAnswerDraft(sessionId, round)
@@ -59,10 +63,10 @@ export default function SystemDesignRound({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, round, currentScore]);
+  }, [sessionId, round, closed]);
 
   useEffect(() => {
-    if (!sessionId || currentScore !== null) return undefined;
+    if (!sessionId || closed) return undefined;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
       saveAnswerDraft(sessionId, {
@@ -74,10 +78,10 @@ export default function SystemDesignRound({
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
     };
-  }, [answer, ratings, sessionId, round, currentScore]);
+  }, [answer, ratings, sessionId, round, closed]);
 
   useEffect(() => {
-    if (currentScore !== null || isScoring || secondsRemaining <= 0) return undefined;
+    if (closed || isScoring || secondsRemaining <= 0) return undefined;
     const interval = setInterval(() => {
       setSecondsRemaining((prev) => {
         if (prev <= 1) {
@@ -88,7 +92,7 @@ export default function SystemDesignRound({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [currentScore, isScoring, secondsRemaining]);
+  }, [closed, isScoring, secondsRemaining]);
 
   const boundary =
     evaluationBoundary
@@ -165,7 +169,7 @@ export default function SystemDesignRound({
         <p className="text-xs text-emerald-700">{draftNotice}</p>
       ) : null}
 
-      {currentScore === null ? (
+      {!closed ? (
         <>
           <label className="block text-sm font-medium text-black">
             Design notes (text)
@@ -224,7 +228,7 @@ export default function SystemDesignRound({
       ) : (
         <div className="space-y-3 rounded-xl border border-black/10 p-4">
           <div className="text-sm text-[#6F6F6F]">Self-assessment score</div>
-          <div className="text-3xl font-medium">{Number(currentScore).toFixed(1)}</div>
+          <div className="text-3xl font-medium">{currentScore == null ? 'Not scored' : Number(currentScore).toFixed(1)}</div>
           <p className="text-sm text-[#444]">{currentFeedback}</p>
           {currentArtifact?.evaluation_mode ? (
             <p className="text-xs uppercase tracking-wider text-[#6F6F6F]">
@@ -232,17 +236,16 @@ export default function SystemDesignRound({
             </p>
           ) : null}
           <CalibrationPanel calibration={currentArtifact?.calibration} />
-          {!sessionComplete ? (
+          {onNextRound && (
             <button
               type="button"
               onClick={onNextRound}
-              className="inline-flex items-center gap-2 rounded-xl border border-black/15 px-4 py-2 text-sm"
+              disabled={nextBusy}
+              className="inline-flex items-center gap-2 rounded-xl border border-black/15 px-4 py-2 text-sm disabled:opacity-50"
             >
               <RefreshCw size={14} />
-              Next
+              {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next')}
             </button>
-          ) : (
-            <p className="text-sm text-emerald-800">Session complete.</p>
           )}
         </div>
       )}

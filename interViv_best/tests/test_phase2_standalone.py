@@ -20,6 +20,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 
 
@@ -155,6 +156,7 @@ def test_interview_only_journey() -> None:
     assert first.json()["session_complete"] is False
     assert first.json()["next_round_type"] == "technical_short_answer"
 
+    activate(client, headers, session_id, 2)
     second = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 2,
         "answer_text": "An index speeds up lookups on a column.",

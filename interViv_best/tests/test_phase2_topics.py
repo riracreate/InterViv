@@ -25,6 +25,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 from backend.auth.security import create_access_token, hash_password
 from backend.config import get_settings
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 from modules import bundle_store
 from tests.test_phase1a_bundles import CALIB, CHECK_OK, REASON
@@ -161,6 +162,7 @@ def test_interview_inside_composed_session_keeps_topic(isolated_inventory) -> No
     assert ans1.json()["next_block_category"] == "interview"
     assert _round_sub_domain(session_id, 2) == "transactions"
 
+    activate(client, headers, session_id, 2)
     ans2 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 2,
         "answer_text": "ACID transactions keep related writes atomic.",

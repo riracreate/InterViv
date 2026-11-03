@@ -179,7 +179,9 @@ test('fresh ml_primitives round counts down from its configured duration and Sub
 test('fresh interview round shows its per-question timer, not an ended state', () => {
   const html = renderRound(payloads.fresh.interview, SKIPPED);
   assert.match(html, /Time left in this round/);
-  assert.deepEqual(readings(html), [120]);
+  // The configured server deadline drives the clock (it used to be ignored
+  // in favour of a fixed 02:00 that reset on every refresh).
+  assertCountingDown(html, 'interview');
   // Submit waits for an answer (canSubmit needs a transcript), not for time.
 });
 

@@ -455,6 +455,14 @@ export function fetchSession(sessionId) {
   return request(`/session/${encodeURIComponent(sessionId)}`).then(normalizeSessionData);
 }
 
+/** Open a prepared round; idempotent (never restarts or extends its clock). */
+export function activateRound(sessionId, roundNumber) {
+  return request(
+    `/session/${encodeURIComponent(sessionId)}/rounds/${encodeURIComponent(roundNumber)}/activate`,
+    { method: "POST" }
+  );
+}
+
 export function continueSession(sessionId) {
   return request(`/session/${encodeURIComponent(sessionId)}/continue`, {
     method: "POST",

@@ -10,7 +10,7 @@ const json = value => value === undefined ? 'No output' : JSON.stringify(value);
 
 export default function CodingRound({ sessionId, round = 1, question = '', questionContext = {},
   configJson = {}, expiresAt = null, isScoring = false, currentScore = null, currentArtifact = null,
-  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false }) {
+  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false, submitted = null, nextBusy = false }) {
   const starters = questionContext.starter_codes || { python: questionContext.starter_code || '# Write your solution here\n' };
   const [language, setLanguage] = useState(configJson.language || 'python');
   const [sources, setSources] = useState(starters);
@@ -27,7 +27,8 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
   const [coachBusy, setCoachBusy] = useState(false);
   const generation = useRef(0);
   const remaining = computeSecondsRemaining(expiresAt, configJson.duration_minutes || 30, now);
-  const closed = currentScore !== null;
+  // Result view follows the submission status, scored or not.
+  const closed = submitted ?? (currentScore !== null);
   const expired = remaining <= 0;
   const activeLanguage = execution?.languages?.find(item => item.id === language);
   // Only block when the status endpoint says so; an unknown status keeps Run/Submit enabled.
@@ -147,7 +148,7 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
               <div>{item.passed ? <Check size={15} /> : <X size={15} />}<strong>Case {index + 1}</strong><span>{item.passed ? 'Passed' : item.error || 'Failed'}</span></div>
               {!item.passed && <><p>Expected <code>{json(tests[index]?.expected)}</code></p><p>Returned <code>{json(item.actual)}</code></p>{item.message && <pre>{item.message}</pre>}</>}
             </div>)}
-            {closed && <div className="coding-verdict" data-testid="coding-review-summary"><h2>{totalTests > 0 && totalPassed === totalTests ? 'Accepted' : 'Tests not passed'}</h2><p>{totalPassed}/{totalTests} tests passed · Score {currentScore.toFixed(1)}/100</p><p>{currentFeedback}</p>{onNextRound && <button className="coding-button" onClick={onNextRound}>{sessionComplete ? 'View summary' : 'Next round'}</button>}</div>}
+            {closed && <div className="coding-verdict" data-testid="coding-review-summary"><h2>{totalTests > 0 && totalPassed === totalTests ? 'Accepted' : 'Tests not passed'}</h2><p>{totalPassed}/{totalTests} tests passed · Score {currentScore == null ? 'not recorded' : `${currentScore.toFixed(1)}/100`}</p><p>{currentFeedback}</p>{onNextRound && <button className="coding-button" disabled={nextBusy} onClick={onNextRound}>{sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next round')}</button>}</div>}
           </div>
         </div>
       </div>

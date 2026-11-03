@@ -138,7 +138,7 @@ def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         kind = item.get("round_type", "technical_short_answer")
         if kind in ("coding", "ml_primitives"):
             reason = "execution_unavailable"
-        elif item.get("status") not in (None, "in_progress"):
+        elif item.get("status") not in (None, "in_progress", "ready"):
             reason = str(item.get("status"))
         else:
             reason = "not_submitted"
@@ -404,15 +404,22 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
             continue
         if resumable is not None or session.get("status") != "active" or not active:
             continue
-        if active.get("status") != "in_progress" or active.get("final_score") is not None:
-            continue
         kind = active.get("round_type", "technical_short_answer")
-        if kind not in {"technical_short_answer", "mcq", "sql", "coding", "ml_primitives"}:
+        if kind not in {
+            "technical_short_answer", "mcq", "sql", "coding", "ml_primitives", "system_design",
+        }:
+            continue
+        if active.get("status") == "ready":
+            # Previous answer reviewed, next question not opened yet: no
+            # clock is running, so the session can always be resumed.
+            resumable = {**summary, "expires_at": None, "pending_activation": True}
+            continue
+        if active.get("status") != "in_progress" or active.get("final_score") is not None:
             continue
         deadline = _utc_date(active.get("expires_at"))
         if active.get("expires_at") and deadline is None:
             continue
-        if kind in {"mcq", "sql", "coding", "ml_primitives"} and deadline is None:
+        if kind in {"mcq", "sql", "coding", "ml_primitives", "system_design"} and deadline is None:
             continue
         if deadline is not None and deadline <= now:
             continue

@@ -15,6 +15,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 
 
@@ -157,6 +158,7 @@ def test_verbal_interview_sql_composition_order() -> None:
     assert ans1.json()["next_round_type"] == "technical_short_answer"
     assert ans1.json()["next_block_category"] == "interview"
     # Submit interview → SQL next.
+    activate(client, headers, session_id, 2)
     ans2 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 2,
         "answer_text": "A primary key uniquely identifies each row and enforces uniqueness.",
@@ -168,6 +170,7 @@ def test_verbal_interview_sql_composition_order() -> None:
     raw = db["sessions"].find_one({"session_id": session_id})
     sql_ctx = raw["rounds"][2].get("question_context") or {}
     ref_query = sql_ctx.get("reference_query") or "SELECT 1"
+    activate(client, headers, session_id, 3)
     ans3 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 3, "answer_text": ref_query,
     })
@@ -204,7 +207,10 @@ def test_two_oa_blocks_different_topics_and_settings() -> None:
     assert ans.status_code == 200, ans.text
     assert ans.json()["next_round_type"] == "mcq"
     assert ans.json()["next_block_position"] == 2
-    next_questions = (ans.json().get("next_question_context") or {}).get("questions") or []
+    # The next prompt is revealed only when the round is opened.
+    assert ans.json()["next_question_context"] is None
+    opened = activate(client, headers, body["session_id"], 2)
+    next_questions = (opened.get("question_context") or {}).get("questions") or []
     assert len(next_questions) == 3
     assert all(q.get("skill") == "Python" for q in next_questions)
 

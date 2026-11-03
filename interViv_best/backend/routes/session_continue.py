@@ -15,6 +15,13 @@ from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
 from backend.db.transactions import atomic
 from backend.integrations import IntegrationError
+from backend.round_lifecycle import (
+    DURATION_SECONDS_KEY,
+    OPEN_STATUSES,
+    ROUND_STATUS_READY,
+    activate_round,
+    prepare_round,
+)
 from backend.routes.answer import _difficulty_from_elo, _submit_locked, _total_rounds
 from backend.routes.session import (
     _expanded_spec_for_round,
@@ -40,6 +47,34 @@ MAX_CONTINUE_ATTEMPTS = 3
 
 def _asked_questions(rounds: list[dict]) -> list[str]:
     return [str(item.get("question") or "") for item in rounds if item.get("question")]
+
+
+def _continued_response(
+    session_id: str, round_doc: dict[str, Any], *, current_skill: Any, total: int
+) -> dict[str, Any]:
+    """Opened round payload. ``active_round`` matches GET /session/{id}."""
+    sanitized = sanitize_round_for_client(dict(round_doc))
+    expires = round_doc.get("expires_at")
+    return {
+        "session_id": session_id,
+        "status": "active",
+        "continued": True,
+        "progression_blocked": False,
+        "progression_blocked_reason": None,
+        "round": round_doc.get("round"),
+        "question": round_doc.get("question"),
+        "round_type": round_doc.get("round_type"),
+        "difficulty": round_doc.get("difficulty"),
+        "question_context": sanitized.get("question_context") or {},
+        "config_json": round_doc.get("config_json") or {},
+        "expires_at": expires.isoformat() if hasattr(expires, "isoformat") else expires,
+        "block_id": round_doc.get("block_id"),
+        "block_position": round_doc.get("block_position"),
+        "block_category": round_doc.get("block_category"),
+        "current_skill": current_skill,
+        "total_rounds": total,
+        "active_round": sanitized,
+    }
 
 
 @router.post("/{session_id}/continue", dependencies=[Depends(require_authenticated)])
@@ -78,46 +113,31 @@ def continue_session(
                 rounds = list(session.get("rounds") or [])
                 total = _total_rounds(session, settings)
 
-                # Idempotent: already has an open next round.
+                # Idempotent: already has an open (or prepared) next round.
                 open_round = next(
-                    (r for r in reversed(rounds) if r.get("status") == "in_progress"),
+                    (r for r in reversed(rounds) if r.get("status") in OPEN_STATUSES),
                     None,
                 )
                 if open_round is not None and session.get("status") in ("active", "content_blocked"):
+                    changes: dict[str, Any] = {}
+                    # Continuing is the candidate opening the question.
+                    if activate_round(open_round):
+                        changes["rounds"] = rounds
                     if session.get("status") == "content_blocked":
+                        changes.update({"status": "active", "progression_blocked_reason": None})
+                    if changes:
                         with atomic(db):
                             db["sessions"].update_one(
                                 {"session_id": session_id},
-                                {"$set": {
-                                    "status": "active",
-                                    "progression_blocked_reason": None,
-                                }},
+                                {"$set": changes},
                                 expected_revision=session.get("revision"),
                             )
-                    sanitized = sanitize_round_for_client(dict(open_round))
-                    return {
-                        "session_id": session_id,
-                        "status": "active",
-                        "continued": True,
-                        "progression_blocked": False,
-                        "progression_blocked_reason": None,
-                        "round": open_round.get("round"),
-                        "question": open_round.get("question"),
-                        "round_type": open_round.get("round_type"),
-                        "difficulty": open_round.get("difficulty"),
-                        "question_context": sanitized.get("question_context") or {},
-                        "config_json": open_round.get("config_json") or {},
-                        "expires_at": (
-                            open_round["expires_at"].isoformat()
-                            if hasattr(open_round.get("expires_at"), "isoformat")
-                            else open_round.get("expires_at")
-                        ),
-                        "block_id": open_round.get("block_id"),
-                        "block_position": open_round.get("block_position"),
-                        "block_category": open_round.get("block_category"),
-                        "current_skill": open_round.get("skill") or session.get("current_skill"),
-                        "total_rounds": total,
-                    }
+                    return _continued_response(
+                        session_id,
+                        open_round,
+                        current_skill=open_round.get("skill") or session.get("current_skill"),
+                        total=total,
+                    )
 
                 if session.get("status") != "content_blocked":
                     raise HTTPException(
@@ -207,7 +227,7 @@ def continue_session(
                                 session.get("allow_unknown_topic_fallback")
                             ),
                         )
-                        next_payload = next_doc.model_dump()
+                        next_payload = prepare_round(next_doc.model_dump())
                         next_payload["skill"] = rotation_skill
                     else:
                         # Technical short answer: keep explicit topic pin.
@@ -284,15 +304,24 @@ def continue_session(
                             ),
                             "elo_after": None,
                             "question_context": question_payload,
-                            "started_at": datetime.now(timezone.utc),
+                            "started_at": None,
                             "expires_at": None,
-                            "status": "in_progress",
+                            "status": ROUND_STATUS_READY,
                             "block_id": (expanded_spec or {}).get("block_id"),
                             "block_position": (expanded_spec or {}).get("block_position"),
                             "block_category": (expanded_spec or {}).get("category"),
                             "block_index": (expanded_spec or {}).get("block_index"),
                             "block_total": (expanded_spec or {}).get("block_total"),
-                            "config_json": {},
+                            # Same time budget the answer route gives a
+                            # planned technical round.
+                            "config_json": (
+                                {
+                                    "duration_minutes": int(expanded_spec["duration_minutes"]),
+                                    DURATION_SECONDS_KEY: int(expanded_spec["duration_minutes"]) * 60,
+                                }
+                                if expanded_spec and expanded_spec.get("duration_minutes")
+                                else {}
+                            ),
                         }
                 except (ValueError, IntegrationError) as exc:
                     blocked_reason = str(exc)
@@ -323,6 +352,8 @@ def continue_session(
                         "preserved_last_round": last_submitted,
                     }
 
+                # The candidate asked to continue: open it now.
+                activate_round(next_payload, datetime.now(timezone.utc))
                 rounds.append(next_payload)
                 with atomic(db):
                     db["sessions"].update_one(
@@ -338,30 +369,12 @@ def continue_session(
                         expected_revision=session.get("revision"),
                     )
 
-                sanitized = sanitize_round_for_client(dict(next_payload))
-                return {
-                    "session_id": session_id,
-                    "status": "active",
-                    "continued": True,
-                    "progression_blocked": False,
-                    "progression_blocked_reason": None,
-                    "round": next_payload.get("round"),
-                    "question": next_payload.get("question"),
-                    "round_type": next_payload.get("round_type"),
-                    "difficulty": next_payload.get("difficulty"),
-                    "question_context": sanitized.get("question_context") or {},
-                    "config_json": next_payload.get("config_json") or {},
-                    "expires_at": (
-                        next_payload["expires_at"].isoformat()
-                        if hasattr(next_payload.get("expires_at"), "isoformat")
-                        else next_payload.get("expires_at")
-                    ),
-                    "block_id": next_payload.get("block_id"),
-                    "block_position": next_payload.get("block_position"),
-                    "block_category": next_payload.get("block_category"),
-                    "current_skill": next_payload.get("skill"),
-                    "total_rounds": total,
-                }
+                return _continued_response(
+                    session_id,
+                    next_payload,
+                    current_skill=next_payload.get("skill"),
+                    total=total,
+                )
             except SessionWriteConflict:
                 # Lost a cross-worker write race: the conditional write
                 # persisted nothing, so reload and re-decide from scratch.

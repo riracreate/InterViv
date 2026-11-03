@@ -1,4 +1,5 @@
 import { blockedResumeFromSession } from './blockedResume.js';
+import { PHASES, restoreFromSession, resultFromHistory } from './interviewLifecycle.js';
 
 export function displayScore(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not measured';
@@ -32,29 +33,50 @@ export function sessionLabel(types = []) {
 }
 
 export function interviewStateFromSession(session) {
-  const round = session.active_round || session.current_round;
-  if (!round || !session.session_id) throw new Error('This session has no available question.');
+  if (!session?.session_id) throw new Error('This session has no available question.');
+  const restored = restoreFromSession(session);
   const blocked = blockedResumeFromSession(session);
+  const legacyResult = restored.phase !== PHASES.ANSWERING && !restored.result && session.active_round
+    ? resultFromHistory(session.active_round)
+    : null;
+  const current = restored.current || legacyResult;
+  if (!current) throw new Error('This session has no available question.');
+  const result = restored.result || legacyResult;
+  const servedRound = session.active_round || null;
+  const lastElo = [...(session.round_history || [])].reverse().find(r => r.elo_after != null)?.elo_after;
+  const progressionBlocked = restored.phase === PHASES.BLOCKED || blocked.progressionBlocked;
   return {
     sessionId: session.session_id,
     candidateId: session.candidate_id,
-    skill: session.current_skill,
+    skill: current.skill || session.current_skill,
     allSkills: session.skills || [session.current_skill],
-    question: round.question,
-    round_type: round.round_type,
-    question_context: round.question_context || {},
-    config_json: round.config_json || {},
-    expires_at: round.expires_at ?? null,
-    difficulty: round.difficulty || session.current_difficulty,
-    round: round.round || session.last_round,
+    question: current.question,
+    round_type: current.roundType,
+    block_category: current.blockCategory,
+    question_context: current.questionContext || {},
+    config_json: current.configJson || {},
+    expires_at: current.expiresAt ?? null,
+    started_at: current.startedAt ?? null,
+    difficulty: current.difficulty || session.current_difficulty,
+    round: current.round || session.last_round,
     totalRounds: session.total_rounds,
-    elo: round.elo_before ?? 1200,
+    elo: servedRound?.status === 'in_progress'
+      ? (servedRound.elo_before ?? 1200)
+      : (lastElo ?? servedRound?.elo_before ?? 1200),
     status: session.status,
-    progressionBlocked: blocked.progressionBlocked,
-    progressionBlockedReason: blocked.progressionBlockedReason,
-    progression_blocked_reason: blocked.progressionBlockedReason,
-    // Deep-link first paint: keep committed score/feedback when blocked.
-    currentScore: blocked.progressionBlocked ? blocked.currentScore : undefined,
-    currentFeedback: blocked.progressionBlocked ? blocked.currentFeedback : undefined,
+    phase: restored.phase,
+    pendingRound: restored.pendingRound,
+    roundHistory: restored.history,
+    progressionBlocked,
+    progressionBlockedReason: blocked.progressionBlockedReason || session.progression_blocked_reason || '',
+    progression_blocked_reason: blocked.progressionBlockedReason || session.progression_blocked_reason || '',
+    // Review after a refresh: the submitted answer and its result.
+    answerText: result ? result.answerText : '',
+    currentScore: result ? result.score : undefined,
+    currentFeedback: result ? result.feedback : undefined,
+    currentRubric: result ? result.rubric : undefined,
+    currentConcepts: result ? result.concepts : undefined,
+    currentArtifact: result ? result.artifact : undefined,
+    evaluationMode: result ? result.evaluationMode : undefined,
   };
 }

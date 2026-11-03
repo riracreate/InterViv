@@ -168,7 +168,8 @@ def test_submit_commit_failure_rolls_back_and_retry_scores_once(monkeypatch) -> 
     stored = db["sessions"].find_one({"session_id": session_id})
     assert len(stored["rounds"]) == 2
     assert stored["rounds"][0]["status"] == "submitted"
-    assert stored["rounds"][1]["status"] == "in_progress"
+    # The next round is prepared, not started, until the candidate opens it.
+    assert stored["rounds"][1]["status"] == "ready"
 
 
 def test_stale_finalizing_claim_is_taken_over() -> None:

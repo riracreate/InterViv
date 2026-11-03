@@ -19,10 +19,11 @@ test('session report Back to Home goes to /home', () => {
   assert.match(src, /fetchAccountOverview/);
 });
 
-test('interview camera uses one callback ref on both video elements', () => {
+test('interview camera uses one callback ref on its only video element', () => {
+  // The blocking calibration screen (and its second <video>) was removed.
   const src = readFileSync(join(root, 'src/pages/Interview.jsx'), 'utf8');
   const attaches = [...src.matchAll(/ref=\{attachVideoEl\}/g)];
-  assert.equal(attaches.length, 2);
+  assert.equal(attaches.length, 1);
   assert.match(src, /node\.srcObject = stream/);
 });
 

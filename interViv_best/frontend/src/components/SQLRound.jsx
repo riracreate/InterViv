@@ -17,7 +17,11 @@ export default function SQLRound({
   onSubmit,
   onNextRound,
   sessionComplete = false,
+  submitted = null,
+  nextBusy = false,
 }) {
+  // Result view follows the submission status, scored or not.
+  const closed = submitted ?? (currentScore !== null);
   const [query, setQuery] = useState(
     questionContext?.reference_query
       ? ''
@@ -36,7 +40,7 @@ export default function SQLRound({
 
   useEffect(() => {
     const key = `${sessionId}:${round}`;
-    if (!sessionId || currentScore !== null || draftLoadedFor.current === key) return undefined;
+    if (!sessionId || closed || draftLoadedFor.current === key) return undefined;
     draftLoadedFor.current = key;
     let cancelled = false;
     fetchAnswerDraft(sessionId, round)
@@ -52,10 +56,10 @@ export default function SQLRound({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, round, currentScore]);
+  }, [sessionId, round, closed]);
 
   useEffect(() => {
-    if (!sessionId || currentScore !== null || !query.trim()) return undefined;
+    if (!sessionId || closed || !query.trim()) return undefined;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
       saveAnswerDraft(sessionId, { round, answer_text: query }).catch(() => {});
@@ -63,11 +67,11 @@ export default function SQLRound({
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
     };
-  }, [query, sessionId, round, currentScore]);
+  }, [query, sessionId, round, closed]);
 
   // Countdown timer
   useEffect(() => {
-    if (currentScore !== null || isScoring || secondsRemaining <= 0) return undefined;
+    if (closed || isScoring || secondsRemaining <= 0) return undefined;
     const interval = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
@@ -79,7 +83,7 @@ export default function SQLRound({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [currentScore, isScoring, secondsRemaining]);
+  }, [closed, isScoring, secondsRemaining]);
 
   const schemaDdl = questionContext?.schema_ddl || '';
   const sampleCases = questionContext?.sample_cases || [];
@@ -109,7 +113,7 @@ export default function SQLRound({
   };
 
   const handleFinalSubmit = () => {
-    if (isScoring || currentScore !== null || !query.trim()) return;
+    if (isScoring || closed || !query.trim()) return;
     onSubmit({ answer_text: query.trim() });
   };
 
@@ -147,11 +151,11 @@ export default function SQLRound({
 
           <button
             onClick={handleFinalSubmit}
-            disabled={isScoring || !query.trim() || currentScore !== null}
+            disabled={isScoring || !query.trim() || closed}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition"
           >
             <Send className="w-3 h-3" />
-            <span>{isScoring ? 'Submitting...' : currentScore !== null ? 'Submitted' : 'Submit Final Solution'}</span>
+            <span>{isScoring ? 'Submitting...' : closed ? 'Submitted' : 'Submit Final Solution'}</span>
           </button>
         </div>
       </div>
@@ -249,7 +253,7 @@ export default function SQLRound({
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              disabled={currentScore !== null || isScoring}
+              disabled={closed || isScoring}
               placeholder="SELECT ... FROM ...;"
               className="flex-1 w-full p-4 font-mono text-xs text-gray-900 bg-white focus:outline-none resize-none leading-relaxed"
               spellCheck={false}
@@ -317,21 +321,22 @@ export default function SQLRound({
       </div>
 
       {/* Submission Score & Test Case Results */}
-      {currentScore !== null && (
+      {closed && (
         <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="sql-review-summary">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Evaluation Score</span>
-              <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{currentScore.toFixed(1)}%</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{currentScore == null ? 'Not scored' : `${currentScore.toFixed(1)}%`}</h3>
               <p className="text-xs text-gray-500 mt-1">{currentFeedback || 'Query scored deterministically across all test cases.'}</p>
             </div>
 
             {onNextRound && (
               <button
                 onClick={onNextRound}
+                disabled={nextBusy}
                 className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
               >
-                {sessionComplete ? 'View Summary' : 'Next Round'}
+                {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next Round')}
               </button>
             )}
           </div>

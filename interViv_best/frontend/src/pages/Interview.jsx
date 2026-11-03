@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback, requestFollowUp } from '../lib/api';
+import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback, requestFollowUp, activateRound } from '../lib/api';
+import {
+  MAX_NARRATION_POLLS,
+  PHASES,
+  TECHNICAL_ADVISORY_SECONDS,
+  inputsLocked,
+  isShowingResult,
+  pendingRoundFromResponse,
+  pendingRoundFromSession,
+  phaseAfterSubmit,
+  progressPercent,
+  roundFieldsFromPayload,
+  shouldPollNarration,
+  technicalSecondsRemaining,
+} from '../lib/interviewLifecycle';
 import {
   applyFeedbackPollResult,
   clearFeedbackPollInterval,
@@ -8,7 +22,7 @@ import {
   shouldKeepPollingNarration,
 } from '../lib/feedbackPoll';
 import { blockedResumeFromSession } from '../lib/blockedResume';
-import { classifyFrame, computeEngagementDelta, loadModels, modeOfLabels } from '../lib/engagement';
+import { classifyFrame, loadModels, modeOfLabels } from '../lib/engagement';
 import { blockUsesInterviewMedia, stopMediaStream, mediaErrorMessage } from '../lib/interviewMedia';
 import MCQRound from '../components/MCQRound';
 import SQLRound from '../components/SQLRound';
@@ -18,7 +32,6 @@ import SystemDesignRound from '../components/SystemDesignRound';
 import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
 
-const ROUND_SECONDS = 120;
 const DEADLINE_TRANSCRIPTION_NOTICE =
   'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
 
@@ -42,7 +55,6 @@ export default function Interview({ sessionState = null }) {
   const mediaChunksRef = useRef([]);
   const discardServerRecordingRef = useRef(false);
   const engagementSamplesRef = useRef([]);
-  const baselineSamplesRef = useRef([]);
   const engagementBusyRef = useRef(false);
   const lastEngagementSampleAtRef = useRef(0);
   const engagementReadyRef = useRef(false);
@@ -65,8 +77,21 @@ export default function Interview({ sessionState = null }) {
   const [questionContext, setQuestionContext] = useState(initState.question_context || {});
   const [configJson, setConfigJson] = useState(initState.config_json || {});
   const [expiresAt, setExpiresAt] = useState(initState.expires_at || null);
-  const [currentArtifact, setCurrentArtifact] = useState(null);
-  const [evaluationMode, setEvaluationMode] = useState(null);
+  const [startedAt, setStartedAt] = useState(initState.started_at || null);
+  // Explicit lifecycle (see lib/interviewLifecycle.js): the submitted round
+  // stays on screen until "Next Question" opens the prepared next round.
+  const [phase, setPhase] = useState(
+    initState.phase
+      || ((initState.progressionBlocked || initState.status === 'content_blocked')
+        ? PHASES.BLOCKED
+        : PHASES.ANSWERING)
+  );
+  const [pendingRound, setPendingRound] = useState(initState.pendingRound || null);
+  const [actionError, setActionError] = useState('');
+  const showingResult = isShowingResult(phase);
+  const locked = inputsLocked(phase);
+  const [currentArtifact, setCurrentArtifact] = useState(initState.currentArtifact || null);
+  const [evaluationMode, setEvaluationMode] = useState(initState.evaluationMode || null);
   const [evaluationBoundary, setEvaluationBoundary] = useState(null);
   const [avState, setAvState] = useState(AV_STATES.PERMISSION_NOT_REQUESTED);
   const [avDetail, setAvDetail] = useState('');
@@ -74,31 +99,32 @@ export default function Interview({ sessionState = null }) {
   const [currentSkill, setCurrentSkill] = useState(initState.skill || '');
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
   const [round, setRound] = useState(initState.round || 1);
-  const [totalRounds] = useState(initState.totalRounds || 5);
+  const [totalRounds, setTotalRounds] = useState(initState.totalRounds || 5);
   const [elo, setElo] = useState(initState.elo || 1200);
 
-  const [timeLeft, setTimeLeft] = useState(ROUND_SECONDS);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Untimed legacy rounds with no server activation time: local advisory budget.
+  const [localDeadlineMs, setLocalDeadlineMs] = useState(() => Date.now() + TECHNICAL_ADVISORY_SECONDS * 1000);
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
+  const [transcript, setTranscript] = useState(initState.answerText || '');
   const [draftNotice, setDraftNotice] = useState('');
   const draftTimerRef = useRef(null);
   const draftLoadedForRef = useRef('');
   const [interimText, setInterimText] = useState('');
   const [isScoring, setIsScoring] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [sessionComplete, setSessionComplete] = useState(false);
+  // Camera is optional and starts off; engagement stays unmeasured unless enabled.
+  const [isVideoOn, setIsVideoOn] = useState(false);
+  const [sessionComplete, setSessionComplete] = useState(initState.phase === PHASES.COMPLETED);
   const [cameraError, setCameraError] = useState('');
   const [micError, setMicError] = useState('');
 
+  const restoredResult = isShowingResult(initState.phase)
+    || Boolean(initState.progressionBlocked || initState.status === 'content_blocked');
   const [currentScore, setCurrentScore] = useState(
-    initState.progressionBlocked || initState.status === 'content_blocked'
-      ? (initState.currentScore ?? null)
-      : null
+    restoredResult ? (initState.currentScore ?? null) : null
   );
   const [currentFeedback, setCurrentFeedback] = useState(
-    (initState.progressionBlocked || initState.status === 'content_blocked')
-      ? (initState.currentFeedback || '')
-      : ''
+    restoredResult ? (initState.currentFeedback || '') : ''
   );
   const [feedbackSourceLabel, setFeedbackSourceLabel] = useState('');
   const [feedbackDetails, setFeedbackDetails] = useState(null);
@@ -112,14 +138,10 @@ export default function Interview({ sessionState = null }) {
   const [eligibilityLabel, setEligibilityLabel] = useState('');
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpNote, setFollowUpNote] = useState('');
-  const [roundSettled, setRoundSettled] = useState(
-    () => Boolean(initState.roundSettled) || initState.currentScore != null
-  );
   const feedbackPollRef = useRef(null);
   const feedbackRoundRef = useRef(null);
-  const [currentRubric, setCurrentRubric] = useState(null);
-  const [currentConcepts, setCurrentConcepts] = useState(null);
-  const [scores, setScores] = useState([]);
+  const [currentRubric, setCurrentRubric] = useState(restoredResult ? (initState.currentRubric || null) : null);
+  const [currentConcepts, setCurrentConcepts] = useState(restoredResult ? (initState.currentConcepts || null) : null);
 
   const [useServerSTT, setUseServerSTT] = useState(!hasBrowserSTT);
   const [serverRecording, setServerRecording] = useState(false);
@@ -130,17 +152,6 @@ export default function Interview({ sessionState = null }) {
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraCollapsed, setCameraCollapsed] = useState(false);
   const [deadlineNotice, setDeadlineNotice] = useState('');
-  const [baselineSamples, setBaselineSamples] = useState([]);
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
-  const [engagementBaseline, setEngagementBaseline] = useState(
-    initState.engagementBaseline || null
-  );
-  const [calibrationComplete, setCalibrationComplete] = useState(
-    Boolean(initState.engagementBaseline || initState.engagementCalibrationSkipped)
-  );
-  const [calibrationSkipped, setCalibrationSkipped] = useState(
-    Boolean(initState.engagementCalibrationSkipped)
-  );
 
   const stopCamera = useCallback(() => {
     stopMediaStream(cameraStreamRef.current);
@@ -176,22 +187,6 @@ export default function Interview({ sessionState = null }) {
     lastEngagementSampleAtRef.current = 0;
     setLiveEngagement(null);
   }, []);
-
-  const finishCalibration = useCallback((samples = [], skipped = false) => {
-    const fallback = { label: 'Neutral', confidence: null, sample_count: 0 };
-    const baseline = skipped ? fallback : (modeOfLabels(samples) || fallback);
-    baselineSamplesRef.current = [];
-    setBaselineSamples([]);
-    setCalibrationProgress(100);
-    setEngagementBaseline(baseline);
-    setCalibrationSkipped(skipped);
-    setCalibrationComplete(true);
-    clearEngagementSamples();
-  }, [clearEngagementSamples]);
-
-  const skipCalibration = useCallback(() => {
-    finishCalibration([], true);
-  }, [finishCalibration]);
 
   const ensureMicrophone = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -401,7 +396,7 @@ export default function Interview({ sessionState = null }) {
   useEffect(() => {
     if (roundType !== 'technical_short_answer') return undefined;
     const key = `${sessionId}:${round}`;
-    if (!sessionId || currentScore !== null || draftLoadedForRef.current === key) return undefined;
+    if (!sessionId || locked || draftLoadedForRef.current === key) return undefined;
     draftLoadedForRef.current = key;
     setDraftNotice('');
     let cancelled = false;
@@ -418,12 +413,12 @@ export default function Interview({ sessionState = null }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, round, roundType, currentScore]);
+  }, [sessionId, round, roundType, locked]);
 
   // Phase B: autosave free-text drafts (debounced).
   useEffect(() => {
     if (roundType !== 'technical_short_answer') return undefined;
-    if (!sessionId || currentScore !== null || !transcript.trim()) return undefined;
+    if (!sessionId || locked || !transcript.trim()) return undefined;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       saveAnswerDraft(sessionId, { round, answer_text: transcript }).catch(() => {});
@@ -431,23 +426,7 @@ export default function Interview({ sessionState = null }) {
     return () => {
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     };
-  }, [transcript, sessionId, round, roundType, currentScore]);
-
-  useEffect(() => {
-    if (!usesInterviewMedia || calibrationComplete) return;
-    if (!isVideoOn || cameraError || engagementLoadFailed) {
-      finishCalibration([], true);
-    }
-  }, [calibrationComplete, cameraError, engagementLoadFailed, finishCalibration, isVideoOn, usesInterviewMedia]);
-
-  const showCalibrationScreen =
-    usesInterviewMedia &&
-    !calibrationComplete &&
-    isVideoOn &&
-    !engagementLoadFailed &&
-    currentScore === null &&
-    !sessionComplete;
-  const calibrationActive = showCalibrationScreen && cameraReady;
+  }, [transcript, sessionId, round, roundType, locked]);
 
   useEffect(() => {
     const node = videoRef.current;
@@ -456,50 +435,14 @@ export default function Interview({ sessionState = null }) {
       node.srcObject = stream;
       node.play?.().catch(() => {});
     }
-  }, [calibrationComplete, isVideoOn, showCalibrationScreen]);
-
-  useEffect(() => {
-    if (!calibrationActive) return undefined;
-
-    let cancelled = false;
-    let elapsed = 0;
-    baselineSamplesRef.current = [];
-    setBaselineSamples([]);
-    setCalibrationProgress(0);
-
-    const captureBaselineFrame = async () => {
-      elapsed += 1;
-      if (engagementReadyRef.current) {
-        const sample = await classifyFrame(videoRef.current);
-        if (cancelled) return;
-        if (sample) {
-          baselineSamplesRef.current.push(sample);
-          setBaselineSamples([...baselineSamplesRef.current]);
-        }
-      }
-
-      if (cancelled) return;
-      setCalibrationProgress(Math.min(100, elapsed * 10));
-      if (elapsed >= 10) {
-        finishCalibration(baselineSamplesRef.current, false);
-      }
-    };
-
-    const id = setInterval(captureBaselineFrame, 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [calibrationActive, finishCalibration]);
+  }, [isVideoOn, cameraCollapsed]);
 
   useEffect(() => {
     const shouldClassify =
       usesInterviewMedia &&
       isVideoOn &&
       engagementReady &&
-      calibrationComplete &&
-      !sessionComplete &&
-      currentScore === null &&
+      !locked &&
       (isRecording || serverRecording || transcript.trim().length > 0);
 
     if (!shouldClassify) return undefined;
@@ -531,7 +474,7 @@ export default function Interview({ sessionState = null }) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [calibrationComplete, currentScore, engagementReady, isRecording, isVideoOn, serverRecording, sessionComplete, transcript, usesInterviewMedia]);
+  }, [engagementReady, isRecording, isVideoOn, locked, serverRecording, transcript, usesInterviewMedia]);
 
   useEffect(() => {
     return () => {
@@ -560,8 +503,6 @@ export default function Interview({ sessionState = null }) {
       expires_at: expiresAt,
       elo,
       totalRounds,
-      engagementBaseline,
-      engagementCalibrationSkipped: calibrationSkipped,
       progressionBlocked,
       progressionBlockedReason,
       status: progressionBlocked ? 'content_blocked' : undefined,
@@ -571,7 +512,6 @@ export default function Interview({ sessionState = null }) {
   }, [
     allSkills,
     blockCategory,
-    calibrationSkipped,
     candidateId,
     configJson,
     currentFeedback,
@@ -579,7 +519,6 @@ export default function Interview({ sessionState = null }) {
     currentSkill,
     difficulty,
     elo,
-    engagementBaseline,
     expiresAt,
     progressionBlocked,
     progressionBlockedReason,
@@ -620,7 +559,7 @@ export default function Interview({ sessionState = null }) {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || phase !== PHASES.ANSWERING) return;
     if (
       (roundType === 'mcq' || roundType === 'sql' || roundType === 'coding' || roundType === 'ml_primitives') &&
       (!questionContext || Object.keys(questionContext).length === 0)
@@ -651,6 +590,7 @@ export default function Interview({ sessionState = null }) {
         })
         .catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, roundType]);
 
   const toggleRecording = useCallback(async () => {
@@ -789,7 +729,7 @@ export default function Interview({ sessionState = null }) {
     const answerText = roundType === 'coding' ? suppliedAnswer : suppliedAnswer.trim();
     const answers = options.answers;
     const rubricRatings = options.rubric_ratings;
-    if (!isMcq && (!answerText && !force) || isScoring) return;
+    if (!isMcq && (!answerText && !force) || isScoring || phase !== PHASES.ANSWERING) return;
     if (force) {
       // Discard in-flight STT — deadline is authoritative; do not wait/extend.
       if (serverRecording || serverTranscribing) stopServerRecording(true);
@@ -801,12 +741,13 @@ export default function Interview({ sessionState = null }) {
       if (serverRecording) stopServerRecording(false);
     }
     setIsScoring(true);
+    setActionError('');
+    setPhase(PHASES.SUBMITTING);
     try {
       const metrics = (!isMcq && !isSystemDesign) ? buildAnswerMetrics(answerText) : {};
       const engagement = isVideoOn ? modeOfLabels(engagementSamplesRef.current) : null;
-      const engagementDelta = calibrationSkipped
-        ? 0
-        : computeEngagementDelta(engagement?.label, engagementBaseline?.label);
+      // No calibration baseline is captured, so the delta is unmeasured.
+      const engagementDelta = null;
       const payload = {
         session_id: sessionId,
         round,
@@ -840,7 +781,6 @@ export default function Interview({ sessionState = null }) {
       const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
       const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
       setCurrentScore(score);
-      setRoundSettled(true);
       const elig = resp.assessment_eligibility;
       if (elig === 'excluded' || resp.assisted) {
         setEligibilityLabel(
@@ -879,67 +819,34 @@ export default function Interview({ sessionState = null }) {
       setEvaluationMode(resp.evaluation_mode || null);
       setEvaluationBoundary(resp.evaluation_boundary || null);
       setElo(resp.elo_after ?? elo);
-      if (score !== null) {
-        setScores(p => [...p, {
-          round,
-          skill: currentSkill,
-          score,
-          question,
-          answer: isMcq ? JSON.stringify(answers) : answerText,
-          feedback,
-          engagement_label: engagement?.label ?? null,
-          engagement_confidence: engagement?.confidence ?? null,
-          engagement_delta: engagementDelta,
-        }]);
+      if (typeof resp.total_rounds === 'number' && resp.total_rounds > 0) {
+        setTotalRounds(resp.total_rounds);
       }
+      // The submitted question, component and feedback stay on screen; the
+      // prepared next round opens only from "Next Question".
+      setPendingRound(pendingRoundFromResponse(resp));
+      setSessionComplete(Boolean(resp.session_complete));
+      setPhase(phaseAfterSubmit(resp));
 
-      if (resp.session_complete) {
-        setSessionComplete(true);
-      } else if (resp.progression_blocked) {
-        // Keep score/feedback visible; wait for continue.
-        setSessionComplete(false);
-      } else if (resp.next_question || resp.next_round_type) {
-        // Prefetch next round fields; UI keeps currentScore until Next.
-        const nextCategory = resp.next_block_category ?? null;
-        const enteringMedia =
-          blockUsesInterviewMedia(nextCategory, resp.next_round_type) &&
-          !blockUsesInterviewMedia(blockCategory, roundType);
-        setQuestion(resp.next_question || '');
-        setRoundType(resp.next_round_type || 'technical_short_answer');
-        setBlockCategory(nextCategory);
-        setDifficulty(resp.next_difficulty || resp.difficulty || 'medium');
-        setCurrentSkill(resp.next_skill || resp.current_skill || currentSkill);
-        setQuestionContext(resp.next_question_context || {});
-        setConfigJson(resp.next_config_json || {});
-        setExpiresAt(resp.next_expires_at || null);
-        setRound(round + 1);
-        if (enteringMedia) {
-          // Mixed Verbal/OA → Interview: present calibration for the media block.
-          setCalibrationComplete(false);
-          setEngagementBaseline(null);
-          setCalibrationSkipped(false);
-          setCalibrationProgress(0);
-          setBaselineSamples([]);
-          setCameraError('');
-          setIsVideoOn(true);
-        } else {
-          setCalibrationComplete(true);
-        }
-      }
-
-      // Poll narration only while eligible and pending for this round.
-      if (score !== null && sessionId) {
+      // Poll narration only while the server reports a pending job.
+      if (sessionId && shouldPollNarration(resp.narration_status)) {
         const pollRound = round;
         feedbackRoundRef.current = pollRound;
         feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
         let pollState = {
           displayFeedback: feedbackWithMode,
           displaySource: 'Rules feedback',
-          narrationStatus: 'queued',
+          narrationStatus: resp.narration_status,
           polling: true,
         };
+        let polls = 0;
         const tick = async () => {
           if (!isFeedbackPollTickCurrent(feedbackRoundRef.current, pollRound)) return;
+          polls += 1;
+          if (polls > MAX_NARRATION_POLLS) {
+            feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
+            return;
+          }
           try {
             const payload = await fetchRoundFeedback(sessionId, pollRound);
             pollState = applyFeedbackPollResult(pollState, payload, pollRound);
@@ -958,62 +865,124 @@ export default function Interview({ sessionState = null }) {
         feedbackPollRef.current = setInterval(tick, 2500);
       }
     } catch (err) {
-      setCurrentFeedback('Scoring failed — ' + err.message);
+      // Nothing was recorded: reopen the answer for a retry.
+      setPhase(PHASES.ANSWERING);
+      setActionError(`Submission failed — ${err.message || 'please try again.'}`);
     } finally {
       setIsScoring(false);
     }
   };
 
   useEffect(() => {
-    setTimeLeft(ROUND_SECONDS);
+    setLocalDeadlineMs(Date.now() + TECHNICAL_ADVISORY_SECONDS * 1000);
   }, [round]);
 
   useEffect(() => {
-    if (sessionComplete || currentScore !== null || isScoring || showCalibrationScreen || roundType !== 'technical_short_answer') return undefined;
-    const id = setInterval(() => {
-      setTimeLeft(seconds => Math.max(0, seconds - 1));
-    }, 1000);
+    if (phase !== PHASES.ANSWERING || roundType !== 'technical_short_answer') return undefined;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [currentScore, isScoring, roundType, sessionComplete, showCalibrationScreen]);
+  }, [phase, roundType]);
+
+  const serverSecondsLeft = technicalSecondsRemaining({ expiresAt, startedAt, nowMs });
+  const timeLeft = serverSecondsLeft ?? Math.max(0, Math.ceil((localDeadlineMs - nowMs) / 1000));
+  // Auto-submit only when the clock runs out while the candidate is here;
+  // returning to an already-elapsed round must not submit an empty answer.
+  const sawTimeLeftRef = useRef(false);
+  useEffect(() => { sawTimeLeftRef.current = false; }, [round]);
+  if (timeLeft > 0) sawTimeLeftRef.current = true;
 
   useEffect(() => {
-    if (
-      timeLeft > 0 ||
-      currentScore !== null ||
-      isScoring ||
-      sessionComplete ||
-      showCalibrationScreen ||
-      roundType !== 'technical_short_answer'
-    ) {
+    if (timeLeft > 0 || phase !== PHASES.ANSWERING || isScoring || roundType !== 'technical_short_answer') {
       return;
     }
+    if (!sawTimeLeftRef.current) return;
     submitAnswer({ force: true });
-  }, [currentScore, isScoring, roundType, sessionComplete, showCalibrationScreen, submitAnswer, timeLeft]);
+  }, [isScoring, phase, roundType, submitAnswer, timeLeft]);
 
-  const leaveSession = () => {
-    if (!confirm('Exit? Progress will be lost.')) return;
-    clearInterviewState();
-    navigate(roundType === 'coding' ? '/problems' : '/home');
-  };
-
-  const handleNext = () => {
-    if (sessionComplete) {
-      clearInterviewState();
-      navigate(`/dashboard/${sessionId}`);
-      return;
-    }
+  const stopRoundActivity = () => {
     feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
-    setTranscript(''); setInterimText('');
+    stopRecording();
+    stopServerRecording(true);
+  };
+
+  // Save & Exit: the server keeps the session; a running deadline keeps
+  // running (saving never pauses assessment time).
+  const saveAndExit = async () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    if (roundType === 'technical_short_answer' && phase === PHASES.ANSWERING && transcript.trim()) {
+      try { await saveAnswerDraft(sessionId, { round, answer_text: transcript }); }
+      catch { /* best effort; the server keeps the last autosave */ }
+    }
+    stopRoundActivity();
+    stopCamera();
+    stopMicrophone();
+    navigate('/home');
+  };
+
+  const resetRoundUi = () => {
+    stopRoundActivity();
+    setTranscript(''); setInterimText(''); setDraftNotice('');
     setCurrentScore(null); setCurrentFeedback('');
     setFeedbackSourceLabel(''); setFeedbackDetails(null);
     setProgressionBlocked(false); setProgressionBlockedReason('');
     setDeadlineNotice('');
     setCurrentRubric(null); setCurrentConcepts(null);
     setCurrentArtifact(null);
-    stopRecording();
-    stopServerRecording(true);
+    setEvaluationMode(null); setEvaluationBoundary(null);
+    setEligibilityLabel('');
+    setFollowUpNote(''); setFollowUpBusy(false);
+    setActionError('');
     clearEngagementSamples();
+  };
+
+  const applyOpenedRound = (fields) => {
+    setQuestion(fields.question);
+    setRoundType(fields.roundType);
+    setBlockCategory(fields.blockCategory);
+    setDifficulty(fields.difficulty);
+    if (fields.skill) setCurrentSkill(fields.skill);
+    setQuestionContext(fields.questionContext);
+    setConfigJson(fields.configJson);
+    setExpiresAt(fields.expiresAt);
+    setStartedAt(fields.startedAt);
+    setRound(fields.round);
+    setNowMs(Date.now());
+  };
+
+  const handleNext = async () => {
+    if (phase === PHASES.COMPLETED || sessionComplete) {
+      clearInterviewState();
+      navigate(`/dashboard/${sessionId}`);
+      return;
+    }
+    if (phase !== PHASES.REVIEWING) return; // ignores repeat clicks while opening
+    setPhase(PHASES.ACTIVATING);
+    setActionError('');
+    try {
+      let target = pendingRound;
+      if (!target) {
+        const fresh = await fetchSession(sessionId);
+        target = pendingRoundFromSession(fresh.pending_round);
+        if (!target && fresh.active_round?.status === 'in_progress') {
+          resetRoundUi();
+          applyOpenedRound(roundFieldsFromPayload(fresh.active_round, { skill: currentSkill }));
+          setPhase(PHASES.ANSWERING);
+          return;
+        }
+        if (!target) throw new Error('The next question is not ready yet.');
+      }
+      const resp = await activateRound(sessionId, target.round);
+      const fields = roundFieldsFromPayload(resp.active_round, { skill: target.skill || currentSkill });
+      if (typeof resp.total_rounds === 'number' && resp.total_rounds > 0) setTotalRounds(resp.total_rounds);
+      resetRoundUi();
+      applyOpenedRound(fields);
+      setPendingRound(null);
+      setPhase(PHASES.ANSWERING);
+    } catch (err) {
+      setActionError(err.message || 'Could not open the next question. Try again.');
+      setPhase(PHASES.REVIEWING);
+    }
   };
 
   const handleContinueBlocked = async () => {
@@ -1028,18 +997,23 @@ export default function Interview({ sessionState = null }) {
         );
         return;
       }
-      setProgressionBlocked(false);
-      setProgressionBlockedReason('');
-      setQuestion(resp.question || '');
-      setRoundType(resp.round_type || 'technical_short_answer');
-      if (resp.block_category != null) setBlockCategory(resp.block_category);
-      if (resp.difficulty) setDifficulty(resp.difficulty);
-      if (resp.current_skill) setCurrentSkill(resp.current_skill);
-      setQuestionContext(resp.question_context || {});
-      setConfigJson(resp.config_json || {});
-      setExpiresAt(resp.expires_at || null);
-      if (resp.round) setRound(resp.round);
-      handleNext();
+      const fields = roundFieldsFromPayload(resp.active_round || {
+        round: resp.round,
+        question: resp.question,
+        round_type: resp.round_type,
+        block_category: resp.block_category,
+        difficulty: resp.difficulty,
+        skill: resp.current_skill,
+        question_context: resp.question_context,
+        config_json: resp.config_json,
+        expires_at: resp.expires_at,
+      }, { skill: resp.current_skill || currentSkill });
+      if (typeof resp.total_rounds === 'number' && resp.total_rounds > 0) setTotalRounds(resp.total_rounds);
+      resetRoundUi();
+      applyOpenedRound(fields);
+      setPendingRound(null);
+      setSessionComplete(false);
+      setPhase(PHASES.ANSWERING);
     } catch (err) {
       setProgressionBlockedReason(err.message || 'Could not continue session.');
     } finally {
@@ -1047,25 +1021,32 @@ export default function Interview({ sessionState = null }) {
     }
   };
 
+  // Clears the draft being written; never touches a submitted result.
   const resetAnswer = () => {
+    if (locked) return;
     if (isRecording) stopRecording();
     if (serverRecording) stopServerRecording(true);
     setTranscript(''); setInterimText('');
     setDraftNotice('');
-    setCurrentScore(null); setCurrentFeedback('');
-    setCurrentRubric(null); setCurrentConcepts(null);
     setIsRecording(false);
     clearEngagementSamples();
   };
 
   const fmt = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
   const scoreColor = (score) => score >= 75 ? '#16A34A' : score >= 50 ? '#D97706' : '#DC2626';
-  const progress = totalRounds ? ((round - 1 + (currentScore !== null ? 1 : 0)) / totalRounds) * 100 : 0;
+  const progress = progressPercent({ round, totalRounds, phase });
   const answerWordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
   const serverSttActive = useServerSTT || !hasBrowserSTT;
-  const canSubmit = transcript.trim().length > 0 && !isScoring && currentScore === null && !serverRecording && !serverTranscribing && isSupportedRoundType(roundType);
+  const canSubmit = transcript.trim().length > 0 && !isScoring && phase === PHASES.ANSWERING && !serverRecording && !serverTranscribing && isSupportedRoundType(roundType);
   const voiceButtonBusy = serverSttActive ? (serverRecording || serverTranscribing) : isRecording;
-  const voiceButtonDisabled = isScoring || roundSettled || serverTranscribing;
+  const voiceButtonDisabled = isScoring || locked || serverTranscribing;
+  const nextLabel = phase === PHASES.COMPLETED || sessionComplete
+    ? 'View report →'
+    : phase === PHASES.BLOCKED
+      ? (continueBusy ? 'Checking…' : 'Retry next question')
+      : phase === PHASES.ACTIVATING
+        ? 'Opening…'
+        : 'Next Question →';
   const voiceStatus = serverTranscribing
     ? 'Transcribing'
     : serverRecording
@@ -1094,123 +1075,34 @@ export default function Interview({ sessionState = null }) {
         : engagementStatus === 'Uncertain'
           ? 'bg-amber-500'
           : 'bg-[#6F6F6F]/30';
-  const baselineLabel = engagementBaseline?.label || 'Neutral';
-
-  if (showCalibrationScreen) {
-    return (
-      <div className="h-screen bg-white flex flex-col overflow-hidden">
-        <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0">
-          <div className="flex items-center gap-4">
-            <button type="button" onClick={leaveSession} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
-              ← Exit
-            </button>
-            <div className="h-4 w-px bg-black/10" />
-            <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-              style={{ fontFamily: "var(--font-body)" }}>{currentSkill || 'Live Session'}</span>
-          </div>
-          {/* Typed rounds show only their own deadline timer (Phase AB). */}
-          {roundType === 'technical_short_answer' && (
-            <span className="text-sm font-mono text-[#6F6F6F]">{fmt(ROUND_SECONDS)}</span>
-          )}
-        </header>
-
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
-          <div className="relative flex-1 bg-black/[0.02] rounded-2xl overflow-hidden border border-black/8">
-            <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
-            <div className="absolute top-4 left-4 flex items-center gap-2 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full border border-black/8">
-              <div className={`w-2 h-2 rounded-full ${engagementReady ? 'bg-blue-500' : 'bg-[#6F6F6F]/30'}`} />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "var(--font-body)" }}>
-                Calibration
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-black/8 p-6 flex flex-col justify-center">
-            <h1 className="text-4xl tracking-tight mb-3"
-              style={{ fontFamily: "var(--font-display)" }}>
-              Calibration
-            </h1>
-            <p className="text-sm text-[#6F6F6F] leading-relaxed mb-8"
-              style={{ fontFamily: "var(--font-body)" }}>
-              Look at the camera with a relaxed expression for 10 seconds.
-            </p>
-            <div className="h-2 rounded-full bg-black/5 overflow-hidden mb-3">
-              <div className="h-full bg-black rounded-full transition-all duration-500"
-                style={{ width: `${calibrationProgress}%` }} />
-            </div>
-            <div className="flex items-center justify-between mb-8">
-              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
-                {calibrationProgress}%
-              </span>
-              <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
-                {baselineSamples.length} samples
-              </span>
-            </div>
-            <button
-              onClick={skipCalibration}
-              className="rounded-full px-6 py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform"
-              style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
-              Skip
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (sessionComplete && roundType !== 'coding') {
-    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b.score, 0) / scores.length) : 0;
-    return (
-      <div className="min-h-screen bg-white flex flex-col">
-        <nav className="border-b border-black/5">
-          <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-            <a href="/home" onClick={(e) => { e.preventDefault(); navigate('/home'); }}
-              className="text-2xl tracking-tight text-black" style={{ fontFamily: "var(--font-display)" }}>
-              interViv<sup className="text-xs align-super">©</sup>
-            </a>
-          </div>
-        </nav>
-        <div className="flex-1 flex items-start justify-center px-6 pt-12 pb-20">
-          <div className="max-w-2xl w-full">
-            <div className="text-center mb-10">
-              <h1 className="text-5xl tracking-tight mb-3" style={{ fontFamily: "var(--font-display)", letterSpacing: '-1.5px' }}>
-                Session Complete
-              </h1>
-              <p className="text-base" style={{ fontFamily: "var(--font-body)", color: 'var(--color-muted)' }}>
-                {scores.length} rounds · Average{' '}
-                <span style={{ color: scoreColor(avg), fontWeight: 600 }}>{avg}%</span>
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {[{ v: elo, l: 'Final Elo' }, { v: `${avg}%`, l: 'Average Score' }].map(s => (
-                <div key={s.l} className="rounded-2xl border border-black/8 py-5 text-center">
-                  <div className="text-2xl font-normal text-black mb-1" style={{ fontFamily: "var(--font-display)" }}>{s.v}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider" style={{ fontFamily: "var(--font-body)", color: 'var(--color-muted)' }}>{s.l}</div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button type="button" onClick={() => { clearInterviewState(); navigate(`/dashboard/${sessionId}`); }}
-                className="app-button app-button-primary">
-                View Dashboard
-              </button>
-              <button type="button" onClick={() => navigate('/upload')} className="app-button">
-                New Session
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Typed round components share one contract: their result stays visible
+  // after submission (scored or not) until Next opens the next round.
+  const roundProps = {
+    sessionId,
+    round,
+    question,
+    questionContext,
+    configJson,
+    expiresAt,
+    isScoring,
+    currentScore,
+    currentArtifact,
+    currentFeedback,
+    submitted: showingResult,
+    nextBusy: phase === PHASES.ACTIVATING,
+    onSubmit: (payload) => submitAnswer(payload),
+    onNextRound: phase === PHASES.BLOCKED ? handleContinueBlocked : handleNext,
+    sessionComplete: phase === PHASES.COMPLETED || sessionComplete,
+  };
+  const roundKey = `${sessionId}:${round}`;
 
   return (
     <div className="h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden">
       <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
-          <button type="button" onClick={leaveSession} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
-            ← Exit
+          <button type="button" onClick={saveAndExit} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}
+            title="Your progress is saved on the server. A running timer keeps running.">
+            ← Save &amp; Exit
           </button>
           <div className="h-4 w-px bg-black/10" />
           <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
@@ -1249,91 +1141,52 @@ export default function Interview({ sessionState = null }) {
         </div>
       </header>
 
+      {actionError && (
+        <div role="alert" data-testid="interview-action-error"
+          className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+          {actionError}
+        </div>
+      )}
+      {phase === PHASES.BLOCKED && roundType !== 'technical_short_answer' && (
+        <div role="status" className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <span>{progressionBlockedReason || 'The next question is temporarily unavailable. Your result is saved.'}</span>
+          <button type="button" className="app-button" disabled={continueBusy} onClick={handleContinueBlocked}>
+            {continueBusy ? 'Checking…' : 'Retry next question'}
+          </button>
+        </div>
+      )}
+
       {roundType === 'mcq' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <MCQRound
-            sessionId={sessionId}
-            round={round}
-            questionContext={questionContext}
-            configJson={configJson}
-            expiresAt={expiresAt}
-            isScoring={isScoring}
-            currentScore={currentScore}
-            currentArtifact={currentArtifact}
-            currentFeedback={currentFeedback}
-            onSubmit={(payload) => submitAnswer(payload)}
-            onNextRound={handleNext}
-            sessionComplete={sessionComplete}
-          />
+          <MCQRound key={roundKey} {...roundProps} />
         </div>
       ) : roundType === 'sql' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <SQLRound
-            sessionId={sessionId}
-            round={round}
-            question={question}
-            questionContext={questionContext}
-            configJson={configJson}
-            expiresAt={expiresAt}
-            isScoring={isScoring}
-            currentScore={currentScore}
-            currentArtifact={currentArtifact}
-            currentFeedback={currentFeedback}
-            onSubmit={(payload) => submitAnswer(payload)}
-            onNextRound={handleNext}
-            sessionComplete={sessionComplete}
-          />
+          <SQLRound key={roundKey} {...roundProps} />
         </div>
       ) : roundType === 'coding' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <CodingRound key={`${sessionId}:${round}`}
-            sessionId={sessionId}
-            round={round}
-            question={question}
-            questionContext={questionContext}
-            configJson={configJson}
-            expiresAt={expiresAt}
-            isScoring={isScoring}
-            currentScore={currentScore}
-            currentArtifact={currentArtifact}
-            currentFeedback={currentFeedback}
-            onSubmit={(payload) => submitAnswer(payload)}
-            onNextRound={handleNext}
-            sessionComplete={sessionComplete}
-          />
+          <CodingRound key={roundKey} {...roundProps} />
         </div>
       ) : roundType === 'ml_primitives' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <MLPrimitivesRound key={`${sessionId}:${round}`}
+          <MLPrimitivesRound key={roundKey}
             sessionId={sessionId} round={round} questionContext={questionContext}
             configJson={configJson} expiresAt={expiresAt} />
         </div>
       ) : roundType === 'system_design' ? (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <SystemDesignRound
-            sessionId={sessionId}
-            round={round}
-            question={question}
-            questionContext={questionContext}
-            configJson={configJson}
-            expiresAt={expiresAt}
-            isScoring={isScoring}
-            currentScore={currentScore}
-            currentArtifact={currentArtifact}
-            currentFeedback={currentFeedback}
+          <SystemDesignRound key={roundKey} {...roundProps}
             evaluationMode={evaluationMode}
-            evaluationBoundary={evaluationBoundary}
-            onSubmit={(payload) => submitAnswer(payload)}
-            onNextRound={handleNext}
-            sessionComplete={sessionComplete}
-          />
+            evaluationBoundary={evaluationBoundary} />
         </div>
       ) : (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
         <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/8 bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
-            {avState && avState !== AV_STATES.READY ? (
+            {/* Only after a requested mic/camera actually failed. */}
+            {avState && avState !== AV_STATES.READY && avState !== AV_STATES.PERMISSION_NOT_REQUESTED ? (
               <div className="w-full">
                 <AvUnavailablePanel
                   state={avState}
@@ -1361,19 +1214,15 @@ export default function Interview({ sessionState = null }) {
                 {voiceStatus}
               </span>
             </div>
-            <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
-              <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "var(--font-body)" }}>
-                Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
-              </span>
-            </div>
-            <div className="bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
-                style={{ fontFamily: "var(--font-body)" }}>
-                Baseline {calibrationSkipped ? 'Skipped' : baselineLabel}
-              </span>
-            </div>
+            {isVideoOn && (
+              <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
+                <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
+                  style={{ fontFamily: "var(--font-body)" }}>
+                  Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Question — the primary focus of the screen */}
@@ -1486,7 +1335,7 @@ export default function Interview({ sessionState = null }) {
                   <input
                     type="checkbox"
                     checked={serverSttActive}
-                    disabled={!hasBrowserSTT || isRecording || serverRecording || serverTranscribing || isScoring || currentScore !== null}
+                    disabled={!hasBrowserSTT || isRecording || serverRecording || serverTranscribing || locked}
                     onChange={(e) => {
                       if (isRecording) stopRecording();
                       if (serverRecording) stopServerRecording(true);
@@ -1506,18 +1355,18 @@ export default function Interview({ sessionState = null }) {
                 setTranscript(e.target.value);
                 setCurrentFeedback('');
               }}
-              disabled={isScoring || roundSettled}
+              disabled={locked}
               placeholder={isRecording || serverRecording ? 'Listening...' : serverTranscribing ? 'Transcribing...' : 'Type your answer here or use the microphone.'}
               className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[#333] outline-none transition-colors placeholder:text-[#6F6F6F]/40 focus:border-black/10 focus:bg-black/[0.015] disabled:cursor-default"
               style={{ fontFamily: "var(--font-body)" }}
             />
-            {interimText && currentScore === null && (
+            {interimText && !locked && (
               <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-xs italic text-[#6F6F6F]/70"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {interimText}
               </p>
             )}
-            {micError && currentScore === null && (
+            {micError && !locked && (
               <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {micError}
@@ -1526,8 +1375,8 @@ export default function Interview({ sessionState = null }) {
           </div>
           )}
 
-          {roundSettled && (
-            <div className="rounded-2xl border border-black/8 p-5">
+          {showingResult && (
+            <div className="rounded-2xl border border-black/8 p-5" data-testid="verbal-review">
               <div className="text-3xl font-normal mb-1 text-center"
                 style={{ fontFamily: "var(--font-display)", color: currentScore == null ? '#6F6F6F' : scoreColor(currentScore) }}>
                 {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
@@ -1598,7 +1447,7 @@ export default function Interview({ sessionState = null }) {
                   <span className="font-medium text-black">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
-              {roundType === 'technical_short_answer' && !sessionComplete && !followUpNote && (
+              {roundType === 'technical_short_answer' && phase === PHASES.REVIEWING && !followUpNote && (
                 <button
                   type="button"
                   className="mt-4 w-full rounded-xl border border-black/10 px-3 py-2 text-xs text-[#333] disabled:opacity-50"
@@ -1610,8 +1459,10 @@ export default function Interview({ sessionState = null }) {
                     )) return;
                     setFollowUpBusy(true);
                     try {
+                      // ``round`` is still the submitted round while reviewing.
                       const res = await requestFollowUp(sessionId, round);
                       if (res.scheduled) {
+                        if (typeof res.total_rounds === 'number') setTotalRounds(res.total_rounds);
                         setFollowUpNote(
                           `Follow-up scheduled (${res.follow_up_scoring || 'unscored'}). It appears after remaining mandatory rounds.`
                         );
@@ -1669,8 +1520,8 @@ export default function Interview({ sessionState = null }) {
               )}
             </button>
 
-            {currentScore === null && (
-              <button onClick={submitAnswer} disabled={!canSubmit}
+            {!showingResult && (
+              <button onClick={() => submitAnswer()} disabled={!canSubmit}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:cursor-not-allowed disabled:opacity-35"
                 style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
                 {isScoring
@@ -1682,21 +1533,17 @@ export default function Interview({ sessionState = null }) {
               </button>
             )}
 
-            {roundSettled && (
+            {showingResult && (
                 <button
-                onClick={progressionBlocked ? handleContinueBlocked : handleNext}
-                disabled={continueBusy}
+                onClick={phase === PHASES.BLOCKED ? handleContinueBlocked : handleNext}
+                disabled={continueBusy || phase === PHASES.ACTIVATING}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:opacity-50"
                 style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
-                {sessionComplete
-                  ? 'View Dashboard →'
-                  : progressionBlocked
-                    ? (continueBusy ? 'Checking…' : 'Retry next question')
-                    : 'Next Question →'}
+                {nextLabel}
               </button>
             )}
 
-            <button onClick={resetAnswer}
+            <button onClick={resetAnswer} disabled={locked} aria-label="Clear answer draft" title="Clear answer draft"
               className="w-9 h-9 rounded-full flex items-center justify-center border border-black/10 text-[#6F6F6F] cursor-pointer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>

@@ -20,6 +20,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 
 
@@ -81,13 +82,23 @@ def test_refresh_preserves_config_round_timing_and_results() -> None:
     assert answer.json()["next_block_position"] == 2
     scored = answer.json()["final_score"]
 
-    # Refresh after submit: completed result kept, active round advanced,
-    # configuration unchanged.
+    # Refresh after submit: completed result kept, next round prepared (not
+    # started, prompt hidden), configuration unchanged.
     resumed = client.get(f"/session/{session_id}", headers=headers).json()
     assert resumed["block_plan"] == body["block_plan"]
     assert resumed["last_round"] == 1
-    assert resumed["active_round"]["round"] == 2
-    assert resumed["active_round"]["block_position"] == 2
+    assert resumed["active_round"] is None
+    assert resumed["review_round"] == 1
+    assert resumed["round_history"][0]["final_score"] == scored
+    assert resumed["pending_round"]["round"] == 2
+    assert resumed["pending_round"]["status"] == "ready"
+    assert "question" not in resumed["pending_round"]
+
+    opened = activate(client, headers, session_id, 2)
+    assert opened["block_position"] == 2
+    again = client.get(f"/session/{session_id}", headers=headers).json()
+    assert again["active_round"]["round"] == 2
+    assert again["active_round"]["expires_at"] == opened["expires_at"]
     stored = get_database()["sessions"].find_one({"session_id": session_id})
     assert stored["rounds"][0]["final_score"] == scored
     assert stored["rounds"][0]["status"] == "submitted"

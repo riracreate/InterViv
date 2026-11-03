@@ -81,7 +81,9 @@ def _start_interview(client, headers, count=1):
 # ── memory backend ──────────────────────────────────────────────────────
 
 
-def test_submit_enqueues_exactly_one_job() -> None:
+def test_submit_enqueues_exactly_one_job(monkeypatch) -> None:
+    # Live narration on: the job waits in the queue for the worker.
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
     client = TestClient(app)
     headers = _headers(_make_user("t3a-enqueue"))
     db = get_database()
@@ -99,12 +101,34 @@ def test_submit_enqueues_exactly_one_job() -> None:
     assert db["narration_jobs"].count_documents({}) == jobs_before + 1
     job = db["narration_jobs"].find_one({"id": narration_job_id(session_id, 1)})
     assert job["status"] == "queued"
+    assert answer.json()["narration_status"] == "queued"
     assert job["attempts"] == 0
     assert job["feedback"] == answer.json()["feedback"]
     assert job["final_score"] == answer.json()["final_score"]
     assert job["skill"] == "DBMS"
     stored = db["sessions"].find_one({"session_id": session_id})
     assert job["snapshot_digest"] == stored["rounds"][0]["attempt_snapshot"]["digest"]
+
+
+def test_submit_renders_rules_narration_when_live_narration_is_off(monkeypatch) -> None:
+    """No worker runs locally; with live narration off the rules script is
+    rendered at submit so the client sees a terminal status at once."""
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+    client = TestClient(app)
+    headers = _headers(_make_user("t3a-inline"))
+    db = get_database()
+    start = _start_interview(client, headers)
+    session_id = start.json()["session_id"]
+    answer = client.post("/session/answer", headers=headers, json={
+        "session_id": session_id, "round": 1,
+        "answer_text": "A covering index answers a query from the index alone.",
+    })
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["narration_status"] == "skipped"
+    job = db["narration_jobs"].find_one({"id": narration_job_id(session_id, 1)})
+    assert job["status"] == "skipped"
+    assert job["attempts"] == 1
+    assert job["artifact"]["source"] == "rules_feedback"
 
 
 def test_enqueue_is_idempotent() -> None:
@@ -252,7 +276,9 @@ def test_worker_sweep_processes_due_jobs_oldest_first(monkeypatch) -> None:
     }
 
 
-def test_worker_refuses_tampered_snapshot() -> None:
+def test_worker_refuses_tampered_snapshot(monkeypatch) -> None:
+    # Keep the job queued at submit so the worker sees the tampered digest.
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
     client = TestClient(app)
     headers = _headers(_make_user("t3a-tamper"))
     db = get_database()
@@ -268,6 +294,7 @@ def test_worker_refuses_tampered_snapshot() -> None:
     # The round's snapshot no longer matches the digest pinned at enqueue.
     db["narration_jobs"].update_one(
         {"id": job_id}, {"$set": {"snapshot_digest": "0" * 64}})
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
     finished = process_narration_job(db, job_id)
     assert finished["status"] == "failed"
     assert finished["attempts"] == 1
@@ -450,7 +477,10 @@ def test_narration_job_round_trips_sqlalchemy(sa_url, monkeypatch) -> None:
 
     job_id = narration_job_id(session_id, 1)
     job = db["narration_jobs"].find_one({"id": job_id})
-    assert job is not None and job["status"] == "queued"
+    # Live narration off: the deterministic rules script is rendered at
+    # submit, so no worker is needed and the client never polls forever.
+    assert job is not None and job["status"] == "skipped"
+    assert answer.json()["narration_status"] == "skipped"
     assert job["feedback"] == answer.json()["feedback"]
 
     finished = process_narration_job(db, job_id)

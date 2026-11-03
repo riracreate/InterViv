@@ -47,6 +47,12 @@ from backend.routes.auth import (
     require_matching_user,
     require_user,
 )
+from backend.round_lifecycle import (
+    OPEN_STATUSES,
+    is_ready,
+    round_duration_seconds,
+    round_not_active_detail,
+)
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules.skill_graph import StudentSkillGraph
 
@@ -1836,15 +1842,43 @@ def get_session(
 
     assert_session_access(session, authorization)
 
-    active_round = next(
-        (r for r in reversed(rounds) if r.get("status") == "in_progress"),
-        rounds[-1] if rounds else None,
-    )
     is_completed = session_assessment_completed(session)
+    in_progress = next(
+        (r for r in reversed(rounds) if r.get("status") == "in_progress"), None
+    )
+    latest = rounds[-1] if rounds else None
+    pending = latest if is_ready(latest) else None
+    # A prepared round's prompt is revealed only by activation, so it is
+    # never served as the active round; legacy fallback is the last round.
+    active_round = in_progress or (None if pending else latest)
 
     sanitized_active_round = (
         sanitize_round_for_client(active_round, is_session_completed=is_completed)
         if active_round
+        else None
+    )
+    closed = [r for r in rounds if r.get("status") not in OPEN_STATUSES]
+    round_history = [
+        sanitize_round_for_client(dict(r), is_session_completed=is_completed)
+        for r in closed
+    ]
+    # The round under review: the latest answered round while no question
+    # is open (next one prepared, session complete, or progression blocked).
+    review_round = (
+        int(closed[-1].get("round") or 0) if closed and in_progress is None else None
+    )
+    pending_round = (
+        {
+            "round": pending.get("round"),
+            "round_type": pending.get("round_type"),
+            "status": pending.get("status"),
+            "skill": pending.get("skill"),
+            "difficulty": pending.get("difficulty"),
+            "block_id": pending.get("block_id"),
+            "block_category": pending.get("block_category"),
+            "duration_seconds": round_duration_seconds(pending),
+        }
+        if pending
         else None
     )
 
@@ -1862,6 +1896,9 @@ def get_session(
         "round_plan": session.get("round_plan"),
         "block_plan": session.get("block_plan"),
         "active_round": sanitized_active_round,
+        "round_history": round_history,
+        "review_round": review_round,
+        "pending_round": pending_round,
     }
 
 
@@ -2015,6 +2052,11 @@ def run_coding_preview(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Target round is not a coding round.",
         )
+    if is_ready(target_round):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=round_not_active_detail(target_round),
+        )
     if target_round.get("status") != "in_progress":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -2069,6 +2111,11 @@ def run_coding_preview(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Target round is not a coding round.",
+                )
+            if is_ready(target_round):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=round_not_active_detail(target_round),
                 )
             if target_round.get("status") != "in_progress":
                 raise HTTPException(
@@ -2157,6 +2204,11 @@ def _draft_round_or_error(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Session is completed; drafts are no longer accepted.",
+        )
+    if is_ready(target):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=round_not_active_detail(target),
         )
     if (
         target.get("status") in ("submitted", "finalizing", "expired")

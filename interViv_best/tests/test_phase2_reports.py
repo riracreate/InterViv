@@ -21,6 +21,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 
 
@@ -73,11 +74,13 @@ def test_composed_session_reports_each_block_own_metric() -> None:
         "answers": _mcq_answers(start.json()["questions"]),
     })
     assert ans1.status_code == 200, ans1.text
+    activate(client, headers, session_id, 2)
     ans2 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 2,
         "answer_text": _sql_reference(session_id, 2),
     })
     assert ans2.status_code == 200, ans2.text
+    activate(client, headers, session_id, 3)
     ans3 = client.post("/session/answer", headers=headers, json={
         "session_id": session_id, "round": 3,
         "answer_text": "A primary key uniquely identifies each row.",

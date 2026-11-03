@@ -16,6 +16,7 @@ os.environ["OPENROUTER_API_KEY"] = ""
 
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
+from tests.round_helpers import activate  # noqa: E402
 from backend.main import app
 from backend.ml_primitives.catalog import UNAVAILABLE_MESSAGE
 from modules.skill_graph import StudentSkillGraph
@@ -126,10 +127,13 @@ def test_mixed_session_reaches_ml_and_stays_open_without_a_score() -> None:
     nxt = interview.json()
     assert nxt["next_round_type"] == "ml_primitives"
     assert nxt["next_block_category"] == "ml_primitives"
-    context = nxt.get("next_question_context") or {}
+    assert nxt["next_question_context"] is None  # revealed on activation
+    _assert_no_pack_leak(nxt)
+    opened = activate(client, headers, session_id, 2)
+    context = opened.get("question_context") or {}
     assert context.get("id") == "minmax_normalize.v1"
     assert context.get("scoring_available") is False
-    _assert_no_pack_leak(nxt)
+    _assert_no_pack_leak(opened)
 
     source = "import numpy as np\n\ndef minmax(x):\n    return x\n"
     unavailable = client.post("/session/answer", headers=headers, json={

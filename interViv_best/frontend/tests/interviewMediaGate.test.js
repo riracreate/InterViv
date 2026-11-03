@@ -113,32 +113,30 @@ test('OA MCQ also skips calibration (same mcq round_type, oa category)', () => {
   assert.doesNotMatch(html, /Calibration|<video/);
 });
 
-test('technical interview retains its calibration and answer screen', () => {
-  assert.match(
-    render({ roundType: 'technical_short_answer', blockCategory: 'interview' }),
-    /Calibration/,
-  );
-  const html = render({
-    roundType: 'technical_short_answer',
-    blockCategory: 'interview',
-    calibrated: true,
-  });
+test('technical interview opens straight to the answer screen with the camera off', () => {
+  // No blocking calibration; the camera is optional and starts off.
+  const html = render({ roundType: 'technical_short_answer', blockCategory: 'interview' });
+  assert.doesNotMatch(html, /Calibration|<video/);
   assert.match(html, /Explain a generator/);
   assert.match(html, /<textarea/);
+  assert.doesNotMatch(html, /<textarea[^>]*disabled=""/);
   assert.match(html, /Time left in this round/);
+  assert.match(html, /Camera Off/);
+  assert.match(html, /Save &amp; Exit/);
+  // No "unavailable" warning before the candidate asks for the microphone.
+  assert.doesNotMatch(html, /permission|unavailable/i);
   assert.doesNotMatch(html, /data-testid="mcq-round-container"/);
 });
 
-test('mixed Verbal→Interview: interview block still presents calibration after round > 1', () => {
-  // Per-block gate: entering an interview category with no baseline must show
-  // calibration even when the session round number is already past 1.
+test('mixed Verbal→Interview: a later interview round is answerable at once', () => {
   const html = render({
     roundType: 'technical_short_answer',
     blockCategory: 'interview',
     round: 2,
-    calibrated: false,
   });
-  assert.match(html, /Calibration/);
+  assert.doesNotMatch(html, /Calibration/);
+  assert.match(html, /<textarea/);
+  assert.doesNotMatch(html, /<textarea[^>]*disabled=""/);
   assert.doesNotMatch(html, /data-testid="mcq-round-container"/);
 });
 
