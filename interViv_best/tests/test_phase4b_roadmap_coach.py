@@ -272,3 +272,68 @@ def test_roadmap_route_nulls_readiness_without_eligible(client: TestClient):
     assert body.get("overall_readiness_percentage") is None
     assert body.get("study_plan")
     assert body["study_plan"]["meta"]["readiness_percentage"] is None
+
+
+# --- Role requirements reach Roadmap and Coach (find_role + skill_requirements) ---
+
+_SDE_INTERN_SKILLS = {"DSA", "OOP", "DBMS", "System Design", "HR"}
+
+
+def test_role_requirements_populate_unassessed_without_history():
+    evidence = collect_planning_evidence(user_id="u-role-req", role_id="amazon_sde_intern")
+    assert {s.skill for s in evidence.unassessed} == _SDE_INTERN_SKILLS
+    assert all(s.population == "unassessed" for s in evidence.unassessed)
+    assert all("SDE Intern" in s.rationale for s in evidence.unassessed)
+
+
+def test_unknown_role_yields_no_unassessed_and_no_error():
+    evidence = collect_planning_evidence(user_id="u-role-unknown", role_id="no_such_role")
+    assert evidence.unassessed == []
+
+
+def test_assessed_role_skill_is_not_listed_as_unassessed():
+    db = get_database()
+    db["sessions"].insert_one(
+        {
+            "session_id": "s-role-req",
+            "user_id": "u-role-assessed",
+            "rounds": [
+                {
+                    "round": 1,
+                    "skill": "DSA",
+                    "final_score": 61.0,
+                    "assessment_eligibility": "eligible",
+                    "evidence_kind": "measured",
+                }
+            ],
+        }
+    )
+    evidence = collect_planning_evidence(
+        user_id="u-role-assessed", role_id="amazon_sde_intern", db=db
+    )
+    assert "DSA" not in {s.skill for s in evidence.unassessed}
+    assert {s.skill for s in evidence.unassessed} == _SDE_INTERN_SKILLS - {"DSA"}
+
+
+def test_starter_roadmap_focuses_on_role_requirements():
+    plan = ensure_plan("u-role-plan", role_id="amazon_sde_intern", days=30)
+    assert plan["meta"]["plan_kind"] == "starter"
+    task_skills = {t["skill"] for t in plan["tasks"]}
+    assert task_skills <= _SDE_INTERN_SKILLS
+    assert len(task_skills) > 1  # not just the hard-coded "DSA" default
+
+
+def test_coach_plan_uses_selected_role_requirements():
+    doc = get_or_create_conversation(user_id="u-role-coach", role_id="amazon_sde_intern")
+    result = post_message(
+        doc["conversation_id"],
+        owner=owner_key("u-role-coach"),
+        user_id="u-role-coach",
+        text="Build my plan",
+        action="create_plan",
+        action_payload={"days": 30},
+    )
+    plan = result["plan"]
+    assert plan is not None
+    assert {t["skill"] for t in plan["tasks"]} <= _SDE_INTERN_SKILLS
+    assert set(plan["evidence_summary"]["unassessed_skills"]) == _SDE_INTERN_SKILLS

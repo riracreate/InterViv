@@ -13,6 +13,7 @@ into populations the deterministic planner may use:
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -22,6 +23,8 @@ from backend.evidence_kind import (
     is_self_reported_round,
 )
 from modules.assistance_policy import read_persisted_eligibility
+
+_log = logging.getLogger(__name__)
 
 
 POP_ELIGIBLE = "eligible"
@@ -219,12 +222,19 @@ def collect_planning_evidence(
     }
     unassessed: list[SkillEvidence] = []
     if role_id:
+        # find_role resolves a role id without its company; get_role needs both.
+        role = None
         try:
-            role = get_company_graph().get_role(role_id)
-        except Exception:
-            role = None
+            match = get_company_graph().find_role(role_id)
+        except Exception:  # graph load failure must not break planning
+            _log.warning("planning_evidence: company graph unavailable", exc_info=True)
+        else:
+            if match is None:
+                _log.info("planning_evidence: unknown role_id %r", role_id)
+            else:
+                role = match[1]
         if role is not None:
-            for req in role.required_skills:
+            for req in role.skill_requirements:
                 skill = _skill_key(req.skill)
                 if skill in assessed_skills:
                     continue

@@ -297,7 +297,10 @@ def evaluate_eligibility(
 
     if is_follow_up_round(round_doc):
         reasons.append(REASON_FOLLOW_UP)
-        if round_doc.get("follow_up_scoring") == "unreviewed":
+        follow_up_scoring = round_doc.get("follow_up_scoring") or (
+            round_doc.get("config_json") or {}
+        ).get("follow_up_scoring")
+        if follow_up_scoring == "unreviewed":
             reasons.append(REASON_UNSCORED_FOLLOW_UP)
 
     retries = _prior_same_item_attempts(

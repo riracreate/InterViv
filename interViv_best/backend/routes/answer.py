@@ -1119,6 +1119,9 @@ def submit_answer(
             "engagement_label": request.engagement_label,
             "engagement_confidence": request.engagement_confidence,
             "engagement_delta": request.engagement_delta,
+            # Delivery signals (server-only; see backend/db/round_meta.py).
+            "wpm": request.wpm,
+            "pause_count": request.pause_count,
             "scoring_breakdown": _bd,
             "artifact_json": scoring_result.get("artifact_json") or _scored_base.get("artifact_json", {}),
             "guard_applied": scoring_result.get("guard_applied"),

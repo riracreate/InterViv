@@ -42,3 +42,16 @@ test('ATS mapping keeps unsubstantiated skills, and null when they cannot be jud
   assert.equal(unknown.unsubstantiatedSkills, null);
   assert.equal(unknown.layout, null);
 });
+
+test("skills-only analysis is flagged for re-upload", () => {
+  const view = mapAtsResultToView({
+    total: 40,
+    components: {},
+    analysis_source: "skills_only",
+    reupload_recommended: true,
+  });
+  assert.equal(view.analysisSource, "skills_only");
+  assert.equal(view.reuploadRecommended, true);
+  const fresh = mapAtsResultToView({ total: 70, components: {}, analysis_source: "snapshot" });
+  assert.equal(fresh.reuploadRecommended, false);
+});

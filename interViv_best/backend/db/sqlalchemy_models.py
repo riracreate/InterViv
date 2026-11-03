@@ -117,6 +117,9 @@ class CandidateRow(Base):
     sub_domain_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     elo_ratings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     session_history: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Resume layout/section analysis for ATS scoring (nullable: rows created
+    # before 20261103_0017 lost it and need a re-upload).
+    ats_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -223,6 +226,8 @@ class RoundRow(Base):
     is_follow_up: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     follow_up_parent_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     follow_up_identity: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    # Server-only round metadata (see sqlalchemy_store.ROUND_PRIVATE_META_KEYS).
+    private_meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -667,7 +672,7 @@ class SystemDesignAttemptRow(Base):
 
 
 class MLPrimitivesAttemptRow(Base):
-    """Stored source only: no candidate execution or grading result exists."""
+    """Submitted source plus, when an executor ran it, its grading result."""
 
     __tablename__ = "ml_primitives_attempts"
 
@@ -683,6 +688,11 @@ class MLPrimitivesAttemptRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 20261103_0017: grading outcome (NULL for source-only/unavailable rows).
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    grader_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 # Phase 1A: reviewed question bundles. Content is immutable per version; only

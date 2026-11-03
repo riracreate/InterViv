@@ -254,6 +254,16 @@ export default function AtsChecker() {
 
         {result && (
           <section className="mt-6 space-y-4" data-testid="ats-result">
+            {result.reuploadRecommended && (
+              <div
+                role="status"
+                data-testid="ats-reupload"
+                className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-ink)]"
+              >
+                This resume was saved before layout and section checks were stored, so
+                those parts could not be measured. Upload the PDF again for a complete score.
+              </div>
+            )}
             <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-6 text-center">
               <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">ATS total</p>
               <p className="mt-2 text-5xl font-semibold text-[var(--color-ink)]" style={{ fontFamily: 'var(--font-display)' }}>

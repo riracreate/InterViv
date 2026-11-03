@@ -46,5 +46,9 @@ export function mapAtsResultToView(payload) {
       : [],
     roleId: payload.role_id || null,
     resumeId: payload.resume_id || null,
+    // "skills_only": the stored resume predates layout/section snapshots, so
+    // parse and section scores are not measured. Ask for a re-upload.
+    analysisSource: payload.analysis_source || null,
+    reuploadRecommended: payload.reupload_recommended === true,
   };
 }

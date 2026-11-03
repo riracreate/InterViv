@@ -38,14 +38,24 @@ class AtsScoreRequest(BaseModel):
         return self
 
 
-def _analysis_from_candidate(candidate: dict, resume_text: str | None) -> dict[str, Any]:
+# Where an ATS analysis came from. ``skills_only`` means the stored resume
+# predates snapshot persistence: layout and sections were never kept, so the
+# client should ask for a re-upload rather than trust a degraded total.
+ANALYSIS_SOURCE_TEXT = "resume_text"
+ANALYSIS_SOURCE_SNAPSHOT = "snapshot"
+ANALYSIS_SOURCE_SKILLS_ONLY = "skills_only"
+
+
+def _analysis_from_candidate(
+    candidate: dict, resume_text: str | None
+) -> tuple[dict[str, Any], str]:
     if resume_text and resume_text.strip():
-        return analyze_resume_text(resume_text)
+        return analyze_resume_text(resume_text), ANALYSIS_SOURCE_TEXT
     snapshot = candidate.get("ats_snapshot") or {}
     if snapshot:
         # Ensure skills fall back to resume_skills
         skills = snapshot.get("skills") or candidate.get("resume_skills") or []
-        return {**snapshot, "skills": skills}
+        return {**snapshot, "skills": skills}, ANALYSIS_SOURCE_SNAPSHOT
     # Legacy candidates: skills only
     return {
         "skills": list(candidate.get("resume_skills") or []),
@@ -56,7 +66,7 @@ def _analysis_from_candidate(candidate: dict, resume_text: str | None) -> dict[s
         "likely_garbage": False,
         "layout_checked": False,
         "text_hash": None,
-    }
+    }, ANALYSIS_SOURCE_SKILLS_ONLY
 
 
 @router.post("/score")
@@ -94,7 +104,7 @@ def post_ats_score(
     else:
         must_have = must_have_from_jd(jd_text or "")
 
-    analysis = _analysis_from_candidate(candidate, body.resume_text)
+    analysis, analysis_source = _analysis_from_candidate(candidate, body.resume_text)
     result = score_ats(
         analysis=analysis,
         must_have=must_have,
@@ -123,6 +133,8 @@ def post_ats_score(
         **result,
         "run_id": saved.get("id"),
         "resume_id": body.candidate_id.strip(),
+        "analysis_source": analysis_source,
+        "reupload_recommended": analysis_source == ANALYSIS_SOURCE_SKILLS_ONLY,
         "created_at": saved.get("created_at").isoformat()
         if hasattr(saved.get("created_at"), "isoformat")
         else saved.get("created_at"),

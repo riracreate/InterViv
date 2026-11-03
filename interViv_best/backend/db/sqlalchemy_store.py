@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Any, Iterator
 
 from backend.config import get_settings
+from backend.db.round_meta import LEGACY_CONFIG_META_KEYS, ROUND_PRIVATE_META_KEYS
 
 from .sqlalchemy_models import (
     AnswerDraftRow,
@@ -166,6 +167,25 @@ def _coerce_datetime(value: Any) -> datetime | None:
     return None
 
 
+
+
+def _round_private_meta(round_doc: dict) -> dict | None:
+    meta = {
+        key: round_doc[key]
+        for key in ROUND_PRIVATE_META_KEYS
+        if round_doc.get(key) is not None
+    }
+    return _json_ready(meta) if meta else None
+
+
+def _restore_round_private_meta(meta: dict | None, config: dict | None) -> dict:
+    restored = {k: v for k, v in (meta or {}).items() if k in ROUND_PRIVATE_META_KEYS and v is not None}
+    for key in LEGACY_CONFIG_META_KEYS:
+        if key not in restored and (config or {}).get(key) is not None:
+            restored[key] = config[key]
+    return restored
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     """Restore UTC on a SQLite read.
 
@@ -300,6 +320,7 @@ class _CandidateCollection:
                 sub_domain_profile=data.get("sub_domain_profile") or {},
                 elo_ratings=data.get("elo_ratings") or {},
                 session_history=data.get("session_history") or [],
+                ats_snapshot=data.get("ats_snapshot"),
                 created_at=_coerce_datetime(data.get("created_at")) or _now(),
             )
             session.merge(row)
@@ -335,6 +356,7 @@ class _CandidateCollection:
             "sub_domain_profile": row.sub_domain_profile or {},
             "elo_ratings": row.elo_ratings or {},
             "session_history": row.session_history or [],
+            "ats_snapshot": row.ats_snapshot,
             "created_at": row.created_at,
         }
 
@@ -729,6 +751,7 @@ class _SessionCollection:
                     is_follow_up=round_doc.get("is_follow_up"),
                     follow_up_parent_round=round_doc.get("follow_up_parent_round"),
                     follow_up_identity=round_doc.get("follow_up_identity"),
+                    private_meta_json=_round_private_meta(round_doc),
                 )
             )
 
@@ -795,6 +818,9 @@ class _SessionCollection:
                     "is_follow_up": round_row.is_follow_up,
                     "follow_up_parent_round": round_row.follow_up_parent_round,
                     "follow_up_identity": round_row.follow_up_identity,
+                    **_restore_round_private_meta(
+                        round_row.private_meta_json, round_row.config_json
+                    ),
                 }
             )
         return {
@@ -1732,6 +1758,13 @@ class _MLPrimitivesAttemptCollection:
             "error_code": row.error_code,
             "created_at": row.created_at.replace(tzinfo=timezone.utc)
                 if row.created_at.tzinfo is None else row.created_at,
+            # Grading outcome keys appear only once an executor graded the
+            # attempt, so source-only rows read back exactly as written.
+            **{key: value for key, value in (
+                ("score", row.score), ("result", row.result_json),
+                ("grader_version", row.grader_version),
+                ("execution_status", row.execution_status),
+            ) if value is not None},
         }
 
     def find(self, query=None):
@@ -1752,6 +1785,9 @@ class _MLPrimitivesAttemptCollection:
                 problem_id=doc["problem_id"], problem_version=doc["problem_version"],
                 language=doc["language"], source=doc["source"], status=doc["status"],
                 error_code=doc["error_code"], created_at=_coerce_datetime(doc["created_at"]),
+                score=doc.get("score"), result_json=_json_ready(doc.get("result")),
+                grader_version=doc.get("grader_version"),
+                execution_status=doc.get("execution_status"),
             ))
         return _InsertResult(doc["id"])
 

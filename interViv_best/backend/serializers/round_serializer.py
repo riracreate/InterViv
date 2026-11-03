@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.db.round_meta import ROUND_PRIVATE_META_KEYS
+
 
 DEFAULT_REVIEW_POLICY = "none"
 SUPPORTED_REVIEW_POLICIES = {"none", "after_session"}
@@ -79,6 +81,8 @@ def sanitize_round_for_client(
     # Attempt snapshots are server-side only (frozen answers and grading
     # inputs); they never travel to clients on any round type or policy.
     cleaned.pop("attempt_snapshot", None)
+    for key in ROUND_PRIVATE_META_KEYS:
+        cleaned.pop(key, None)
     round_type = cleaned.get("round_type", "technical_short_answer")
     config = dict(cleaned.get("config_json") or {})
 
