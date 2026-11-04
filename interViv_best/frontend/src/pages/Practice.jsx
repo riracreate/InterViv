@@ -19,6 +19,14 @@ import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import SkillChipInput from '../components/SkillChipInput';
+import InterviewResumePanel from '../components/InterviewResumePanel';
+import { readScoped, writeScoped } from '../lib/accountStorage';
+import {
+  WIZARD_STORAGE_NAME,
+  WIZARD_STORAGE_VERSION,
+  restoreWizard,
+  serializeWizard,
+} from '../lib/uploadWizard';
 import { COMMON_SKILLS } from '../lib/skillChips';
 import { useAccountRetry } from '../lib/useAccountRetry';
 import {
@@ -145,17 +153,39 @@ export default function Practice() {
   const [bankSkill, setBankSkill] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
 
+  // Resume state for main interview rounds (shared with upload wizard storage)
+  const [resumeState, setResumeState] = useState({
+    candidateId: '',
+    fileName: '',
+    extractedSkills: [],
+    domainProfile: {},
+  });
+
   useEffect(() => {
     let cancelled = false;
     fetchMe()
       .then((me) => {
         if (cancelled) return;
-        setUser(me.user || me);
+        const u = me.user || me;
+        const id = u.id || u.user_id || null;
+        setUser(u);
         setAuthReady(true);
+        const saved = restoreWizard(readScoped('session', id, WIZARD_STORAGE_NAME, WIZARD_STORAGE_VERSION));
+        if (saved.candidateId || saved.extractedSkills?.length) {
+          setResumeState({
+            candidateId: saved.candidateId || '',
+            fileName: saved.fileName || '',
+            extractedSkills: saved.extractedSkills || [],
+            domainProfile: saved.domainProfile || {},
+          });
+        }
         return fetchTargetContext().catch(() => null);
       })
       .then((data) => {
         if (cancelled || !data?.target) return;
+        if (data.target.resume_ref) {
+          setResumeState((prev) => (prev.candidateId ? prev : { ...prev, candidateId: data.target.resume_ref }));
+        }
         if (data.target.company_id && data.target.role_id) {
           // The saved target is a default only: a target passed by the
           // Gap/Roadmap hop (or picked already) wins.
@@ -474,6 +504,9 @@ export default function Practice() {
     setAvailability(null);
     try {
       const body = stripClientOnly(mapped.payload);
+      if (resumeState.candidateId && !body.candidate_id) {
+        body.candidate_id = resumeState.candidateId;
+      }
       body.practice_mode = practiceMode;
       body.allow_optional_follow_ups =
         practiceMode === 'assessment' ? false : allowOptionalFollowUps;
@@ -508,6 +541,38 @@ export default function Practice() {
     }
   };
 
+  const handleResumeExtracted = ({ candidateId, fileName, extractedSkills, domainProfile }) => {
+    const nextState = {
+      candidateId: candidateId || '',
+      fileName: fileName || '',
+      extractedSkills: extractedSkills || [],
+      domainProfile: domainProfile || {},
+    };
+    setResumeState(nextState);
+    const topSkills = (extractedSkills || []).slice(0, 5);
+    if (topSkills.length > 0) {
+      setSkillsExplicit(true);
+      skillsExplicitRef.current = true;
+      skillsRef.current = topSkills;
+      setSkills(topSkills);
+      setStandaloneTopics(topSkills.slice(0, 3).join(', '));
+      setPrefillNote(`Extracted ${extractedSkills.length} skill${extractedSkills.length === 1 ? '' : 's'} from ${fileName || 'your resume'}.`);
+    }
+    if (userId) {
+      writeScoped(
+        'session',
+        userId,
+        WIZARD_STORAGE_NAME,
+        serializeWizard({
+          ...nextState,
+          selectedSkills: topSkills.length > 0 ? topSkills : skills,
+          targetSelection: target,
+        }),
+        WIZARD_STORAGE_VERSION
+      );
+    }
+  };
+
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)] grid place-items-center">
@@ -522,11 +587,6 @@ export default function Practice() {
         <AppNav
           userId={user?.id || user?.user_id || null}
           roleId={target.roleId || user?.target_role_id || null}
-          trailing={
-            <Link to="/upload" className="rounded-[var(--radius-pill)] px-3 py-1.5 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
-              Resume upload
-            </Link>
-          }
         />
 
         <header className="app-page-hero">
@@ -644,6 +704,27 @@ export default function Practice() {
           </div>
         )}
 
+        {(mode === 'full' || mode === 'interview') && (
+          <InterviewResumePanel
+            candidateId={resumeState.candidateId}
+            fileName={resumeState.fileName}
+            extractedSkills={resumeState.extractedSkills}
+            selectedSkills={mode === 'full' ? skills : standaloneSkillList}
+            onResumeExtracted={handleResumeExtracted}
+            onSkillsChange={(next) => {
+              if (mode === 'full') {
+                setSkillsExplicit(true);
+                skillsExplicitRef.current = true;
+                skillsRef.current = next;
+                setPrefillNote('');
+                setSkills(next);
+              } else {
+                setStandaloneTopics(next.join(', '));
+              }
+            }}
+          />
+        )}
+
         {(mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
@@ -722,6 +803,7 @@ export default function Practice() {
                   mapFullInterviewToStartPayload({
                     skills,
                     roundsPerSkill,
+                    candidateId: resumeState.candidateId || undefined,
                     targetCompanyId: target.companyId,
                     targetRoleId: target.roleId,
                   })
@@ -1162,6 +1244,7 @@ export default function Practice() {
                 count: standaloneCount,
                 difficulty: standaloneDifficulty || undefined,
                 topic: standaloneTopic || undefined,
+                candidateId: resumeState.candidateId || undefined,
                 targetCompanyId: target.companyId, targetRoleId: target.roleId,
               }))}
             >
