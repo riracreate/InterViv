@@ -17,7 +17,10 @@ import {
 import CompanySelector from '../components/CompanySelector';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 import {
+  roleRequiredSkills,
   PRACTICE_MODES,
   STANDALONE_MODES,
   BLOCK_CATEGORIES,
@@ -86,6 +89,8 @@ export default function Practice() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = searchParams.get('mode') || '';
 
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
+
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState(null);
   const [error, setError] = useState('');
@@ -93,6 +98,11 @@ export default function Practice() {
   const [busy, setBusy] = useState(false);
   const [skills, setSkills] = useState(DEFAULT_SKILLS);
   const [skillsExplicit, setSkillsExplicit] = useState(false);
+  // Async target prefill reads the latest values, not a stale closure.
+  const skillsRef = useRef(DEFAULT_SKILLS);
+  const skillsExplicitRef = useRef(false);
+  skillsRef.current = skills;
+  skillsExplicitRef.current = skillsExplicit;
   const [prefillNote, setPrefillNote] = useState('');
   const [target, setTarget] = useState({ companyId: '', roleId: '' });
   // Phase 4A: assessment vs coached practice; follow-ups default off for assessment.
@@ -145,19 +155,22 @@ export default function Practice() {
       .then((data) => {
         if (cancelled || !data?.target) return;
         if (data.target.company_id && data.target.role_id) {
-          setTarget({
+          // The saved target is a default only: a target passed by the
+          // Gap/Roadmap hop (or picked already) wins.
+          setTarget((prev) => (prev.companyId && prev.roleId ? prev : {
             companyId: data.target.company_id,
             roleId: data.target.role_id,
-          });
+          }));
         }
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { replace: true, state: { next: location.pathname + location.search } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate, location.pathname, location.search]);
+    // Load once per retry; mode changes (?mode=) must not refetch and reset the target.
+  }, [accountAttempt]);
 
   useEffect(() => {
     if (!authReady || mode !== 'problems') return undefined;
@@ -265,14 +278,13 @@ export default function Practice() {
         if (cancelled) return;
         const company = (data.companies || []).find((c) => c.id === target.companyId);
         const role = (company?.roles || []).find((r) => r.id === target.roleId);
-        const req = (role?.required_skills || role?.skills || [])
-          .map((s) => (typeof s === 'string' ? s : s.canonical_name || s.name || s.skill))
-          .filter(Boolean);
-        const { skills: next, applied } = applyTargetPrefill(skills, req, skillsExplicit);
+        const req = roleRequiredSkills(role);
+        const explicit = skillsExplicitRef.current;
+        const { skills: next, applied } = applyTargetPrefill(skillsRef.current, req, explicit);
         if (applied) {
           setSkills(next);
           setPrefillNote(`Prefilled from ${role?.title || 'target role'} required skills.`);
-        } else if (skillsExplicit) {
+        } else if (explicit) {
           setPrefillNote('Showing your explicitly chosen topics; target prefill skipped.');
         }
       })
@@ -295,6 +307,11 @@ export default function Practice() {
     const { skills: next, applied } = applyTargetPrefill(skills, incoming, skillsExplicit);
     if (applied) {
       setSkills(next);
+      // Weak areas are a deliberate choice: mark them explicit at once so a
+      // target default arriving later cannot overwrite them.
+      setSkillsExplicit(true);
+      skillsExplicitRef.current = true;
+      skillsRef.current = next;
       setPrefillNote(
         `Prefilled from ${location.state?.prefillSource || 'gap analysis'} weak areas.`
       );
@@ -485,7 +502,7 @@ export default function Practice() {
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

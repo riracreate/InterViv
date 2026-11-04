@@ -110,12 +110,18 @@ function sources(dir) {
   });
 }
 
-test('audit pin: no sessionStorage, IndexedDB or cookies; localStorage only in api.js and practiceBuilder.js', () => {
+test('audit pin: no IndexedDB or cookies; browser storage only in the audited modules', () => {
+  // accountStorage.js owns account-scoped, versioned session/local values.
+  const sessionAllowed = ['lib/accountStorage.js'];
+  const localAllowed = ['lib/api.js', 'lib/practiceBuilder.js', 'lib/accountStorage.js'];
   for (const file of sources(srcDir)) {
     const text = readFileSync(file, 'utf8');
-    const rel = path.relative(srcDir, file);
-    assert.doesNotMatch(text, /sessionStorage|indexedDB|document\.cookie/, rel);
-    if (!['lib/api.js', 'lib/practiceBuilder.js'].includes(rel.split(path.sep).join('/'))) {
+    const rel = path.relative(srcDir, file).split(path.sep).join('/');
+    assert.doesNotMatch(text, /indexedDB|document\.cookie/, rel);
+    if (!sessionAllowed.includes(rel)) {
+      assert.doesNotMatch(text, /sessionStorage/, `${rel} uses sessionStorage outside accountStorage.js`);
+    }
+    if (!localAllowed.includes(rel)) {
       assert.doesNotMatch(text, /localStorage/, `${rel} writes browser storage outside the audited modules`);
     }
   }

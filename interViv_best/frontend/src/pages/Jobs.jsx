@@ -12,6 +12,8 @@ import {
 } from '../lib/api';
 import { mapJobCard, jobApplyHref, formatSalary } from '../lib/jobsMapping';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 import '../styles/hub.css';
 
 const ADZUNA_LOGO = 'https://www.adzuna.co.in/images/logo.png';
@@ -64,6 +66,7 @@ function AdzunaAttribution({ attribution }) {
 export default function Jobs() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [authReady, setAuthReady] = useState(false);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
   const [q, setQ] = useState(searchParams.get('q') || 'software intern OR backend OR data');
@@ -96,13 +99,13 @@ export default function Jobs() {
           roleId: u.target_role_id || null,
         });
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: returnTo } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [accountAttempt, navigate]);
 
   const load = async (
     nextQ = q,
@@ -212,7 +215,7 @@ export default function Jobs() {
     return (
       <main className="hub-page">
         <div className="hub-container">
-          <p className="hub-loading" role="status">Checking sign-in…</p>
+          <AccountGate error={accountError} onRetry={retryAccount} />
         </div>
       </main>
     );

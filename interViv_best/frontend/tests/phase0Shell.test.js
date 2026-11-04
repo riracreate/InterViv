@@ -12,11 +12,10 @@ test('page title is interViv and index.html has no Velorah branding', () => {
   assert.equal(/velorah/i.test(html), false);
 });
 
-test('session report Back to Home goes to /home', () => {
+test('session report Back returns in-app, else to Progress (never the landing page)', () => {
   const src = readFileSync(join(root, 'src/pages/Dashboard.tsx'), 'utf8');
-  assert.match(src, /navigate\('\/home'\)/);
+  assert.match(src, /backDestination\(location, '\/dashboard'\)/);
   assert.doesNotMatch(src, /navigate\('\/'\)/);
-  assert.match(src, /fetchAccountOverview/);
 });
 
 test('interview camera uses one callback ref on its only video element', () => {

@@ -62,6 +62,8 @@ export function moreNavItems({ userId, roleId } = {}) {
 }
 
 export function isNavActive(pathname, itemTo) {
+  // "Set a target" prompts point at /home#target; they are not destinations.
+  if (String(itemTo || '').includes('#')) return false;
   const path = (pathname || '/').split('?')[0];
   const base = (itemTo || '').split('?')[0].split('#')[0];
   if (base === '/dashboard') {

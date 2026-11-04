@@ -11,10 +11,13 @@ import {
 import { mapAtsResultToView } from '../lib/atsMapping';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
 export default function AtsChecker() {
   const navigate = useNavigate();
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [authReady, setAuthReady] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,13 +44,13 @@ export default function AtsChecker() {
           roleId: u.target_role_id || null,
         });
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: '/ats' } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [accountAttempt, navigate]);
 
   useEffect(() => {
     if (!authReady) return undefined;
@@ -146,7 +149,7 @@ export default function AtsChecker() {
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

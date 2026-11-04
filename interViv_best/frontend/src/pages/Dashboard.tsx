@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { backDestination } from "../lib/backNavigation";
 import { motion } from "motion/react";
 import {
   ArrowLeft,
@@ -335,6 +336,7 @@ function DashboardHome() {
 export default function Dashboard() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(Boolean(sessionId));
   const [err, setErr] = useState('');
@@ -406,11 +408,16 @@ export default function Dashboard() {
     <div className="dashboard-session min-h-screen w-full bg-[var(--color-session-bg)] text-white selection:bg-cyan-300/20 selection:text-white">
       <motion.div {...pageMotion} className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button onClick={() => navigate('/home')}
+          {/* Back to wherever the report was opened from; Progress lists reports. */}
+          <button onClick={() => {
+              const target = backDestination(location, '/dashboard');
+              if (typeof target === 'number') navigate(target); else navigate(target);
+            }}
+            data-testid="report-back"
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 backdrop-blur-xl transition hover:bg-white/8"
             style={{ fontFamily: "var(--font-body)" }}>
             <ArrowLeft className="h-4 w-4" />
-            Back to Home
+            Back
           </button>
           <div className="flex flex-wrap items-center gap-2">
             {raw?.target_role_id && raw?.user_id && (

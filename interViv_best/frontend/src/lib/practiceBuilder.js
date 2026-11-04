@@ -542,6 +542,19 @@ export function mapProblemItemToStartPayload(item, form = {}) {
 }
 
 /**
+ * Required skill names for a role from GET /companies. The API sends
+ * ``skill_requirements: [{skill, display_name, ...}]``; older shapes are
+ * still accepted. Pure for tests.
+ */
+export function roleRequiredSkills(role) {
+  const list = role?.skill_requirements || role?.required_skills || role?.skills || [];
+  return list
+    .map((s) => (typeof s === 'string' ? s : s?.skill || s?.canonical_name || s?.name))
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+}
+
+/**
  * Target/weak-area prefill for the shared skills field.
  * Prefills only when the user has not explicitly chosen topics;
  * an explicit selection is never overridden. Pure for tests.

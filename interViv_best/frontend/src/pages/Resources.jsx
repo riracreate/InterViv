@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchMe } from '../lib/api';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 
 const CATEGORIES = ['DSA', 'System Design', 'Behavioral', 'SQL', 'OA / MCQ', 'Resume / ATS'];
 const OTHER_SKILLS = ['DBMS', 'OOP', 'Operating Systems', 'Computer Networks', 'Python', 'Machine Learning'];
@@ -12,6 +14,7 @@ export default function Resources() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const skillId = params.get('skill_id') || 'DSA';
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [skillInput, setSkillInput] = useState(skillId);
   const [authReady, setAuthReady] = useState(false);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
@@ -32,18 +35,18 @@ export default function Resources() {
           roleId: u.target_role_id || null,
         });
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate, skillId]);
+  }, [accountAttempt, navigate, skillId]);
 
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

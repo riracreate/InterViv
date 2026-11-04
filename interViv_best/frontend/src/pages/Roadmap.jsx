@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchRoadmap, fetchMyRoadmap } from '../lib/api';
 import AppNav from '../components/AppNav';
+import BackLink from '../components/BackLink';
+import { gapAnalysisPath } from '../lib/backNavigation';
 import '../styles/hub.css';
 
 const SUPPORTED_DAYS = [7, 14, 30];
@@ -166,9 +168,7 @@ export default function Roadmap() {
         <div className="hub-container">
           <AppNav userId={userId === 'me' ? null : userId} roleId={roleId} />
           <div className="hub-error" role="alert">{error}</div>
-          <button type="button" onClick={() => navigate(-1)} className="hub-button hub-button-primary">
-            ← Back
-          </button>
+          <BackLink fallback="/home" className="hub-button hub-button-primary" />
         </div>
       </main>
     );
@@ -180,6 +180,7 @@ export default function Roadmap() {
     <main className="hub-page" data-testid="roadmap-page">
       <div className="hub-container">
         <AppNav userId={roadmap.user_id || (userId === 'me' ? null : userId)} roleId={roadmap.role_id || roleId} />
+        <div className="mt-4"><BackLink fallback={gapAnalysisPath(userId, roleId)} /></div>
 
         <header className="hub-page-hero">
         <p className="hub-eyebrow">
@@ -286,7 +287,7 @@ export default function Roadmap() {
                   data-testid="roadmap-start-practice">
             Start practice now →
           </button>
-          <button type="button" onClick={() => navigate(`/gap-analysis/${userId}/${roleId}`)}
+          <button type="button" onClick={() => navigate(gapAnalysisPath(userId, roleId))}
                   className="hub-button">
             ← Back to gap analysis
           </button>

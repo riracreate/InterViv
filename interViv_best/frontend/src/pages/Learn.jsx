@@ -18,10 +18,13 @@ import {
   saveInterviewState,
 } from '../lib/api';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 
 /** Phase D+I learning hub: notebook, retry sets, spaced reviews, bookmarks. */
 export default function Learn() {
   const navigate = useNavigate();
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [authReady, setAuthReady] = useState(false);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
   const [notebook, setNotebook] = useState(null);
@@ -48,13 +51,13 @@ export default function Learn() {
           roleId: u.target_role_id || null,
         });
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: '/learn' } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [accountAttempt, navigate]);
 
   const reload = () => {
     fetchNotebook().then(setNotebook).catch((e) => setError(e.message));
@@ -203,7 +206,7 @@ export default function Learn() {
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

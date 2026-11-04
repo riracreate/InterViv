@@ -1,6 +1,9 @@
 import { normalizeSessionData } from './roundContractHelpers.js';
 import { LEGACY_BUILDER_DRAFT_KEY } from './practiceBuilder.js';
 import { loginHref } from './authRedirect.js';
+import { createUnauthorizedHandler, unauthorizedRoute } from './authGuard.js';
+import { errorFromFetchFailure, kindForStatus, makeRequestError } from './requestErrors.js';
+import { clearSessionScopedState } from './accountStorage.js';
 
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_STORAGE_KEY = "adaptive-mock-interview-state";
@@ -28,28 +31,74 @@ export function fetchCodingCoach(payload) {
   return request('/problems/coach/hint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
 }
 
+function apiUrl(path) {
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : `/api${path}`;
+}
+
+function readToken() {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Status of GET /auth/me for one specific token (no shared side effects). */
+async function verifyToken(token) {
+  const response = await fetch(apiUrl("/auth/me"), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.status;
+}
+
+// Confirmed expiry: clear account state once, then go to sign-in without
+// leaving the expired page in history.
+function expireSession() {
+  clearAuthToken();
+  if (typeof window === "undefined" || !window.location) return;
+  if (window.location.pathname.startsWith("/login")) return;
+  const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(loginHref(here, window.location.origin));
+}
+
+const handleUnauthorized = createUnauthorizedHandler({
+  verifyToken,
+  currentToken: readToken,
+  onExpired: expireSession,
+});
+
 async function request(path, options = {}) {
-  const requestPath = API_BASE_URL ? `${API_BASE_URL}${path}` : `/api${path}`;
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = readToken();
   const headers = new Headers(options.headers || {});
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const response = await fetch(requestPath, { ...options, headers });
+  let response;
+  try {
+    response = await fetch(apiUrl(path), { ...options, headers });
+  } catch (err) {
+    // Aborts are cancellations; anything else is a retryable network error.
+    throw errorFromFetchFailure(err, options.signal);
+  }
   const data = await response.json().catch(() => ({}));
 
-  if (response.status === 401 && token && !path.startsWith("/auth/")) {
-    clearAuthToken();
-    const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.assign(loginHref(here, window.location.origin));
+  if (response.status === 401 && token) {
+    // Never log out on a single 401: confirm with /auth/me (shared across
+    // concurrent failures) and ignore responses for a replaced token.
+    const route = unauthorizedRoute(path, options.method);
+    if (route === "confirmed") {
+      if (readToken() === token) expireSession();
+    } else if (route === "verify") {
+      await handleUnauthorized(token);
     }
   }
   if (!response.ok) {
-    const error = new Error(apiErrorMessage(data));
-    error.status = response.status;
-    error.detail = data.detail;
-    throw error;
+    throw makeRequestError({
+      kind: kindForStatus(response.status),
+      status: response.status,
+      message: apiErrorMessage(data),
+      detail: data.detail,
+    });
   }
 
   return data;
@@ -59,12 +108,17 @@ async function request(path, options = {}) {
 // changes (signin, signup, signout) so it never surfaces under another
 // account on a shared browser. Per-account keys are left intact.
 function clearUnscopedAccountState() {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
-  localStorage.removeItem(LEGACY_BUILDER_DRAFT_KEY);
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_BUILDER_DRAFT_KEY);
+  } catch { /* storage unavailable */ }
+  // Per-account session values (e.g. the upload wizard) never outlive the
+  // account that wrote them.
+  clearSessionScopedState();
 }
 
 export function hasAuthToken() {
-  return Boolean(localStorage.getItem(AUTH_TOKEN_KEY));
+  return Boolean(readToken());
 }
 
 export function saveAuthToken(token) {
@@ -74,7 +128,13 @@ export function saveAuthToken(token) {
 
 export function clearAuthToken() {
   clearUnscopedAccountState();
-  localStorage.removeItem(AUTH_TOKEN_KEY);
+  try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* storage unavailable */ }
+}
+
+/** Sign out: forget the token and every account-sensitive browser value. */
+export function signOut() {
+  clearAuthToken();
+  clearInterviewState();
 }
 
 export function signup(payload) {
@@ -584,12 +644,16 @@ export function saveInterviewState(state) {
 }
 
 export function loadInterviewState() {
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function clearInterviewState() {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* storage unavailable */ }
 }
 
 export function fetchMLAttempts() {

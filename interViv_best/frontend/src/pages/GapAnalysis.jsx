@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { fetchGapAnalysis, fetchMyGapAnalysis } from '../lib/api';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
+import BackLink from '../components/BackLink';
+import { roadmapPath } from '../lib/backNavigation';
 import '../styles/hub.css';
 
 const SEVERITY_COLORS = {
@@ -125,9 +127,7 @@ export default function GapAnalysis() {
         <div className="hub-container">
           <AppNav userId={userId === 'me' ? null : userId} roleId={roleId} />
           <div className="hub-error" role="alert">{error}</div>
-          <button type="button" onClick={() => navigate('/upload')} className="hub-button hub-button-primary">
-            ← Back to Upload
-          </button>
+          <BackLink fallback="/home" className="hub-button hub-button-primary" />
         </div>
       </main>
     );
@@ -146,6 +146,7 @@ export default function GapAnalysis() {
     <main className="hub-page" data-testid="gap-analysis-page">
       <div className="hub-container">
         <AppNav userId={report.user_id || (userId === 'me' ? null : userId)} roleId={report.role_id || roleId} />
+        <div className="mt-4"><BackLink fallback="/home" /></div>
 
         <header className="hub-page-hero">
         <p className="hub-eyebrow">
@@ -275,7 +276,7 @@ export default function GapAnalysis() {
           </button>
           <button
             type="button"
-            onClick={() => navigate(`/roadmap/${userId}/${roleId}?days=30`)}
+            onClick={() => navigate(roadmapPath(userId, roleId, 30))}
             className="hub-button hub-button-primary"
             data-testid="build-roadmap-cta"
           >

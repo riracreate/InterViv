@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchProblems, startSession, saveInterviewState, fetchItemStatus, fetchBookmarks, saveBookmark, removeBookmark, fetchCodingExecutionStatus } from '../lib/api';
 import { mapStandaloneToStartPayload } from '../lib/practiceBuilder';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 
 /** Phase C Problems experience: browse the coding bank and start a coding round. */
 export default function Problems() {
   const navigate = useNavigate();
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [authReady, setAuthReady] = useState(false);
   const [navUser, setNavUser] = useState({ userId: null, roleId: null });
   const [problems, setProblems] = useState([]);
@@ -40,13 +43,13 @@ export default function Problems() {
           roleId: u.target_role_id || null,
         });
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: '/problems' } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [accountAttempt, navigate]);
 
   useEffect(() => {
     if (!authReady) return undefined;
@@ -164,7 +167,7 @@ export default function Problems() {
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

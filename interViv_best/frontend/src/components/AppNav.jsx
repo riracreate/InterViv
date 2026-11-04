@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { DESKTOP_NAV_ITEMS, isNavActive, moreNavItems, navDestinations } from '../lib/appNav';
-import { fetchMe } from '../lib/api';
+import { fetchMe, signOut } from '../lib/api';
 
 /**
  * Brand + desktop destinations (Home, Practice, Progress, Jobs, More).
  * Smaller screens keep the hamburger menu with every destination.
- * Sign-out lives on Account / Settings, not in the primary nav.
+ * Sign out lives in the account menu (avatar), on every signed-in page.
  */
 export default function AppNav({
   brandTo = '/home',
@@ -17,6 +17,9 @@ export default function AppNav({
   trailing = null,
 }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountButtonRef = useRef(null);
   const [profile, setProfile] = useState({
     userId,
     roleId,
@@ -39,7 +42,7 @@ export default function AppNav({
   }, [userId, roleId, userName, userEmail]);
 
   useEffect(() => {
-    if (userId && (roleId || userName || userEmail)) return undefined;
+    if (userId && (userName || userEmail)) return undefined;
     let cancelled = false;
     fetchMe()
       .then((me) => {
@@ -69,15 +72,20 @@ export default function AppNav({
   const moreActive = moreItems.some((item) => isNavActive(location.pathname, item.to));
 
   useEffect(() => {
-    if (!menuOpen && !moreOpen) return undefined;
+    if (!menuOpen && !moreOpen && !accountOpen) return undefined;
     function onPointerDown(event) {
       if (rootRef.current && !rootRef.current.contains(event.target)) {
         setMenuOpen(false);
         setMoreOpen(false);
+        setAccountOpen(false);
       }
     }
     function onKeyDown(event) {
       if (event.key === 'Escape') {
+        if (accountOpen) {
+          setAccountOpen(false);
+          accountButtonRef.current?.focus();
+        }
         if (moreOpen) {
           setMoreOpen(false);
           moreButtonRef.current?.focus();
@@ -94,12 +102,21 @@ export default function AppNav({
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [menuOpen, moreOpen]);
+  }, [menuOpen, moreOpen, accountOpen]);
 
   useEffect(() => {
     setMenuOpen(false);
     setMoreOpen(false);
+    setAccountOpen(false);
   }, [location.pathname, location.hash]);
+
+  function handleSignOut() {
+    setAccountOpen(false);
+    signOut();
+    navigate('/login', { replace: true });
+  }
+
+  const initial = (profile.userName || profile.userEmail || 'I').trim().charAt(0).toUpperCase() || 'I';
 
   const needsTarget = !profile.roleId;
 
@@ -188,6 +205,45 @@ export default function AppNav({
 
         <div className="flex items-center gap-2">
           {trailing}
+          <div className="relative">
+            <button
+              ref={accountButtonRef}
+              type="button"
+              onClick={() => setAccountOpen((v) => !v)}
+              aria-haspopup="true"
+              aria-expanded={accountOpen}
+              aria-controls="app-nav-account-menu"
+              aria-label="Account menu"
+              data-testid="app-nav-account-button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-card)] text-sm font-semibold text-[var(--color-ink)] transition hover:border-slate-300"
+            >
+              <span aria-hidden="true">{initial}</span>
+            </button>
+            <div
+              id="app-nav-account-menu"
+              data-testid="app-nav-account-menu"
+              hidden={!accountOpen}
+              className="absolute right-0 top-full z-50 mt-2 w-60 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-2 shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
+            >
+              {(profile.userName || profile.userEmail) && (
+                <div className="px-3 py-2 text-sm">
+                  {profile.userName && <p className="font-semibold text-[var(--color-ink)]">{profile.userName}</p>}
+                  {profile.userEmail && <p className="truncate text-[var(--color-ink-muted)]">{profile.userEmail}</p>}
+                </div>
+              )}
+              <Link to="/dashboard" className="block rounded-[var(--radius-pill)] px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)]">
+                Progress
+              </Link>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                data-testid="app-nav-sign-out"
+                className="block w-full rounded-[var(--radius-pill)] px-3 py-2 text-left text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)]"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
           <button
             ref={menuButtonRef}
             type="button"

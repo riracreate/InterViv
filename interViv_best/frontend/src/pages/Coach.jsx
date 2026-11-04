@@ -13,9 +13,12 @@ import {
 } from '../lib/api';
 import { mapCoachPlan } from '../lib/coachMapping';
 import AppNav from '../components/AppNav';
+import AccountGate from '../components/AccountGate';
+import { useAccountRetry } from '../lib/useAccountRetry';
 
 export default function Coach() {
   const navigate = useNavigate();
+  const { accountError, accountAttempt, retryAccount, onAccountError } = useAccountRetry();
   const [authReady, setAuthReady] = useState(false);
   const [mode, setMode] = useState('goal'); // goal | jd
   const [text, setText] = useState('');
@@ -43,8 +46,8 @@ export default function Coach() {
         setRoleId(u.target_role_id || me.target_role_id || '');
         setUserId(u.id || u.user_id || null);
       })
-      .catch(() => {
-        if (!cancelled) navigate('/login', { state: { next: '/coach' } });
+      .catch((err) => {
+        if (!cancelled) onAccountError(err);
       });
     fetchTargetContext()
       .then((data) => {
@@ -67,7 +70,7 @@ export default function Coach() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [accountAttempt, navigate]);
 
   const submit = async () => {
     setBusy(true);
@@ -234,7 +237,7 @@ export default function Coach() {
   if (!authReady) {
     return (
       <main className="min-h-screen bg-[var(--color-surface)] grid place-items-center">
-        <p className="text-sm text-[var(--color-ink-muted)]">Checking sign-in…</p>
+        <AccountGate error={accountError} onRetry={retryAccount} />
       </main>
     );
   }

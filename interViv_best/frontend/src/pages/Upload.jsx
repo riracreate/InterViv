@@ -1,6 +1,16 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { uploadResume, startSession, saveInterviewState, fetchMe, saveTargetContext } from '../lib/api';
+import { readScoped, writeScoped } from '../lib/accountStorage';
+import {
+  WIZARD_STORAGE_NAME,
+  WIZARD_STORAGE_VERSION,
+  previousStep,
+  resolveWizardStep,
+  restoreWizard,
+  serializeWizard,
+  stepFromSearch,
+} from '../lib/uploadWizard';
 import CompanySelector from '../components/CompanySelector';
 import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
@@ -120,8 +130,12 @@ function withoutSkill(list, skill) {
 
 export default function Upload() {
   const navigate = useNavigate();
-  const [step, setStep] = useState('upload');
+  const location = useLocation();
+  const [, setSearchParams] = useSearchParams();
   const [file, setFile] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [userId, setUserId] = useState(null);
+  const [restored, setRestored] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [extractedSkills, setExtractedSkills] = useState([]);
@@ -132,14 +146,65 @@ export default function Upload() {
   const [error, setError] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [targetSelection, setTargetSelection] = useState({ companyId: '', roleId: '' });
+  const [initialTarget, setInitialTarget] = useState({ companyId: '', roleId: '' });
 
+  // The URL owns the step (?step=upload|skills|domains), so browser Back and
+  // Forward move through the wizard; an unreachable step resolves to the
+  // nearest valid one.
+  const wizard = { candidateId, fileName, extractedSkills, domainProfile, selectedSkills, targetSelection };
+  const requestedStep = stepFromSearch(location.search);
+  const step = resolveWizardStep(requestedStep || 'upload', wizard);
+
+  const goToStep = useCallback((next, { replace = false } = {}) => {
+    setSearchParams({ step: next }, { replace, state: { wizardFrom: step } });
+  }, [setSearchParams, step]);
+
+  // Restore this account's wizard before applying defaults.
   useEffect(() => {
     let cancelled = false;
     fetchMe()
-      .then(() => { if (!cancelled) setIsAuthenticated(true); })
-      .catch(() => { if (!cancelled) setIsAuthenticated(false); });
+      .then((me) => {
+        if (cancelled) return;
+        const u = me.user || me;
+        const id = u.id || u.user_id || null;
+        setIsAuthenticated(true);
+        setUserId(id);
+        const saved = restoreWizard(readScoped('session', id, WIZARD_STORAGE_NAME, WIZARD_STORAGE_VERSION));
+        setCandidateId(saved.candidateId);
+        setFileName(saved.fileName);
+        setExtractedSkills(saved.extractedSkills);
+        setDomainProfile(saved.domainProfile);
+        setSelectedSkills(saved.selectedSkills);
+        const target = saved.targetSelection.companyId && saved.targetSelection.roleId
+          ? saved.targetSelection
+          : { companyId: u.target_company_id || '', roleId: u.target_role_id || '' };
+        setTargetSelection(target);
+        setInitialTarget(target);
+      })
+      .catch(() => { if (!cancelled) setIsAuthenticated(false); })
+      .finally(() => { if (!cancelled) setRestored(true); });
     return () => { cancelled = true; };
   }, []);
+
+  // Persist wizard metadata per account (never resume bytes).
+  useEffect(() => {
+    if (!restored || !userId) return;
+    writeScoped('session', userId, WIZARD_STORAGE_NAME, serializeWizard(wizard), WIZARD_STORAGE_VERSION);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restored, userId, candidateId, fileName, extractedSkills, domainProfile, selectedSkills, targetSelection]);
+
+  // Replace an invalid or unreachable ?step= with the nearest valid step.
+  useEffect(() => {
+    if (!restored) return;
+    if (requestedStep !== step) setSearchParams({ step }, { replace: true });
+  }, [restored, requestedStep, step, setSearchParams]);
+
+  const goBack = () => {
+    const prev = previousStep(step);
+    if (!prev) { navigate('/home'); return; }
+    if (location.state?.wizardFrom === prev) navigate(-1);
+    else goToStep(prev, { replace: true });
+  };
 
   const handleFile = (f) => {
     const problem = resumeFileError(f);
@@ -163,10 +228,11 @@ export default function Upload() {
       const r = await uploadResume(file);
       const detected = r.skills || [];
       setCandidateId(r.candidate_id);
+      setFileName(file.name);
       setExtractedSkills(detected);
       setDomainProfile(r.domain_profile || {});
       setSelectedSkills(detected.slice(0, 3));
-      setStep('skills');
+      goToStep('skills');
       // Carry the resume forward: later hops (ATS, coach, gaps) prefill
       // from the shared target context instead of re-prompting.
       if (r.candidate_id) {
@@ -235,10 +301,11 @@ export default function Upload() {
   const chooseDomainPreset = (domain) => {
     const skills = domain.skills || [domain.short];
     setCandidateId('');
+    setFileName('');
     setExtractedSkills(skills);
     setDomainProfile(skills.reduce((profile, skill) => ({ ...profile, [skill]: 'general' }), {}));
     setSelectedSkills(skills.slice(0, Math.min(3, skills.length)));
-    setStep('skills');
+    goToStep('skills');
   };
 
   const suggestedSkills = mergeUnique(ALL_SUGGESTED_SKILLS, extractedSkills);
@@ -248,16 +315,12 @@ export default function Upload() {
       {/* Nav */}
       <nav className="w-full border-b border-black/5">
         <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
+          <a href="/home" onClick={(e) => { e.preventDefault(); navigate('/home'); }}
             className="text-2xl tracking-tight text-black"
             style={{ fontFamily: "var(--font-display)" }}>
             interViv<sup className="text-xs align-super">©</sup>
           </a>
-          <button onClick={() => {
-            if (step === 'domains') setStep('skills');
-            else if (step === 'skills') setStep('upload');
-            else navigate('/home');
-          }}
+          <button onClick={goBack}
             type="button"
             className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
             ← {step === 'upload' ? 'Home' : 'Back'}
@@ -345,6 +408,17 @@ export default function Upload() {
             </div>
 
             {error && <p className="app-form-error mt-4" role="alert">{error}</p>}
+
+            {candidateId && !file && (
+              <div className="mt-6 rounded-2xl border border-black/8 p-4 flex flex-wrap items-center justify-between gap-3" data-testid="upload-restored">
+                <p className="text-sm text-black" style={{ fontFamily: "var(--font-body)" }}>
+                  Resume already processed{fileName ? `: ${fileName}` : ''}. Upload a new PDF above, or keep these skills.
+                </p>
+                <button type="button" onClick={() => goToStep('skills')} className="app-button">
+                  Continue with these skills →
+                </button>
+              </div>
+            )}
 
             {/* Quick start without resume */}
             <div className="mt-8">
@@ -470,12 +544,14 @@ export default function Upload() {
               <CompanySelector
                 isAuthenticated={isAuthenticated}
                 onSelectionChange={setTargetSelection}
+                initialCompanyId={initialTarget.companyId}
+                initialRoleId={initialTarget.roleId}
               />
             </div>
 
-            <button type="button" onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
+            <button type="button" onClick={() => goToStep('domains')} disabled={selectedSkills.length === 0}
               className="app-button app-button-primary w-full" style={{ padding: '16px 20px' }}>
-              Choose Interview Domains →
+              Review and start →
             </button>
           </div>
         )}
