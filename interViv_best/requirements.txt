@@ -17,6 +17,7 @@ networkx>=3.0
 python-dotenv>=1.0.0
 certifi>=2024.0.0
 numpy>=1.26
+psutil>=5.9  # memory watchdog for the trusted local runner (backend/local_runner.py)
 httpx>=0.28
 PyYAML>=6.0
 sentence-transformers>=2.2.0
