@@ -1,0 +1,3571 @@
+{
+  "protocol": "100 seeds, budgets 8\u201312; 34 strong/33 mixed/33 weak synthetic profiles. Primary bank only, all 11 canonical buckets. Same data and difficulty model as calibration; not independent validation or production firing rates.",
+  "counts": {
+    "moves": 1000,
+    "COVER": 569,
+    "PROBE_HARDER": 260,
+    "harder_attempts": 295,
+    "harder_selected": 260,
+    "BRIDGE": 171,
+    "bridge:up": 39,
+    "bridge:down": 34,
+    "bridge:across": 98,
+    "harder_fallbacks": 35,
+    "fallback:no_unseen_harder_question": 35,
+    "fallback:no_eligible_prerequisite": 117,
+    "difficulty_relaxations": 17,
+    "fallback:difficulty_relaxed": 17,
+    "fallback:no_eligible_bridge_question": 1,
+    "fallback:all_candidates_previously_demonstrated": 1
+  },
+  "per_skill": {
+    "ML": {
+      "selected": 74,
+      "harder_attempts": 13,
+      "harder_selected": 13
+    },
+    "CN": {
+      "selected": 79,
+      "harder_attempts": 23,
+      "harder_selected": 5,
+      "harder_fallbacks": 18
+    },
+    "System Design": {
+      "selected": 108,
+      "harder_attempts": 35,
+      "harder_selected": 35
+    },
+    "HR": {
+      "selected": 65,
+      "harder_attempts": 23,
+      "harder_fallbacks": 17,
+      "harder_selected": 6
+    },
+    "DBMS": {
+      "selected": 110,
+      "harder_attempts": 36,
+      "harder_selected": 36
+    },
+    "DSA": {
+      "selected": 93,
+      "harder_attempts": 24,
+      "harder_selected": 24
+    },
+    "Python": {
+      "selected": 85,
+      "harder_attempts": 18,
+      "harder_selected": 18
+    },
+    "OOP": {
+      "selected": 103,
+      "harder_attempts": 30,
+      "harder_selected": 30
+    },
+    "JavaScript": {
+      "selected": 84,
+      "difficulty_relaxations": 14,
+      "harder_attempts": 21,
+      "harder_selected": 21
+    },
+    "OS": {
+      "selected": 104,
+      "harder_attempts": 38,
+      "harder_selected": 38
+    },
+    "Java": {
+      "selected": 95,
+      "harder_attempts": 34,
+      "harder_selected": 34,
+      "difficulty_relaxations": 3
+    }
+  },
+  "sessions": [
+    {
+      "seed": 0,
+      "profile": "strong",
+      "must_cover": [
+        "ML",
+        "CN",
+        "HR",
+        "DBMS"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "HR",
+        "ML",
+        "System Design"
+      ],
+      "observed_elo": {
+        "ML": 1225.6709277929501,
+        "System Design": 1226.5784850660532,
+        "CN": 1211.1954100020118,
+        "Java": 1200.0,
+        "OOP": 1200.0,
+        "HR": 1189.0352983472653,
+        "JavaScript": 1200.0,
+        "DSA": 1200.0,
+        "DBMS": 1199.4096983472652,
+        "Python": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 1,
+      "profile": "mixed",
+      "must_cover": [
+        "DSA",
+        "DBMS",
+        "HR",
+        "System Design",
+        "Python"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DSA": 1217.4510539231007,
+        "Python": 1204.4896,
+        "DBMS": 1209.5927765943522,
+        "Java": 1200.0,
+        "CN": 1200.0,
+        "HR": 1200.4880983472653,
+        "JavaScript": 1200.0,
+        "OOP": 1209.0336,
+        "System Design": 1196.913326506371,
+        "OS": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 2,
+      "profile": "weak",
+      "must_cover": [
+        "CN",
+        "Python",
+        "OS",
+        "HR",
+        "DBMS",
+        "JavaScript"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "HR",
+        "JavaScript",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "CN": 1207.3602072765764,
+        "DBMS": 1220.2712850660532,
+        "Python": 1196.7152983472654,
+        "JavaScript": 1202.2304,
+        "ML": 1200.0,
+        "OS": 1213.1735191426865,
+        "DSA": 1200.0,
+        "Java": 1200.0,
+        "HR": 1183.6880983472654,
+        "System Design": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 3,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "OS",
+        "Java",
+        "ML",
+        "Python",
+        "DSA"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "Java",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1193.6,
+        "Python": 1206.2688,
+        "OS": 1213.2599191426864,
+        "DSA": 1221.8861168682047,
+        "OOP": 1200.0,
+        "Java": 1214.7999435821587,
+        "System Design": 1226.7645069401249,
+        "CN": 1200.0,
+        "ML": 1197.5088983472654,
+        "JavaScript": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 4,
+      "profile": "mixed",
+      "must_cover": [
+        "HR",
+        "DBMS",
+        "OS",
+        "OOP",
+        "Java",
+        "ML",
+        "System Design"
+      ],
+      "covered": [
+        "DBMS",
+        "HR",
+        "Java",
+        "ML",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1210.8,
+        "Java": 1220.944649930938,
+        "DBMS": 1209.5927765943522,
+        "ML": 1209.14292779295,
+        "System Design": 1210.8,
+        "OS": 1200.4880983472653,
+        "CN": 1200.0,
+        "Python": 1224.2296850660532,
+        "OOP": 1202.4880983472653,
+        "JavaScript": 1200.0,
+        "DSA": 1200.0
+      }
+    },
+    {
+      "seed": 5,
+      "profile": "weak",
+      "must_cover": [
+        "Python",
+        "JavaScript",
+        "HR",
+        "OS"
+      ],
+      "covered": [
+        "HR",
+        "Java",
+        "JavaScript",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "Python": 1188.4511198853654,
+        "Java": 1200.9984,
+        "JavaScript": 1193.4096983472652,
+        "CN": 1200.0,
+        "ML": 1200.0,
+        "HR": 1183.6880983472654,
+        "DBMS": 1200.0,
+        "OOP": 1200.0,
+        "OS": 1192.7735191426864,
+        "DSA": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 6,
+      "profile": "strong",
+      "must_cover": [
+        "Python",
+        "OOP",
+        "ML",
+        "DSA",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "OOP",
+        "Python"
+      ],
+      "observed_elo": {
+        "Python": 1223.3295066325804,
+        "DBMS": 1230.2277277929502,
+        "OOP": 1200.418059040108,
+        "Java": 1200.0,
+        "CN": 1200.0,
+        "ML": 1197.5088983472654,
+        "System Design": 1200.0,
+        "HR": 1200.0,
+        "DSA": 1210.1025667729118,
+        "OS": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 7,
+      "profile": "mixed",
+      "must_cover": [
+        "JavaScript",
+        "ML",
+        "Java",
+        "HR",
+        "DSA",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "HR",
+        "Java",
+        "JavaScript",
+        "ML"
+      ],
+      "observed_elo": {
+        "JavaScript": 1198.7080585174458,
+        "DSA": 1223.6400177002454,
+        "ML": 1193.0672983472653,
+        "CN": 1221.1028017523358,
+        "OOP": 1200.0,
+        "Java": 1203.3040983472654,
+        "OS": 1200.0,
+        "Python": 1200.0,
+        "HR": 1183.6880983472654,
+        "System Design": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 8,
+      "profile": "weak",
+      "must_cover": [
+        "HR",
+        "ML",
+        "Python",
+        "System Design",
+        "JavaScript",
+        "DSA"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1209.7537253976789,
+        "JavaScript": 1208.829790651971,
+        "ML": 1193.0672983472653,
+        "DSA": 1192.0,
+        "DBMS": 1200.0,
+        "Python": 1196.7152983472654,
+        "CN": 1208.8,
+        "Java": 1200.0,
+        "System Design": 1193.2496983472654,
+        "OOP": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 9,
+      "profile": "strong",
+      "must_cover": [
+        "OOP",
+        "JavaScript",
+        "ML",
+        "HR",
+        "Python",
+        "Java",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "HR",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "Python"
+      ],
+      "observed_elo": {
+        "OOP": 1235.547373830987,
+        "Python": 1227.8200850660533,
+        "JavaScript": 1203.3520983472654,
+        "Java": 1230.743049930938,
+        "DBMS": 1230.2277277929502,
+        "ML": 1197.5088983472654,
+        "CN": 1200.0,
+        "DSA": 1200.0,
+        "HR": 1189.0352983472653,
+        "OS": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 10,
+      "profile": "mixed",
+      "must_cover": [
+        "Python",
+        "ML",
+        "System Design",
+        "OS"
+      ],
+      "covered": [
+        "CN",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Python": 1221.9941277929502,
+        "CN": 1210.8,
+        "ML": 1193.0672983472653,
+        "OOP": 1200.0,
+        "Java": 1200.0,
+        "System Design": 1211.0214098249648,
+        "DBMS": 1200.0,
+        "HR": 1200.0,
+        "OS": 1211.1735191426865,
+        "DSA": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 11,
+      "profile": "weak",
+      "must_cover": [
+        "OOP",
+        "System Design",
+        "ML",
+        "DSA",
+        "OS"
+      ],
+      "covered": [
+        "DSA",
+        "ML",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1190.0572453714574,
+        "OS": 1201.6419838626161,
+        "System Design": 1180.2888695351874,
+        "Python": 1200.0,
+        "Java": 1200.0,
+        "ML": 1193.0672983472653,
+        "DBMS": 1200.0,
+        "JavaScript": 1200.0,
+        "DSA": 1196.4336983472654,
+        "HR": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 12,
+      "profile": "strong",
+      "must_cover": [
+        "OOP",
+        "OS",
+        "HR",
+        "ML",
+        "Java",
+        "JavaScript"
+      ],
+      "covered": [
+        "HR",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "OOP": 1234.1762391912139,
+        "Java": 1240.9789636445244,
+        "OS": 1202.4880983472653,
+        "JavaScript": 1212.0384,
+        "DBMS": 1200.0,
+        "HR": 1202.6160983472653,
+        "CN": 1200.0,
+        "DSA": 1200.0,
+        "ML": 1197.5088983472654,
+        "System Design": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 13,
+      "profile": "mixed",
+      "must_cover": [
+        "Java",
+        "DSA",
+        "DBMS",
+        "CN",
+        "System Design",
+        "HR"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1231.6783907103625,
+        "System Design": 1227.8877366017966,
+        "DSA": 1198.6320983472654,
+        "HR": 1210.9056,
+        "JavaScript": 1200.0,
+        "DBMS": 1197.4559720400132,
+        "ML": 1200.0,
+        "Python": 1200.0,
+        "CN": 1195.9216983472654,
+        "OS": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 14,
+      "profile": "weak",
+      "must_cover": [
+        "DBMS",
+        "OS",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "HR",
+        "DSA"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "DBMS": 1195.0224447220428,
+        "Python": 1211.0760084717385,
+        "OS": 1194.3735191426863,
+        "HR": 1190.4,
+        "DSA": 1192.0,
+        "JavaScript": 1205.4281333032898,
+        "ML": 1200.0,
+        "Java": 1200.0,
+        "OOP": 1183.6880983472654,
+        "CN": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 15,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "OS",
+        "ML",
+        "DSA"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "HR",
+        "ML",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1208.8,
+        "CN": 1210.8,
+        "OS": 1213.1735191426865,
+        "Python": 1200.0,
+        "DBMS": 1200.0,
+        "ML": 1197.5088983472654,
+        "OOP": 1200.0,
+        "Java": 1200.0,
+        "DSA": 1198.6320983472654,
+        "System Design": 1221.5877277929503,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 16,
+      "profile": "mixed",
+      "must_cover": [
+        "JavaScript",
+        "Python",
+        "DBMS",
+        "System Design",
+        "OOP"
+      ],
+      "covered": [
+        "DBMS",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "JavaScript": 1219.9350762728554,
+        "OOP": 1219.9513341725303,
+        "Python": 1196.4912983472655,
+        "Java": 1200.0,
+        "HR": 1200.0,
+        "DBMS": 1210.2368827168268,
+        "ML": 1200.0,
+        "CN": 1200.0,
+        "System Design": 1211.0214098249648,
+        "DSA": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 17,
+      "profile": "weak",
+      "must_cover": [
+        "OS",
+        "Java",
+        "DBMS",
+        "CN",
+        "ML",
+        "JavaScript"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "OS": 1190.4,
+        "ML": 1218.7365277929503,
+        "Java": 1200.0048611271975,
+        "JavaScript": 1191.3888,
+        "DSA": 1200.0,
+        "DBMS": 1197.5984983472654,
+        "System Design": 1200.0,
+        "Python": 1206.5632,
+        "CN": 1190.795410002012,
+        "HR": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 18,
+      "profile": "strong",
+      "must_cover": [
+        "DSA",
+        "OOP",
+        "ML",
+        "CN",
+        "DBMS",
+        "JavaScript"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "OOP"
+      ],
+      "observed_elo": {
+        "DSA": 1233.5766971243524,
+        "DBMS": 1231.1813277929502,
+        "OOP": 1210.5970372451554,
+        "JavaScript": 1212.0384,
+        "Python": 1200.0,
+        "ML": 1197.5088983472654,
+        "HR": 1200.0,
+        "Java": 1200.0,
+        "CN": 1196.7568983472654,
+        "OS": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 19,
+      "profile": "mixed",
+      "must_cover": [
+        "System Design",
+        "OS",
+        "OOP",
+        "ML",
+        "CN",
+        "DBMS",
+        "Java"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "ML",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1218.4315999198016,
+        "CN": 1210.8,
+        "OS": 1209.2631191426863,
+        "DBMS": 1220.1477277929503,
+        "Java": 1225.991049930938,
+        "OOP": 1202.4880983472653,
+        "HR": 1200.0,
+        "DSA": 1200.0,
+        "ML": 1193.0672983472653,
+        "JavaScript": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 20,
+      "profile": "weak",
+      "must_cover": [
+        "System Design",
+        "Java",
+        "Python",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "Java",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1209.1601016472662,
+        "DSA": 1207.536,
+        "Java": 1207.3105953405718,
+        "DBMS": 1200.0,
+        "ML": 1200.0,
+        "Python": 1194.2768983472654,
+        "OS": 1200.0,
+        "OOP": 1200.0,
+        "CN": 1195.1472983472654,
+        "HR": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 21,
+      "profile": "strong",
+      "must_cover": [
+        "DSA",
+        "Python",
+        "DBMS",
+        "System Design",
+        "ML"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DSA": 1226.2553341725304,
+        "ML": 1223.0820288685447,
+        "Python": 1198.6608983472654,
+        "Java": 1200.0,
+        "HR": 1200.0,
+        "DBMS": 1209.7943765943521,
+        "OS": 1200.0,
+        "JavaScript": 1200.0,
+        "System Design": 1215.713326506371,
+        "CN": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 22,
+      "profile": "mixed",
+      "must_cover": [
+        "DSA",
+        "CN",
+        "JavaScript",
+        "Java",
+        "HR",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "HR",
+        "Java",
+        "JavaScript",
+        "OOP"
+      ],
+      "observed_elo": {
+        "DSA": 1223.9077277929503,
+        "HR": 1210.8,
+        "CN": 1211.1954100020118,
+        "OOP": 1206.6208,
+        "DBMS": 1200.0,
+        "JavaScript": 1194.5865333032898,
+        "OS": 1200.0,
+        "System Design": 1200.0,
+        "Java": 1204.1503435821587,
+        "Python": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 23,
+      "profile": "weak",
+      "must_cover": [
+        "Java",
+        "CN",
+        "ML",
+        "OS",
+        "DBMS",
+        "System Design"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "ML",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1207.3922598034628,
+        "DBMS": 1193.4224447220427,
+        "CN": 1195.9280983472654,
+        "System Design": 1184.3683485189692,
+        "HR": 1200.0,
+        "ML": 1193.0672983472653,
+        "OOP": 1200.0,
+        "DSA": 1200.0,
+        "OS": 1182.0880983472653,
+        "JavaScript": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 24,
+      "profile": "strong",
+      "must_cover": [
+        "ML",
+        "DSA",
+        "System Design",
+        "OS",
+        "Python",
+        "HR",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "ML": 1221.9877277929502,
+        "Python": 1227.8200850660533,
+        "DSA": 1196.6576983472653,
+        "HR": 1210.8,
+        "DBMS": 1222.5721341725302,
+        "System Design": 1211.1494098249648,
+        "JavaScript": 1200.0,
+        "CN": 1200.0,
+        "OS": 1213.1735191426865,
+        "OOP": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 25,
+      "profile": "mixed",
+      "must_cover": [
+        "ML",
+        "HR",
+        "OS",
+        "OOP"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "ML",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "ML": 1233.5052844900918,
+        "CN": 1200.0,
+        "HR": 1189.0352983472653,
+        "Java": 1200.0,
+        "JavaScript": 1200.0,
+        "OS": 1190.8656206024864,
+        "Python": 1200.0,
+        "DSA": 1210.8608,
+        "OOP": 1197.8576983472653,
+        "DBMS": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 26,
+      "profile": "weak",
+      "must_cover": [
+        "HR",
+        "ML",
+        "Python",
+        "DSA",
+        "System Design"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1192.9713792934206,
+        "System Design": 1199.346669585851,
+        "ML": 1193.0672983472653,
+        "CN": 1200.0,
+        "DBMS": 1200.0,
+        "Python": 1197.7296983472654,
+        "OOP": 1200.0,
+        "OS": 1200.0,
+        "DSA": 1198.6320983472654,
+        "JavaScript": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 27,
+      "profile": "strong",
+      "must_cover": [
+        "System Design",
+        "Java",
+        "CN",
+        "HR",
+        "OOP",
+        "OS"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "Java",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1229.1257341725302,
+        "OOP": 1226.0632850660531,
+        "Java": 1203.9793953405717,
+        "OS": 1227.67732779295,
+        "DBMS": 1200.0,
+        "CN": 1199.1344983472654,
+        "JavaScript": 1200.0,
+        "DSA": 1200.0,
+        "HR": 1189.0352983472653,
+        "ML": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 28,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "OS",
+        "ML",
+        "CN",
+        "DSA",
+        "Python"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "ML",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "DBMS": 1216.1604488376763,
+        "DSA": 1210.8016177002453,
+        "OS": 1194.3735191426863,
+        "Python": 1223.9713207513114,
+        "System Design": 1200.0,
+        "ML": 1197.5088983472654,
+        "HR": 1200.0,
+        "Java": 1200.0,
+        "CN": 1196.7568983472654,
+        "OOP": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 29,
+      "profile": "weak",
+      "must_cover": [
+        "OS",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "DBMS",
+        "Java",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "OS": 1201.6419838626161,
+        "DBMS": 1217.3317277929502,
+        "JavaScript": 1195.3385856323303,
+        "Java": 1200.9984,
+        "CN": 1201.6419838626161,
+        "OOP": 1192.7735191426864,
+        "DSA": 1200.0,
+        "HR": 1200.0,
+        "Python": 1195.7968983472654,
+        "ML": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 30,
+      "profile": "strong",
+      "must_cover": [
+        "OS",
+        "CN",
+        "System Design",
+        "ML"
+      ],
+      "covered": [
+        "CN",
+        "ML",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1237.2054290951291,
+        "Java": 1200.0,
+        "CN": 1211.1954100020118,
+        "HR": 1200.0,
+        "DSA": 1200.0,
+        "System Design": 1215.713326506371,
+        "OOP": 1200.0,
+        "Python": 1200.0,
+        "ML": 1197.5088983472654,
+        "JavaScript": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 31,
+      "profile": "mixed",
+      "must_cover": [
+        "CN",
+        "DBMS",
+        "JavaScript",
+        "Java",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "JavaScript",
+        "OOP"
+      ],
+      "observed_elo": {
+        "CN": 1210.8,
+        "OOP": 1213.30122824438,
+        "DBMS": 1209.5927765943522,
+        "ML": 1200.0,
+        "OS": 1200.0,
+        "JavaScript": 1194.5865333032898,
+        "System Design": 1200.0,
+        "Python": 1200.0,
+        "Java": 1215.2497953405718,
+        "DSA": 1200.0,
+        "HR": 1200.0
+      }
+    },
+    {
+      "seed": 32,
+      "profile": "weak",
+      "must_cover": [
+        "DBMS",
+        "DSA",
+        "System Design",
+        "OS",
+        "HR",
+        "Java"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DBMS": 1201.1683485189694,
+        "HR": 1192.0,
+        "DSA": 1191.4416983472654,
+        "Java": 1204.3013558657344,
+        "JavaScript": 1200.0,
+        "System Design": 1190.6214098249648,
+        "Python": 1200.0,
+        "CN": 1200.0,
+        "OS": 1192.7735191426864,
+        "OOP": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 33,
+      "profile": "strong",
+      "must_cover": [
+        "Python",
+        "HR",
+        "JavaScript",
+        "System Design",
+        "DSA",
+        "Java"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "Java",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Python": 1224.1061277929502,
+        "DSA": 1223.6805277929502,
+        "HR": 1199.2695191426865,
+        "Java": 1230.1438644678742,
+        "OS": 1200.0,
+        "JavaScript": 1203.5056983472653,
+        "OOP": 1210.8576,
+        "DBMS": 1200.0,
+        "System Design": 1203.7680983472653,
+        "ML": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 34,
+      "profile": "mixed",
+      "must_cover": [
+        "OS",
+        "CN",
+        "OOP",
+        "DBMS",
+        "JavaScript",
+        "HR",
+        "System Design"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "HR",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1229.5839408993827,
+        "JavaScript": 1195.034153278136,
+        "CN": 1195.1941586304354,
+        "HR": 1210.8,
+        "System Design": 1205.6928,
+        "OOP": 1192.7735191426864,
+        "DSA": 1200.0,
+        "ML": 1200.0,
+        "DBMS": 1196.4464983472653,
+        "Java": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 35,
+      "profile": "weak",
+      "must_cover": [
+        "OS",
+        "DSA",
+        "DBMS",
+        "OOP"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1213.9869552158768,
+        "JavaScript": 1200.0,
+        "DSA": 1196.4336983472654,
+        "Python": 1192.0,
+        "ML": 1200.0,
+        "DBMS": 1210.2368827168268,
+        "System Design": 1192.0,
+        "HR": 1200.0,
+        "OOP": 1182.0880983472653,
+        "CN": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 36,
+      "profile": "strong",
+      "must_cover": [
+        "JavaScript",
+        "Python",
+        "ML",
+        "System Design",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "JavaScript",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "JavaScript": 1227.9051370375203,
+        "CN": 1219.1028017523358,
+        "Python": 1195.7776983472654,
+        "Java": 1200.0,
+        "OS": 1200.0,
+        "ML": 1197.5088983472654,
+        "OOP": 1200.0,
+        "DBMS": 1200.0,
+        "System Design": 1215.8413265063712,
+        "HR": 1200.0,
+        "DSA": 1200.0
+      }
+    },
+    {
+      "seed": 37,
+      "profile": "mixed",
+      "must_cover": [
+        "System Design",
+        "DBMS",
+        "DSA",
+        "ML",
+        "Python",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1231.6779307002348,
+        "Python": 1217.005828280845,
+        "DBMS": 1195.0611292951846,
+        "CN": 1208.8,
+        "JavaScript": 1200.0,
+        "DSA": 1193.8512983472654,
+        "HR": 1200.0,
+        "OOP": 1200.0,
+        "ML": 1197.5088983472654,
+        "OS": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 38,
+      "profile": "weak",
+      "must_cover": [
+        "System Design",
+        "Python",
+        "DSA",
+        "OS",
+        "ML",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1207.7615682742776,
+        "ML": 1200.24,
+        "Python": 1203.0259786346196,
+        "DBMS": 1207.2121341725303,
+        "CN": 1200.0,
+        "DSA": 1197.8160983472653,
+        "HR": 1200.0,
+        "JavaScript": 1200.0,
+        "OS": 1190.8656206024864,
+        "Java": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 39,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "ML",
+        "OS",
+        "DSA",
+        "Java",
+        "CN",
+        "DBMS"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "ML",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1210.9056,
+        "Java": 1225.3918644678743,
+        "ML": 1197.5088983472654,
+        "CN": 1208.9408,
+        "DBMS": 1225.33492779295,
+        "OS": 1213.1735191426865,
+        "System Design": 1222.65652779295,
+        "OOP": 1200.0,
+        "DSA": 1196.6576983472653,
+        "JavaScript": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 40,
+      "profile": "mixed",
+      "must_cover": [
+        "OOP",
+        "OS",
+        "DSA",
+        "HR"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "OOP": 1231.7863994974632,
+        "Python": 1205.1616,
+        "OS": 1194.3735191426863,
+        "CN": 1200.0,
+        "DBMS": 1200.0,
+        "DSA": 1197.8160983472653,
+        "ML": 1200.0,
+        "Java": 1200.0,
+        "HR": 1189.0352983472653,
+        "JavaScript": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 41,
+      "profile": "weak",
+      "must_cover": [
+        "ML",
+        "HR",
+        "Java",
+        "DBMS",
+        "JavaScript"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "JavaScript",
+        "ML",
+        "Python"
+      ],
+      "observed_elo": {
+        "ML": 1228.8025142853687,
+        "JavaScript": 1202.2304,
+        "HR": 1182.0880983472653,
+        "DSA": 1192.0,
+        "OS": 1200.0,
+        "Java": 1196.4624983472654,
+        "OOP": 1200.0,
+        "Python": 1205.9552,
+        "DBMS": 1195.7488983472654,
+        "CN": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 42,
+      "profile": "strong",
+      "must_cover": [
+        "System Design",
+        "CN",
+        "ML",
+        "DSA",
+        "DBMS",
+        "Java"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "Java",
+        "ML",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1225.0309277929503,
+        "DBMS": 1237.4222328082913,
+        "CN": 1196.7568983472654,
+        "Java": 1230.1438644678742,
+        "Python": 1200.0,
+        "ML": 1197.5088983472654,
+        "JavaScript": 1200.0,
+        "OS": 1200.0,
+        "DSA": 1199.2688983472653,
+        "HR": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 43,
+      "profile": "mixed",
+      "must_cover": [
+        "CN",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "Java",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP"
+      ],
+      "observed_elo": {
+        "CN": 1221.173201752336,
+        "Java": 1225.991049930938,
+        "DSA": 1198.6288983472652,
+        "OOP": 1207.2121341725303,
+        "OS": 1200.0,
+        "JavaScript": 1193.4636439527476,
+        "System Design": 1200.0,
+        "HR": 1200.0,
+        "ML": 1193.0672983472653,
+        "DBMS": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 44,
+      "profile": "weak",
+      "must_cover": [
+        "ML",
+        "Python",
+        "HR",
+        "CN",
+        "OS",
+        "DBMS",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "HR",
+        "ML",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "ML": 1218.7365277929503,
+        "OS": 1209.14292779295,
+        "Python": 1193.9056983472653,
+        "DBMS": 1215.4009341725302,
+        "OOP": 1209.14292779295,
+        "HR": 1192.8375191426865,
+        "System Design": 1200.0,
+        "DSA": 1200.0,
+        "CN": 1193.1632983472653,
+        "JavaScript": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 45,
+      "profile": "strong",
+      "must_cover": [
+        "Java",
+        "OOP",
+        "DSA",
+        "HR"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "Java",
+        "OOP"
+      ],
+      "observed_elo": {
+        "Java": 1241.0279609061492,
+        "ML": 1200.0,
+        "OOP": 1213.3015191426864,
+        "System Design": 1200.0,
+        "CN": 1200.0,
+        "DSA": 1198.6288983472652,
+        "JavaScript": 1200.0,
+        "Python": 1200.0,
+        "HR": 1197.3968206024863,
+        "DBMS": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 46,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "CN",
+        "Java",
+        "OOP",
+        "ML"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "Java",
+        "ML",
+        "OOP"
+      ],
+      "observed_elo": {
+        "DBMS": 1229.0373965700971,
+        "ML": 1224.761039020487,
+        "CN": 1199.1344983472654,
+        "HR": 1200.0,
+        "JavaScript": 1200.0,
+        "Java": 1203.9793953405717,
+        "System Design": 1200.0,
+        "OS": 1200.0,
+        "OOP": 1197.8576983472653,
+        "DSA": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 47,
+      "profile": "weak",
+      "must_cover": [
+        "JavaScript",
+        "ML",
+        "DSA",
+        "Python",
+        "DBMS",
+        "OOP"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "Python"
+      ],
+      "observed_elo": {
+        "JavaScript": 1187.3049908818248,
+        "DBMS": 1204.9472,
+        "ML": 1182.0880983472653,
+        "OOP": 1209.14292779295,
+        "Java": 1200.0,
+        "DSA": 1197.8160983472653,
+        "System Design": 1200.0,
+        "HR": 1200.0,
+        "Python": 1191.5223564945347,
+        "CN": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 48,
+      "profile": "strong",
+      "must_cover": [
+        "OS",
+        "DSA",
+        "OOP",
+        "CN",
+        "JavaScript",
+        "Java"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "Java",
+        "JavaScript",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "OS": 1224.99252779295,
+        "JavaScript": 1229.3046762728557,
+        "DSA": 1197.9439924673868,
+        "Java": 1230.1438644678742,
+        "ML": 1200.0,
+        "OOP": 1213.2311191426863,
+        "DBMS": 1200.0,
+        "HR": 1200.0,
+        "CN": 1196.7568983472654,
+        "System Design": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 49,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "ML",
+        "Java",
+        "OS",
+        "JavaScript",
+        "System Design",
+        "DSA"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DBMS": 1223.38292779295,
+        "JavaScript": 1225.2150762728556,
+        "ML": 1197.5088983472654,
+        "System Design": 1225.0309277929503,
+        "DSA": 1211.2896564184216,
+        "Java": 1202.4688611271974,
+        "Python": 1200.0,
+        "CN": 1200.0,
+        "OS": 1202.4880983472653,
+        "HR": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 50,
+      "profile": "weak",
+      "must_cover": [
+        "OOP",
+        "JavaScript",
+        "System Design",
+        "Python"
+      ],
+      "covered": [
+        "Java",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1199.175019811068,
+        "Java": 1203.4624,
+        "JavaScript": 1197.5344983472653,
+        "HR": 1200.0,
+        "OS": 1200.0,
+        "System Design": 1193.2496983472654,
+        "DSA": 1200.0,
+        "CN": 1200.0,
+        "Python": 1189.592671901579,
+        "DBMS": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 51,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "Python",
+        "ML",
+        "JavaScript",
+        "OS"
+      ],
+      "covered": [
+        "HR",
+        "JavaScript",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1210.8,
+        "OS": 1227.9244407146837,
+        "Python": 1210.120671901579,
+        "DSA": 1200.0,
+        "DBMS": 1200.0,
+        "ML": 1197.5088983472654,
+        "Java": 1200.0,
+        "OOP": 1200.0,
+        "JavaScript": 1203.3520983472654,
+        "System Design": 1225.9013277929503,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 52,
+      "profile": "mixed",
+      "must_cover": [
+        "Java",
+        "OS",
+        "DSA",
+        "System Design",
+        "CN",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "Java",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1230.1438644678742,
+        "CN": 1201.0272,
+        "OS": 1213.1735191426865,
+        "OOP": 1207.3820599590215,
+        "ML": 1200.0,
+        "DSA": 1204.531366772912,
+        "HR": 1200.0,
+        "Python": 1200.0,
+        "System Design": 1192.6928983472653,
+        "JavaScript": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 53,
+      "profile": "weak",
+      "must_cover": [
+        "Python",
+        "OOP",
+        "Java",
+        "ML",
+        "HR",
+        "OS"
+      ],
+      "covered": [
+        "HR",
+        "Java",
+        "ML",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "Python": 1221.3185478775915,
+        "HR": 1174.0314979744412,
+        "OOP": 1183.6880983472654,
+        "OS": 1207.2121341725303,
+        "JavaScript": 1200.0,
+        "Java": 1192.7504983472654,
+        "DSA": 1200.0,
+        "System Design": 1200.0,
+        "ML": 1182.0880983472653,
+        "CN": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 54,
+      "profile": "strong",
+      "must_cover": [
+        "DSA",
+        "OS",
+        "ML",
+        "Python",
+        "OOP",
+        "Java",
+        "HR"
+      ],
+      "covered": [
+        "DSA",
+        "HR",
+        "Java",
+        "ML",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DSA": 1226.2553341725304,
+        "OOP": 1221.8821277929503,
+        "OS": 1211.2656206024865,
+        "Java": 1211.648,
+        "HR": 1208.8,
+        "ML": 1197.5088983472654,
+        "JavaScript": 1200.0,
+        "DBMS": 1200.0,
+        "Python": 1196.5136983472653,
+        "System Design": 1224.6053277929502,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 55,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "DSA",
+        "CN",
+        "JavaScript"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "JavaScript",
+        "ML"
+      ],
+      "observed_elo": {
+        "DBMS": 1218.7673341725304,
+        "HR": 1200.0,
+        "DSA": 1210.1025667729118,
+        "Java": 1200.0,
+        "ML": 1226.5157277929502,
+        "CN": 1196.7568983472654,
+        "System Design": 1200.0,
+        "OS": 1200.0,
+        "JavaScript": 1203.5056983472653,
+        "OOP": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 56,
+      "profile": "weak",
+      "must_cover": [
+        "OS",
+        "OOP",
+        "System Design",
+        "Python",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1206.7067394864087,
+        "CN": 1196.015727340555,
+        "OOP": 1183.6880983472654,
+        "Java": 1200.0,
+        "ML": 1200.0,
+        "System Design": 1196.7024983472654,
+        "HR": 1200.0,
+        "DBMS": 1200.0,
+        "Python": 1195.9536983472653,
+        "JavaScript": 1200.0,
+        "DSA": 1200.0
+      }
+    },
+    {
+      "seed": 57,
+      "profile": "strong",
+      "must_cover": [
+        "CN",
+        "System Design",
+        "DSA",
+        "DBMS",
+        "JavaScript",
+        "HR"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "System Design"
+      ],
+      "observed_elo": {
+        "CN": 1219.3932316624312,
+        "JavaScript": 1229.3046762728557,
+        "System Design": 1212.7360223475341,
+        "HR": 1210.8,
+        "Java": 1200.0,
+        "DSA": 1198.6320983472654,
+        "OOP": 1200.0,
+        "Python": 1200.0,
+        "DBMS": 1209.5927765943522,
+        "ML": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 58,
+      "profile": "mixed",
+      "must_cover": [
+        "Python",
+        "System Design",
+        "DBMS",
+        "JavaScript",
+        "HR",
+        "OS"
+      ],
+      "covered": [
+        "DBMS",
+        "HR",
+        "JavaScript",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Python": 1209.8225276903017,
+        "HR": 1208.8,
+        "System Design": 1210.606126506371,
+        "OS": 1224.99252779295,
+        "CN": 1200.0,
+        "DBMS": 1189.8368827168267,
+        "OOP": 1200.0,
+        "Java": 1200.0,
+        "JavaScript": 1194.73306045092,
+        "DSA": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 59,
+      "profile": "weak",
+      "must_cover": [
+        "HR",
+        "OOP",
+        "DSA",
+        "ML",
+        "DBMS",
+        "CN",
+        "Python"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "ML",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "HR": 1204.6946975602532,
+        "DBMS": 1221.0789277929503,
+        "OOP": 1197.2080983472654,
+        "CN": 1190.4,
+        "Python": 1224.6533277929502,
+        "DSA": 1182.0880983472653,
+        "OS": 1224.99252779295,
+        "Java": 1200.0,
+        "ML": 1193.0672983472653,
+        "JavaScript": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 60,
+      "profile": "strong",
+      "must_cover": [
+        "Java",
+        "DSA",
+        "HR",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "HR",
+        "Java",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1225.991049930938,
+        "System Design": 1212.6336000000001,
+        "DSA": 1198.6288983472652,
+        "Python": 1200.0,
+        "DBMS": 1200.0,
+        "HR": 1213.1735191426865,
+        "JavaScript": 1200.0,
+        "OS": 1200.0,
+        "CN": 1207.9743560888887,
+        "OOP": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 61,
+      "profile": "mixed",
+      "must_cover": [
+        "OOP",
+        "OS",
+        "Python",
+        "System Design",
+        "DSA"
+      ],
+      "covered": [
+        "DSA",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1217.8549601175114,
+        "DSA": 1223.6805277929502,
+        "OS": 1207.4551191426863,
+        "HR": 1200.0,
+        "ML": 1200.0,
+        "Python": 1198.6608983472654,
+        "JavaScript": 1200.0,
+        "Java": 1200.0,
+        "System Design": 1196.7024983472654,
+        "CN": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 62,
+      "profile": "weak",
+      "must_cover": [
+        "Python",
+        "DBMS",
+        "System Design",
+        "Java",
+        "DSA",
+        "HR"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Python": 1202.0549912660927,
+        "DSA": 1199.769983862616,
+        "DBMS": 1196.2576983472654,
+        "HR": 1210.8,
+        "OOP": 1190.4,
+        "System Design": 1182.0880983472653,
+        "JavaScript": 1200.0,
+        "OS": 1200.0,
+        "Java": 1196.4624983472654,
+        "CN": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 63,
+      "profile": "strong",
+      "must_cover": [
+        "OOP",
+        "Java",
+        "JavaScript",
+        "DSA",
+        "System Design",
+        "OS"
+      ],
+      "covered": [
+        "DSA",
+        "Java",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1221.8821277929503,
+        "System Design": 1239.599235598612,
+        "Java": 1203.9793953405717,
+        "OS": 1227.67732779295,
+        "HR": 1200.0,
+        "JavaScript": 1203.5056983472653,
+        "CN": 1200.0,
+        "ML": 1200.0,
+        "DSA": 1199.2688983472653,
+        "Python": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 64,
+      "profile": "mixed",
+      "must_cover": [
+        "OOP",
+        "ML",
+        "DSA",
+        "System Design",
+        "DBMS",
+        "CN",
+        "Python"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "ML",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1223.9303811648203,
+        "DBMS": 1206.8768,
+        "ML": 1197.5088983472654,
+        "CN": 1210.8,
+        "Python": 1218.2158773129595,
+        "DSA": 1210.1025667729118,
+        "OS": 1200.0,
+        "Java": 1200.0,
+        "System Design": 1190.2459357726914,
+        "HR": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 65,
+      "profile": "weak",
+      "must_cover": [
+        "ML",
+        "Python",
+        "System Design",
+        "DSA"
+      ],
+      "covered": [
+        "DSA",
+        "Java",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "ML": 1217.9128900450587,
+        "Java": 1204.3296,
+        "Python": 1193.9056983472653,
+        "HR": 1200.0,
+        "OOP": 1200.0,
+        "System Design": 1196.2320983472653,
+        "OS": 1200.0,
+        "JavaScript": 1200.0,
+        "DSA": 1192.8361203468608,
+        "DBMS": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 66,
+      "profile": "strong",
+      "must_cover": [
+        "DBMS",
+        "ML",
+        "OOP",
+        "JavaScript",
+        "Java"
+      ],
+      "covered": [
+        "DBMS",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP"
+      ],
+      "observed_elo": {
+        "DBMS": 1225.33492779295,
+        "Java": 1230.1438644678742,
+        "ML": 1197.5088983472654,
+        "HR": 1200.0,
+        "OS": 1200.0,
+        "OOP": 1203.9120206024863,
+        "DSA": 1200.0,
+        "Python": 1200.0,
+        "JavaScript": 1215.38266045092,
+        "CN": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 67,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "ML",
+        "DSA",
+        "Python",
+        "System Design",
+        "OOP"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DBMS": 1233.1077270534936,
+        "System Design": 1218.9689341725302,
+        "ML": 1193.0672983472653,
+        "OOP": 1221.8821277929503,
+        "HR": 1200.0,
+        "DSA": 1197.8160983472653,
+        "Java": 1200.0,
+        "OS": 1200.0,
+        "Python": 1196.5136983472653,
+        "JavaScript": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 68,
+      "profile": "weak",
+      "must_cover": [
+        "OOP",
+        "DBMS",
+        "ML",
+        "Python",
+        "OS",
+        "HR"
+      ],
+      "covered": [
+        "DBMS",
+        "HR",
+        "ML",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1190.2799188598285,
+        "OS": 1206.9730029260247,
+        "DBMS": 1196.2576983472654,
+        "HR": 1189.4016,
+        "System Design": 1192.0,
+        "ML": 1193.0672983472653,
+        "DSA": 1200.0,
+        "Java": 1200.0,
+        "Python": 1196.5040983472654,
+        "JavaScript": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 69,
+      "profile": "strong",
+      "must_cover": [
+        "System Design",
+        "DBMS",
+        "Java",
+        "HR",
+        "CN",
+        "DSA",
+        "Python"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "System Design": 1205.2355485189694,
+        "CN": 1210.8,
+        "DBMS": 1197.4559720400132,
+        "DSA": 1224.2272564184216,
+        "Python": 1222.4629138119624,
+        "Java": 1206.443395340572,
+        "OOP": 1200.0,
+        "JavaScript": 1200.0,
+        "HR": 1202.4880983472653,
+        "OS": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 70,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "OOP",
+        "DSA",
+        "JavaScript"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "JavaScript",
+        "OOP"
+      ],
+      "observed_elo": {
+        "DBMS": 1218.4197277929502,
+        "Java": 1200.0,
+        "OOP": 1213.3015191426864,
+        "OS": 1200.0,
+        "System Design": 1200.0,
+        "DSA": 1198.6288983472652,
+        "CN": 1210.8,
+        "ML": 1200.0,
+        "JavaScript": 1215.2361333032898,
+        "Python": 1200.0,
+        "HR": 1200.0
+      }
+    },
+    {
+      "seed": 71,
+      "profile": "weak",
+      "must_cover": [
+        "JavaScript",
+        "CN",
+        "ML",
+        "HR",
+        "OS"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "JavaScript",
+        "ML",
+        "OS"
+      ],
+      "observed_elo": {
+        "JavaScript": 1195.1877532781361,
+        "OS": 1219.521977573453,
+        "CN": 1188.9385694424564,
+        "Java": 1200.0,
+        "DBMS": 1200.0,
+        "ML": 1193.0672983472653,
+        "DSA": 1200.0,
+        "Python": 1200.0,
+        "HR": 1183.6880983472654,
+        "OOP": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 72,
+      "profile": "strong",
+      "must_cover": [
+        "DBMS",
+        "DSA",
+        "Java",
+        "System Design",
+        "Python",
+        "JavaScript"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "Java",
+        "JavaScript",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DBMS": 1230.6079609302692,
+        "Python": 1204.848,
+        "DSA": 1196.6576983472653,
+        "JavaScript": 1225.2150762728556,
+        "OOP": 1200.0,
+        "Java": 1214.628995340572,
+        "ML": 1200.0,
+        "OS": 1200.0,
+        "System Design": 1201.7040983472652,
+        "CN": 1200.0,
+        "HR": 1200.0
+      }
+    },
+    {
+      "seed": 73,
+      "profile": "mixed",
+      "must_cover": [
+        "Java",
+        "OS",
+        "Python",
+        "ML",
+        "DBMS",
+        "OOP"
+      ],
+      "covered": [
+        "DBMS",
+        "Java",
+        "ML",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1225.3918644678743,
+        "DBMS": 1218.4197277929502,
+        "OS": 1213.1735191426865,
+        "OOP": 1209.472,
+        "System Design": 1222.65652779295,
+        "Python": 1197.9536983472653,
+        "HR": 1200.0,
+        "DSA": 1200.0,
+        "ML": 1193.0672983472653,
+        "CN": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 74,
+      "profile": "weak",
+      "must_cover": [
+        "Python",
+        "DBMS",
+        "DSA",
+        "HR",
+        "OS",
+        "JavaScript",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "Python": 1205.136,
+        "OS": 1219.521977573453,
+        "DBMS": 1182.0880983472653,
+        "JavaScript": 1205.5077546716927,
+        "CN": 1188.0178000012454,
+        "DSA": 1182.0880983472653,
+        "System Design": 1200.0,
+        "Java": 1200.0,
+        "HR": 1183.6880983472654,
+        "ML": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 75,
+      "profile": "strong",
+      "must_cover": [
+        "OOP",
+        "ML",
+        "JavaScript",
+        "DSA"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1224.1788599590216,
+        "Python": 1200.0,
+        "ML": 1197.5088983472654,
+        "System Design": 1210.8,
+        "CN": 1210.8,
+        "JavaScript": 1215.38266045092,
+        "Java": 1200.0,
+        "HR": 1200.0,
+        "DSA": 1198.6288983472652,
+        "DBMS": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 76,
+      "profile": "mixed",
+      "must_cover": [
+        "JavaScript",
+        "ML",
+        "CN",
+        "Java",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP"
+      ],
+      "observed_elo": {
+        "JavaScript": 1222.790580523398,
+        "OOP": 1209.1985287668952,
+        "ML": 1197.5088983472654,
+        "HR": 1200.0,
+        "DSA": 1200.0,
+        "CN": 1195.9280983472654,
+        "Python": 1200.0,
+        "DBMS": 1200.0,
+        "Java": 1206.443395340572,
+        "OS": 1200.0,
+        "System Design": 1200.0
+      }
+    },
+    {
+      "seed": 77,
+      "profile": "weak",
+      "must_cover": [
+        "Java",
+        "HR",
+        "CN",
+        "System Design",
+        "JavaScript",
+        "OS"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "Java",
+        "JavaScript",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1200.7298598034627,
+        "JavaScript": 1195.034153278136,
+        "HR": 1183.6880983472654,
+        "OS": 1192.0,
+        "DBMS": 1200.0,
+        "CN": 1191.2069586304353,
+        "DSA": 1200.0,
+        "OOP": 1200.0,
+        "System Design": 1192.6928983472653,
+        "Python": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 78,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "Java",
+        "System Design",
+        "DSA",
+        "DBMS",
+        "OS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "OS",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1210.8,
+        "DBMS": 1232.3695865952393,
+        "Java": 1215.4207435821588,
+        "OS": 1227.67732779295,
+        "JavaScript": 1200.0,
+        "System Design": 1209.020822347534,
+        "CN": 1200.0,
+        "Python": 1200.0,
+        "DSA": 1198.6320983472654,
+        "ML": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 79,
+      "profile": "mixed",
+      "must_cover": [
+        "DSA",
+        "JavaScript",
+        "ML",
+        "CN",
+        "OOP",
+        "System Design",
+        "DBMS"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DSA": 1226.2553341725304,
+        "OOP": 1221.8821277929503,
+        "JavaScript": 1215.2361333032898,
+        "System Design": 1224.0635072409816,
+        "DBMS": 1224.4165277929503,
+        "ML": 1193.0672983472653,
+        "HR": 1200.0,
+        "OS": 1200.0,
+        "CN": 1196.7568983472654,
+        "Java": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 80,
+      "profile": "weak",
+      "must_cover": [
+        "Java",
+        "OS",
+        "OOP",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "Java",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "Java": 1203.1161588703526,
+        "ML": 1200.0,
+        "OS": 1194.3735191426863,
+        "Python": 1200.0,
+        "DSA": 1200.0,
+        "OOP": 1186.7379491760098,
+        "System Design": 1200.0,
+        "HR": 1200.0,
+        "DBMS": 1198.6768983472653,
+        "CN": 1200.0,
+        "JavaScript": 1200.0
+      }
+    },
+    {
+      "seed": 81,
+      "profile": "strong",
+      "must_cover": [
+        "OS",
+        "JavaScript",
+        "CN",
+        "Python",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "OS": 1227.67732779295,
+        "OOP": 1221.8821277929503,
+        "JavaScript": 1215.38266045092,
+        "ML": 1200.0,
+        "HR": 1200.0,
+        "CN": 1197.2809694424564,
+        "DBMS": 1200.0,
+        "Java": 1200.0,
+        "Python": 1196.3088983472653,
+        "System Design": 1200.0,
+        "DSA": 1200.0
+      }
+    },
+    {
+      "seed": 82,
+      "profile": "mixed",
+      "must_cover": [
+        "DSA",
+        "OS",
+        "DBMS",
+        "CN",
+        "OOP",
+        "Java"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "Java",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "DSA": 1223.9077277929503,
+        "OOP": 1203.3888,
+        "OS": 1190.8656206024864,
+        "Java": 1225.991049930938,
+        "ML": 1200.0,
+        "DBMS": 1209.5927765943522,
+        "JavaScript": 1200.0,
+        "System Design": 1200.0,
+        "CN": 1195.9216983472654,
+        "HR": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 83,
+      "profile": "weak",
+      "must_cover": [
+        "OOP",
+        "DBMS",
+        "CN",
+        "Java",
+        "System Design",
+        "DSA"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "Java",
+        "OOP",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OOP": 1201.6419838626161,
+        "System Design": 1220.4325277929502,
+        "DBMS": 1196.4464983472653,
+        "DSA": 1231.4250320055871,
+        "HR": 1200.0,
+        "CN": 1195.9280983472654,
+        "JavaScript": 1200.0,
+        "OS": 1200.0,
+        "Java": 1200.0048611271975,
+        "Python": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 84,
+      "profile": "strong",
+      "must_cover": [
+        "Java",
+        "OOP",
+        "JavaScript",
+        "HR",
+        "CN",
+        "Python",
+        "System Design"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "Java",
+        "JavaScript",
+        "OOP",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "Java": 1241.0279609061492,
+        "CN": 1210.8,
+        "OOP": 1213.2922228811246,
+        "Python": 1222.9230773129595,
+        "System Design": 1210.8,
+        "JavaScript": 1203.5056983472653,
+        "DSA": 1200.0,
+        "DBMS": 1200.0,
+        "HR": 1202.4880983472653,
+        "ML": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 85,
+      "profile": "mixed",
+      "must_cover": [
+        "HR",
+        "DBMS",
+        "ML",
+        "Java"
+      ],
+      "covered": [
+        "DBMS",
+        "HR",
+        "Java",
+        "ML",
+        "Python"
+      ],
+      "observed_elo": {
+        "HR": 1221.7098946457536,
+        "Python": 1210.8,
+        "DBMS": 1198.6768983472653,
+        "JavaScript": 1200.0,
+        "OS": 1200.0,
+        "ML": 1193.0672983472653,
+        "System Design": 1200.0,
+        "DSA": 1200.0,
+        "Java": 1206.443395340572,
+        "CN": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 86,
+      "profile": "weak",
+      "must_cover": [
+        "CN",
+        "JavaScript",
+        "OOP",
+        "HR",
+        "OS"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "JavaScript",
+        "OOP",
+        "OS"
+      ],
+      "observed_elo": {
+        "CN": 1196.4656175448501,
+        "OS": 1217.393732624076,
+        "JavaScript": 1205.57466045092,
+        "System Design": 1200.0,
+        "ML": 1200.0,
+        "OOP": 1182.0880983472653,
+        "Java": 1200.0,
+        "DSA": 1200.0,
+        "HR": 1192.7735191426864,
+        "DBMS": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 87,
+      "profile": "strong",
+      "must_cover": [
+        "DSA",
+        "OS",
+        "ML",
+        "Python",
+        "HR",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "ML",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DSA": 1223.6805277929502,
+        "HR": 1208.8,
+        "OS": 1211.2656206024865,
+        "DBMS": 1210.8,
+        "System Design": 1226.7685277929502,
+        "ML": 1197.5088983472654,
+        "Java": 1200.0,
+        "JavaScript": 1200.0,
+        "Python": 1196.3088983472653,
+        "CN": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 88,
+      "profile": "mixed",
+      "must_cover": [
+        "ML",
+        "JavaScript",
+        "CN",
+        "DBMS",
+        "HR",
+        "DSA"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "ML"
+      ],
+      "observed_elo": {
+        "ML": 1206.2892054223182,
+        "HR": 1210.8,
+        "JavaScript": 1194.73306045092,
+        "DSA": 1233.4038980148168,
+        "OS": 1200.0,
+        "CN": 1196.7568983472654,
+        "Java": 1200.0,
+        "System Design": 1200.0,
+        "DBMS": 1198.6768983472653,
+        "OOP": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 89,
+      "profile": "weak",
+      "must_cover": [
+        "DBMS",
+        "Java",
+        "CN",
+        "OS",
+        "Python",
+        "DSA",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "Java",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "DBMS": 1199.1219775734528,
+        "Python": 1204.976,
+        "Java": 1192.7504983472654,
+        "DSA": 1223.58132779295,
+        "OOP": 1209.14292779295,
+        "CN": 1182.0880983472653,
+        "System Design": 1200.0,
+        "HR": 1200.0,
+        "OS": 1194.3735191426863,
+        "JavaScript": 1200.0,
+        "ML": 1200.0
+      }
+    },
+    {
+      "seed": 90,
+      "profile": "strong",
+      "must_cover": [
+        "HR",
+        "OOP",
+        "DSA",
+        "Python"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "OOP",
+        "Python"
+      ],
+      "observed_elo": {
+        "HR": 1210.8,
+        "DBMS": 1224.4165277929503,
+        "OOP": 1213.1735191426865,
+        "Java": 1200.0,
+        "JavaScript": 1200.0,
+        "DSA": 1198.6320983472654,
+        "System Design": 1200.0,
+        "ML": 1200.0,
+        "Python": 1210.322356494535,
+        "OS": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 91,
+      "profile": "mixed",
+      "must_cover": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "System Design",
+        "Python"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "DBMS": 1232.920290337014,
+        "Python": 1216.9081424150427,
+        "DSA": 1196.4336983472654,
+        "OS": 1200.0,
+        "HR": 1200.0,
+        "ML": 1197.5088983472654,
+        "JavaScript": 1200.0,
+        "Java": 1200.0,
+        "System Design": 1192.025622347534,
+        "OOP": 1200.0,
+        "CN": 1200.0
+      }
+    },
+    {
+      "seed": 92,
+      "profile": "weak",
+      "must_cover": [
+        "ML",
+        "Python",
+        "JavaScript",
+        "OOP",
+        "OS",
+        "Java"
+      ],
+      "covered": [
+        "DSA",
+        "Java",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "OS",
+        "Python"
+      ],
+      "observed_elo": {
+        "ML": 1201.769983862616,
+        "OS": 1209.14292779295,
+        "Python": 1197.4928983472653,
+        "Java": 1204.3296,
+        "System Design": 1200.0,
+        "JavaScript": 1196.7376983472655,
+        "CN": 1200.0,
+        "HR": 1200.0,
+        "OOP": 1192.4656206024863,
+        "DSA": 1210.8,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 93,
+      "profile": "strong",
+      "must_cover": [
+        "OOP",
+        "JavaScript",
+        "DSA",
+        "HR",
+        "Python",
+        "DBMS"
+      ],
+      "covered": [
+        "CN",
+        "DBMS",
+        "DSA",
+        "HR",
+        "JavaScript",
+        "OOP",
+        "Python"
+      ],
+      "observed_elo": {
+        "OOP": 1225.9397277929502,
+        "Python": 1206.2688,
+        "JavaScript": 1218.2294906647978,
+        "DBMS": 1210.8,
+        "CN": 1221.1028017523358,
+        "DSA": 1196.6576983472653,
+        "System Design": 1200.0,
+        "Java": 1200.0,
+        "HR": 1202.4880983472653,
+        "ML": 1200.0,
+        "OS": 1200.0
+      }
+    },
+    {
+      "seed": 94,
+      "profile": "mixed",
+      "must_cover": [
+        "OS",
+        "DBMS",
+        "HR",
+        "System Design",
+        "DSA",
+        "Java",
+        "Python"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1207.2522987273528,
+        "DSA": 1222.1005168682047,
+        "DBMS": 1210.3648827168267,
+        "Java": 1225.991049930938,
+        "Python": 1217.572627889028,
+        "HR": 1202.4880983472653,
+        "CN": 1200.0,
+        "JavaScript": 1200.0,
+        "System Design": 1203.7680983472653,
+        "ML": 1200.0,
+        "OOP": 1200.0
+      }
+    },
+    {
+      "seed": 95,
+      "profile": "weak",
+      "must_cover": [
+        "OS",
+        "Python",
+        "CN",
+        "OOP"
+      ],
+      "covered": [
+        "CN",
+        "OOP",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "OS": 1207.4546300687791,
+        "System Design": 1198.0611838626162,
+        "Python": 1193.0064983472653,
+        "DSA": 1200.0,
+        "HR": 1200.0,
+        "CN": 1195.9280983472654,
+        "DBMS": 1200.0,
+        "JavaScript": 1200.0,
+        "OOP": 1197.2080983472654,
+        "ML": 1200.0,
+        "Java": 1200.0
+      }
+    },
+    {
+      "seed": 96,
+      "profile": "strong",
+      "must_cover": [
+        "JavaScript",
+        "ML",
+        "DSA",
+        "OOP",
+        "System Design"
+      ],
+      "covered": [
+        "CN",
+        "DSA",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "System Design"
+      ],
+      "observed_elo": {
+        "JavaScript": 1229.3046762728557,
+        "System Design": 1223.4917277929503,
+        "ML": 1197.5088983472654,
+        "HR": 1200.0,
+        "CN": 1208.8,
+        "DSA": 1210.1633667729118,
+        "OS": 1200.0,
+        "Java": 1200.0,
+        "OOP": 1202.4880983472653,
+        "DBMS": 1200.0,
+        "Python": 1200.0
+      }
+    },
+    {
+      "seed": 97,
+      "profile": "mixed",
+      "must_cover": [
+        "HR",
+        "JavaScript",
+        "OOP",
+        "System Design",
+        "ML",
+        "CN"
+      ],
+      "covered": [
+        "CN",
+        "HR",
+        "JavaScript",
+        "ML",
+        "OOP",
+        "System Design"
+      ],
+      "observed_elo": {
+        "HR": 1210.8,
+        "ML": 1225.6709277929501,
+        "JavaScript": 1200.2000212829294,
+        "CN": 1221.1028017523358,
+        "Java": 1200.0,
+        "OOP": 1200.4880983472653,
+        "Python": 1200.0,
+        "OS": 1200.0,
+        "System Design": 1192.025622347534,
+        "DBMS": 1200.0,
+        "DSA": 1200.0
+      }
+    },
+    {
+      "seed": 98,
+      "profile": "weak",
+      "must_cover": [
+        "JavaScript",
+        "CN",
+        "OS",
+        "Java",
+        "Python",
+        "System Design"
+      ],
+      "covered": [
+        "CN",
+        "Java",
+        "JavaScript",
+        "OS",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "JavaScript": 1198.7080585174458,
+        "Python": 1192.0,
+        "CN": 1187.4341532506292,
+        "System Design": 1220.6725277929502,
+        "HR": 1200.0,
+        "OS": 1182.0880983472653,
+        "ML": 1200.0,
+        "DSA": 1200.0,
+        "Java": 1196.4624983472654,
+        "OOP": 1200.0,
+        "DBMS": 1200.0
+      }
+    },
+    {
+      "seed": 99,
+      "profile": "strong",
+      "must_cover": [
+        "ML",
+        "HR",
+        "Python",
+        "Java",
+        "System Design",
+        "DSA",
+        "DBMS"
+      ],
+      "covered": [
+        "DBMS",
+        "DSA",
+        "HR",
+        "Java",
+        "ML",
+        "Python",
+        "System Design"
+      ],
+      "observed_elo": {
+        "ML": 1222.8229277929502,
+        "System Design": 1206.6336000000001,
+        "HR": 1213.1735191426865,
+        "DSA": 1222.5406352787359,
+        "DBMS": 1224.4165277929503,
+        "Python": 1197.9536983472653,
+        "JavaScript": 1200.0,
+        "CN": 1200.0,
+        "Java": 1214.628995340572,
+        "OOP": 1200.0,
+        "OS": 1200.0
+      }
+    }
+  ],
+  "cold_bank": {
+    "CN": {
+      "questions": 95,
+      "difficulty_counts": {
+        "easy": 3,
+        "medium": 92
+      },
+      "no_higher_after_current_and_near_dedup": 92
+    },
+    "DBMS": {
+      "questions": 181,
+      "difficulty_counts": {
+        "easy": 3,
+        "medium": 173,
+        "hard": 5
+      },
+      "no_higher_after_current_and_near_dedup": 5
+    },
+    "DSA": {
+      "questions": 77,
+      "difficulty_counts": {
+        "easy": 4,
+        "hard": 2,
+        "medium": 71
+      },
+      "no_higher_after_current_and_near_dedup": 2
+    },
+    "HR": {
+      "questions": 31,
+      "difficulty_counts": {
+        "easy": 12,
+        "medium": 19
+      },
+      "no_higher_after_current_and_near_dedup": 19
+    },
+    "Java": {
+      "questions": 5,
+      "difficulty_counts": {
+        "easy": 2,
+        "medium": 2,
+        "hard": 1
+      },
+      "no_higher_after_current_and_near_dedup": 1
+    },
+    "JavaScript": {
+      "questions": 4,
+      "difficulty_counts": {
+        "easy": 2,
+        "medium": 1,
+        "hard": 1
+      },
+      "no_higher_after_current_and_near_dedup": 1
+    },
+    "ML": {
+      "questions": 120,
+      "difficulty_counts": {
+        "medium": 116,
+        "easy": 1,
+        "hard": 3
+      },
+      "no_higher_after_current_and_near_dedup": 3
+    },
+    "OOP": {
+      "questions": 40,
+      "difficulty_counts": {
+        "easy": 7,
+        "medium": 32,
+        "hard": 1
+      },
+      "no_higher_after_current_and_near_dedup": 1
+    },
+    "OS": {
+      "questions": 40,
+      "difficulty_counts": {
+        "medium": 35,
+        "hard": 1,
+        "easy": 4
+      },
+      "no_higher_after_current_and_near_dedup": 1
+    },
+    "Python": {
+      "questions": 60,
+      "difficulty_counts": {
+        "medium": 44,
+        "easy": 9,
+        "hard": 7
+      },
+      "no_higher_after_current_and_near_dedup": 7
+    },
+    "System Design": {
+      "questions": 120,
+      "difficulty_counts": {
+        "medium": 100,
+        "hard": 15,
+        "easy": 5
+      },
+      "no_higher_after_current_and_near_dedup": 15
+    }
+  },
+  "bridge_coverage": {
+    "skills": {
+      "CN": {
+        "down": [
+          "OS"
+        ],
+        "up": [
+          "System Design"
+        ],
+        "across": [
+          "JavaScript"
+        ]
+      },
+      "DBMS": {
+        "down": [],
+        "up": [
+          "System Design"
+        ],
+        "across": [
+          "Java",
+          "ML",
+          "Python"
+        ]
+      },
+      "DSA": {
+        "down": [],
+        "up": [
+          "System Design"
+        ],
+        "across": [
+          "ML",
+          "OOP"
+        ]
+      },
+      "HR": {
+        "down": [],
+        "up": [],
+        "across": []
+      },
+      "Java": {
+        "down": [],
+        "up": [],
+        "across": [
+          "DBMS",
+          "OOP"
+        ]
+      },
+      "JavaScript": {
+        "down": [],
+        "up": [],
+        "across": [
+          "CN"
+        ]
+      },
+      "ML": {
+        "down": [
+          "Python"
+        ],
+        "up": [],
+        "across": [
+          "DBMS",
+          "DSA"
+        ]
+      },
+      "OOP": {
+        "down": [],
+        "up": [],
+        "across": [
+          "DSA",
+          "Java",
+          "Python"
+        ]
+      },
+      "OS": {
+        "down": [],
+        "up": [
+          "CN",
+          "System Design"
+        ],
+        "across": []
+      },
+      "Python": {
+        "down": [],
+        "up": [
+          "ML"
+        ],
+        "across": [
+          "DBMS",
+          "OOP"
+        ]
+      },
+      "System Design": {
+        "down": [
+          "CN",
+          "DBMS",
+          "DSA",
+          "OS"
+        ],
+        "up": [],
+        "across": []
+      }
+    },
+    "denominator": 11,
+    "down": 3,
+    "up": 5,
+    "across": 8,
+    "up_or_across": 9
+  },
+  "complete_sessions": 100,
+  "must_cover_fully_covered": 100,
+  "question_repeats": 0,
+  "near_duplicates": 0,
+  "concept_probes": 0,
+  "difficulty_relaxation_rate": 0.017,
+  "harder_fallback_rate": 0.11864406779661017,
+  "neutral_expected_scores": {
+    "easy": 0.7597469266479578,
+    "medium": 0.5,
+    "hard": 0.2402530733520421
+  },
+  "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "source_sha256": {
+    "modules/adaptive_policy.py": "3d2c8fcac6fd88a096e9a68314f633a9e419eca8ed56440abbc1305531b0cf85",
+    "modules/adaptive_skill_graph.py": "aba8a951dce24b547850076b0c580f10a98f97be4684e2a6a498f3f66b9db040",
+    "modules/answer_bands.py": "a04bb30611a25fe12ba9291b4e2e4f39dc9067c6aca0096d1aa8d5c465a30b08",
+    "backend/config.py": "ec956ade06dd48050e4e0403dacb2ceeb8aa6bd36ff82c6e7ba2e807cf751e40",
+    "data/question_concepts_v1.json": "68cb75323f02cc9a367ef7cea64a3707bcd30d12f1e3924021fb8c5d60868727",
+    "data/audits/concept_review/all_rows.jsonl": "309cc743619e5fd93253d7d6567c207c5a386d1f394e22e33ac9c9f0ba86b979"
+  }
+}

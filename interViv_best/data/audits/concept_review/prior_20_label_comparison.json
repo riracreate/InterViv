@@ -1,0 +1,165 @@
+{
+  "labeler": "Assistant manual reading of 20 purposively selected answer/concept pairs. Not independent human annotation; not a random sample or an accuracy estimate.",
+  "pairs": [
+    {
+      "pair_id": "R01",
+      "concept": "classification",
+      "tier": 3,
+      "similarity": 0.5674,
+      "assistant_label": "true_miss",
+      "reason": "Final predictions do not distinguish classification from regression; no class/label evidence."
+    },
+    {
+      "pair_id": "R02",
+      "concept": "regression",
+      "tier": 3,
+      "similarity": 0.5202,
+      "assistant_label": "true_miss",
+      "reason": "Classes and leaves are explained, but continuous regression targets are not."
+    },
+    {
+      "pair_id": "R03",
+      "concept": "overfitting",
+      "tier": 3,
+      "similarity": 0.5606,
+      "assistant_label": "true_miss",
+      "reason": "The answer describes sensitivity/underfitting; it does not explain overfitting."
+    },
+    {
+      "pair_id": "R04",
+      "concept": "cross-validation",
+      "tier": 3,
+      "similarity": 0.4114,
+      "assistant_label": "true_miss",
+      "reason": "No resampling, folds, or validation procedure is described."
+    },
+    {
+      "pair_id": "R05",
+      "concept": "STAR",
+      "tier": 3,
+      "similarity": 0.2313,
+      "assistant_label": "rubric_overreach",
+      "reason": "A sound conflict-handling strategy need not name STAR; the extracted reference framework is not necessarily required."
+    },
+    {
+      "pair_id": "R06",
+      "concept": "action",
+      "tier": 3,
+      "similarity": 0.3783,
+      "assistant_label": "false_miss",
+      "reason": "The answer describes concrete actions: listen, hold a private conversation, write approaches and compare criteria."
+    },
+    {
+      "pair_id": "R07",
+      "concept": "communication",
+      "tier": 3,
+      "similarity": 0.6107,
+      "assistant_label": "false_miss",
+      "reason": "Private conversation and listening explicitly demonstrate communication; cosine 0.6107 falls below 0.62."
+    },
+    {
+      "pair_id": "R08",
+      "concept": "key distribution",
+      "tier": 2,
+      "similarity": 0.5921,
+      "assistant_label": "false_miss",
+      "reason": "Sharing keys conveys the key-distribution concept at a high level, although the mechanism is incomplete."
+    },
+    {
+      "pair_id": "R09",
+      "concept": "caching",
+      "tier": 3,
+      "similarity": 0.3481,
+      "assistant_label": "true_miss",
+      "reason": "Crawler/index/ranking/sharding are described; caching is absent. Its requiredness needs rubric review."
+    },
+    {
+      "pair_id": "R10",
+      "concept": "caching",
+      "tier": 3,
+      "similarity": 0.3248,
+      "assistant_label": "true_miss",
+      "reason": "The detailed search design omits caching. This is a real omission, not proof that the otherwise strong answer is wrong."
+    },
+    {
+      "pair_id": "R11",
+      "concept": "bagging",
+      "tier": 3,
+      "similarity": 0.3009,
+      "assistant_label": "partial_support",
+      "reason": "Random subsets and aggregation describe the central bagging idea; bootstrap sampling with replacement is not explicit. A binary full miss loses partial evidence."
+    },
+    {
+      "pair_id": "R12",
+      "concept": "regression",
+      "tier": 3,
+      "similarity": 0.43,
+      "assistant_label": "true_miss",
+      "reason": "Forest aggregation is explained without describing regression targets or averaged continuous output."
+    },
+    {
+      "pair_id": "R13",
+      "concept": "unstructured",
+      "tier": 2,
+      "similarity": 0.3015,
+      "assistant_label": "false_miss",
+      "reason": "Images are a concrete example of unstructured blob content; a literal label is not needed for this aspect."
+    },
+    {
+      "pair_id": "R14",
+      "concept": "asynchronous",
+      "tier": 2,
+      "similarity": 0.4139,
+      "assistant_label": "true_miss",
+      "reason": "Messages between services do not by themselves establish asynchronous delivery."
+    },
+    {
+      "pair_id": "R15",
+      "concept": "random forest",
+      "tier": 3,
+      "similarity": 0.5564,
+      "assistant_label": "rubric_overreach",
+      "reason": "A correct detailed single-tree explanation need not mention random forests; an example/comparison in the ideal became a required concept."
+    },
+    {
+      "pair_id": "R16",
+      "concept": "function",
+      "tier": 3,
+      "similarity": 0.3259,
+      "assistant_label": "true_miss",
+      "reason": "The cut-off MRO answer does not address the super function represented in the reference."
+    },
+    {
+      "pair_id": "R17",
+      "concept": "encapsulation",
+      "tier": 2,
+      "similarity": 0.3983,
+      "assistant_label": "false_miss",
+      "reason": "Hiding internal data behind public methods demonstrates encapsulation."
+    },
+    {
+      "pair_id": "R18",
+      "concept": "inheritance",
+      "tier": 2,
+      "similarity": 0.5684,
+      "assistant_label": "false_miss",
+      "reason": "A child class reusing parent behavior demonstrates inheritance."
+    },
+    {
+      "pair_id": "R19",
+      "concept": "polymorphism",
+      "tier": 2,
+      "similarity": 0.4095,
+      "assistant_label": "false_miss",
+      "reason": "One interface taking many forms by overriding derived methods demonstrates polymorphism."
+    },
+    {
+      "pair_id": "R20",
+      "concept": "abstraction",
+      "tier": 2,
+      "similarity": 0.4561,
+      "assistant_label": "false_miss",
+      "reason": "Exposing essential operations while keeping implementation private demonstrates abstraction."
+    }
+  ]
+}

@@ -1,0 +1,565 @@
+{
+  "definition": "Include a target in the other question\u2019s offline rubric even when that question names it and excludes it from credit. Only current question seen; primary bank; cosine >=0.85 duplicates excluded; no actual session caps/history. This is availability, not a probe implementation.",
+  "by_skill": {
+    "Python": {
+      "vague": 31,
+      "with_other_question_after_dedup": 7,
+      "hr_disabled": 7
+    },
+    "System Design": {
+      "vague": 71,
+      "with_other_question_after_dedup": 18,
+      "hr_disabled": 18
+    },
+    "DBMS": {
+      "vague": 17,
+      "with_other_question_after_dedup": 3,
+      "hr_disabled": 3
+    },
+    "ML": {
+      "vague": 23,
+      "with_other_question_after_dedup": 2,
+      "hr_disabled": 2
+    },
+    "DSA": {
+      "vague": 23,
+      "with_other_question_after_dedup": 2,
+      "hr_disabled": 2
+    },
+    "CN": {
+      "vague": 10,
+      "with_other_question_after_dedup": 1,
+      "hr_disabled": 1
+    },
+    "OOP": {
+      "vague": 14,
+      "with_other_question_after_dedup": 2,
+      "hr_disabled": 2
+    },
+    "OS": {
+      "vague": 5
+    },
+    "HR": {
+      "vague": 3,
+      "with_other_question_after_dedup": 1,
+      "hr_disabled": 0
+    },
+    "Java": {
+      "vague": 5
+    },
+    "JavaScript": {
+      "vague": 5
+    }
+  },
+  "opportunities": [
+    {
+      "row_index": 4,
+      "skill": "Python",
+      "question_id": "v6:246f43ed8ac3a62a06433211",
+      "concept_to_question_ids": {
+        "mutable": [
+          "v6:3b459bf97c2bf42bcd15ea75",
+          "v6:99afcdfa044ab4e387186a7f"
+        ]
+      }
+    },
+    {
+      "row_index": 6,
+      "skill": "Python",
+      "question_id": "v6:246f43ed8ac3a62a06433211",
+      "concept_to_question_ids": {
+        "immutable": [
+          "v6:3b459bf97c2bf42bcd15ea75",
+          "v6:94baa301b4c6af1dcd6d0c46",
+          "v6:99afcdfa044ab4e387186a7f"
+        ]
+      }
+    },
+    {
+      "row_index": 18,
+      "skill": "Python",
+      "question_id": "v6:b2bb5c8c5bc992a33dca8393",
+      "concept_to_question_ids": {
+        "decorator": [
+          "v6:20ba903994900c1945fe029b",
+          "v6:6320abcc87da568e37a8cc72",
+          "v6:8a36aabe8d10f23442dc920d",
+          "v6:b258dc03a22b57e86fb9fb78",
+          "v6:d345b9f998f52c890f127a0e",
+          "v6:d60d089a1bd0068746095727",
+          "v6:ffb16725fd4df8622ce3b99b"
+        ]
+      }
+    },
+    {
+      "row_index": 21,
+      "skill": "Python",
+      "question_id": "v6:99afcdfa044ab4e387186a7f",
+      "concept_to_question_ids": {
+        "immutable": [
+          "v6:246f43ed8ac3a62a06433211",
+          "v6:3b459bf97c2bf42bcd15ea75",
+          "v6:94baa301b4c6af1dcd6d0c46",
+          "v6:d014dd7901c53ad862db77c5"
+        ]
+      }
+    },
+    {
+      "row_index": 71,
+      "skill": "Python",
+      "question_id": "v6:5efe35a6c8bd3031d620f518",
+      "concept_to_question_ids": {
+        "yield": [
+          "v6:665bddda27810f232cf54183",
+          "v6:ca68ee110aa9b0d398fe765f"
+        ]
+      }
+    },
+    {
+      "row_index": 75,
+      "skill": "Python",
+      "question_id": "v6:9066585c80b7cd19a363aaac",
+      "concept_to_question_ids": {
+        "dict": [
+          "v6:3b459bf97c2bf42bcd15ea75",
+          "v6:94baa301b4c6af1dcd6d0c46"
+        ]
+      }
+    },
+    {
+      "row_index": 89,
+      "skill": "System Design",
+      "question_id": "v6:5b2c14cec97897780fa5ddcd",
+      "concept_to_question_ids": {
+        "CDN": [
+          "v6:0c7886e6e4d19fa81adf33b6",
+          "v6:119d435fddc9d063c5e5614f"
+        ]
+      }
+    },
+    {
+      "row_index": 90,
+      "skill": "System Design",
+      "question_id": "v6:5b2c14cec97897780fa5ddcd",
+      "concept_to_question_ids": {
+        "sharding": [
+          "v6:1d09758f746863aa4b3d75e4"
+        ]
+      }
+    },
+    {
+      "row_index": 98,
+      "skill": "System Design",
+      "question_id": "v6:94ce8c36af201b8c7952a633",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 101,
+      "skill": "System Design",
+      "question_id": "v6:e50c6ca752342461c6016028",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a"
+        ]
+      }
+    },
+    {
+      "row_index": 102,
+      "skill": "System Design",
+      "question_id": "v6:e50c6ca752342461c6016028",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a"
+        ]
+      }
+    },
+    {
+      "row_index": 118,
+      "skill": "System Design",
+      "question_id": "v6:70a1fefc07592cefa3849105",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 122,
+      "skill": "System Design",
+      "question_id": "v6:c50ba8ca883caf695155f108",
+      "concept_to_question_ids": {
+        "dynamodb": [
+          "v6:0994f86e256ceefd6e6b37d9",
+          "v6:cd5569246ddad3eb7fc4c81d",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 124,
+      "skill": "System Design",
+      "question_id": "v6:a5b272d0b5f8f8a943a80d6c",
+      "concept_to_question_ids": {
+        "Kafka": [
+          "v6:12399fe6e98361fc9fc9012f",
+          "v6:67309cf12372024f1fa19d0d",
+          "v6:6af41220b77a5d591b31036c",
+          "v6:a42a42efbcba847b34dbbcd6",
+          "v6:d82aa7934d19a86df7bbb15a"
+        ]
+      }
+    },
+    {
+      "row_index": 142,
+      "skill": "System Design",
+      "question_id": "v6:1947bffa23b0b03c9fadae9f",
+      "concept_to_question_ids": {
+        "TTL": [
+          "v6:70a1fefc07592cefa3849105",
+          "v6:ed29984375dfb0e5d121cf4a",
+          "v6:fccaab79849e89f78793bb28"
+        ]
+      }
+    },
+    {
+      "row_index": 149,
+      "skill": "System Design",
+      "question_id": "v6:d82aa7934d19a86df7bbb15a",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:e50c6ca752342461c6016028"
+        ],
+        "cassandra": [
+          "v6:0994f86e256ceefd6e6b37d9",
+          "v6:c50ba8ca883caf695155f108",
+          "v6:cd5569246ddad3eb7fc4c81d",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 150,
+      "skill": "System Design",
+      "question_id": "v6:d82aa7934d19a86df7bbb15a",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 159,
+      "skill": "System Design",
+      "question_id": "v6:497298d8c052268cf8f45d61",
+      "concept_to_question_ids": {
+        "API gateway": [
+          "v6:e2be24fda66e1c0d400ddc6d"
+        ]
+      }
+    },
+    {
+      "row_index": 160,
+      "skill": "System Design",
+      "question_id": "v6:40f20226ef1748bc567efc74",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 162,
+      "skill": "System Design",
+      "question_id": "v6:40f20226ef1748bc567efc74",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:492344c76548affb70b8936d",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 167,
+      "skill": "System Design",
+      "question_id": "v6:492344c76548affb70b8936d",
+      "concept_to_question_ids": {
+        "Redis": [
+          "v6:1947bffa23b0b03c9fadae9f",
+          "v6:40f20226ef1748bc567efc74",
+          "v6:5b2c14cec97897780fa5ddcd",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:94ce8c36af201b8c7952a633",
+          "v6:cd7c04b33be17e24b48805d4",
+          "v6:d82aa7934d19a86df7bbb15a",
+          "v6:e50c6ca752342461c6016028"
+        ]
+      }
+    },
+    {
+      "row_index": 195,
+      "skill": "DBMS",
+      "question_id": "v6:912a90452a50b794f6ab062f",
+      "concept_to_question_ids": {
+        "primary key": [
+          "v6:1b7c45bae9dcb0ba59f4e714",
+          "v6:2de66a617fd6c652222929eb",
+          "v6:510e2eac87f60696eb497e5a",
+          "v6:9e722c1393a877acb6de8564",
+          "v6:d7c06955532b4f3b9102a6e9"
+        ]
+      }
+    },
+    {
+      "row_index": 209,
+      "skill": "DBMS",
+      "question_id": "v6:993bb6c72bc673d42df50723",
+      "concept_to_question_ids": {
+        "sharding": [
+          "v6:1a7cebf0c56929fa1703fd50",
+          "v6:2657646bdd4c50ab784b2bc0",
+          "v6:27f96e8e24b5bacf886f3126",
+          "v6:2cfff99c19a816163710eae7",
+          "v6:79b02373ce2912d558de9b80",
+          "v6:7f3922bff77560dad301b2b5",
+          "v6:bee3f94fa4c88e706b3193ae",
+          "v6:bfa706da0dab9b902f5ebc12",
+          "v6:d89823873e87bae76de16e06"
+        ]
+      }
+    },
+    {
+      "row_index": 269,
+      "skill": "DSA",
+      "question_id": "v6:73abb38014238291b491e0ef",
+      "concept_to_question_ids": {
+        "DFS": [
+          "v6:15646c3314a5d7c96b47bb03",
+          "v6:864f38d36c558dd0168d1127",
+          "v6:9eeb36dc46f84a57f688b26c",
+          "v6:ac5501bf2b5919a28f114eb8",
+          "v6:c1a469034885a4505d65ff04"
+        ],
+        "BFS": [
+          "v6:15646c3314a5d7c96b47bb03",
+          "v6:864f38d36c558dd0168d1127",
+          "v6:87477f9fa4ecf73e7e9ea2d7",
+          "v6:9eeb36dc46f84a57f688b26c",
+          "v6:ac5501bf2b5919a28f114eb8",
+          "v6:c1a469034885a4505d65ff04"
+        ]
+      }
+    },
+    {
+      "row_index": 275,
+      "skill": "DSA",
+      "question_id": "v6:c56cf682f0c78c891f6480ba",
+      "concept_to_question_ids": {
+        "time complexity": [
+          "v6:75a3e2b8237fb64143badf54",
+          "v6:87477f9fa4ecf73e7e9ea2d7"
+        ]
+      }
+    },
+    {
+      "row_index": 322,
+      "skill": "CN",
+      "question_id": "v6:b9a840f02a0e872e6f24ccc3",
+      "concept_to_question_ids": {
+        "stateless": [
+          "v6:26b06c88ff03a004f4d47227",
+          "v6:48430309cffcb90e12cb7c70"
+        ]
+      }
+    },
+    {
+      "row_index": 346,
+      "skill": "OOP",
+      "question_id": "v6:5a92e1f2b7fc7739f5dc0e4d",
+      "concept_to_question_ids": {
+        "liskov substitution": [
+          "v6:6fde96f80d951fd318331595",
+          "v6:8e63b67481470d299267d6d5",
+          "v6:8f62c49a5d8eecaff68aaba2"
+        ]
+      }
+    },
+    {
+      "row_index": 376,
+      "skill": "HR",
+      "question_id": "v6:9e8461cd671f6e3bced2dd6e",
+      "concept_to_question_ids": {
+        "STAR": [
+          "v6:e97e67c230da46bb6fc6ed84"
+        ]
+      }
+    },
+    {
+      "row_index": 398,
+      "skill": "Python",
+      "question_id": "v6:b258dc03a22b57e86fb9fb78",
+      "concept_to_question_ids": {
+        "decorator": [
+          "v6:20ba903994900c1945fe029b",
+          "v6:6320abcc87da568e37a8cc72",
+          "v6:8a36aabe8d10f23442dc920d",
+          "v6:b2bb5c8c5bc992a33dca8393",
+          "v6:d345b9f998f52c890f127a0e",
+          "v6:d60d089a1bd0068746095727",
+          "v6:ffb16725fd4df8622ce3b99b"
+        ]
+      }
+    },
+    {
+      "row_index": 572,
+      "skill": "ML",
+      "question_id": "v6:8b429ccec4c3870150ef37dc",
+      "concept_to_question_ids": {
+        "kernel trick": [
+          "v6:d71f06cedde924481cf0529a"
+        ]
+      }
+    },
+    {
+      "row_index": 575,
+      "skill": "System Design",
+      "question_id": "v6:cd7c04b33be17e24b48805d4",
+      "concept_to_question_ids": {
+        "async": [
+          "v6:0b60f350a760373b4e8e842f",
+          "v6:6af41220b77a5d591b31036c",
+          "v6:70a1fefc07592cefa3849105",
+          "v6:902de4af1d137904991641c2",
+          "v6:a42a42efbcba847b34dbbcd6",
+          "v6:fccaab79849e89f78793bb28"
+        ]
+      }
+    },
+    {
+      "row_index": 669,
+      "skill": "System Design",
+      "question_id": "v6:dd9d2b9ab070075323a57b90",
+      "concept_to_question_ids": {
+        "stateless": [
+          "v6:481c643b2cbe50e01ba33cd7",
+          "v6:5d284a71716c4ad9ff6b7d3c",
+          "v6:7da9348dbc0638f53dffb6c2",
+          "v6:96cffefda283dea9cccde1fe"
+        ]
+      }
+    },
+    {
+      "row_index": 689,
+      "skill": "System Design",
+      "question_id": "v6:481c643b2cbe50e01ba33cd7",
+      "concept_to_question_ids": {
+        "stateless": [
+          "v6:5d284a71716c4ad9ff6b7d3c",
+          "v6:7da9348dbc0638f53dffb6c2",
+          "v6:96cffefda283dea9cccde1fe",
+          "v6:dd9d2b9ab070075323a57b90"
+        ]
+      }
+    },
+    {
+      "row_index": 700,
+      "skill": "OOP",
+      "question_id": "v6:8f62c49a5d8eecaff68aaba2",
+      "concept_to_question_ids": {
+        "Liskov": [
+          "v6:5a92e1f2b7fc7739f5dc0e4d",
+          "v6:6fde96f80d951fd318331595",
+          "v6:8e63b67481470d299267d6d5"
+        ]
+      }
+    },
+    {
+      "row_index": 2139,
+      "skill": "DBMS",
+      "question_id": "v6:bfa706da0dab9b902f5ebc12",
+      "concept_to_question_ids": {
+        "sharding": [
+          "v6:1a7cebf0c56929fa1703fd50",
+          "v6:2657646bdd4c50ab784b2bc0",
+          "v6:27f96e8e24b5bacf886f3126",
+          "v6:2cfff99c19a816163710eae7",
+          "v6:79b02373ce2912d558de9b80",
+          "v6:7f3922bff77560dad301b2b5",
+          "v6:993bb6c72bc673d42df50723",
+          "v6:bee3f94fa4c88e706b3193ae",
+          "v6:d89823873e87bae76de16e06"
+        ]
+      }
+    },
+    {
+      "row_index": 2202,
+      "skill": "ML",
+      "question_id": "v6:660b1f956e66033239721913",
+      "concept_to_question_ids": {
+        "F1": [
+          "v6:63e8427e9e43828d4346cfb1"
+        ]
+      }
+    }
+  ],
+  "total_with_other_question": 36,
+  "total_hr_disabled": 35
+}

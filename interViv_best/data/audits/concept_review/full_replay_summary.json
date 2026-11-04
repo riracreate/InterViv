@@ -1,0 +1,1697 @@
+{
+  "row_count": 2319,
+  "model_revision_loaded": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "bands": {
+    "strong": 1235,
+    "vague": 207,
+    "adequate": 148,
+    "wrong": 337,
+    "nonanswer": 392
+  },
+  "bands_by_label": {
+    "Good": {
+      "strong": 691,
+      "vague": 36,
+      "adequate": 34,
+      "wrong": 11,
+      "nonanswer": 1
+    },
+    "Average": {
+      "strong": 538,
+      "vague": 127,
+      "adequate": 87,
+      "wrong": 18,
+      "nonanswer": 3
+    },
+    "Poor": {
+      "strong": 6,
+      "vague": 44,
+      "adequate": 27,
+      "wrong": 308,
+      "nonanswer": 388
+    }
+  },
+  "by_skill": {
+    "Python": {
+      "rows": 180,
+      "strong": 60,
+      "vague": 31,
+      "vague_with_confident_miss": 7,
+      "vague_with_filter_survivor": 7,
+      "vague_with_unseen_target_raw": 7,
+      "vague_with_unseen_target_deduped": 7,
+      "vague_policy_eligible_hr_disabled": 7,
+      "adequate": 47,
+      "wrong": 29,
+      "nonanswer": 13
+    },
+    "System Design": {
+      "rows": 360,
+      "strong": 160,
+      "vague": 71,
+      "vague_with_confident_miss": 26,
+      "vague_with_filter_survivor": 26,
+      "vague_with_unseen_target_raw": 16,
+      "vague_with_unseen_target_deduped": 16,
+      "vague_policy_eligible_hr_disabled": 16,
+      "nonanswer": 58,
+      "wrong": 49,
+      "adequate": 22
+    },
+    "DBMS": {
+      "rows": 543,
+      "strong": 330,
+      "vague": 17,
+      "vague_with_confident_miss": 6,
+      "vague_with_filter_survivor": 6,
+      "vague_with_unseen_target_raw": 3,
+      "vague_with_unseen_target_deduped": 3,
+      "vague_policy_eligible_hr_disabled": 3,
+      "nonanswer": 93,
+      "wrong": 80,
+      "adequate": 23
+    },
+    "ML": {
+      "rows": 360,
+      "vague": 23,
+      "vague_with_confident_miss": 2,
+      "vague_with_filter_survivor": 2,
+      "vague_with_unseen_target_raw": 2,
+      "vague_with_unseen_target_deduped": 2,
+      "vague_policy_eligible_hr_disabled": 2,
+      "adequate": 14,
+      "wrong": 51,
+      "strong": 206,
+      "nonanswer": 66
+    },
+    "DSA": {
+      "rows": 231,
+      "strong": 128,
+      "vague": 23,
+      "vague_with_confident_miss": 3,
+      "vague_with_filter_survivor": 3,
+      "vague_with_unseen_target_raw": 2,
+      "vague_with_unseen_target_deduped": 2,
+      "vague_policy_eligible_hr_disabled": 2,
+      "nonanswer": 36,
+      "adequate": 12,
+      "wrong": 32
+    },
+    "CN": {
+      "rows": 285,
+      "strong": 176,
+      "vague": 10,
+      "vague_with_confident_miss": 1,
+      "vague_with_filter_survivor": 1,
+      "vague_with_unseen_target_raw": 1,
+      "vague_with_unseen_target_deduped": 1,
+      "vague_policy_eligible_hr_disabled": 1,
+      "nonanswer": 55,
+      "wrong": 33,
+      "adequate": 11
+    },
+    "OOP": {
+      "rows": 120,
+      "strong": 58,
+      "vague": 14,
+      "vague_with_confident_miss": 3,
+      "vague_with_filter_survivor": 3,
+      "vague_with_unseen_target_raw": 3,
+      "vague_with_unseen_target_deduped": 2,
+      "vague_policy_eligible_hr_disabled": 2,
+      "nonanswer": 21,
+      "adequate": 7,
+      "wrong": 20
+    },
+    "OS": {
+      "rows": 120,
+      "strong": 69,
+      "vague": 5,
+      "vague_with_confident_miss": 0,
+      "vague_with_filter_survivor": 0,
+      "vague_with_unseen_target_raw": 0,
+      "vague_with_unseen_target_deduped": 0,
+      "vague_policy_eligible_hr_disabled": 0,
+      "nonanswer": 28,
+      "wrong": 11,
+      "adequate": 7
+    },
+    "HR": {
+      "rows": 93,
+      "wrong": 26,
+      "nonanswer": 22,
+      "vague": 3,
+      "vague_with_confident_miss": 1,
+      "vague_with_filter_survivor": 1,
+      "vague_with_unseen_target_raw": 1,
+      "vague_with_unseen_target_deduped": 1,
+      "vague_policy_eligible_hr_disabled": 0,
+      "strong": 37,
+      "adequate": 5
+    },
+    "Java": {
+      "rows": 15,
+      "strong": 7,
+      "vague": 5,
+      "vague_with_confident_miss": 2,
+      "vague_with_filter_survivor": 2,
+      "vague_with_unseen_target_raw": 0,
+      "vague_with_unseen_target_deduped": 0,
+      "vague_policy_eligible_hr_disabled": 0,
+      "wrong": 3
+    },
+    "JavaScript": {
+      "rows": 12,
+      "strong": 4,
+      "vague": 5,
+      "vague_with_confident_miss": 1,
+      "vague_with_filter_survivor": 1,
+      "vague_with_unseen_target_raw": 0,
+      "vague_with_unseen_target_deduped": 0,
+      "vague_policy_eligible_hr_disabled": 0,
+      "wrong": 3
+    }
+  },
+  "generic_filter_metrics": {
+    "CN": {
+      "questions": 95,
+      "top_30": [
+        [
+          "http",
+          16
+        ],
+        [
+          "ip",
+          10
+        ],
+        [
+          "encryption",
+          5
+        ],
+        [
+          "tls",
+          5
+        ],
+        [
+          "https",
+          4
+        ],
+        [
+          "tcp",
+          4
+        ],
+        [
+          "dns",
+          3
+        ],
+        [
+          "ipv4",
+          3
+        ],
+        [
+          "stateless",
+          3
+        ],
+        [
+          "udp",
+          3
+        ],
+        [
+          "application layer",
+          2
+        ],
+        [
+          "caching",
+          2
+        ],
+        [
+          "javascript",
+          2
+        ],
+        [
+          "reliable",
+          2
+        ],
+        [
+          "router",
+          2
+        ],
+        [
+          "three way handshake",
+          2
+        ],
+        [
+          "transport layer",
+          2
+        ],
+        [
+          "connectionless",
+          1
+        ],
+        [
+          "faster",
+          1
+        ],
+        [
+          "ipv6",
+          1
+        ],
+        [
+          "packet filtering",
+          1
+        ],
+        [
+          "rest",
+          1
+        ],
+        [
+          "subnet",
+          1
+        ]
+      ],
+      "filter_min_df": 5,
+      "filtered_generic_concepts": [],
+      "generic_dominated_questions": 0,
+      "generic_dominated_share": 0.0,
+      "generic_occurrences": 0,
+      "generic_occurrence_share": 0.0,
+      "empty_before": 50,
+      "empty_after": 50,
+      "occurrences_before": 76,
+      "probeable_before": 70,
+      "unique_concepts_before": 23,
+      "shared_concepts_before": 17,
+      "unique_concepts_after": 23,
+      "shared_concepts_after": 17,
+      "questions_with_probe_after": 44,
+      "occurrences_after": 76,
+      "probeable_after": 70,
+      "prompt_target_inclusive_probeable_after": 71,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 3,
+        "medium": 92
+      },
+      "harder_available_questions": 3,
+      "harder_fallback_questions": 92,
+      "next_level_missing_nonhard": 92,
+      "cold_missing_difficulty_levels": [
+        "hard"
+      ]
+    },
+    "DBMS": {
+      "questions": 181,
+      "top_30": [
+        [
+          "transaction",
+          17
+        ],
+        [
+          "isolation",
+          5
+        ],
+        [
+          "acid",
+          4
+        ],
+        [
+          "primary key",
+          4
+        ],
+        [
+          "sharding",
+          4
+        ],
+        [
+          "unique",
+          4
+        ],
+        [
+          "consistency",
+          3
+        ],
+        [
+          "durability",
+          3
+        ],
+        [
+          "referential integrity",
+          3
+        ],
+        [
+          "right",
+          3
+        ],
+        [
+          "1nf",
+          2
+        ],
+        [
+          "2nf",
+          2
+        ],
+        [
+          "3nf",
+          2
+        ],
+        [
+          "atomicity",
+          2
+        ],
+        [
+          "index",
+          2
+        ],
+        [
+          "inner",
+          2
+        ],
+        [
+          "join",
+          2
+        ],
+        [
+          "left",
+          2
+        ],
+        [
+          "redis",
+          2
+        ],
+        [
+          "timeout",
+          2
+        ],
+        [
+          "atomic",
+          1
+        ],
+        [
+          "availability",
+          1
+        ],
+        [
+          "caching",
+          1
+        ],
+        [
+          "circular wait",
+          1
+        ],
+        [
+          "collection",
+          1
+        ],
+        [
+          "dataloader",
+          1
+        ],
+        [
+          "denormalization",
+          1
+        ],
+        [
+          "eager loading",
+          1
+        ],
+        [
+          "eventual",
+          1
+        ],
+        [
+          "graphql",
+          1
+        ]
+      ],
+      "filter_min_df": 10,
+      "filtered_generic_concepts": [
+        "transaction"
+      ],
+      "generic_dominated_questions": 16,
+      "generic_dominated_share": 0.0884,
+      "generic_occurrences": 17,
+      "generic_occurrence_share": 0.1848,
+      "empty_before": 131,
+      "empty_after": 145,
+      "occurrences_before": 92,
+      "probeable_before": 70,
+      "unique_concepts_before": 42,
+      "shared_concepts_before": 20,
+      "unique_concepts_after": 41,
+      "shared_concepts_after": 19,
+      "questions_with_probe_after": 32,
+      "occurrences_after": 75,
+      "probeable_after": 53,
+      "prompt_target_inclusive_probeable_after": 54,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 3,
+        "medium": 173,
+        "hard": 5
+      },
+      "harder_available_questions": 176,
+      "harder_fallback_questions": 5,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "DSA": {
+      "questions": 77,
+      "top_30": [
+        [
+          "tree",
+          15
+        ],
+        [
+          "array",
+          12
+        ],
+        [
+          "node",
+          11
+        ],
+        [
+          "stack",
+          8
+        ],
+        [
+          "lifo",
+          5
+        ],
+        [
+          "bfs",
+          4
+        ],
+        [
+          "index",
+          4
+        ],
+        [
+          "queue",
+          4
+        ],
+        [
+          "root",
+          4
+        ],
+        [
+          "dfs",
+          3
+        ],
+        [
+          "edge",
+          3
+        ],
+        [
+          "hash function",
+          3
+        ],
+        [
+          "linked list",
+          3
+        ],
+        [
+          "recursion",
+          3
+        ],
+        [
+          "space complexity",
+          3
+        ],
+        [
+          "binary tree",
+          2
+        ],
+        [
+          "elasticsearch",
+          2
+        ],
+        [
+          "fifo",
+          2
+        ],
+        [
+          "graph",
+          2
+        ],
+        [
+          "hash table",
+          2
+        ],
+        [
+          "pointer",
+          2
+        ],
+        [
+          "python",
+          2
+        ],
+        [
+          "time complexity",
+          2
+        ],
+        [
+          "binary search tree",
+          1
+        ],
+        [
+          "go",
+          1
+        ],
+        [
+          "java",
+          1
+        ],
+        [
+          "javascript",
+          1
+        ],
+        [
+          "overlapping subproblems",
+          1
+        ],
+        [
+          "pop",
+          1
+        ],
+        [
+          "push",
+          1
+        ]
+      ],
+      "filter_min_df": 4,
+      "filtered_generic_concepts": [
+        "array",
+        "index",
+        "node",
+        "root"
+      ],
+      "generic_dominated_questions": 18,
+      "generic_dominated_share": 0.2338,
+      "generic_occurrences": 31,
+      "generic_occurrence_share": 0.2844,
+      "empty_before": 24,
+      "empty_after": 31,
+      "occurrences_before": 109,
+      "probeable_before": 101,
+      "unique_concepts_before": 31,
+      "shared_concepts_before": 23,
+      "unique_concepts_after": 27,
+      "shared_concepts_after": 19,
+      "questions_with_probe_after": 45,
+      "occurrences_after": 78,
+      "probeable_after": 70,
+      "prompt_target_inclusive_probeable_after": 71,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 4,
+        "hard": 2,
+        "medium": 71
+      },
+      "harder_available_questions": 75,
+      "harder_fallback_questions": 2,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "HR": {
+      "questions": 31,
+      "top_30": [
+        [
+          "result",
+          3
+        ],
+        [
+          "situation",
+          3
+        ],
+        [
+          "action",
+          2
+        ],
+        [
+          "conflict resolution",
+          2
+        ],
+        [
+          "growth mindset",
+          2
+        ],
+        [
+          "learning",
+          2
+        ],
+        [
+          "star",
+          2
+        ],
+        [
+          "task",
+          2
+        ],
+        [
+          "active improvement",
+          1
+        ],
+        [
+          "collaboration",
+          1
+        ],
+        [
+          "communication",
+          1
+        ],
+        [
+          "feedback",
+          1
+        ],
+        [
+          "genuine weakness",
+          1
+        ],
+        [
+          "honest",
+          1
+        ],
+        [
+          "leadership",
+          1
+        ],
+        [
+          "progress",
+          1
+        ],
+        [
+          "quantifiable",
+          1
+        ],
+        [
+          "self awareness",
+          1
+        ],
+        [
+          "specific",
+          1
+        ],
+        [
+          "specific actions",
+          1
+        ],
+        [
+          "technical challenge",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [
+        "result",
+        "situation"
+      ],
+      "generic_dominated_questions": 2,
+      "generic_dominated_share": 0.0645,
+      "generic_occurrences": 6,
+      "generic_occurrence_share": 0.1935,
+      "empty_before": 19,
+      "empty_after": 21,
+      "occurrences_before": 31,
+      "probeable_before": 18,
+      "unique_concepts_before": 21,
+      "shared_concepts_before": 8,
+      "unique_concepts_after": 19,
+      "shared_concepts_after": 6,
+      "questions_with_probe_after": 7,
+      "occurrences_after": 25,
+      "probeable_after": 12,
+      "prompt_target_inclusive_probeable_after": 12,
+      "concept_probes_enabled_in_proposal": false,
+      "difficulty_counts": {
+        "easy": 12,
+        "medium": 19
+      },
+      "harder_available_questions": 12,
+      "harder_fallback_questions": 19,
+      "next_level_missing_nonhard": 19,
+      "cold_missing_difficulty_levels": [
+        "hard"
+      ]
+    },
+    "Java": {
+      "questions": 5,
+      "top_30": [
+        [
+          "static",
+          2
+        ],
+        [
+          "@ autowired",
+          1
+        ],
+        [
+          "@ override",
+          1
+        ],
+        [
+          "access modifier",
+          1
+        ],
+        [
+          "bean",
+          1
+        ],
+        [
+          "bytecode",
+          1
+        ],
+        [
+          "cache",
+          1
+        ],
+        [
+          "compiler",
+          1
+        ],
+        [
+          "constructor",
+          1
+        ],
+        [
+          "container",
+          1
+        ],
+        [
+          "contention",
+          1
+        ],
+        [
+          "covariant",
+          1
+        ],
+        [
+          "critical section",
+          1
+        ],
+        [
+          "doubly linked",
+          1
+        ],
+        [
+          "dynamic array",
+          1
+        ],
+        [
+          "final",
+          1
+        ],
+        [
+          "ioc",
+          1
+        ],
+        [
+          "javac",
+          1
+        ],
+        [
+          "lock",
+          1
+        ],
+        [
+          "o 1",
+          1
+        ],
+        [
+          "object",
+          1
+        ],
+        [
+          "random access",
+          1
+        ],
+        [
+          "setter",
+          1
+        ],
+        [
+          "subclass",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [],
+      "generic_dominated_questions": 0,
+      "generic_dominated_share": 0.0,
+      "generic_occurrences": 0,
+      "generic_occurrence_share": 0.0,
+      "empty_before": 0,
+      "empty_after": 0,
+      "occurrences_before": 25,
+      "probeable_before": 2,
+      "unique_concepts_before": 24,
+      "shared_concepts_before": 1,
+      "unique_concepts_after": 24,
+      "shared_concepts_after": 1,
+      "questions_with_probe_after": 2,
+      "occurrences_after": 25,
+      "probeable_after": 2,
+      "prompt_target_inclusive_probeable_after": 2,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 2,
+        "medium": 2,
+        "hard": 1
+      },
+      "harder_available_questions": 4,
+      "harder_fallback_questions": 1,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "JavaScript": {
+      "questions": 4,
+      "top_30": [
+        [
+          "addeventlistener",
+          1
+        ],
+        [
+          "boilerplate",
+          1
+        ],
+        [
+          "cleanup",
+          1
+        ],
+        [
+          "componentdidmount",
+          1
+        ],
+        [
+          "delegation",
+          1
+        ],
+        [
+          "devtools",
+          1
+        ],
+        [
+          "encapsulation",
+          1
+        ],
+        [
+          "inner function",
+          1
+        ],
+        [
+          "lexical scope",
+          1
+        ],
+        [
+          "middleware",
+          1
+        ],
+        [
+          "mount",
+          1
+        ],
+        [
+          "outer function",
+          1
+        ],
+        [
+          "propagation",
+          1
+        ],
+        [
+          "render",
+          1
+        ],
+        [
+          "saga",
+          1
+        ],
+        [
+          "stale closure",
+          1
+        ],
+        [
+          "state",
+          1
+        ],
+        [
+          "stoppropagation",
+          1
+        ],
+        [
+          "target",
+          1
+        ],
+        [
+          "thunk",
+          1
+        ],
+        [
+          "unidirectional",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [],
+      "generic_dominated_questions": 0,
+      "generic_dominated_share": 0.0,
+      "generic_occurrences": 0,
+      "generic_occurrence_share": 0.0,
+      "empty_before": 0,
+      "empty_after": 0,
+      "occurrences_before": 21,
+      "probeable_before": 0,
+      "unique_concepts_before": 21,
+      "shared_concepts_before": 0,
+      "unique_concepts_after": 21,
+      "shared_concepts_after": 0,
+      "questions_with_probe_after": 0,
+      "occurrences_after": 21,
+      "probeable_after": 0,
+      "prompt_target_inclusive_probeable_after": 0,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 2,
+        "medium": 1,
+        "hard": 1
+      },
+      "harder_available_questions": 3,
+      "harder_fallback_questions": 1,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "ML": {
+      "questions": 120,
+      "top_30": [
+        [
+          "classification",
+          15
+        ],
+        [
+          "overfitting",
+          13
+        ],
+        [
+          "regression",
+          7
+        ],
+        [
+          "cross validation",
+          4
+        ],
+        [
+          "loss function",
+          4
+        ],
+        [
+          "neural network",
+          4
+        ],
+        [
+          "activation function",
+          3
+        ],
+        [
+          "ml",
+          3
+        ],
+        [
+          "random forest",
+          3
+        ],
+        [
+          "bagging",
+          2
+        ],
+        [
+          "dropout",
+          2
+        ],
+        [
+          "f1",
+          2
+        ],
+        [
+          "high variance",
+          2
+        ],
+        [
+          "hyperplane",
+          2
+        ],
+        [
+          "kernel trick",
+          2
+        ],
+        [
+          "regularization",
+          2
+        ],
+        [
+          "underfitting",
+          2
+        ],
+        [
+          "backpropagation",
+          1
+        ],
+        [
+          "cnn",
+          1
+        ],
+        [
+          "gradient descent",
+          1
+        ],
+        [
+          "learning rate",
+          1
+        ],
+        [
+          "lstm",
+          1
+        ],
+        [
+          "precision",
+          1
+        ],
+        [
+          "recall",
+          1
+        ],
+        [
+          "reinforcement",
+          1
+        ],
+        [
+          "resnet",
+          1
+        ],
+        [
+          "svm",
+          1
+        ],
+        [
+          "true positive",
+          1
+        ],
+        [
+          "unsupervised",
+          1
+        ],
+        [
+          "xgboost",
+          1
+        ]
+      ],
+      "filter_min_df": 6,
+      "filtered_generic_concepts": [],
+      "generic_dominated_questions": 0,
+      "generic_dominated_share": 0.0,
+      "generic_occurrences": 0,
+      "generic_occurrence_share": 0.0,
+      "empty_before": 72,
+      "empty_after": 72,
+      "occurrences_before": 85,
+      "probeable_before": 72,
+      "unique_concepts_before": 30,
+      "shared_concepts_before": 17,
+      "unique_concepts_after": 30,
+      "shared_concepts_after": 17,
+      "questions_with_probe_after": 45,
+      "occurrences_after": 85,
+      "probeable_after": 72,
+      "prompt_target_inclusive_probeable_after": 78,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "medium": 116,
+        "easy": 1,
+        "hard": 3
+      },
+      "harder_available_questions": 117,
+      "harder_fallback_questions": 3,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "OOP": {
+      "questions": 40,
+      "top_30": [
+        [
+          "interface",
+          10
+        ],
+        [
+          "abstraction",
+          5
+        ],
+        [
+          "liskov substitution",
+          4
+        ],
+        [
+          "polymorphism",
+          4
+        ],
+        [
+          "dependency inversion",
+          3
+        ],
+        [
+          "inheritance",
+          3
+        ],
+        [
+          "interface segregation",
+          3
+        ],
+        [
+          "method overriding",
+          3
+        ],
+        [
+          "parent class",
+          3
+        ],
+        [
+          "python",
+          3
+        ],
+        [
+          "single responsibility",
+          3
+        ],
+        [
+          "code reuse",
+          2
+        ],
+        [
+          "design pattern",
+          2
+        ],
+        [
+          "encapsulation",
+          2
+        ],
+        [
+          "factory",
+          2
+        ],
+        [
+          "java",
+          2
+        ],
+        [
+          "observer",
+          2
+        ],
+        [
+          "singleton",
+          2
+        ],
+        [
+          "child class",
+          1
+        ],
+        [
+          "composition",
+          1
+        ],
+        [
+          "method overloading",
+          1
+        ],
+        [
+          "oop",
+          1
+        ],
+        [
+          "open closed",
+          1
+        ],
+        [
+          "solid",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [
+        "interface",
+        "python"
+      ],
+      "generic_dominated_questions": 7,
+      "generic_dominated_share": 0.175,
+      "generic_occurrences": 13,
+      "generic_occurrence_share": 0.2031,
+      "empty_before": 13,
+      "empty_after": 19,
+      "occurrences_before": 64,
+      "probeable_before": 58,
+      "unique_concepts_before": 24,
+      "shared_concepts_before": 18,
+      "unique_concepts_after": 22,
+      "shared_concepts_after": 16,
+      "questions_with_probe_after": 20,
+      "occurrences_after": 51,
+      "probeable_after": 45,
+      "prompt_target_inclusive_probeable_after": 49,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "easy": 7,
+        "medium": 32,
+        "hard": 1
+      },
+      "harder_available_questions": 39,
+      "harder_fallback_questions": 1,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "OS": {
+      "questions": 40,
+      "top_30": [
+        [
+          "process",
+          12
+        ],
+        [
+          "thread",
+          4
+        ],
+        [
+          "mutual exclusion",
+          3
+        ],
+        [
+          "circular wait",
+          2
+        ],
+        [
+          "fcfs",
+          2
+        ],
+        [
+          "hold and wait",
+          2
+        ],
+        [
+          "memory space",
+          2
+        ],
+        [
+          "no preemption",
+          2
+        ],
+        [
+          "paging",
+          2
+        ],
+        [
+          "priority",
+          2
+        ],
+        [
+          "round robin",
+          2
+        ],
+        [
+          "lightweight",
+          1
+        ],
+        [
+          "page fault",
+          1
+        ],
+        [
+          "scheduling",
+          1
+        ],
+        [
+          "shared memory",
+          1
+        ],
+        [
+          "virtual memory",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [
+        "process",
+        "thread"
+      ],
+      "generic_dominated_questions": 13,
+      "generic_dominated_share": 0.325,
+      "generic_occurrences": 16,
+      "generic_occurrence_share": 0.4,
+      "empty_before": 19,
+      "empty_after": 28,
+      "occurrences_before": 40,
+      "probeable_before": 35,
+      "unique_concepts_before": 16,
+      "shared_concepts_before": 11,
+      "unique_concepts_after": 14,
+      "shared_concepts_after": 9,
+      "questions_with_probe_after": 9,
+      "occurrences_after": 24,
+      "probeable_after": 19,
+      "prompt_target_inclusive_probeable_after": 21,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "medium": 35,
+        "hard": 1,
+        "easy": 4
+      },
+      "harder_available_questions": 39,
+      "harder_fallback_questions": 1,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "Python": {
+      "questions": 60,
+      "top_30": [
+        [
+          "function",
+          9
+        ],
+        [
+          "python",
+          7
+        ],
+        [
+          "decorator",
+          5
+        ],
+        [
+          "list",
+          5
+        ],
+        [
+          "tuple",
+          5
+        ],
+        [
+          "await",
+          4
+        ],
+        [
+          "generator",
+          4
+        ],
+        [
+          "immutable",
+          4
+        ],
+        [
+          "string",
+          4
+        ],
+        [
+          "dict",
+          3
+        ],
+        [
+          "event loop",
+          3
+        ],
+        [
+          "multiprocessing",
+          3
+        ],
+        [
+          "mutable",
+          3
+        ],
+        [
+          "yield",
+          3
+        ],
+        [
+          "caching",
+          2
+        ],
+        [
+          "context manager",
+          2
+        ],
+        [
+          "coroutine",
+          2
+        ],
+        [
+          "threading",
+          2
+        ],
+        [
+          "with statement",
+          2
+        ],
+        [
+          "asyncio",
+          1
+        ],
+        [
+          "ci cd",
+          1
+        ],
+        [
+          "enclosing scope",
+          1
+        ],
+        [
+          "gil",
+          1
+        ],
+        [
+          "inner function",
+          1
+        ],
+        [
+          "list comprehension",
+          1
+        ],
+        [
+          "resource cleanup",
+          1
+        ]
+      ],
+      "filter_min_df": 3,
+      "filtered_generic_concepts": [
+        "function",
+        "list",
+        "python",
+        "string"
+      ],
+      "generic_dominated_questions": 17,
+      "generic_dominated_share": 0.2833,
+      "generic_occurrences": 25,
+      "generic_occurrence_share": 0.3165,
+      "empty_before": 24,
+      "empty_after": 35,
+      "occurrences_before": 79,
+      "probeable_before": 72,
+      "unique_concepts_before": 26,
+      "shared_concepts_before": 19,
+      "unique_concepts_after": 22,
+      "shared_concepts_after": 15,
+      "questions_with_probe_after": 22,
+      "occurrences_after": 54,
+      "probeable_after": 47,
+      "prompt_target_inclusive_probeable_after": 49,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "medium": 44,
+        "easy": 9,
+        "hard": 7
+      },
+      "harder_available_questions": 53,
+      "harder_fallback_questions": 7,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    },
+    "System Design": {
+      "questions": 120,
+      "top_30": [
+        [
+          "consistency",
+          13
+        ],
+        [
+          "availability",
+          11
+        ],
+        [
+          "redis",
+          9
+        ],
+        [
+          "caching",
+          8
+        ],
+        [
+          "async",
+          7
+        ],
+        [
+          "fault tolerance",
+          6
+        ],
+        [
+          "kafka",
+          6
+        ],
+        [
+          "cache invalidation",
+          5
+        ],
+        [
+          "cassandra",
+          5
+        ],
+        [
+          "stateless",
+          5
+        ],
+        [
+          "dynamodb",
+          4
+        ],
+        [
+          "microservices",
+          4
+        ],
+        [
+          "ttl",
+          4
+        ],
+        [
+          "aws",
+          3
+        ],
+        [
+          "cdn",
+          3
+        ],
+        [
+          "message queue",
+          3
+        ],
+        [
+          "partition tolerance",
+          3
+        ],
+        [
+          "rabbitmq",
+          3
+        ],
+        [
+          "elasticsearch",
+          2
+        ],
+        [
+          "horizontal scaling",
+          2
+        ],
+        [
+          "javascript",
+          2
+        ],
+        [
+          "microservice",
+          2
+        ],
+        [
+          "monolith",
+          2
+        ],
+        [
+          "service discovery",
+          2
+        ],
+        [
+          "typescript",
+          2
+        ],
+        [
+          "aes",
+          1
+        ],
+        [
+          "angular",
+          1
+        ],
+        [
+          "api gateway",
+          1
+        ],
+        [
+          "approval",
+          1
+        ],
+        [
+          "asynchronous",
+          1
+        ]
+      ],
+      "filter_min_df": 6,
+      "filtered_generic_concepts": [],
+      "generic_dominated_questions": 0,
+      "generic_dominated_share": 0.0,
+      "generic_occurrences": 0,
+      "generic_occurrence_share": 0.0,
+      "empty_before": 50,
+      "empty_after": 50,
+      "occurrences_before": 196,
+      "probeable_before": 116,
+      "unique_concepts_before": 105,
+      "shared_concepts_before": 25,
+      "unique_concepts_after": 105,
+      "shared_concepts_after": 25,
+      "questions_with_probe_after": 61,
+      "occurrences_after": 196,
+      "probeable_after": 116,
+      "prompt_target_inclusive_probeable_after": 123,
+      "concept_probes_enabled_in_proposal": true,
+      "difficulty_counts": {
+        "medium": 100,
+        "hard": 15,
+        "easy": 5
+      },
+      "harder_available_questions": 105,
+      "harder_fallback_questions": 15,
+      "next_level_missing_nonhard": 0,
+      "cold_missing_difficulty_levels": []
+    }
+  },
+  "availability_assumption": "Only the current question is seen; another primary-bank same-skill question must retain the target after prompt exclusion. Also report exclusion of cosine >=0.85 near-duplicates. No actual session history.",
+  "storage": {
+    "trace_one_copy_compact_utf8": {
+      "n": 2319,
+      "mean": 284.52,
+      "median": 25,
+      "p95_nearest_rank": 1249,
+      "min": 25,
+      "max": 2092
+    },
+    "trace_two_stored_copies_compact_utf8": {
+      "n": 2319,
+      "mean": 569.04,
+      "median": 50,
+      "p95_nearest_rank": 2498,
+      "min": 50,
+      "max": 4184
+    },
+    "all_part1_concept_fields_two_copies_compact_utf8": {
+      "n": 2319,
+      "mean": 1369.06,
+      "median": 826,
+      "p95_nearest_rank": 3528,
+      "min": 794,
+      "max": 5364
+    },
+    "copies": "RoundRow.scoring_breakdown_json plus attempt_snapshot_json.scoring_breakdown; JSON size only, excludes DB pages/indexes/compression."
+  },
+  "source_sha256": {
+    "data/interview_dataset_v6.csv": "ee0dc87058da17067589f39c438c9df129c6cc0161fe84591dd76b4bf1803812",
+    "data/question_concepts_v1.json": "68cb75323f02cc9a367ef7cea64a3707bcd30d12f1e3924021fb8c5d60868727",
+    "modules/answer_bands.py": "a04bb30611a25fe12ba9291b4e2e4f39dc9067c6aca0096d1aa8d5c465a30b08",
+    "backend/config.py": "ec956ade06dd48050e4e0403dacb2ceeb8aa6bd36ff82c6e7ba2e807cf751e40"
+  }
+}

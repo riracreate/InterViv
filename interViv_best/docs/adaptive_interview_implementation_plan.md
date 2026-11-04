@@ -1,6 +1,8 @@
-# Revised implementation plan — Part I delivered; Part II held
+# Revised implementation plan — Part I merged; stage (a) isolated
 
-This revision incorporates the user's Part I approval and all ten Part II amendments. Only Part I is implemented. Part II remains a design proposal requiring a later explicit go-ahead; passing Part I tests does not activate it.
+Part I was merged by fast-forward at `dc5fdfe` after the requested clean-branch, consumer and storage checks. The latest approval authorizes Part II stage (a) **except PROBE_CONCEPT**. The pure policy, typed graph and band classifier are implemented on `codex/policy-stage-a`, with no session wiring. Concept probing is unimplemented behind a separate disabled guard; review audit items 1–4 before designing it. Stage (b), live routing and dashboard changes remain unapproved and unimplemented.
+
+Read [the unlabeled worksheet](../data/audits/concept_review/blind_20_pairs.md), then [the read-only concept review](concept_probe_readonly_review.md), [stage-(a) results](policy_stage_a_report.md), and [proposed go-live criteria](adaptive_policy_go_live_criteria.md). The criteria require approval before stage (b), before viewing shadow logs. Neither the Tier-3 0.62 threshold nor Tier-2 keyword scoring is changed.
 
 ## Part I: implemented scope and guarantees
 
@@ -59,17 +61,17 @@ The strict index leaves 402/773 primary questions empty after prompt exclusion; 
 
 At 0.62, Tier 3 accepts topical neighbors such as random forest for a single-tree explanation (0.6665) and MongoDB for a generic SQL/NoSQL answer (0.6212), yet misses communication expressed through listening/private conversation (0.6107). The 76 Tier-3 traces include 32 exact/alias hits, 44 cosine checks, 14 semantic hits and 30 misses. Six hits lie in [0.62,0.72). This threshold is diagnostic and unvalidated; it is not proof of mastery.
 
-## Part II: three-stage proposal — NOT IMPLEMENTED
+## Part II: stage (a) delivered; stages (b)/(c) held
 
-No stage below is implemented by this change. Each stage is a separate reviewable change; the Part I approval does not authorize starting Part II.
+Each stage remains a separate reviewable change. Stage (a) is authorized and implemented without session integration. Its concept-probe exception takes precedence over all earlier proposal language below. The outcome and prefix contracts are retained as constraints for a later reviewed design, not implemented concept-probe behavior.
 
 ### Stage (a): pure policy, typed graph and bands
 
-Create a pure policy core (proposed `modules/adaptive_policy.py`) plus typed graph queries and band/config constants. The core accepts immutable canonical state, observed answer evidence, precomputed bank features and a seed; returns a decision and proposed next state without database, session, network, UI or global-RNG effects. It is a subordinate core for the existing selector, not a second production selector/service. Include COVER / PROBE_CONCEPT / PROBE_HARDER / BRIDGE rules, direction-specific availability, budgets, deterministic fallback reasons, canonical aggregation, probe outcome contracts and exact/alias-only prefix formatting as pure functions.
+Implemented `modules/adaptive_policy.py`, `modules/adaptive_skill_graph.py`, and `modules/answer_bands.py` plus config constants. The core accepts immutable canonical state, supplied observations, precomputed bank features and a seed, returning a decision without database/session/network/UI/global-RNG effects. It supports COVER / PROBE_HARDER / BRIDGE / END, directional graph queries, feasibility-protected budgets, dedup, source/difficulty fallback, canonical evidence inputs and observed Elo re-anchoring. The existing selector does not import it. `ADAPTIVE_CONCEPT_PROBING_ENABLED=False` is separate; enabling it raises `NotImplementedError`. No concept-probe selection, outcome-state tracking or prefix formatter is implemented.
 
-**PROBE_CONCEPT eligibility** requires new trace `status == "missed"` and either source Tier 1/2, or source Tier 3 that also survives the frequency-qualified generic filter. Do not use legacy `missed_concepts` as the gate. Uncertain targets are never probed; HR concept probes, nonanswer probes and role-gap probes remain forbidden. Enforce legal bank availability, duplicate checks and per-skill/session caps. PROBE_HARDER retains its separate strong-answer rule; it is not a concept-miss probe. Prefix helper tests reject semantic-only matches even when status is matched.
+**Future PROBE_CONCEPT constraint, pending audit review (not implementation/design approval):** eligibility requires new trace `status == "missed"` and either source Tier 1/2, or source Tier 3 that also survives the frequency-qualified generic filter. Do not use legacy `missed_concepts` as the gate. Uncertain targets are never probed; HR concept probes, nonanswer probes and role-gap probes remain forbidden. Enforce legal bank availability, duplicate checks and per-skill/session caps. PROBE_HARDER retains its separate strong-answer rule; it is not a concept-miss probe. The future prefix contract rejects semantic-only matches even when status is matched; no prefix helper is implemented in this stage.
 
-Deliver deterministic unit/property tests for all invariants and boundary cases, static bank diagnostics and the explicitly in-sample simulation report. Review the policy contract and results before adding any session wiring. Production selection remains unchanged and cannot invoke this module yet.
+Delivered deterministic invariant/boundary tests, static bank diagnostics and the in-sample 100-session/1,000-move simulation. Focused validation: 160 passed. The full 2,319-row scoring replay and all 12 bundle checks are read-only audit outputs. Review these results and approve written go-live criteria before stage (b). Production selection remains unchanged.
 
 ### Stage (b): shadow-mode logging behind a default-off flag
 
@@ -79,36 +81,34 @@ Measure proposed choices, applicability, fallbacks and disagreements by canonica
 
 ### Stage (c): go-live and dashboard changes after shadow review
 
-Only after explicit review of representative shadow logs, implement the live adapter in the existing `AdaptiveQuestionSelector` and `follow_ups.py`, gated by default-off `ADAPTIVE_POLICY_ENABLED`. Shadow wins if both flags are set. Approve go-live separately; disabling the flag restores baseline selection. Review unresolved confident-miss errors and rubric requiredness, actual fallback/exhaustion rates, coverage, and zero forbidden-probe/repeat violations before activation. No cutoff is silently retuned based on shadow observations.
+Only after approval of the preregistered go-live criteria, evaluation against those criteria, and explicit review of representative shadow logs, implement the live adapter in the existing `AdaptiveQuestionSelector` and `follow_ups.py`, gated by default-off `ADAPTIVE_POLICY_ENABLED`. Shadow wins if both flags are set. Approve go-live separately; disabling the flag restores baseline selection. Review unresolved confident-miss errors and rubric requiredness, actual fallback/exhaustion rates, coverage, and zero forbidden-probe/repeat violations before activation. No cutoff is silently retuned based on shadow observations.
 
-Then implement canonical-bucket observed-score/evidence/confidence reporting, the revised probe-outcome display, resume skill preselection and General role profile UI. No new difficulty-adjusted Elo or percentile is reported. Show evidence uncertainty honestly; never credit a target just because the probe succeeded after its prompt supplied that target.
+Then implement canonical-bucket observed-score/evidence/confidence reporting, the revised probe-outcome display, resume skill preselection and General role profile UI. Any display of the pure re-anchored Elo must say heuristic rating, never percentile, and requires stage-(c) review. Show evidence uncertainty honestly; never credit a target just because the probe succeeded after its prompt supplied that target.
 
 ### Coverage of the ten prior revisions
 
-| Prior revision | Plan section | Delivery stage |
+| Prior revision | Current disposition | Stage |
 |---|---|---|
-| 1. Re-anchor/defer Elo; remove percentile | §1: defer new difficulty-adjusted reporting | (c) |
-| 2. Harder-probe/difficulty fallback behavior and rates | §2: static rates now; measured shadow rates next | (a), (b) |
-| 3. Bridge coverage by direction and wrong-answer fallbacks | §3: only ML/CN/System Design have prerequisites | (a) |
-| 4. Generic frequency filter and no HR concept probes | §4 plus three-state gate above | (a), audited in (b) |
-| 5. Config band constants, in-sample labeling, guard/content counts | §5: 10 guard-based / 1 content-only wrong | (a) |
-| 6. Probed-concepts set; outcome is the probe's own band | §6: no leaked target credit | (a) contract, (b)/(c) wiring |
-| 7. Exact/alias-only “You touched on X” | §7; reject semantic-only evidence | (a) helper, (c) display |
-| 8. Canonical-bucket evidence tags | §8: deduplicated attempts and weights | (a), (c) |
-| 9. Feature flag and shadow mode | §9 and stages (b)/(c) | (b), (c) |
-| 10. Shared simulation/calibration data and difficulty model | §10: explicit non-independent evaluation | (a) report |
+| 1. Re-anchor/defer Elo; remove percentile | Pure core re-anchors neutral/Medium at 1200; no percentile label; live Elo untouched | (a) delivered; UI (c) |
+| 2. Harder/difficulty fallback behavior and rates | Strictly higher only, explicit fallback; static and simulated rates with per-skill denominators | (a) delivered; actual shadow rates (b) |
+| 3. Directional bridges and wrong-answer fallback | Down 3/11, up 5/11, across 8/11; wrong DSA/DBMS/OS/Python → COVER | (a) delivered |
+| 4. Frequency filter; no HR concept probes | Read-only filter/opportunity audit delivered; HR disabled in counts; PROBE_CONCEPT entirely unimplemented | Separate review gate |
+| 5. Config bands, in-sample label, guard/content counts | One configured classifier; n=50 wrong 10 guard/1 content; n=2319 wrong 274 guard/63 content | (a) delivered |
+| 6. Probed-concepts set; outcome is probe band | Written contract retained; target excluded from credit never implies failure/mastery; no implementation | After concept audit review |
+| 7. Exact/alias-only “You touched on X” | Written constraint retained; semantic-only uses neutral wording; formatter unimplemented | Later reviewed phrasing change |
+| 8. Canonical-bucket evidence tags | Pure profiles collapse aliases; no taxonomy tags; dashboard deferred | (a) inputs, (c) reporting |
+| 9. Feature flag and shadow mode | Separate disabled concept guard delivered; default-off shadow/live flags specified, no session wiring | (b), (c) pending |
+| 10. Shared simulation/calibration data/model | Explicit in simulation protocol and both reports; mechanics only, no independent validity claim | (a) delivered |
 
 ## Part II: detailed requirements retained for those stages
 
-### 1. Defer difficulty adjustment
+### 1. Re-anchor the pure observed Elo
 
-The old neutral 1200 versus medium 1500 gives `1/(1+10**(300/400)) ≈ 0.151`, making ordinary medium answers look unexpectedly strong. Defer the proposed difficulty-adjusted ability metric until empirical item difficulty is calibrated independently. New report work will show observed mean raw score, eligible attempt count, question-difficulty mix and evidence confidence. It will not introduce an Elo ability number, logistic mapping or “percentile” label. Existing legacy Elo behavior is outside this change and stays separate.
-
-Resume routing priors may remain ephemeral: evidenced claim → Medium opener, keyword-only → Easy/Medium route, role gap → one Easy question. They never affect observed means, evidence tags, readiness or reported ability. Difficulty labels remain routing inputs, not validated psychometric anchors.
+The old neutral 1200 versus Medium 1500 gives `1/(1+10**(300/400)) ≈ 0.151`. The authorized pure core instead uses neutral 1200 and Easy/Medium/Hard anchors 1000/1200/1400, with K=32. Neutral Medium expected score is 0.5. Only observed score/difficulty updates it; resume priors affect routing, not observed ratings. No percentile mapping/label is present. This is a heuristic, not empirically calibrated ability. Existing live Elo and reporting are untouched; any later dashboard rating needs separate stage-(c) review.
 
 ### 2. PROBE_HARDER and difficulty relaxation
 
-A higher-difficulty probe requires a real unseen question strictly above the preceding difficulty, within the same canonical skill and passing every duplicate/eligibility filter. Prefer the next level; Easy may jump to Hard only if Medium is unavailable, logging `difficulty_skip_up`. Never label a same/lower-difficulty question PROBE_HARDER. On no higher question, log `no_unseen_harder_question` (or `already_at_max_difficulty`), then try the normal upward/across bridge for a strong answer, then COVER. Terminal-hard failures count in the attempted-harder denominator separately.
+A higher-difficulty probe requires a real unseen question strictly above the preceding difficulty, within the same canonical skill and passing every duplicate/eligibility filter. Prefer the next level; Easy may jump to Hard only if Medium is unavailable, logging `difficulty_relaxed` with requested and actual levels. Never label a same/lower-difficulty question PROBE_HARDER. On no higher question, log `no_unseen_harder_question` (or `already_at_max_difficulty`), then try the normal upward/across bridge for a strong answer, then COVER. Terminal-hard failures count in the attempted-harder denominator separately.
 
 For COVER/BRIDGE, search all eligible sources at the requested difficulty first: DB-reviewed eligible YAML, primary CSV, then curated fallback CSV. If none exists, relax to the nearest difficulty within the same skill; ties prefer lower. Log requested and actual difficulty, source, reason, candidate counts before/after exclusions and relaxation distance. For PROBE_CONCEPT, a difficulty relaxation may preserve the target and real rubric; never relax away the target. Role-gap questions remain strictly Easy and capped at one: choose another eligible gap/coverage skill if unavailable. No fallback relaxes repeats, semantic near-duplicates or assessment eligibility. Admission/preflight must verify enough distinct bank questions for the budget and must-cover set; infeasible or exhausted banks yield an explicit availability error, not synthetic unscorable questions.
 
@@ -130,7 +130,7 @@ For COVER/BRIDGE, search all eligible sources at the requested difficulty first:
 
 Primary bank: 36 Hard questions, none for CN/HR. No-higher fallback occurs for 147/773 (19.0%) enumerated starts: 36 terminal Hard starts plus 111 Medium CN/HR starts. Among non-Hard starts, 111/737 (15.1%) cannot reach the next level. All 111 are Medium CN/HR. The actual fallback bank contains one Hard CN and one Hard HR item; combined canonical CSV counts are 46 Hard across 826 questions. It reduces cold no-higher failures to 46/826 (5.6%), all terminal Hard starts, but one Hard question is easily exhausted and may not pass duplicate filters.
 
-For an equal-weight requested-difficulty audit (11 skills × 3 levels), primary-only difficulty relaxation is needed in 2/33 cells (6.1%, Hard CN/HR). Combined CSV has a question in every cell (0/33), before any session filtering. For the nine strong n=50 answers treated as independent first-attempt triggers with no other exclusions, 8/9 have a higher-level option; 1/9 (11.1%) is already Hard and falls back. These are not session rollout results. The live trigger, fallback and relaxation rates are **unmeasured** because Part II is not implemented; shadow mode must report numerators and denominators by canonical skill, source, requested difficulty and exclusion reason, including exhaustion.
+For an equal-weight requested-difficulty audit (11 skills × 3 levels), primary-only difficulty relaxation is needed in 2/33 cells (6.1%, Hard CN/HR). Combined CSV has a question in every cell (0/33), before any session filtering. For the nine strong n=50 answers treated as independent first-attempt triggers with no other exclusions, 8/9 have a higher-level option; 1/9 (11.1%) is already Hard and falls back. These are not session rollout results. Stage-(a) primary-only simulation measures 35/295 harder fallbacks (11.9%) and 17/1,000 difficulty relaxations (1.7%). Actual live/shadow rates remain **unmeasured** because no session wiring exists; shadow mode must report numerators and denominators by canonical skill, source, requested difficulty and exclusion reason, including exhaustion.
 
 ### 3. Bridge coverage by direction
 
@@ -154,7 +154,7 @@ Downward availability is **3/11 (27.3%)**: ML, CN and System Design only. Upward
 
 Wrong or nonanswer outcomes in **DSA, DBMS, OS and Python go to COVER** with `no_eligible_prerequisite`; they cannot bridge downward. Wrong answers in Java, JavaScript and OOP behave the same. Wrong/nonanswer ML/CN/System Design may bridge to an eligible prerequisite, otherwise COVER. Strong System Design has no up/across neighbor under these edges and falls back to COVER. Prefer uncovered must-cover neighbors, then role weight, then a deterministic canonical-name tie-break. HR is isolated. Alternative-language edges are not fault-isolation prerequisites. The former 70/71 taxonomy claim remains unverified until a full projection table is reviewed; canonical coverage above is the supported statement.
 
-### 4. Frequency-filtered concept probes; HR disabled
+### 4. Frequency-filtered concept-probe constraints; implementation held
 
 The selector proposal uses the explicit generic-candidate vocabulary and frequency threshold in `scripts/audit_question_concepts.py`: remove generic candidates present in at least `max(3, ceil(0.05*N_skill))` bank questions. This is an auditable heuristic and can remove useful broad concepts. Do not change scoring diagnostics or their order to hide filtered concepts.
 
@@ -164,7 +164,7 @@ Disable **concept probes for HR** unconditionally. An HR strong answer may still
 
 ### 5. Band constants and in-sample status
 
-When Part II is approved, put thresholds in `backend/config.py` constants with an explicit calibration version; do not scatter literals through the selector:
+Stage (a) places thresholds in `backend/config.py` with an explicit calibration version. The older offline audit delegates to this classifier:
 
 | Proposed constant | Value |
 |---|---:|
@@ -177,17 +177,17 @@ When Part II is approved, put thresholds in `backend/config.py` constants with a
 | `BAND_VAGUE_MAX_DEPTH` (strictly below) | 4.2 |
 | `BAND_CALIBRATION_STATUS` | `in_sample_n50` |
 
-Retain the total precedence: nonanswer guards/refusals or low-scoring ultra-short answer; then wrong score/correctness/Poor-label/entity-swap/truncation; then strong; then vague if a usable confident-missed target remains and score/depth is low; else adequate. Ultra-short alone must not override a high score. Active nonanswer guards still take precedence: Part I has not changed or softened existing brevity guards, so the old blanket “short correct answers never become nonanswer” claim is removed. Empty concept lists cannot establish completeness and should be logged as `no_concept_evidence` even if the total partition calls an intermediate answer adequate.
+Retain the total precedence: nonanswer guards/refusals or low-scoring ultra-short answer; then wrong score/correctness/Poor-label/entity-swap/truncation; then strong; then vague if the existing binary missed list is nonempty and score/depth is low; else adequate. Ultra-short alone must not override a high score. Active nonanswer guards still take precedence: Part I has not changed or softened existing brevity guards, so the old blanket “short correct answers never become nonanswer” claim is removed. Empty concept lists cannot establish completeness and should be logged as `no_concept_evidence` even if the total partition calls an intermediate answer adequate.
 
 The **52 cutoff is in-sample**, placed in the observed **49.99–54.63** score gap. Current diagnostic replay of all 50 is 6 nonanswer / 11 wrong / 13 vague / 11 adequate / 9 strong before applying the proposed generic routing filter. **10 wrong items are guard-based** (active `truncated_fragment`) and **1 is content-signal-only**. A capped answer may satisfy both guard and score conditions; this disjoint count labels any active guard first and does not infer what an uncapped score would have been. Record both reasons in shadow logs. No generalization claim is justified by this set.
 
-### 6. Probe outcome tracking without leaked target credit
+### 6. Future probe outcome contract — unimplemented pending audit review
 
 Maintain `probed_concepts: dict[canonical_skill, set[canonical_concept]]` plus per-probe records. Add the target only when a selected PROBE_CONCEPT is actually presented, including the originating round/question and probe question ID. A pending/skipped request is not an observed answer; aborted probes keep an explicit pending/aborted status. Once the eligible probe answer is scored, **outcome is the probe's own band**, recorded with its own score, rubric, expected concepts, exclusions and `target_excluded_from_credit` flag.
 
 The target may be named by the bank's question and therefore excluded from matched/missed credit. The outcome still evaluates the probe against that question's own reference/rubric. Adequate/strong is a favorable probe outcome, not proof that the target was explicitly demonstrated; never insert that target into `matched_concepts` or session mastery merely because the probe succeeded. Record any independently supported remaining concepts normally. Do not probe the same canonical target twice in a session, regardless of outcome. Prefer targets whose bank probe asks for an explanation/example with an independently assessable reference.
 
-### 7. Prefixes require literal or alias evidence
+### 7. Future prefix constraint — no formatter implementation in stage (a)
 
 Use `You touched on {X}. Building on that: …` only if X has new status `matched` and its trace reports `method` exactly `exact` or `alias` **and** a whole-token check confirms that surface/alias in the candidate answer. Do not use it for a semantic match or a bundle-supported state without exact/alias evidence. Otherwise use `Going a step deeper on {canonical_skill}: …`. Neither prefix names a missed target. Pass the complete displayed question to the scorer and include all supplied concepts. Optional rewrite validation must reject newly introduced answer/target terms, and a failed rewrite falls back to the original bank wording.
 
@@ -207,9 +207,9 @@ Rollout reports must include PROBE_HARDER trigger/selection/fallback rates, diff
 
 ### 10. Simulation protocol and shared-data limitation
 
-Retain seed-controlled candidate profiles and Good/Average/Poor bank answers at equal question budgets, comparing proposed adaptive mechanics to round-robin. Report coverage, concept-target/probe-outcome counts, fallback and difficulty-relaxation rates, eligible question counts, and duplicates as descriptive outputs; test only hard invariants. The simulator **shares question/answer data and the assumed Easy/Medium/Hard difficulty model with calibration**. It is not independent validation and can favor the policy's assumptions. The twenty-pair audit is also in-sample and purposive.
+The stage-(a) mechanics simulation uses 100 seeded candidate profiles, budgets 8–12 and existing Good/Average/Poor bank answers, with all selections and row IDs recorded. Report coverage, harder-trigger/selection/fallback counts, difficulty relaxation, bridge direction, eligible question counts and duplicates. Tests assert hard invariants, not synthetic accuracy. No concept probe or concept-outcome count is synthesized.
 
-Because difficulty-adjusted ability is deferred, remove its Elo-versus-latent-theta RMSE and the percentile output. If observed-score error against synthetic theta is explored, label the units and generator dependence, and do not call it ability validity. Cross-policy correctness or conversational quality requires held-out questions, independently authored answers/annotations and eventually human sessions. No claims of improved assessment accuracy follow from mechanics-only simulation.
+The simulator **shares question/answer data and the assumed Easy/Medium/Hard difficulty model with calibration**. It is not independent validation and can favor the policy’s assumptions. It does not establish better assessment accuracy than round-robin. Future comparative efficacy requires held-out questions, independently authored answers/annotations and human sessions. Re-anchored Elo is reported only in native heuristic units; no percentile or Elo-versus-latent-theta validity claim is made.
 
 ## Retained Part II architecture and verification constraints
 
@@ -219,11 +219,51 @@ Because difficulty-adjusted ability is deferred, remove its Elo-versus-latent-th
 - Bundle precedence applies only to DB-approved, eligible versions, then primary CSV, then fallback CSV. All scored adaptive questions have their own reference/rubric. Required target/difficulty constraints are applied across all sources before relaxing difficulty.
 - Keep zero repeat IDs and within-skill cosine ≥0.85 duplicate exclusion under the pinned model. Offline content-token Jaccard ≥0.65 is only the declared semantic-disabled fallback. Deduplicate equivalent bundle/CSV question identities as well as source IDs. Answer-aware filtering at ≥75% demonstrated expected concepts uses only valid nonempty rubrics; it must not divide by zero or reject every empty-rubric question as fully covered.
 - Filter bridge targets to resume/role canonical buckets, respect role-gap and exhaustion caps, and prefer uncovered must-cover. If no legal target exists, take COVER; deterministic exhaustion is explicit.
-- Proposed UI work removes resume skill preselection caps, adds General role profiles, and presents observed-score/evidence fields. It is deferred with all other Part II work.
-- Tests after approval: fixed-seed replay; must-cover feasibility/coverage over 100 seed profiles; no nonanswer/role-gap/HR-concept probes; no repeats/near-duplicates; direction-specific bridges; all fallback paths; target outcomes despite prompt exclusions; canonical aggregation; shadow non-interference and feature-flag rollback. Simulation tables are reports, not brittle accuracy assertions.
+- Proposed UI work removes resume skill preselection caps, adds General role profiles, and presents observed-score/evidence fields. It is deferred to stage (c).
+- Stage-(a) tests cover fixed-seed replay; must-cover feasibility/coverage over 100 seed profiles; no nonanswer/role-gap/HR-concept probes; no repeats/near-duplicates; direction-specific bridges; all fallback paths; canonical aggregation. Target outcomes, shadow non-interference and live flag rollback remain later-stage tests and are not claimed as delivered. Simulation tables are reports, not brittle accuracy assertions.
 
 ## Verification record
 
 Part I full-suite run: **1024 passed, 6 skipped**; five local-runner/ML timeout/memory tests hit a macOS sandbox `psutil/sysctl` PermissionError. The two affected test files then passed with process-inspection permission: **51 passed**. After the final bundle-precedence edge-case fix, the focused scoring/golden suite passed **92 tests**; the offline index reproducibility check and `git diff --check` also passed. Every frozen-output case and the index/precedence/boundary/pinning tests passed in the full-suite run. The v3 manifest itself was not regenerated.
 
-The three-state amendment is validated by the focused scoring/semantic/golden suite, including a live model check that prints `SCORING_MODEL_REVISION_LOADED=1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. A separate comparison of all 60 outputs before/after the amendment confirms exact preservation after removing only the new status fields. The frozen JSON hash remains unchanged; no test regenerates it. Final amendment validation: **132 focused scoring/semantic/golden tests passed**, plus the offline index reproducibility check and `git diff --check`. The implementation commit is recorded in the delivery. Part I is committed on `codex/part-i-concept-diagnostics`; unrelated workspace edits are excluded. No merge or Part II implementation is performed.
+The three-state amendment is validated by the focused scoring/semantic/golden suite, including a live model check that prints `SCORING_MODEL_REVISION_LOADED=1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. A separate comparison of all 60 outputs before/after the amendment confirms exact preservation after removing only the new status fields. The frozen JSON hash remains unchanged; no test regenerates it. Final amendment validation: **132 focused scoring/semantic/golden tests passed**, plus the offline index reproducibility check and `git diff --check`. The implementation commit is recorded in the delivery. Part I is committed on `codex/part-i-concept-diagnostics`; unrelated workspace edits are excluded. The latest approval allowed a clean-worktree fast-forward merge of Part I to `current`; stage (a) is now isolated on `codex/policy-stage-a`. All unrelated original-checkout edits are retained. No stage (b)/(c) or concept-probe implementation is performed.
+
+
+## Latest read-only review and stage-(a) scope
+
+The original 20-pair blind export has no assistant labels. Prior labels: 8 false misses (6 Tier 2, 2 Tier 3), 9 true misses, 2 rubric-overreach, 1 partial support. Below 0.30 there is one pair: strict false-miss 0/1, but rubric-overreach 1/1. New stratified matched sample: assistant-labeled false matches 6/20 (Tier 2 3/10, Tier 3 3/10), not a population estimate. Every Tier-1 bundle was checked: 72 answers, zero post-prompt matches. Tier-2 paraphrase under-credit also affects final_score and is explicitly out of scope for correction.
+
+All 2,319 rows were replayed: 207 vague. With confident-miss/filter/alternate-question/near-dedup gates and HR disabled, strict post-prompt availability is 33/207 (15.9%); permitting the next question to name its rubric target gives 35/207 (16.9%). These are cold-history proxies, not live probe rates. See the report for all skill denominators, top-30 ML/CN/OS concepts, generic-filter zeros and storage deltas.
+
+Stage (a) touches only the following files relative to `interViv_best` (Part I’s historical file scope above is unchanged):
+
+| File | Purpose |
+|---|---|
+| `backend/config.py` | Band/Elo/dedup constants and separate disabled concept guard |
+| `modules/answer_bands.py` | Pure total band classifier |
+| `modules/adaptive_skill_graph.py` | Typed edges, canonical aliases and directional queries |
+| `modules/adaptive_policy.py` | Pure budget/dedup/selection/Elo functions; no concept probe |
+| `tests/test_adaptive_policy_stage_a.py` | Invariant and boundary tests |
+| `scripts/audit_question_concepts.py` | Delegate historic audit bands to configured classifier |
+| `scripts/replay_concept_review.py` | Full pinned scoring replay and all-bundle audit |
+| `scripts/export_concept_review_samples.py` | Blind export and fixed matched-pair sampling |
+| `scripts/audit_concept_availability.py` | Read-only target-in-prompt availability bounds |
+| `scripts/evaluate_policy_stage_a.py` | Seeded offline mechanics simulation |
+| `data/audits/concept_review/all_rows.jsonl` | All 2,319 scored rows/traces |
+| `data/audits/concept_review/full_replay_summary.json` | Aggregates, storage and source hashes |
+| `data/audits/concept_review/blind_20_pairs.json` | Unlabeled original pairs |
+| `data/audits/concept_review/blind_20_pairs.md` | Unlabeled human worksheet |
+| `data/audits/concept_review/prior_20_label_comparison.json` | Prior labels alongside similarity |
+| `data/audits/concept_review/matched_20_sample.json` | Stratified selection without judgments |
+| `data/audits/concept_review/matched_20_adjudication.json` | Assistant labels/reasons, clearly attributed |
+| `data/audits/concept_review/tier1_all_bundles.json` | All 72 reference/calibration evaluations |
+| `data/audits/concept_review/tier1_review_summary.json` | Per-bundle manual review and limitations |
+| `data/audits/concept_review/prompt_inclusive_availability.json` | Alternate question IDs by eligible target |
+| `data/audits/policy_stage_a/simulation_moves.jsonl` | Every simulated choice/outcome row |
+| `data/audits/policy_stage_a/simulation_summary.json` | Counts, directional coverage and provenance |
+| `docs/concept_probe_readonly_review.md` | Requested read-only review |
+| `docs/policy_stage_a_report.md` | Implementation behavior and test/simulation results |
+| `docs/adaptive_policy_go_live_criteria.md` | Proposed criteria for approval before shadow logs |
+| `docs/adaptive_interview_implementation_plan.md` | Latest approvals, exclusions and scope |
+
+The external plan copy remains synchronized. No frozen fixture, score function, concept threshold, question bank, session integration, UI or database schema is changed by stage (a).

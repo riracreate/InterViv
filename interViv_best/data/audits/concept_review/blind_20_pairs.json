@@ -1,0 +1,162 @@
+[
+  {
+    "pair_id": "R01",
+    "question": "Explain how a decision tree works.",
+    "concept": "classification",
+    "tier": 3,
+    "answer_excerpt": "A decision tree splits data using rules. At each step it picks the feature that best separates the data. The leaves give the final predictions.",
+    "similarity": 0.5674
+  },
+  {
+    "pair_id": "R02",
+    "question": "Explain how a decision tree works.",
+    "concept": "regression",
+    "tier": 3,
+    "answer_excerpt": "A decision tree splits data at each node based on a feature threshold that best separates the classes. It recurses until reaching leaf nodes which give the prediction. Decision trees are easy to interpret but can overfit. Random forests use many trees together.",
+    "similarity": 0.5202
+  },
+  {
+    "pair_id": "R03",
+    "question": "What is the bias-variance tradeoff?",
+    "concept": "overfitting",
+    "tier": 3,
+    "answer_excerpt": "Bias is error from wrong assumptions in the model — high bias models are too simple, underfit, perform poorly on training and test data. Variance is sensitivity to fluctuations. Some additional details apply.",
+    "similarity": 0.5606
+  },
+  {
+    "pair_id": "R04",
+    "question": "What is the bias-variance tradeoff?",
+    "concept": "cross-validation",
+    "tier": 3,
+    "answer_excerpt": "Bias is error from wrong assumptions in the model — high bias models are too simple, underfit, perform poorly on training and test data. Variance is sensitivity to fluctuations. Some additional details apply.",
+    "similarity": 0.4114
+  },
+  {
+    "pair_id": "R05",
+    "question": "How do you handle conflict with a coworker?",
+    "concept": "STAR",
+    "tier": 3,
+    "answer_excerpt": "I first try to understand their perspective directly in a private conversation rather than escalating. I listen fully before responding and focus on the specific issue not the person. If we disagree technically, I suggest we both write up our approaches and evaluate them against agreed criteria. I find that conflicts often come from different context or assumptions, and direct conversation resolves most of them.",
+    "similarity": 0.2313
+  },
+  {
+    "pair_id": "R06",
+    "question": "How do you handle conflict with a coworker?",
+    "concept": "action",
+    "tier": 3,
+    "answer_excerpt": "I first try to understand their perspective directly in a private conversation rather than escalating. I listen fully before responding and focus on the specific issue not the person. If we disagree technically, I suggest we both write up our approaches and evaluate them against agreed criteria. I find that conflicts often come from different context or assumptions, and direct conversation resolves most of them.",
+    "similarity": 0.3783
+  },
+  {
+    "pair_id": "R07",
+    "question": "How do you handle conflict with a coworker?",
+    "concept": "communication",
+    "tier": 3,
+    "answer_excerpt": "I first try to understand their perspective directly in a private conversation rather than escalating. I listen fully before responding and focus on the specific issue not the person. If we disagree technically, I suggest we both write up our approaches and evaluate them against agreed criteria. I find that conflicts often come from different context or assumptions, and direct conversation resolves most of them.",
+    "similarity": 0.6107
+  },
+  {
+    "pair_id": "R08",
+    "question": "What is the difference between symmetric and asymmetric encryption?",
+    "concept": "key distribution",
+    "tier": 2,
+    "answer_excerpt": "Symmetric uses same key for encrypt and decrypt. Asymmetric uses public and private key. Asymmetric is slower but more secure for sharing keys.",
+    "similarity": 0.5921
+  },
+  {
+    "pair_id": "R09",
+    "question": "How would you design a search engine?",
+    "concept": "caching",
+    "tier": 3,
+    "answer_excerpt": "A search engine needs a crawler to fetch pages, an indexer to build an inverted index of terms to documents, and a ranking algorithm to sort results. Elasticsearch uses Lucene for indexing. Distributed sharding handles large document sets.",
+    "similarity": 0.3481
+  },
+  {
+    "pair_id": "R10",
+    "question": "How would you design a search engine?",
+    "concept": "caching",
+    "tier": 3,
+    "answer_excerpt": "Crawler: politeness (robots.txt, rate limiting), deduplication via URL hashing. Indexer: tokenisation, stemming, stop-word removal, positional inverted index. Ranking: BM25 for relevance, PageRank for authority, click signals. Serving: query parsing, index lookup, scoring, snippet generation. Scale: partition index by document range; federate queries. Elasticsearch uses multiple shards and replicas, Lucene segments merged in background.",
+    "similarity": 0.3248
+  },
+  {
+    "pair_id": "R11",
+    "question": "What is a random forest?",
+    "concept": "bagging",
+    "tier": 3,
+    "answer_excerpt": "A random forest trains many decision trees on random subsets of data and features, then aggregates their predictions. This ensemble approach reduces overfitting compared to a single tree. Feature importance is calculated as average reduction in impurity.",
+    "similarity": 0.3009
+  },
+  {
+    "pair_id": "R12",
+    "question": "What is a random forest?",
+    "concept": "regression",
+    "tier": 3,
+    "answer_excerpt": "A random forest trains many decision trees on random subsets of data and features, then aggregates their predictions. This ensemble approach reduces overfitting compared to a single tree. Feature importance is calculated as average reduction in impurity.",
+    "similarity": 0.43
+  },
+  {
+    "pair_id": "R13",
+    "question": "What is the difference between Azure Blob Storage, Azure File Storage, and Azure Queue Storage?",
+    "concept": "unstructured",
+    "tier": 2,
+    "answer_excerpt": "Blob is for files like images. File storage is like a file server you can mount. Queue is for messages between services.",
+    "similarity": 0.3015
+  },
+  {
+    "pair_id": "R14",
+    "question": "What is the difference between Azure Blob Storage, Azure File Storage, and Azure Queue Storage?",
+    "concept": "asynchronous",
+    "tier": 2,
+    "answer_excerpt": "Blob is for files like images. File storage is like a file server you can mount. Queue is for messages between services.",
+    "similarity": 0.4139
+  },
+  {
+    "pair_id": "R15",
+    "question": "Explain how a decision tree works.",
+    "concept": "random forest",
+    "tier": 3,
+    "answer_excerpt": "At each node, the tree picks the feature-threshold pair that maximises information gain (entropy reduction) or minimises Gini impurity. It recurses on each child subset. Stopping criteria: max depth, min samples per leaf, no remaining gain. Predictions: leaf's majority class (classification) or mean (regression). Trees are interpretable, handle mixed types, require no scaling, but overfit. Pruning (pre or post) reduces overfitting.",
+    "similarity": 0.5564
+  },
+  {
+    "pair_id": "R16",
+    "question": "What is method resolution order (MRO) in Python?",
+    "concept": "function",
+    "tier": 3,
+    "answer_excerpt": "MRO determines the order Python searches for methods and attributes in class hierarchies with multiple inheritance. Python uses. Some additional details apply.",
+    "similarity": 0.3259
+  },
+  {
+    "pair_id": "R17",
+    "question": "Explain the four pillars of OOP.",
+    "concept": "encapsulation",
+    "tier": 2,
+    "answer_excerpt": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+    "similarity": 0.3983
+  },
+  {
+    "pair_id": "R18",
+    "question": "Explain the four pillars of OOP.",
+    "concept": "inheritance",
+    "tier": 2,
+    "answer_excerpt": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+    "similarity": 0.5684
+  },
+  {
+    "pair_id": "R19",
+    "question": "Explain the four pillars of OOP.",
+    "concept": "polymorphism",
+    "tier": 2,
+    "answer_excerpt": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+    "similarity": 0.4095
+  },
+  {
+    "pair_id": "R20",
+    "question": "Explain the four pillars of OOP.",
+    "concept": "abstraction",
+    "tier": 2,
+    "answer_excerpt": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+    "similarity": 0.4561
+  }
+]

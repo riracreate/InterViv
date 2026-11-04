@@ -1,0 +1,168 @@
+{
+  "labeler": "Codex assistant manual review; bundle author levels are source metadata, not independent labels. Drafts remain unapproved.",
+  "bundles": [
+    {
+      "bundle_id": "dbms.acid-properties",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 16,
+        "not_demonstrated": 14
+      },
+      "post_prompt_decisions": {
+        "uncertain": 12,
+        "missed": 12
+      },
+      "retained_reference_concepts": 4,
+      "manual_note": "Reference/strong/concise answers explain the properties, but all retained properties stay uncertain; rigid phrase evidence under-credits paraphrases."
+    },
+    {
+      "bundle_id": "dbms.deadlocks",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 6,
+        "supported": 1,
+        "not_demonstrated": 5
+      },
+      "post_prompt_decisions": {
+        "uncertain": 3,
+        "missed": 3
+      },
+      "retained_reference_concepts": 1,
+      "manual_note": "Circular-wait explanations remain uncertain. The sole raw supported deadlock in the strong answer is removed because the question names deadlocks."
+    },
+    {
+      "bundle_id": "dbms.isolation-levels",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 7,
+        "not_demonstrated": 5
+      },
+      "post_prompt_decisions": {},
+      "retained_reference_concepts": 0,
+      "manual_note": "Both required concepts are in the question; all six scoped lists are empty. No operational match/miss evidence survives."
+    },
+    {
+      "bundle_id": "dbms.join-types",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 11,
+        "not_demonstrated": 7
+      },
+      "post_prompt_decisions": {
+        "uncertain": 6,
+        "missed": 6
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Reference and correct examples explain inner/left row retention, but the retained concepts stay uncertain."
+    },
+    {
+      "bundle_id": "dbms.normalisation-1nf-3nf",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 11,
+        "not_demonstrated": 13
+      },
+      "post_prompt_decisions": {},
+      "retained_reference_concepts": 0,
+      "manual_note": "Every required concept is prompt-supplied; all scoped lists are empty. Raw evaluator also under-credits spelling/paraphrase variants."
+    },
+    {
+      "bundle_id": "dbms.oltp-vs-olap",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 9,
+        "supported": 1,
+        "not_demonstrated": 2
+      },
+      "post_prompt_decisions": {},
+      "retained_reference_concepts": 0,
+      "manual_note": "Both targets are prompt-supplied. The reference has one raw supported OLAP decision, removed in every scoped result."
+    },
+    {
+      "bundle_id": "python.generators",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "supported": 2,
+        "uncertain": 11,
+        "not_demonstrated": 5
+      },
+      "post_prompt_decisions": {
+        "uncertain": 7,
+        "missed": 5
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Raw generator support in reference and concise examples is excluded. Yield/lazy-evaluation explanations remain uncertain."
+    },
+    {
+      "bundle_id": "python.gil",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 11,
+        "not_demonstrated": 7
+      },
+      "post_prompt_decisions": {
+        "uncertain": 6,
+        "missed": 6
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Reference/strong answers remain uncertain. The concise correct answer receives a missed threading status despite expressing the thread limitation."
+    },
+    {
+      "bundle_id": "python.is-vs-equals",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 7,
+        "not_demonstrated": 5
+      },
+      "post_prompt_decisions": {
+        "uncertain": 7,
+        "missed": 5
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Identity/equality explanations in reference/strong/concise examples remain uncertain; no supported state survives."
+    },
+    {
+      "bundle_id": "python.lists-vs-tuples",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "supported": 6,
+        "uncertain": 10,
+        "not_demonstrated": 8
+      },
+      "post_prompt_decisions": {
+        "uncertain": 6,
+        "missed": 6
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Six raw list/tuple supports are prompt-excluded. Mutable/immutable remain uncertain. Reference also overstates tuple hashability; elements must be hashable, as the strong example correctly qualifies."
+    },
+    {
+      "bundle_id": "python.memory-management",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 6,
+        "not_demonstrated": 6
+      },
+      "post_prompt_decisions": {
+        "uncertain": 6,
+        "missed": 6
+      },
+      "retained_reference_concepts": 2,
+      "manual_note": "Reference/strong answers remain uncertain. Concise cyclic-GC paraphrase is marked not_demonstrated for garbage collection."
+    },
+    {
+      "bundle_id": "python.shallow-vs-deep-copy",
+      "answers_checked": 6,
+      "raw_required_decisions": {
+        "uncertain": 6,
+        "supported": 1,
+        "not_demonstrated": 5
+      },
+      "post_prompt_decisions": {},
+      "retained_reference_concepts": 0,
+      "manual_note": "Both targets are prompt-supplied; all scoped lists are empty. One raw supported shallow-copy decision in the strong answer is removed."
+    }
+  ],
+  "post_prompt_false_match_rate": null,
+  "reason": "Zero matched post-prompt Tier-1 decisions. No denominator."
+}

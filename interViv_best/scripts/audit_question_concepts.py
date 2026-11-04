@@ -17,33 +17,19 @@ os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', LLM_LIVE_FETCH='
                   JOBS_LIVE_FETCH='0', LENGTH_RATIO_MULTIPLIER_ENABLED='0', DISABLE_SEMANTIC_SCORING='0')
 from backend.scoring.pipeline import run_scoring_pipeline
 from modules.question_concepts import canonical, load_index
+from modules.answer_bands import classify_answer_band
 
 # Explicit generic-candidate vocabulary; frequency alone is not semantic quality.
 # This is a proposed selector filter, NOT a scoring change.
 GENERIC_CANDIDATES = set('function python java javascript ml oop interface list string array node root edge index unique right left inner transaction query object state process thread priority lightweight situation task action result learning feedback communication static'.split())
 FREQUENCY_SHARE = 0.05
 MIN_DOCUMENT_FREQUENCY = 3
-# Proposed bands: in-sample, copied here ONLY for reporting. No runtime policy.
-BAND_WRONG_SCORE = 52.0
-BAND_WRONG_CORRECTNESS = 5.0
-BAND_STRONG_SCORE = 72.0
-BAND_STRONG_CORRECTNESS = 7.5
-BAND_VAGUE_DEPTH = 4.2
-NONANSWER = {'empty','gibberish','repetition','too_short','off_topic','question_parroting','low_density'}
-REFUSALS = {"i don't know",'i do not know','no idea','not sure','skip','pass'}
-
-
 def band(result, answer):
-    guard, score, rubric = result['guard_applied'], result['final_score'], result['rubric']
-    if guard in NONANSWER or answer.strip().lower().rstrip('.!?') in REFUSALS or (len(answer.split())<8 and score<40 and guard!='truncated_fragment'):
-        return 'nonanswer'
-    if score<BAND_WRONG_SCORE or rubric['correctness']<BAND_WRONG_CORRECTNESS or result['svm_label']=='Poor' or guard in {'entity_swap','truncated_fragment'}:
-        return 'wrong'
-    if score>=BAND_STRONG_SCORE and rubric['correctness']>=BAND_STRONG_CORRECTNESS and not guard:
-        return 'strong'
-    if result['concepts']['missed_concepts'] and (score<BAND_STRONG_SCORE or rubric['depth']<BAND_VAGUE_DEPTH):
-        return 'vague'
-    return 'adequate'
+    """Read-only compatibility wrapper around the single configured classifier."""
+    return classify_answer_band(final_score=result['final_score'], rubric=result['rubric'],
+        svm_label=result['svm_label'], guard_type=result['guard_applied'],
+        word_count=len(answer.split()), answer_text=answer,
+        missed_concepts=result['concepts']['missed_concepts'])
 
 
 def expected(q):
