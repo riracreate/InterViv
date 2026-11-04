@@ -19,6 +19,7 @@ import { fetchDashboard, fetchLearningSignals, fetchAtsRuns, fetchMe, fetchAccou
 import { mapRealDataToDashboard, scoreAccent } from "../lib/dashboardMapping";
 import { displayScore, observedReadinessNote, sessionLabel } from "../lib/accountOverview";
 import AppNav from "../components/AppNav";
+import AccountMenu from "../components/AccountMenu";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
 import { ReviewSummary } from "../components/dashboard/ReviewSummary";
@@ -430,6 +431,7 @@ export default function Dashboard() {
                 Readiness vs. target →
               </Link>
             )}
+            <AccountMenu />
             <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-white/75 backdrop-blur-xl">
               <Sparkles className="h-3.5 w-3.5 text-cyan-200" />
               interViv Results

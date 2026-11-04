@@ -70,11 +70,17 @@ export default function CompanySelector({
     }
   }, [roles, selectedRole]);
 
+  // Notify on changes only: mounting must never report a value back to the
+  // parent, or a remount (e.g. returning from Review) would overwrite the
+  // parent's current selection with this component's starting state.
+  const lastNotified = useRef({ companyId: initialCompanyId || '', roleId: initialRoleId || '' });
   useEffect(() => {
-    if (onSelectionChange) {
-      onSelectionChange({ companyId: selectedCompany, roleId: selectedRole });
+    const next = { companyId: selectedCompany, roleId: selectedRole };
+    if (next.companyId === lastNotified.current.companyId && next.roleId === lastNotified.current.roleId) {
+      return;
     }
-    // Only notify on selection changes.
+    lastNotified.current = next;
+    onSelectionChange?.(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompany, selectedRole]);
 

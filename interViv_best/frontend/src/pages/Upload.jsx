@@ -12,6 +12,7 @@ import {
   stepFromSearch,
 } from '../lib/uploadWizard';
 import CompanySelector from '../components/CompanySelector';
+import AccountMenu from '../components/AccountMenu';
 import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
 const ROUNDS_PER_SKILL = 3;
@@ -135,6 +136,7 @@ export default function Upload() {
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
   const [userId, setUserId] = useState(null);
+  const [profile, setProfile] = useState({ name: '', email: '' });
   const [restored, setRestored] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -146,7 +148,6 @@ export default function Upload() {
   const [error, setError] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [targetSelection, setTargetSelection] = useState({ companyId: '', roleId: '' });
-  const [initialTarget, setInitialTarget] = useState({ companyId: '', roleId: '' });
 
   // The URL owns the step (?step=upload|skills|domains), so browser Back and
   // Forward move through the wizard; an unreachable step resolves to the
@@ -169,6 +170,7 @@ export default function Upload() {
         const id = u.id || u.user_id || null;
         setIsAuthenticated(true);
         setUserId(id);
+        setProfile({ name: u.name || '', email: u.email || '' });
         const saved = restoreWizard(readScoped('session', id, WIZARD_STORAGE_NAME, WIZARD_STORAGE_VERSION));
         setCandidateId(saved.candidateId);
         setFileName(saved.fileName);
@@ -179,7 +181,6 @@ export default function Upload() {
           ? saved.targetSelection
           : { companyId: u.target_company_id || '', roleId: u.target_role_id || '' };
         setTargetSelection(target);
-        setInitialTarget(target);
       })
       .catch(() => { if (!cancelled) setIsAuthenticated(false); })
       .finally(() => { if (!cancelled) setRestored(true); });
@@ -320,11 +321,14 @@ export default function Upload() {
             style={{ fontFamily: "var(--font-display)" }}>
             interViv<sup className="text-xs align-super">©</sup>
           </a>
-          <button onClick={goBack}
-            type="button"
-            className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
-            ← {step === 'upload' ? 'Home' : 'Back'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={goBack}
+              type="button"
+              className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
+              ← {step === 'upload' ? 'Home' : 'Back'}
+            </button>
+            <AccountMenu userName={profile.name} userEmail={profile.email} fetchProfile={false} />
+          </div>
         </div>
       </nav>
 
@@ -544,8 +548,10 @@ export default function Upload() {
               <CompanySelector
                 isAuthenticated={isAuthenticated}
                 onSelectionChange={setTargetSelection}
-                initialCompanyId={initialTarget.companyId}
-                initialRoleId={initialTarget.roleId}
+                // The selector unmounts on Review; when it remounts it must
+                // start from the live selection, not a page-load snapshot.
+                initialCompanyId={targetSelection.companyId}
+                initialRoleId={targetSelection.roleId}
               />
             </div>
 
