@@ -12,18 +12,51 @@ cd interViv_best
 Open <http://127.0.0.1:5173>. The launcher applies database migrations and saves
 accounts and progress in `interViv_best/local-data/interviv-local.sqlite3`.
 It uses offline questions; coding execution needs the optional local Piston
-service. Ctrl+C stops the backend and frontend started by this launcher.
+service or the trusted local runner below. Ctrl+C stops the backend and
+frontend started by this launcher.
+
+For coding execution and live job listings (with the local Adzuna credentials
+configured), start it with:
+
+```bash
+cd interViv_best
+.venv/bin/python scripts/run_local.py --with-executor --live-jobs
+```
+
+Without Docker, Python coding and NumPy ML Primitives rounds can run in a
+local worker process on your own machine:
+
+```bash
+cd interViv_best
+.venv/bin/python scripts/run_local.py --trusted-local-execution
+```
+
+This trusted local runner is for running your own code locally; it is not a
+security sandbox. The backend accepts it only in development on 127.0.0.1.
+Other languages still need Piston. Details:
+[coding execution security](interViv_best/docs/coding_execution_security.md#trusted-local-runner-docker-free-demo-mode).
 
 - [Application setup and architecture](interViv_best/README.md)
 - [Maintenance results and folder guide](interViv_best/docs/maintenance_2026-11-02.md)
 - [Researched improvement roadmap](interViv_best/docs/IMPROVEMENT_ROADMAP.md)
+- [Overhaul acceptance record and manual checklist](interViv_best/docs/overhaul_acceptance.md)
 
-Keep `.git/`, application source, migrations, datasets, model artifacts, and
-current environments. `private/maintenance-2026-11-02/` holds local recovery
-backups and must stay private. `archive/`, `output/`, and `interviv_colab_lab/`
-hold historical models, deliverables, or research; they are not application
-runtime folders. The two remaining `.worktrees/` checkouts contain work that
-still needs reconciliation.
+## Folder layout
+
+| Folder | Contents |
+|---|---|
+| `interViv_best/` | The application: source, migrations, datasets, model artifacts, tests, docs, and its `.venv` and `frontend/node_modules` |
+| `output/` | Finished deliverables (reports, slides, project overview); not used at runtime |
+| `private/` | Local recovery backups; must stay private |
+| `.github/` | CI workflows |
+| `.claude/`, `.cursor/` | Editor and assistant settings |
+
+The old `archive/`, `interviv_colab_lab/`, `hint_coach_training/`, root
+`scripts/` folders and the two `.worktrees/` checkouts were removed on
+2026-11-04. Checksummed tarballs of the removed files and a git bundle of the
+`phase4b/roadmap-coach` and `codex/phase-b-block-practice` branches are in
+`private/overhaul-2026-11-03/phase8-cleanup/`; both branches also remain in
+this repository.
 
 This working copy has local changes beyond the older GitHub `main` snapshot.
 Do not replace it with a clone of `main` until the changes are reconciled and

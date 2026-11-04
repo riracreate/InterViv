@@ -57,10 +57,37 @@ For this checkout, with dependencies already installed:
 Open <http://127.0.0.1:5173>. This starts both services, applies migrations,
 and persists accounts and progress in `local-data/interviv-local.sqlite3`.
 The launcher selects this local database even if a different `DATABASE_URL`
-is present in your shell. It disables live LLM and job fetching, requires no
-downloads at startup, and leaves logs in `local-data/local-run/`.
+is present in your shell. By default it disables live LLM and job fetching,
+requires no downloads at startup, and leaves logs in `local-data/local-run/`.
 Cached semantic models are used when available; a fresh machine may use the
 existing lexical fallback until the model has been provisioned.
+
+To enable the local coding runner and live job search while keeping interview
+questions offline, use:
+
+```bash
+.venv/bin/python scripts/run_local.py --with-executor --live-jobs
+```
+
+Live Adzuna results require `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` in the local
+`.env`; Greenhouse uses public feeds. The default command remains offline. The
+coding runner needs Docker, and downloaded runtimes may need setup once.
+
+To run Python coding and NumPy ML Primitives rounds without Docker, use the
+trusted local runner instead:
+
+```bash
+.venv/bin/python scripts/run_local.py --trusted-local-execution
+```
+
+It runs each submission in a fresh local worker process with time, memory,
+output and import limits. It is meant for your own code on your own machine
+and is not a security sandbox. The backend accepts it only when
+`ENVIRONMENT=development` and the bind host is loopback; other deployments
+ignore it. JavaScript, Java and C++ still need Piston. For coding rounds,
+Piston takes priority when it is running; ML Primitives always use the local
+runner. The flags can be combined, for example
+`--trusted-local-execution --live-jobs`.
 
 For a fresh checkout, install dependencies first (network access required):
 
@@ -83,6 +110,7 @@ lock; fresh Linux/container installation still needs verification in CI.
 | `8000` | FastAPI backend (uvicorn) | local launcher | yes |
 | `5173` | Vite frontend | local launcher | yes |
 | `19000` | Piston coding executor (Docker, loopback only) | `docker compose -f compose.coding.yml up executor` | only for Run/Submit on `/problems` |
+| — | Trusted local runner (worker processes, no port) | `--trusted-local-execution` | alternative to Piston for Python coding and ML Primitives |
 | `11434` | Ollama (`gemma2:2b`) for coding hints | system Ollama | no; curated hints are the fallback |
 
 Create an account via `/signup`. There is no built-in demo account.
@@ -120,7 +148,8 @@ the selected language but the cause is shared. Drafts still autosave.
 
 Optional env: `CODING_RATE_LIMIT_PER_MINUTE` (default 30), `CODING_COACH_URL`
 (default `http://127.0.0.1:11434`), `CODING_COACH_MODEL` (default `gemma2:2b`).
-Security evidence: `docs/coding_execution_security.md`.
+Security evidence, including the trusted local runner's limits:
+`docs/coding_execution_security.md`.
 
 ### PostgreSQL and Auth
 

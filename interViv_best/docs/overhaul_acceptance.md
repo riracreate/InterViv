@@ -11,6 +11,7 @@ Branch `overhaul/reliable-journey`. One commit per phase; nothing pushed or merg
 | 5 Evaluation & learning | `e234442` | System-design practice estimate (`v1-system-design-content`, not measured); curated hints, unrecorded guidance, editorials; offline Greenhouse samples. |
 | 6 Interface & voice | `e3b7207` | Five-item nav, practice tracks and skill chips, report summary and tabs without invented numbers, read-aloud and resilient speech, one light theme. |
 | 7 Acceptance | this record | End-to-end journey test and lifecycle smoke check. |
+| 8 Cleanup & docs | see `git log` | Removed obsolete root folders after a checksummed backup (`private/overhaul-2026-11-03/phase8-cleanup/`); READMEs, demo guide and roadmap document `--trusted-local-execution`. |
 
 ## Automated evidence
 

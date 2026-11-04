@@ -143,9 +143,18 @@ alone cannot establish learning.
 Coding already has an isolated local execution design and an availability
 endpoint. Exercise the real service next: each supported language, correct and
 incorrect solutions, timeout, runtime missing, service down, draft restoration,
-and duplicate submission. Keep execution isolated; do not add host execution
-as a convenience fallback. The executor was not started or validated in this
+and duplicate submission. The executor was not started or validated in this
 maintenance session.
+
+Update 2026-11-03: the overhaul replaced "no host execution" with one explicit
+exception. `scripts/run_local.py --trusted-local-execution` runs Python coding
+and NumPy ML Primitives in local worker processes so the demo works without
+Docker. The backend honours it only in development on a loopback bind host.
+It is a trusted local runner for your own code, not a sandbox, and it is never
+a silent fallback: without the flag, missing Piston still means "execution
+unavailable". Shared or hosted deployments must keep using the isolated
+executor. Limits and evidence: `coding_execution_security.md` (trusted local
+runner section).
 
 For speech, let the learner review and edit the transcript before grading.
 Test noisy audio, interrupted recording, permission refusal, and text fallback.
