@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-interviv}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in interViv_best/.env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - interviv_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - interviv_redis:/data
@@ -43,8 +43,16 @@ services:
       QUESTION_LLM_RATE_LIMIT_PER_MINUTE: 60
       QUESTION_LLM_PROVIDER: openrouter
       OPENROUTER_MODEL: anthropic/claude-haiku-4.5
+      # Phase J: use cached MiniLM; do not Hub-fetch during scorer warm-up.
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
+      # Phase O: Adzuna outbound stays off unless deliberately enabled.
+      JOBS_LIVE_FETCH: ${JOBS_LIVE_FETCH:-0}
+      # Phase Q: LLM chat completions stay off unless deliberately enabled.
+      LLM_LIVE_FETCH: ${LLM_LIVE_FETCH:-0}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy

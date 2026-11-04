@@ -1,0 +1,395 @@
+# Review guide — chain A through Z
+
+**Audience:** reviewers of `codex/phase-b-block-practice` (historical) and the
+Phase 0 unify-shell port on `phase0/cursor-ai-design`.
+
+**Phase 0 port:** Z-F01/Z-F02/Z-F03 from `cc905cfc7eb6da7b43b022ece213fc16be141b92`
+were merged into unify-shell. This branch has local Piston coding execution and
+stock Gemma coaching; the Phase Z “coding 503 seam” paragraph below is
+historical for `codex/phase-b-block-practice`, not this checkout.
+
+**Base (chain root):** Phase A tip `0442493`
+
+**Product tip (Phase Y):** `6ae830338ad9c3b5e2173ff75341ab397fb78b68` (parent `ed0701e`). Phase Z adds documentation only; see [browser verification](phase_z_browser_verification.md) for the incomplete backlog and stop condition.
+
+**Phase AA (docs only, not copied here):** commit `7498cdb` inventoried another
+checkout’s dirty Tree 2 and a GGUF rescue. That Tree-2 inventory would be
+misleading on unify-shell, so `phase_aa_preservation.md` was not ported.
+
+**Phase Q commit (confirmed):** `c58e106` (`c58e1064f21eedc16bed347be4469f07b80f89e1`) — message `fix(phase-q): default LLM_LIVE_FETCH off and enforce mode at LLM client`; adds `modules/llm_outbound_gate.py` and the `_generate_via_llm` gate in `question_bank.py`.
+
+**This file:** introduced in Phase H.1 (`9e91e08`); refreshed in Phase R; Phase S pins Q’s sha, preserves Phase M findings, and clears trailing-whitespace check noise. No history rewrite; describe only.
+
+**First paragraph (read this before the tables):** Coding “execution” is a **503 seam with nothing behind it**. `POST /session/coding/run` and scored coding submits return infrastructure-unavailable; the editor stays open; Progress treats coding as unscored coverage, not a zero. C.2 (Docker/live runner) was never started. Do not review this branch as if candidates can receive coding scores today.
+
+---
+
+## Phase Z review warning
+
+[Phase Z](phase_z_browser_verification.md) found browser defects despite 539 backend and 56 frontend tests passing: immediate typed-round expiry, unscored Coding reports presented as 0%, cross-account builder drafts, repeated-round question/count state leaks, and missing stale-submit error feedback. Phase Z itself made no fixes. [Phase AB](phase_ab_delivery.md) fixed Z-F01, Z-F02 and Z-F03 in code; their browser verification is still open (STILL BLOCKED). Further browser checks stopped at a source-confirmed engagement-label-to-scoring metadata path (Z-F00); a numeric score effect was not established. Do not treat the capability inventory below as a claim that these flows are defect-free.
+
+## (a) Commit inventory
+
+### B → G.1 (`0442493..65a456e`) — 13 commits
+
+| SHA | Role | What / why | Scale | Independently reviewable? |
+|-----|------|------------|-------|---------------------------|
+| `1601e91` | **B** feat | Block contract; Verbal/OA/SQL/Interview practice; presets/drafts; Verbal bank file | ~17 files, +4.2k | Needs B.1 for SQLAlchemy truth |
+| `39a7579` | **B.1** fix | Persist block plans, presets, drafts, answer drafts on SQLAlchemy; rewrite answer route for submit lock | ~6 files, +1.7k | **Land with B** |
+| `98d3813` | **C.1** feat | Coding bank, Problems UI, execution boundary (503), scoring formula, migration 0005 | ~33 files, +3.9k | After B.1 |
+| `670f5ea` | **D Step 0** docs | Adds/corrects Phase C delivery evidence notes | 1 file docs | **Skim** (docs) |
+| `daa18b4` | **D** feat | Target context, learning hub (notebook, retry, assistance), migration 0006 | ~33 files, +4.2k | After C |
+| `4303577` | **E.0** docs | Correct scoring_regression claim to **2/8** full | 1 file docs | **Skim** (docs) |
+| `a47944a` | **E.1** feat | System-design self-assessment; AV capability honesty; migration 0007; `modules/scoring/system_design.py` (new) | ~23 files, +2.0k | After D |
+| `7002fa2` | **F.0** fix | Self-assessment ≠ measured mastery; `/health` scoring.mode; real-route leakage fixtures | ~8 files | **Land with F.1** |
+| `f71aae4` | **F.1** docs+fix | Browser verification doc; DSA-as-topic coding start; System design builder label + standalone form | 3 files | **Land with F.0** |
+| `dd13aab` | **G.0** fix | Persist/disclose scoring mode; F-phase tests; `parent_revision()` alembic helper | ~15 files | **Land with G.0b/G.0c/G.1** |
+| `736b36f` | **G.0b** fix | Embed `scoring_mode` in `scoring_breakdown` JSON (SQLAlchemy drops unknown columns) | 4 files | With G.0 |
+| `383d8ba` | **G.0c** fix | Dashboard tolerates string feedback (SD reports 500ed) | 2 files | With G.0 |
+| `65a456e` | **G.1** docs | Phase G verification / backlog / review topology notes | 1 file docs | **Skim** after reading F/G.0 |
+
+### H → R (`65a456e..711995c`) — 11 commits
+
+| SHA | Role | What / why | Independently reviewable? |
+|-----|------|------------|---------------------------|
+| `594f3d9` | **H.0** docs | Rescue record for at-risk phase21 dangling objects | **Skim** |
+| `9e91e08` | **H.1** docs | This review guide (initial); correct overstated verification | **Skim** (superseded in part by Phase R refresh) |
+| `e8addaf` | **I** feat | Spaced-review schedule over notebook misses; migration `20260907_0008` | After G; practice-only, no mastery move |
+| `dac9c3c` | **J** ops | `HF_HUB_OFFLINE` (etc.) via `runtime_env`; Hub TCP gated on warm MiniLM | Mechanical; pair with §e / §e2 |
+| `29a8998` | **K** docs | Rescued phase21 Verbal UI vs chain — assessment only | **Skim** |
+| `8466c48` | **L** fix | Gate Interview media by `block_category` (Verbal/OA skip) | After K; SSR pin `interviewMediaGate.test.js` |
+| `0d5fd54` | **N** docs | Real job-data engineering assessment (no integration) | **Skim** |
+| `43ac864` | **O** fix | `JOBS_LIVE_FETCH=0`; fixture provenance survives cache | Mechanical Jobs honesty |
+| `bb5702a` | **P** docs+fix | Outbound/LLM audit; Google Fonts CDN removed from default CSS | Audit + narrow CSS gate |
+| `c58e106` | **Q** fix | `LLM_LIVE_FETCH=0`; mode enforced at shared LLM client; adaptive cannot bypass. Full sha `c58e1064f21eedc16bed347be4469f07b80f89e1` (2026-09-07). Files include `modules/llm_outbound_gate.py` + `question_bank.py` gate | Mechanical gating |
+| `711995c` | **R** docs | Protected-file attestation exception; degrade-pattern §e2; inventory through Q | **Skim** |
+
+**No Phase M product commit** is on this chain. Session findings are preserved in `docs/phase_m_delivery.md` (Phase S; incomplete phase; browser verification never finished). See §f and §i. Ports `:18000`/`:5173` may still hold that stack.
+
+Pure documentation / skim-first among H–R: `594f3d9`, `9e91e08`, `29a8998`, `0d5fd54`, the audit half of `bb5702a`, and `711995c`.
+
+### S → X.1 (`711995c..56ec00d`) — 5 commits
+
+| SHA | Role | What / why | Independently reviewable? |
+|-----|------|------------|---------------------------|
+| `3a16de2` | **S** docs | Trailing-whitespace cleanup; pin Phase Q sha; preserve Phase M findings | **Skim** (docs) |
+| `e062e0d` | **T** fix | Jobs `empty_reason` product copy; flag names only in server logs | After O/P copy context |
+| `e5a1bcc` | **U** docs | Execution-service spike; negative result — daemon unreachable, C.2 stays blocked | **Skim** (docs) |
+| `32b4a0b` | **X** docs | Phase X delivery doc + review-guide pointer ONLY; implementation still uncommitted (see X.1 correction) | **Skim** (docs) |
+| `56ec00d` | **X** feat | ml_primitives block category, Layers A+B: 6 packs, catalog, grade(), 503 store path, migration 0009, editor UI, tests; scoring unavailable | After B.1/I persistence pattern |
+
+### LLM question generation — ADJACENT (owner judgment)
+
+Phase P classified the interview question path as **ADJACENT**, not CLEAR and not a VIOLATION: an LLM may generate the question text and the `ideal_answer` / `ideal_keywords` references; the deterministic scorer (and guard) then grades the candidate against those references. The LLM does not return a score, band, readiness number, or guard verdict.
+
+That sits inside the **letter** of the contract (no LLM judge in scoring, readiness, guard decisions, or gap analysis). Whether shaping the answer key this way sits inside the contract’s **intent** is an **owner judgment**, not an established fact on this chain. Reviewers who encounter LLM-authored `ideal_*` fields should treat the classification as ADJACENT and escalate intent to the owner rather than assuming CLEAR. Default configuration keeps LLM dials off (`LLM_LIVE_FETCH=0`, Phase Q).
+
+---
+
+## (b) Risk order (highest first)
+
+Spend the **first hour** here:
+
+1. **`39a7579` (B.1)** — SQLAlchemy persistence + answer submit/finalizing lock. Wrong here corrupts sessions or double-scores.
+2. **`736b36f` + `dd13aab` (G.0/G.0b)** — scoring-mode plumbing on every scored attempt; evidence honesty for degraded SemanticScorer.
+3. **`7002fa2` (F.0)** — self-assessment segregation from mastery/readiness/notebook; touches learning aggregates.
+4. **`8466c48` (L)** — Interview media gate by block category; wrong here reintroduces camera/mic on Verbal/OA.
+5. **`98d3813` (C.1)** — coding bank + 503 boundary + formula; confirm no fake scores on infra failure.
+6. **`daa18b4` (D)** — target context + assistance events; ownership boundaries.
+7. **`a47944a` (E.1)** — system-design self-report path; AV “unavailable” honesty (no speech scores).
+8. **`1601e91` (B)** — large UI/contract surface; review after B.1 semantics are clear.
+
+**Lower risk / mechanical (skim after the above):** Phase J Hub-offline defaults; Phase O Jobs live-fetch gate + provenance; Phase P outbound audit + fonts CDN removal; Phase Q `LLM_LIVE_FETCH` + client-boundary mode gate. These close honesty/outbound holes; they are not persistence or scoring-formula changes.
+
+Named scorer/guard modules (aside from the Phase Q `question_bank.py` gate exception in §c) were **not** formula-edited on this chain. Persistence and submit-lock outrank chrome.
+
+---
+
+## (c) Protected-file attestation
+
+Re-run against tip `c58e106` (Phase R):
+
+```text
+$ git diff --stat 0442493..HEAD -- \
+  interViv_best/backend/scoring/pipeline.py \
+  interViv_best/modules/nlp_scorer.py \
+  interViv_best/modules/nlp_scorer_patch.py \
+  interViv_best/modules/answer_guard.py \
+  interViv_best/modules/semantic_scorer.py \
+  interViv_best/modules/knowledge_graph.py \
+  interViv_best/modules/ner_scorer.py \
+  interViv_best/modules/c4_feedback.py \
+  interViv_best/modules/question_bank.py \
+  interViv_best/modules/model_metadata.json \
+  'interViv_best/modules/*.joblib'
+
+ interViv_best/modules/question_bank.py | 7 +++++++
+ 1 file changed, 7 insertions(+)
+```
+
+```text
+$ git diff --name-status 0442493..HEAD -- <same paths>
+M	interViv_best/modules/question_bank.py
+```
+
+**Conclusion:** among the named protected scorer/guard/bank-module set above, **`question_bank.py` is the only file that differs from Phase A**. Pipeline, nlp/semantic/ner scorers, answer_guard, knowledge_graph, c4_feedback, `model_metadata.json`, and `*.joblib` are unchanged vs `0442493`.
+
+### Authorized exception — Phase Q gate in `question_bank.py`
+
+| Field | Value |
+|-------|--------|
+| Phase | **Q** (`c58e106`) |
+| Reason | Close latent OpenAI/OpenRouter outbound from `_generate_via_llm` under the shared `LLM_LIVE_FETCH` / generation-mode gate (same boundary as `call_llm_with_cache_retry`) |
+| Scope | Gate wiring only |
+
+Full diff vs Phase A (complete; nothing omitted):
+
+```diff
+diff --git a/interViv_best/modules/question_bank.py b/interViv_best/modules/question_bank.py
+index 1c3f41b..edcaa69 100644
+--- a/interViv_best/modules/question_bank.py
++++ b/interViv_best/modules/question_bank.py
+@@ -325,6 +325,13 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
+     global _LAST_LLM_ERROR
+     _LAST_LLM_ERROR = None
+
++    # Phase Q: shared outbound gate (minimal touch on this protected module).
++    from modules.llm_outbound_gate import question_llm_outbound_allowed
++
++    if not question_llm_outbound_allowed():
++        _LAST_LLM_ERROR = "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
++        return None
++
+     provider, api_key, model = _llm_provider()
+     if not provider or not api_key or not model:
+         _LAST_LLM_ERROR = "No supported LLM provider/key/model was configured."
+```
+
+**Gate-only verdict:** no question content added, removed, or altered; no bank CSV/data touched by this diff; when the gate permits a call, generation behavior after the early return is unchanged from Phase A.
+
+### Bank data (separate from the module file)
+
+| Artifact | vs Phase A `0442493` |
+|----------|----------------------|
+| `data/fallback_question_bank.csv` | **Byte-identical** (MD5 `e60b1e32bec52064d2c951a7d3766634`) |
+| `data/interview_dataset_v6.csv` | **Byte-identical** (MD5 `a4d176433776dbb04e9ce56632eeab67`) |
+| `backend/db/phase2_content_bank.py` (MCQ/SQL) | **Byte-identical** (MD5 `e9ecf82e2e61f50df596cd41eceb8cd7`) |
+| `backend/db/phase21_verbal_bank.py` | **Not in A** — added B (`1601e91`); MD5 `05e73d867b75648291d538c476c6dca0` matches phase21 `fe75a32` |
+| `backend/db/phase_c_coding_bank.py` | **Not in A** — added C (`98d3813`); MD5 `3eb5bd436179045c509e520220e9d337` |
+
+**Authorized new scoring modules (not in the frozen “existing modules” list):** `modules/scoring/coding.py` (C), `modules/scoring/system_design.py` (E.1) — deterministic only; no LLM judge.
+
+---
+
+## (d) Migration story
+
+| Revision | Adds |
+|----------|------|
+| `20260907_0004` | Session block/round plan JSON columns; `practice_presets`, `builder_drafts`, `answer_drafts`; round block metadata |
+| `20260907_0005` | `coding_submissions` table |
+| `20260907_0006` | Round `assisted` / `assistance_kinds`; `target_contexts`, `retry_sets`, `bookmarks`, `assistance_events` |
+| `20260907_0007` | `system_design_attempts` table |
+| `20260907_0008` | `review_schedules` (Phase I spaced review) |
+| `20260908_0009` | `ml_primitives_attempts` (Phase X attempts, unscored) |
+
+Chain: `0003 → 0004 → 0005 → 0006 → 0007 → 0008 → 0009`.
+`alembic heads` → **single head** `20260908_0009`.
+No historical migration files were edited after introduction; only new revisions appended.
+
+**`parent_revision()` (G.0):** persistence tests previously pinned absolute parents because Alembic relative `-1` breaks when HEAD advances. `tests/alembic_helpers.py` resolves the current head’s parent dynamically.
+
+---
+
+## (e) Environment-dependent scoring (fresh reader)
+
+SemanticScorer loads **`all-MiniLM-L6-v2` in-process** from the Hugging Face Hub
+cache under `~/.cache/huggingface/hub/…`.
+
+**Phase J finding (see `docs/phase_j_delivery.md`):** on this machine the
+checkpoint is already cached (~87M `model.safetensors`). Without offline env,
+`SentenceTransformer(...)` still opens **TCP to `huggingface.co:443`** for
+Hub **HEAD** / resolve checks. A **403** on that path flips the process into
+sticky lexical fallback and changes **both guard labels and numeric scores**.
+
+With **`HF_HUB_OFFLINE=1`** (and typically `TRANSFORMERS_OFFLINE=1`),
+`huggingface_hub` raises `OfflineModeIsEnabled` **before** socket connect.
+Warm cache → full scorer; **no Hub TCP**. Cold / empty `HF_HOME` → library
+`OSError`, then the app’s existing sticky degrade (fail-fast still not built).
+
+| Mode | How | `scoring_regression` |
+|------|-----|----------------------|
+| full | cached MiniLM + Hub offline env (`backend.runtime_env` / `.env.example`) | **2/8** — always-present: gibberish→repetition (6.06); keyword_stuffing→gibberish (10.00) |
+| degraded | `DISABLE_SEMANTIC_SCORING=1` (same sticky pattern as Hub-403 / cold-cache miss) | **4/8** — above + paraphrase out of band + off_topic guard None |
+
+F.0 exposed mode on `/health`. G.0/G.0b **record `scoring_mode` on each scored attempt** (inside `scoring_breakdown` JSON) and surface it; rows without a stored mode read as **`unknown`** (never guessed).
+
+**Phase J** makes Hub-offline the **recommended local operating configuration**
+so warm machines stay in full mode without an outbound Hub request. That does
+**not** retire fail-fast. Mode-on-attempt remains the durable record if a worker
+runs degraded anyway.
+
+Outbound inventory and LLM/Jobs gates: `docs/phase_p_outbound_audit.md` (updated through Phase Q). Defaults: `HF_HUB_OFFLINE=1`, `JOBS_LIVE_FETCH=0`, `LLM_LIVE_FETCH=0` via `backend/runtime_env.py`. Google Fonts CDN removed from default CSS in Phase P.
+
+---
+
+## (e2) Degrade patterns (four paths, one decision frame)
+
+The codebase documents four failure paths that do **not** agree. Stated once:
+
+| Path | On failure | Pattern |
+|------|------------|---------|
+| **SemanticScorer** (MiniLM / Hub) | Sticky lexical fallback for the process; changes labels and scores | **Silent degrade**. Mode recorded on scored attempts (G.0/G.0b) |
+| **Jobs** live Adzuna fetch | Returns fixture listings as `fixture_fallback` (when live fetch is enabled and fails) | **Silent degrade**. Default: live fetch **off** (`JOBS_LIVE_FETCH=0`, Phase O) |
+| **LLM question / coach** chat completions | Soft `None` → CSV / lexicon / plan fallback | **Silent degrade**. Default: dials **off** (`LLM_LIVE_FETCH=0`, Phase Q); generation also needs mode ∈ `{llm, llm_csv_fallback}` at the client boundary |
+| **Transcription** (Whisper / Hub cold under offline) | `LocalEntryNotFoundError` → HTTP **503** `transcription_unavailable` | **Fail loud** (Phase M Step 0, as recorded in `docs/phase_m_delivery.md`; incomplete phase) |
+
+Three paths degrade silently; **transcription is the outlier** and is the behavior the project’s own honesty rules would favor (unavailable labeled, not a quiet substitute presented as success).
+
+The still-open **fail-fast versus labeled-degrade** product decision (framed since Phase F primarily around SemanticScorer) **applies to all three silent paths**, not only to the scorer. Owner decides once whether missing dependency / failed fetch should abort, surface a durable unavailable label, or continue with a substitute.
+
+**Mode-on-attempt** is the durable safeguard for **scoring** specifically (evidence rows carry `scoring_mode`). Jobs and LLM silent paths have **no equivalent** on evidence rows because their output is context / generation / coaching — not scored attempts.
+
+Do not treat this section as a resolution. It is the decision surface.
+
+---
+
+## (f) Honest capability inventory
+
+**Implemented surfaces (subject to the Phase Z findings above):** auth/home/progress; block practice (Verbal/OA/SQL/Interview) with Phase L media gate (Verbal/OA skip camera/mic); builder presets/drafts; Problems browse + start; learning notebook/retry/assistance labeling; **spaced-review due list + review sessions (practice only)**; target context prefill on Practice/Learn; system-design **self-assessment** (explicitly not measured mastery); scoring-mode disclosure on new attempts; AV capability **reporting** and unavailable-state wiring; Jobs explorer with **fixture provenance / sample banner** (including warm cache, Phase O); offline Google Fonts default (Phase P); ml_primitives block flow (start, stored-ungraded submit, attempt history) — browser-rendered in Z, but immediate expiry blocked ML submission; mixed navigation and stored-submit UI remain unverified.
+
+**Shipped but unavailable:** **coding execution and coding scores** (503 / unscored). Video recording / durable AV blobs / speech scoring (E.2 not started). **ml_primitives candidate scoring** (503 stored-ungraded; Layer A/B oracles run in tests only, pending execution infrastructure).
+
+**Phase M (incomplete):** session findings are recorded in `docs/phase_m_delivery.md` (written in Phase S from the Phase M report — not re-verified end-to-end here). Step 0: local `faster_whisper` `"tiny.en"` cache under `HF_HUB_OFFLINE=1`; cold disposable `HF_HOME` → loud 503. Owner-present browser AV verification (calibration, seven states, real-audio transcription, retention) was **not finished**. Ports `:18000`/`:5173` may still hold that stack. Z subsequently rendered calibration with zero samples and exercised Skip; successful calibration remains unverified. The owner manually verified capture in Z. E.1’s local-server transcription path still has no real-audio browser verification. Z stopped at an AV label entering scoring metadata; no numeric influence was established.
+
+**Never built on this chain:** C.2 live runner; E.2 ffmpeg/blob retention; phase21 **Upload Verbal Ability entry** (rescued blobs only — see `docs/phase_h0_rescue.md`); LLM judge in scoring/readiness/guard/gaps (forbidden).
+
+---
+
+## (g) Outstanding decisions (owner)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Fail-fast vs labeled-degrade | **Open** | Applies to SemanticScorer, Jobs live-fail, and LLM soft-fallback (§e2) |
+| C.2 Docker / live coding runner | **Not started** | Keep 503 seam or authorize Docker. Phase U spike (`phase_u_execution_spike.md`): daemon unreachable (Desktop VM stopped + sandboxed session), nothing demonstrated, C.2 stays blocked; re-spike + owner rulings pending |
+| phase21 Verbal Upload entry snapshot | **Not integrated** | Media gate done in L; Upload entry still skipped |
+| Job data sourcing | **Open** | Engineering: `phase_n_jobs_data_assessment.md`; recommend labeled sample / offline import; live adapter later |
+| ADJACENT question-generation intent | **Open** | Letter vs intent (§a); default dials off in Q |
+| Home target picker vs `/target-context/me` | Known gap | Prefill inconsistency |
+
+---
+
+## (h) Reproduction instructions
+
+### Disposable environment
+
+Use ports that do **not** collide with a possible Phase M stack on `:18000`/`:5173` (e.g. `18001` / `5174`).
+
+```bash
+cd "/Users/praneetsharma/Downloads/mega 2 copy/.worktrees/phase-b-block-practice/interViv_best"
+rm -f /tmp/interviv_review_disposable.db
+DATABASE_URL='sqlite:////tmp/interviv_review_disposable.db' .venv/bin/alembic upgrade head
+
+DATABASE_URL='sqlite:////tmp/interviv_review_disposable.db' \
+INTERVIV_USE_MEMORY_DB=false \
+JWT_SECRET_KEY='review-disposable-secret-key-32bytes!!' \
+OPENAI_API_KEY= OPENROUTER_API_KEY= \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 \
+JOBS_LIVE_FETCH=0 LLM_LIVE_FETCH=0 \
+QUESTION_GENERATION_MODE=csv QUESTION_REQUIRE_LLM=false \
+ADZUNA_APP_ID= ADZUNA_APP_KEY= \
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 18001
+
+# other terminal
+cd frontend && VITE_API_BASE_URL=http://127.0.0.1:18001 npm run dev -- --host 127.0.0.1 --port 5174
+```
+
+`runtime_env.py` already setdefaults Hub / Jobs / LLM offline flags; the explicit env above documents the contract. Default CSS does **not** load Google Fonts (Phase P).
+
+Signup via the real UI. **Never** point at the developer’s personal database.
+
+Confirm mode: `curl -s http://127.0.0.1:18001/health` → `scoring.mode` `full` | `lexical_fallback_degraded`.
+
+### Suites (mode recorded)
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+cd frontend && npm test && npm run build
+
+HF_HUB_OFFLINE=1 .venv/bin/python scripts/scoring_regression.py          # expect 2/8 fail full (6/8 pass)
+DISABLE_SEMANTIC_SCORING=1 HF_HUB_OFFLINE=1 .venv/bin/python scripts/scoring_regression.py  # expect 4/8 fail
+
+.venv/bin/alembic heads   # 20260908_0009
+# After pytest: restore docs/human_baseline_report.md
+# MD5 5421f9f0fd6efad395666c545e5cf76a, 230 lines
+git checkout -- docs/human_baseline_report.md
+```
+
+### Rescue refs (do not merge)
+
+```bash
+git show-ref | grep refs/rescue/
+# docs: interViv_best/docs/phase_h0_rescue.md
+```
+
+---
+
+## (i) Findings list (known, unfixed)
+
+| Finding | Status |
+|---------|--------|
+| Jobs: if `JOBS_LIVE_FETCH=1` and live fetch fails → silent fixture fallback | Deferred with sourcing decision (O/P/Q) |
+| Jobs: sample `empty_reason` named `JOBS_LIVE_FETCH` / `ADZUNA_APP_*` | **Closed in Phase T** — product copy; flag names only in server logs |
+| Jobs freshness line still renders `source: fixture` (and `fixture_fallback` empty_reason still says “Adzuna” / “fixture”) | Finding — not env-flag class; left untouched (Phase O provenance/freshness) |
+| LLM `last_runtime_error` / `_LAST_LLM_ERROR` strings name `LLM_LIVE_FETCH` / `QUESTION_GENERATION_MODE` | Finding — may surface via `llm_fallback_reason` on question payloads; not Jobs copy; leave for a later copy pass |
+| Three silent-degrade paths (SemanticScorer, Jobs live-fail, LLM soft fallback) vs transcription fail-loud | Decision open — see §e2 |
+| Phase M / Z AV backlog | PARTIAL — owner verified capture in Z; two states rendered, five remain unverified; server transcription/retention still open |
+| Calibration | PARTIAL — Z rendered blank/zero-sample calibration and successful Skip; ten-second real-frame completion unverified |
+| E.1 transcription path never processed real audio | Unexercised — recorded in Phase M doc |
+| 409 message visible in UI | PARTIAL, observed failure — Z stale tab reached server 409 but no visible error; Z-F06 |
+| Target does not override explicit topic | VERIFIED — Z explicit Python retained after TCS/entry-role target save |
+| Builder coding start in browser | VERIFIED — Z builder → calibration Skip → Two Sum editor; not execution proof |
+| AV seven states in live UI | PARTIAL — not-requested and denied rendered in Z; five states unverified |
+| Real mic/camera | VERIFIED by owner manual evidence in Z; does not prove local-server transcription |
+| C.2 Docker execution | Not started |
+| E.2 AV artifacts | Not started |
+| phase21 Verbal Upload entry | Not integrated (L gated media only) |
+| ADJACENT LLM question generation vs contract intent | Owner judgment (§a) |
+| Home target picker vs `/target-context/me` | Known gap |
+| AV label enters scoring interface/metadata | Z-F00, source-confirmed; verification stopped; no live numeric influence established |
+| Immediate typed-round 00:00 / ML Submit disabled | Z-F01 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Cause: SQLite read dropped tzinfo, offset-less deadline parsed as browser-local time. See [Phase AB delivery](phase_ab_delivery.md) |
+| Expired unscored Coding report shows 0% / Needs Work | Z-F02 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Report client mapped a null average to 0. See [Phase AB delivery](phase_ab_delivery.md) |
+| Cross-account builder draft | Z-F03 — **fixed in code (Phase AB)**; browser verification still open (STILL BLOCKED). Local draft key per account; legacy key never read, cleared on signin/signup/signout. See [Phase AB delivery](phase_ab_delivery.md) |
+| Account-two server builder drafts that already hold account one's blocks from before the Z-F03 fix | Pre-existing rows; **owner decision** needed on repair. Not repaired (Phase AB) |
+| Coding rounds zeroed (`final_score` 0.0) before Phase Y still count as scored in averages, coverage and item outcomes | Pre-existing rows; **owner decision** needed on repair. Not repaired (Phase AB) |
+| Other SQLite-read timestamps cross the API without a UTC offset (drafts, presets, bookmarks, retry sets, review `due_at`, user and skill-graph times, system-design attempts) | Open — Phase AB scan; not fixed. Learn renders review `due_at` with `toLocaleString`, so it would display shifted by the viewer's UTC offset (source/API inference, not rendered). See [Phase AB delivery](phase_ab_delivery.md) |
+| Repeated OA wrong result question / answered count | Z-F04/05, P2 — observed across two real rounds |
+| Coding calibration / intermittent fetch failures / execution copy | Z-F07–09 — details and evidence limits in Phase Z |
+| Frozen reports `human_baseline_report.md` / `persona_validation_report.md` retain markdown hard-break trailing spaces | Left untouched to preserve committed MD5 / frozen research bytes (Phase S) |
+
+---
+
+## Related delivery docs
+
+Phase X is delivered as Layers A and B only: [ML primitives](phase_x_ml_primitives.md).
+Candidate ML submissions are stored and ungraded; pack oracles are proven in tests.
+
+`phase_a_delivery.md` … `phase_g_delivery.md`, `phase_h0_rescue.md`, `phase_i_delivery.md`, `phase_j_delivery.md`, `phase_k_verbal_assessment.md`, `phase_m_delivery.md` (incomplete; findings preserved in S), `phase_n_jobs_data_assessment.md`, `phase_o_delivery.md`, `phase_p_outbound_audit.md` (includes Phase Q closure notes), `phase_u_execution_spike.md` (execution-service spike; negative result — daemon unreachable, C.2 stays blocked). Prefer this guide for onboarding; use per-phase docs for detailed evidence tables (note Phase H downgrades in F/G where VERIFIED had been overstated).
+
+## Phase Z delivery
+
+Canonical itemized backlog: [Phase Z browser verification](phase_z_browser_verification.md). Rows in E/F/G/I/K/M/N/X and D have attribution/status follow-ups. The backlog remains incomplete at the user-defined AV/scoring stop condition. Documentation only; no fixes, push, merge or blocked implementation. The unrelated untracked worktree-root workspace file is preserved and prevents an unqualified-clean claim.
+
+## Phase AA delivery
+
+Historical preservation record of another checkout (`7498cdb`). Not copied onto
+this unify-shell branch: the Tree 2 inventory and GGUF rescue notes describe a
+different worktree. Hint-coach was not ported.
+
+## Phase AB delivery
+
+[Phase AB delivery](phase_ab_delivery.md) fixes three Phase Z defects in code:
+- **Z-F03:** per-account builder draft key; the legacy key is cleared on signin, signup and signout.
+- **Z-F02:** the session report reads a null average as not measured and lists unscored rounds.
+- **Z-F01:** the SQLite read restores UTC on round and session timestamps.
+
+No migration; no scorer, guard or bank changes. All three browser checks are **STILL BLOCKED**: no browser tool was available and nothing was rendered. Manual steps are in the delivery doc. Deferred data repairs and the remaining naive API timestamps are in §i.

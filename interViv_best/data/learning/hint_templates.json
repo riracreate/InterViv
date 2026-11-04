@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "note": "Curated, answer-free study guidance. Item hints combine these templates with facts already visible to the candidate (stem skill, schema, constraints, topics). Never include answer keys, reference solutions or hidden test data here.",
+  "skills": {
+    "dbms": {
+      "overview": "Relational design and transactions: keys, normal forms, joins, indexing and ACID guarantees.",
+      "checklist": ["Name the anomaly a normal form removes", "Say which isolation level prevents which read phenomenon", "Explain what an index speeds up and what it costs on writes"]
+    },
+    "sql": {
+      "overview": "Write queries that read the schema first: which tables hold the facts, how they join, then filter and aggregate.",
+      "checklist": ["List the tables and join keys before writing SELECT", "Decide row-level filters (WHERE) vs group filters (HAVING)", "Check NULL handling and duplicates"]
+    },
+    "dsa": {
+      "overview": "Pick a data structure from the operations you need most, then state time and space complexity.",
+      "checklist": ["Name the dominant operation (lookup, insert, min, range)", "State the brute-force complexity first", "Look for a structure that removes the inner loop"]
+    },
+    "oop": {
+      "overview": "Encapsulation, inheritance, polymorphism and composition, with when to prefer each.",
+      "checklist": ["Give a concrete example for each principle", "Explain composition over inheritance with a trade-off", "Connect a design pattern to the problem it solves"]
+    },
+    "operating systems": {
+      "overview": "Processes and threads, scheduling, synchronization, memory management and file systems.",
+      "checklist": ["Distinguish process vs thread resources", "Name the four deadlock conditions", "Explain paging and what a TLB miss costs"]
+    },
+    "computer networks": {
+      "overview": "Layers, TCP vs UDP, HTTP, DNS, routing and how a request travels end to end.",
+      "checklist": ["Trace a browser request from DNS to response", "Contrast TCP and UDP guarantees", "Explain what the handshake and congestion control are for"]
+    },
+    "system design": {
+      "overview": "Clarify requirements, sketch APIs and data, then scale and discuss trade-offs.",
+      "checklist": ["State functional and non-functional requirements with numbers", "Name the bottleneck and how you would remove it", "Offer one alternative and say what you gave up"]
+    },
+    "machine learning": {
+      "overview": "Bias and variance, evaluation metrics, regularization, and how models fail in practice.",
+      "checklist": ["Match the metric to the error that matters", "Say how you would detect overfitting", "Explain one regularization method and its effect"]
+    },
+    "python": {
+      "overview": "Data model, iteration and generators, comprehensions, mutability and common library behaviour.",
+      "checklist": ["Predict mutation vs copy behaviour", "Explain what a generator saves", "Know the complexity of list, dict and set operations"]
+    },
+    "verbal ability": {
+      "overview": "Vocabulary in context, sentence correction and reading comprehension.",
+      "checklist": ["Read the whole sentence before choosing", "Eliminate options that change the meaning", "Check agreement and tense"]
+    },
+    "hr/professional judgment": {
+      "overview": "Structured answers that show ownership, communication and judgment.",
+      "checklist": ["Use situation, action, result", "Name the trade-off you weighed", "Say what you would do differently"]
+    }
+  },
+  "mcq_approach": "Restate what the stem asks in your own words, eliminate options that contradict a definition you know, and compare the remaining options on the exact wording.",
+  "coding_topics": {
+    "arrays": "Consider one pass with running state; check whether sorting or a prefix sum turns the problem into a scan.",
+    "hashing": "A hash map or set can replace an inner search loop: store what you have seen keyed by what you will need to look up.",
+    "strings": "Think in characters or counts; a frequency map or two indices often avoids rebuilding strings.",
+    "sliding-window": "Grow the right edge, shrink the left edge while the window breaks the rule, and update the answer at each step.",
+    "two-pointers": "Move two indices toward each other (or together) when the input is sorted or the condition is monotonic.",
+    "sorting": "Sort first if order makes neighbours meaningful; then the remaining work is often a single scan.",
+    "stack": "Use a stack when the most recent unmatched item decides what happens next (brackets, next greater element).",
+    "greedy": "Find a local choice you can prove never hurts the final answer, then apply it repeatedly.",
+    "math": "Look for an invariant or formula; check overflow and edge values such as zero and negatives.",
+    "dp": "Define the state in words, write the transition from smaller states, then choose an evaluation order.",
+    "graphs": "Model nodes and edges explicitly; choose BFS for shortest unweighted paths and DFS for reachability.",
+    "bfs": "Process the graph level by level with a queue and mark nodes visited when you enqueue them."
+  },
+  "coding_general": "Trace the visible examples by hand, write the brute force in words, state its complexity, then remove the slowest step.",
+  "sql_constructs": {
+    "join": "The answer combines facts from more than one table: join on the key that links them.",
+    "left_join": "Some rows have no match in the other table and must still appear: keep them with an outer join.",
+    "group_by": "The result has one row per group: aggregate with GROUP BY on the grouping columns.",
+    "having": "The filter applies to an aggregate, so it belongs after grouping.",
+    "subquery": "A value you compare against is itself computed from the data (for example an average): compute it in a subquery.",
+    "window": "Each row needs a rank or running value within its group: a window function keeps the rows while computing it.",
+    "order_by": "The output order is part of the answer: sort explicitly.",
+    "distinct": "Duplicates would appear otherwise: deduplicate the result.",
+    "aggregate": "The question asks for a count, sum, average, minimum or maximum."
+  }
+}

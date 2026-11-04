@@ -10,6 +10,9 @@ os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("QUESTION_GENERATION_MODE", "llm_csv_fallback")
 os.environ.setdefault("QUESTION_REQUIRE_LLM", "false")
 os.environ.setdefault("QUESTION_LLM_RETRY_BASE_SECONDS", "0")
+# Phase Q: task8 exercises the live LLM client with stubs; force opt-in
+# (setdefault is insufficient if runtime_env already filled 0).
+os.environ["LLM_LIVE_FETCH"] = "1"
 
 from modules import question_runtime as qr  # noqa: E402
 
@@ -21,6 +24,18 @@ def test_question_cache_key_uses_target_concepts_tuple() -> None:
     assert qr.question_cache_key(base) != qr.question_cache_key(targeted)
     assert qr.question_cache_key(targeted) == qr.question_cache_key(
         qr.QuestionCacheContext(" dsa ", "GENERAL", "Medium", ("tree",))
+    )
+
+
+def test_question_cache_key_includes_company_and_role() -> None:
+    amazon = qr.QuestionCacheContext("DSA", "general", "medium", (), company="Amazon", role="SDE")
+    google = qr.QuestionCacheContext("DSA", "general", "medium", (), company="Google", role="SDE")
+    none = qr.QuestionCacheContext("DSA", "general", "medium", ())
+    assert qr.question_cache_key(amazon).startswith("interviv:question:v2:")
+    assert qr.question_cache_key(amazon) != qr.question_cache_key(google)
+    assert qr.question_cache_key(amazon) != qr.question_cache_key(none)
+    assert qr.question_cache_key(amazon) == qr.question_cache_key(
+        qr.QuestionCacheContext("DSA", "general", "medium", (), company=" amazon ", role="SDE")
     )
 
 

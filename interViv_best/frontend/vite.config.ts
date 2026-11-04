@@ -10,6 +10,7 @@ export default defineConfig({
           react: ["react", "react-dom", "react-router-dom"],
           recharts: ["recharts"],
           motion: ["motion"],
+          "face-api": ["face-api.js"],
         },
       },
     },

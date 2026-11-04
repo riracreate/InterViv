@@ -67,14 +67,74 @@ _TECHNICAL_OR_MEANINGFUL = frozenset({
     "node", "python", "react", "redis", "rest", "sql",
 })
 
+# Letter pairs that occur in at least 10 distinct words (6+ letters) of the
+# question bank's own reference text: every question and ideal answer in
+# data/interview_dataset_v6.csv and data/ml_training_data.csv. Candidate
+# answers were not used. Frozen here so the guard does not drift with the data;
+# scripts/build_guard_bigrams.py regenerates and checks both tables (scorer v3).
 _COMMON_BIGRAMS = frozenset({
-    "al", "an", "ar", "at", "ay", "be", "bi", "by", "ce", "ch", "ck",
-    "co", "da", "de", "di", "du", "ea", "ed", "em", "en", "er", "es",
-    "et", "fo", "gh", "ha", "he", "hi", "ic", "id", "ig", "il", "in",
-    "io", "is", "it", "iv", "le", "li", "me", "mi", "mp", "na", "nd",
-    "ne", "ng", "ni", "no", "nt", "on", "oo", "or", "ou", "pe", "pr",
-    "qu", "ra", "rc", "re", "ri", "ro", "ry", "sc", "se", "ss", "st",
-    "ta", "te", "th", "ti", "to", "uc", "ul", "ur", "ve", "vi", "wo",
+    "ab", "ac", "ad", "ag", "ai", "ak", "al", "am", "an", "ap", "ar", "as",
+    "at", "au", "av", "ay", "ba", "be", "bi", "bl", "bo", "br", "bs", "bu",
+    "ca", "cc", "ce", "ch", "ci", "ck", "cl", "co", "cr", "ct", "cu", "cy",
+    "da", "dd", "de", "di", "dl", "do", "dr", "ds", "du", "ea", "eb", "ec",
+    "ed", "ee", "ef", "eg", "eh", "ei", "el", "em", "en", "eo", "ep", "eq",
+    "er", "es", "et", "eu", "ev", "ew", "ex", "fa", "fe", "ff", "fi", "fl",
+    "fo", "fr", "fu", "fy", "ga", "ge", "gg", "gh", "gi", "gl", "gm", "gn",
+    "go", "gr", "gs", "gu", "ha", "he", "hi", "hm", "ho", "hr", "ht", "hy",
+    "ia", "ib", "ic", "id", "ie", "if", "ig", "il", "im", "in", "io", "ip",
+    "ir", "is", "it", "iv", "iz", "je", "ke", "ki", "ks", "la", "ld", "le",
+    "li", "ll", "lo", "ls", "lt", "lu", "lv", "ly", "ma", "mb", "me", "mi",
+    "mm", "mo", "mp", "ms", "mu", "na", "nc", "nd", "ne", "nf", "ng", "ni",
+    "nl", "nn", "no", "ns", "nt", "nu", "nv", "oa", "ob", "oc", "od", "of",
+    "og", "oi", "ok", "ol", "om", "on", "oo", "op", "or", "os", "ot", "ou",
+    "ov", "ow", "pa", "pe", "ph", "pi", "pl", "po", "pp", "pr", "ps", "pt",
+    "pu", "qu", "ra", "rc", "rd", "re", "rf", "rg", "ri", "rk", "rl", "rm",
+    "rn", "ro", "rp", "rr", "rs", "rt", "ru", "rv", "ry", "sa", "sc", "se",
+    "sf", "sh", "si", "sl", "sm", "so", "sp", "ss", "st", "su", "sy", "ta",
+    "tc", "te", "th", "ti", "tl", "to", "tr", "ts", "tt", "tu", "ty", "ua",
+    "ub", "uc", "ud", "ue", "ug", "ui", "ul", "um", "un", "up", "ur", "us",
+    "ut", "va", "ve", "vi", "vo", "wa", "we", "wi", "wn", "wo", "xc", "xe",
+    "xi", "xp", "xt", "yi", "yn", "yp", "ys", "za", "ze", "zi",
+})
+
+# Letter pairs that occur in no 6+ letter word of that same reference text.
+# Two of them in one word mark it as nonsense ("gctcititxi": gc, tx).
+_UNSEEN_BIGRAMS = frozenset({
+    "aa", "ah", "ao", "aq", "bf", "bg", "bk", "bq", "bv", "bw", "bx", "bz",
+    "cb", "cd", "cf", "cj", "cn", "cv", "cw", "cx", "cz", "dk", "dn", "dq",
+    "dx", "dz", "ej", "fb", "fd", "fg", "fh", "fj", "fk", "fn", "fp", "fq",
+    "fv", "fw", "fx", "fz", "gc", "gd", "gj", "gk", "gp", "gv", "gw", "gx",
+    "gz", "hc", "hd", "hg", "hh", "hj", "hk", "hl", "hv", "hx", "hz", "ih",
+    "ii", "iw", "iy", "jb", "jc", "jd", "jf", "jg", "jh", "ji", "jj", "jl",
+    "jm", "jn", "jp", "jq", "jr", "js", "jt", "jv", "jw", "jx", "jy", "jz",
+    "kb", "kd", "kh", "kj", "kk", "km", "kq", "kv", "kx", "kz", "lj", "lk",
+    "lq", "lx", "lz", "md", "mg", "mh", "mj", "mk", "mr", "mt", "mv", "mx",
+    "mz", "nx", "nz", "oq", "pb", "pj", "pn", "pq", "pv", "px", "pz", "qa",
+    "qb", "qc", "qd", "qe", "qf", "qg", "qh", "qi", "qj", "qk", "qm", "qn",
+    "qo", "qp", "qq", "qr", "qs", "qt", "qv", "qw", "qx", "qy", "qz", "rj",
+    "rq", "rx", "rz", "sb", "sr", "sv", "sx", "sz", "tj", "tq", "tx", "uh",
+    "uj", "uk", "uq", "uv", "uw", "ux", "uy", "uz", "vb", "vc", "vd", "vf",
+    "vg", "vh", "vj", "vk", "vl", "vm", "vp", "vq", "vr", "vs", "vv", "vw",
+    "vx", "vy", "vz", "wc", "wd", "wg", "wj", "wk", "wm", "wp", "wq", "wu",
+    "wv", "ww", "wx", "wy", "wz", "xb", "xd", "xj", "xk", "xl", "xm", "xn",
+    "xo", "xq", "xs", "xu", "xv", "xw", "xx", "xz", "yd", "yf", "yh", "yj",
+    "yk", "yq", "yu", "yv", "yx", "yy", "zb", "zc", "zd", "zf", "zg", "zh",
+    "zj", "zk", "zl", "zm", "zn", "zp", "zq", "zs", "zt", "zu", "zv", "zw",
+    "zx", "zy", "zz",
+})
+
+# A 6+ letter word is English-like when at least this share of its letter
+# pairs is common. Unusual vowel/consonant shape counts against a word only
+# when its share is also below the softer limit.
+_COMMON_BIGRAM_MIN_SHARE = 0.60
+_ODD_SHAPE_MAX_SHARE = 0.75
+
+# Function words that signal a cut-off mid-clause when they end the answer.
+_DANGLING_ENDINGS = frozenset({
+    "a", "an", "the", "to", "of", "and", "or", "but", "with", "for",
+    "from", "by", "as", "that", "which", "who", "whom", "whose",
+    "into", "onto", "upon", "over", "under", "about", "like", "than",
+    "then", "when", "while", "where", "because", "if", "whether",
 })
 
 
@@ -162,12 +222,14 @@ def _repeated_pattern(token: str) -> bool:
     return False
 
 
-def _is_meaningful_token(token: str) -> bool:
+def _is_meaningful_token(token: str, known: frozenset[str] = frozenset()) -> bool:
     token = token.lower()
     if token in _TECHNICAL_OR_MEANINGFUL:
         return True
     if len(token) <= 2 or token in _STOPWORDS or token in _FLUFF_VOCAB:
         return False
+    if token in known:
+        return True
     if _looks_like_nonsense_token(token):
         return False
     return True
@@ -183,22 +245,41 @@ def _looks_like_nonsense_token(token: str) -> bool:
         return True
     if _max_char_run(token) >= 4:
         return True
-    if len(token) >= 8 and _max_consonant_run(token) >= 4:
+    if len(token) < 6 or token in _TECHNICAL_OR_MEANINGFUL:
+        return False
+    share = _common_bigram_ratio(token)
+    if share < _COMMON_BIGRAM_MIN_SHARE:
         return True
-    if len(token) >= 6:
-        vowel_ratio = _vowel_ratio(token)
-        if vowel_ratio < 0.24 or vowel_ratio > 0.82:
-            return True
-        if token not in _TECHNICAL_OR_MEANINGFUL and _common_bigram_ratio(token) < 0.45:
-            return True
-    return False
+    if sum(token[i : i + 2] in _UNSEEN_BIGRAMS for i in range(len(token) - 1)) >= 2:
+        return True
+    # Real words such as "branch" or "abstraction" have one vowel or four
+    # consonants in a row; that shape alone is not evidence of nonsense.
+    vowel_ratio = _vowel_ratio(token)
+    odd_shape = (
+        vowel_ratio < 0.24
+        or vowel_ratio > 0.82
+        or (len(token) >= 8 and _max_consonant_run(token) >= 4)
+    )
+    return odd_shape and share < _ODD_SHAPE_MAX_SHARE
 
 
-def _nonsense_token_ratio(tokens: list[str]) -> float:
+def _reference_vocabulary(*texts: str) -> frozenset[str]:
+    """Words the question itself uses (question, ideal answer, keywords).
+
+    A word the reference material uses is never counted as nonsense, which
+    protects domain terms ("dijkstra", "kruskal") that letter statistics miss.
+    """
+    return frozenset(word for text in texts if text for word in _alpha_tokens(text))
+
+
+def _nonsense_token_ratio(tokens: list[str], known: frozenset[str] = frozenset()) -> float:
     alpha = [token for token in tokens if token.isalpha()]
     if not alpha:
         return 0.0
-    return sum(1 for token in alpha if _looks_like_nonsense_token(token)) / len(alpha)
+    return sum(
+        1 for token in alpha
+        if token.lower() not in known and _looks_like_nonsense_token(token)
+    ) / len(alpha)
 
 
 # ── Shared rule helpers ──────────────────────────────────────────────────────
@@ -207,8 +288,9 @@ def _check_basic_rules(
     answer_text: str,
     ideal_keywords: str,
     question_text: str = "",
+    ideal_answer: str = "",
 ) -> dict | None:
-    """Run the v1 rules 1–5 (+ parroting at 3.5); return cap dict or None."""
+    """Run the v1 rules 1–5 (+ parroting / truncated); return cap dict or None."""
     text = (answer_text or "").strip()
 
     if len(text) == 0:
@@ -216,6 +298,7 @@ def _check_basic_rules(
 
     tokens = _word_tokens(text)
     alpha_tokens = _alpha_tokens(text)
+    known = _reference_vocabulary(question_text, ideal_keywords, ideal_answer)
 
     if len(text) < 5:
         return _cap("too_short", 20)
@@ -233,7 +316,7 @@ def _check_basic_rules(
     if (
         _vowel_ratio(text) < 0.24
         or _GIBBERISH_PATTERNS.search(text.lower())
-        or _nonsense_token_ratio(alpha_tokens) >= 0.50
+        or _nonsense_token_ratio(alpha_tokens, known) >= 0.50
     ):
         return _cap("gibberish", 10)
 
@@ -254,6 +337,16 @@ def _check_basic_rules(
             if jaccard > 0.55 and len(extra) < 8:
                 return _cap("question_parroting", 25)
 
+    # Truncated on-topic fragment before stuffing — incomplete sentences often
+    # look like keyword lists to the stuffing ratio check.
+    truncated = _check_truncated_fragment(
+        text,
+        ideal_keywords=ideal_keywords,
+        ideal_answer=ideal_answer,
+    )
+    if truncated is not None:
+        return truncated
+
     # Keyword stuffing intentionally before too-short so short keyword spam
     # ("stateless caching URI HTTP JSON") gets the harder gaming cap.
     if ideal_keywords and ideal_keywords.strip() and tokens:
@@ -265,10 +358,15 @@ def _check_basic_rules(
             if kw_ratio > 0.45 and len(non_kw_tokens) < 8:
                 return _cap("keyword_stuffing", 35)
 
-    meaningful_tokens = [token for token in alpha_tokens if _is_meaningful_token(token)]
+    meaningful_tokens = [token for token in alpha_tokens if _is_meaningful_token(token, known)]
     if len(tokens) < 4:
         return _cap("too_short", 20)
     if len(tokens) < 8 and len(meaningful_tokens) < 4:
+        return _cap("too_short", 20)
+    # Under eight words and under half the reference answer: a fragment, even
+    # when every word is real ("Deadlock occurs when processes are permanently.").
+    # Questions whose reference answer is itself short are unaffected.
+    if ideal_answer and len(tokens) < 8 and len(tokens) < 0.5 * len(_word_tokens(ideal_answer)):
         return _cap("too_short", 20)
     if len(tokens) >= 8 and len(meaningful_tokens) < 3:
         return _cap("gibberish", 10)
@@ -310,6 +408,65 @@ def check_answer_quality(
 
 # ── v2: fluff, off-topic ────────────────────────────────────────────────────
 # (Question parroting now lives in _check_basic_rules so v1 catches it too.)
+
+
+def _ends_as_truncated_fragment(text: str) -> bool:
+    """True when the answer appears cut off mid-thought (dangling close)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t[-1] in ",;:—":
+        return True
+    body = t.rstrip(".!?…")
+    words = _word_tokens(body)
+    if not words:
+        return False
+    if words[-1] in _DANGLING_ENDINGS:
+        return True
+    # Short cutoffs like "… from common." / "… for machine."
+    if 2 <= len(words) <= 12 and words[-2] in _DANGLING_ENDINGS:
+        return True
+    return False
+
+
+def _is_on_topic_fragment(
+    answer_text: str,
+    ideal_keywords: str,
+    ideal_answer: str,
+) -> bool:
+    """Require topical overlap so off-topic short text is not called truncated."""
+    ans = _content_tokens(answer_text)
+    if not ans:
+        return False
+    kw = _keyword_token_set(ideal_keywords)
+    if kw and (ans & kw):
+        return True
+    ideal = _content_tokens(ideal_answer)
+    if not ideal:
+        return False
+    overlap = len(ans & ideal)
+    if overlap >= 2:
+        return True
+    return overlap / len(ans | ideal) >= 0.15
+
+
+def _check_truncated_fragment(
+    answer_text: str,
+    ideal_keywords: str = "",
+    ideal_answer: str = "",
+) -> dict | None:
+    """
+    Truncated on-topic fragment: topical start, cut off mid-clause.
+
+    Fires only when basic length rules did not already cap the answer.
+    Cap only — does not replace scoring.
+    """
+    text = (answer_text or "").strip()
+    if not _ends_as_truncated_fragment(text):
+        return None
+    if not _is_on_topic_fragment(text, ideal_keywords, ideal_answer):
+        return None
+    return _cap("truncated_fragment", 25)
 
 
 def _check_low_density(answer_tokens: list[str]) -> dict | None:
@@ -365,6 +522,235 @@ def _check_off_topic(
     return None
 
 
+# ── Entity-swap detection ─────────────────────────────────────────────────────
+# Comparison questions ("difference between TCP and UDP") are where embedding
+# similarity and keyword coverage are blind: an answer that gives TCP's
+# properties to UDP and vice versa scores like a correct one. This check reads
+# the reference answer to learn which properties belong to which side, then
+# counts how often the candidate attaches them to the other side.
+#
+# Deliberately conservative: it is a no-op unless the question names a clear
+# A/B pair and the reference gives each side at least one distinctive property.
+# Clauses that mention both sides or contain a negation are not counted.
+
+ENTITY_SWAP_CAP = 35
+ENTITY_SWAP_MIN_CROSSED = 2
+ENTITY_SWAP_RATIO = 2.0
+
+_CONTRAST_PATTERNS = (
+    re.compile(r"\bdifferences?\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|with|for|and\s+when|and\s+how|and\s+why)\b|$)", re.I),
+    re.compile(r"\bdistinguish\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|with|for)\b|$)", re.I),
+    re.compile(r"\bcompare\s+(?:and\s+contrast\s+)?(?P<a>.+?)\s+(?:and|with|to|vs\.?|versus)\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|for)\b|$)", re.I),
+    re.compile(r"\bhow\s+(?:does|do|is|are)\s+(?P<a>.+?)\s+differ(?:ent)?\s+from\s+(?P<b>.+?)(?=[?.,:;(]|\s+(?:in|when|for)\b|$)", re.I),
+    re.compile(r"(?P<a>[\w+#\-/ ]+?)\s+(?:vs\.?|versus)\s+(?P<b>[\w+#\-/ ]+?)(?=[?.,:;(]|$)", re.I),
+)
+
+# Leading words a question wraps around the entity phrase.
+_PHRASE_FILLER = frozenset({
+    "the", "a", "an", "between", "of", "what", "is", "are", "explain",
+    "describe", "difference", "differences", "key", "main", "major",
+})
+
+# Parentheses are not split points: a parenthetical elaborates its own clause
+# ("use copy.deepcopy() for deep copies").
+_CLAUSE_SPLIT = re.compile(
+    r"[;\n]+|[.!?]+(?=\s|$)|,|\b(?:whereas|while|but|however|unlike|in\s+contrast|on\s+the\s+other\s+hand|compared\s+(?:to|with)|as\s+opposed\s+to)\b",
+    re.I,
+)
+
+# A clause that opens with one of these refers back to the previous subject,
+# even if it later uses a side's name as an ordinary noun ("It guarantees
+# ordered pod deployment" is still about the StatefulSet).
+_PRONOUN_OPENERS = frozenset({"it", "its", "they", "their", "this", "these", "such"})
+
+_SWAP_NEGATION = re.compile(
+    r"\b(?:not|no|never|isn't|isnt|aren't|arent|doesn't|doesnt|don't|dont|without|cannot|can't|cant|neither|nor|lacks?)\b",
+    re.I,
+)
+
+# Words that carry no side-specific property. Comparative words are excluded
+# because "more"/"less" flip meaning depending on which side is the subject.
+_SWAP_STOPWORDS = _STOPWORDS | frozenset({
+    "has", "have", "had", "its", "their", "they", "them", "there", "these",
+    "those", "than", "more", "less", "both", "also", "only", "each", "other",
+    "same", "such", "used", "use", "uses", "using", "like", "into", "from",
+    "between", "difference", "differences", "whereas", "while", "however",
+    "unlike", "because", "since", "then", "than", "one", "two", "very",
+    "much", "many", "most", "some", "any", "all", "will", "may", "might",
+    "must", "not", "never", "without", "which", "where", "while", "example",
+    "examples", "case", "cases", "typically", "usually", "generally", "often",
+    "way", "ways", "thing", "things", "type", "types", "called",
+    "new", "make", "makes", "made", "create", "creates", "created",
+    "good", "better", "work", "works", "based", "need", "needs",
+    "provide", "provides", "allow", "allows", "support", "supports",
+    "handle", "handles", "completely", "fully", "just", "still",
+})
+
+
+def _swap_stem(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if token.endswith("sses"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith(("ches", "shes", "xes", "zes")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def _swap_tokens(text: str) -> list[str]:
+    return [_swap_stem(t) for t in re.findall(r"[a-z0-9+#]+", text.lower())]
+
+
+def _clean_entity_phrase(phrase: str) -> list[str]:
+    tokens = _swap_tokens(phrase)
+    while tokens and tokens[0] in _PHRASE_FILLER:
+        tokens.pop(0)
+    return tokens
+
+
+def _contrast_pair(question_text: str) -> tuple[set[str], set[str], set[str]] | None:
+    """Return (side A tokens, side B tokens, shared tokens) for a comparison question.
+
+    "shallow copy and deep copy" -> ({"shallow"}, {"deep"}, {"copy"}); the
+    shared head noun identifies neither side. "supervised and unsupervised
+    learning" is read as "supervised learning" vs "unsupervised learning".
+    """
+    if not question_text:
+        return None
+    for pattern in _CONTRAST_PATTERNS:
+        match = pattern.search(question_text)
+        if not match:
+            continue
+        a = _clean_entity_phrase(match.group("a"))
+        b = _clean_entity_phrase(match.group("b"))
+        if not a or not b or len(a) > 4 or len(b) > 4:
+            return None
+        # Elided shared head: "supervised and unsupervised learning".
+        if len(a) == 1 and len(b) > 1:
+            a = a + b[1:]
+        elif len(b) == 1 and len(a) > 1:
+            b = b + a[1:]
+        shared = set(a) & set(b)
+        ident_a = {t for t in a if t not in shared and t not in _SWAP_STOPWORDS and len(t) > 1}
+        ident_b = {t for t in b if t not in shared and t not in _SWAP_STOPWORDS and len(t) > 1}
+        if not ident_a or not ident_b or ident_a & ident_b:
+            return None
+        return ident_a, ident_b, shared
+    return None
+
+
+def _side_clauses(
+    text: str, ident_a: set[str], ident_b: set[str], shared: set[str]
+) -> list[tuple[str, set[str], bool]]:
+    """Split text into clauses and assign each one to side "a" or "b".
+
+    A clause that names one side belongs to it. A clause that names neither,
+    or that opens with a pronoun, inherits the previous clause's side. A clause
+    that names both is ambiguous and resets the inherited side.
+    Returns (side, content_tokens, negated) for every assigned clause.
+    """
+    out: list[tuple[str, set[str], bool]] = []
+    current: str | None = None
+    for raw in _CLAUSE_SPLIT.split(text or ""):
+        if not raw or not raw.strip():
+            continue
+        tokens = _swap_tokens(raw)
+        if not tokens:
+            continue
+        has_a = any(t in ident_a for t in tokens)
+        has_b = any(t in ident_b for t in tokens)
+        if tokens[0] in _PRONOUN_OPENERS and current is not None:
+            pass
+        elif has_a and has_b:
+            current = None
+            continue
+        elif has_a:
+            current = "a"
+        elif has_b:
+            current = "b"
+        if current is None:
+            continue
+        content = {
+            t for t in tokens
+            if len(t) > 2
+            and not t.isdigit()
+            and t not in _SWAP_STOPWORDS
+            and t not in ident_a
+            and t not in ident_b
+            and t not in shared
+        }
+        out.append((current, content, bool(_SWAP_NEGATION.search(raw))))
+    return out
+
+
+def entity_swap_evidence(
+    answer_text: str, question_text: str, ideal_answer: str
+) -> dict | None:
+    """Count side-consistent vs side-crossed property mentions.
+
+    Returns None when the check does not apply (no A/B pair in the question, or
+    the reference answer gives no distinctive property for one side).
+    """
+    pair = _contrast_pair(question_text)
+    if pair is None or not ideal_answer:
+        return None
+    ident_a, ident_b, shared = pair
+
+    profile: dict[str, set[str]] = {"a": set(), "b": set()}
+    for side, content, negated in _side_clauses(ideal_answer, ident_a, ident_b, shared):
+        if not negated:
+            profile[side] |= content
+    attrs_a = profile["a"] - profile["b"]
+    attrs_b = profile["b"] - profile["a"]
+    if not attrs_a or not attrs_b:
+        return None
+
+    consistent: set[tuple[str, str]] = set()
+    crossed: set[tuple[str, str]] = set()
+    for side, content, negated in _side_clauses(answer_text, ident_a, ident_b, shared):
+        if negated:
+            continue
+        own, other = (attrs_a, attrs_b) if side == "a" else (attrs_b, attrs_a)
+        for token in content:
+            if token in own:
+                consistent.add((side, token))
+            elif token in other:
+                crossed.add((side, token))
+    return {
+        "consistent": len(consistent),
+        "crossed": len(crossed),
+        "crossed_sides": len({side for side, _ in crossed}),
+        "crossed_terms": sorted(t for _, t in crossed),
+    }
+
+
+def entity_swap_fires(
+    evidence: dict | None,
+    min_crossed: int = ENTITY_SWAP_MIN_CROSSED,
+    ratio: float = ENTITY_SWAP_RATIO,
+) -> bool:
+    """A swap moves properties both ways: each side must carry the other's."""
+    if evidence is None:
+        return False
+    crossed = evidence["crossed"]
+    return (
+        evidence["crossed_sides"] == 2
+        and crossed >= min_crossed
+        and crossed > ratio * evidence["consistent"]
+    )
+
+
+def _check_entity_swap(
+    answer_text: str, question_text: str, ideal_answer: str
+) -> dict | None:
+    evidence = entity_swap_evidence(answer_text, question_text, ideal_answer)
+    if entity_swap_fires(evidence):
+        return _cap("entity_swap", ENTITY_SWAP_CAP)
+    return None
+
+
 def check_answer_quality_v2(
     answer_text: str,
     question_text: str = "",
@@ -374,12 +760,22 @@ def check_answer_quality_v2(
     """
     Extended guard. Order:
       1 empty, 2 gibberish, 3 repetition, 3.5 question_parroting,
-      4 keyword_stuffing, 5 too_short, 6 low_density, 7 off_topic
+      4 truncated_fragment, 5 keyword_stuffing, 6 too_short,
+      6.5 entity_swap, 7 low_density, 8 off_topic
     First match wins.
     """
-    cap = _check_basic_rules(answer_text, ideal_keywords, question_text)
+    cap = _check_basic_rules(
+        answer_text,
+        ideal_keywords,
+        question_text,
+        ideal_answer=ideal_answer,
+    )
     if cap is not None:
         return cap
+
+    swap = _check_entity_swap(answer_text or "", question_text or "", ideal_answer or "")
+    if swap is not None:
+        return swap
 
     answer_tokens = _word_tokens(answer_text or "")
 

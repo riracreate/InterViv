@@ -1,0 +1,361 @@
+[
+  {
+    "skill": "DBMS",
+    "level": "beginner",
+    "title": "PostgreSQL official tutorial",
+    "url": "https://www.postgresql.org/docs/current/tutorial.html",
+    "source": "docs"
+  },
+  {
+    "skill": "DBMS",
+    "level": "intermediate",
+    "title": "Use The Index, Luke — SQL indexing",
+    "url": "https://use-the-index-luke.com/",
+    "source": "docs"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "MIT 6.006 Introduction to Algorithms — Lecture 1",
+    "url": "https://www.youtube.com/watch?v=HtSuA80QTyo",
+    "source": "youtube"
+  },
+  {
+    "skill": "DSA",
+    "level": "intermediate",
+    "title": "CP-Algorithms — algorithms encyclopedia",
+    "url": "https://cp-algorithms.com/",
+    "source": "docs"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "VisuAlgo — interactive data structures",
+    "url": "https://visualgo.net/en",
+    "source": "other"
+  },
+  {
+    "skill": "OOP",
+    "level": "beginner",
+    "title": "Oracle Java Tutorials — Object-Oriented Programming Concepts",
+    "url": "https://docs.oracle.com/javase/tutorial/java/concepts/index.html",
+    "source": "docs"
+  },
+  {
+    "skill": "OOP",
+    "level": "intermediate",
+    "title": "Python docs — Classes (OOP)",
+    "url": "https://docs.python.org/3/tutorial/classes.html",
+    "source": "docs"
+  },
+  {
+    "skill": "Operating Systems",
+    "level": "beginner",
+    "title": "Operating Systems: Three Easy Pieces (OSTEP)",
+    "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
+    "source": "docs"
+  },
+  {
+    "skill": "Operating Systems",
+    "level": "intermediate",
+    "title": "OSTEP — CPU virtualization overview chapter",
+    "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/cpu-intro.pdf",
+    "source": "docs"
+  },
+  {
+    "skill": "Computer Networks",
+    "level": "beginner",
+    "title": "Kurose & Ross — interactive networking materials",
+    "url": "https://gaia.cs.umass.edu/kurose_ross/interactive/",
+    "source": "docs"
+  },
+  {
+    "skill": "Computer Networks",
+    "level": "intermediate",
+    "title": "MDN — HTTP overview",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
+    "source": "docs"
+  },
+  {
+    "skill": "Python",
+    "level": "beginner",
+    "title": "Python official tutorial",
+    "url": "https://docs.python.org/3/tutorial/",
+    "source": "docs"
+  },
+  {
+    "skill": "Python",
+    "level": "intermediate",
+    "title": "Python HOWTOs index",
+    "url": "https://docs.python.org/3/howto/index.html",
+    "source": "docs"
+  },
+  {
+    "skill": "System Design",
+    "level": "beginner",
+    "title": "System Design Primer (donnemartin)",
+    "url": "https://github.com/donnemartin/system-design-primer",
+    "source": "other"
+  },
+  {
+    "skill": "System Design",
+    "level": "intermediate",
+    "title": "Martin Fowler — Patterns of Enterprise Application Architecture catalog",
+    "url": "https://martinfowler.com/eaaCatalog/",
+    "source": "docs"
+  },
+  {
+    "skill": "Machine Learning",
+    "level": "beginner",
+    "title": "scikit-learn — An introduction to machine learning with scikit-learn",
+    "url": "https://scikit-learn.org/stable/tutorial/basic/tutorial.html",
+    "source": "docs"
+  },
+  {
+    "skill": "Machine Learning",
+    "level": "intermediate",
+    "title": "scikit-learn user guide",
+    "url": "https://scikit-learn.org/stable/user_guide.html",
+    "source": "docs"
+  },
+  {
+    "skill": "DBMS",
+    "level": "intermediate",
+    "title": "Lecture note for MCQ indexing item",
+    "url": "https://use-the-index-luke.com/sql/anatomy",
+    "source": "docs",
+    "question_id": "mcq_dbms_001"
+  },
+  {
+    "skill": "DBMS",
+    "level": "intermediate",
+    "title": "SQL problem walkthrough (High-Value Customers pattern)",
+    "url": "https://www.postgresql.org/docs/current/tutorial-agg.html",
+    "source": "docs",
+    "question_id": "sql_prob_001"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "NeetCode — coding interview walkthroughs",
+    "url": "https://www.youtube.com/@NeetCode",
+    "source": "youtube"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "freeCodeCamp — Algorithms and Data Structures Tutorial",
+    "url": "https://www.youtube.com/watch?v=8hly31xKli0",
+    "source": "youtube"
+  },
+  {
+    "skill": "DSA",
+    "level": "intermediate",
+    "title": "freeCodeCamp — Data Structures and Algorithms Mega Course (49 hours)",
+    "url": "https://www.youtube.com/watch?v=xwI5OBEnsZU",
+    "source": "youtube"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "Data Structures and Algorithms in 15 Minutes",
+    "url": "https://www.youtube.com/watch?v=oz9cEqFynHU",
+    "source": "youtube"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "Striver's A2Z DSA Sheet — structured practice",
+    "url": "https://takeuforward.org/dsa/strivers-a2z-sheet-learn-dsa-a-to-z",
+    "source": "docs"
+  },
+  {
+    "skill": "DSA",
+    "level": "intermediate",
+    "title": "NeetCode Practice — Blind 75 and NeetCode 150",
+    "url": "https://neetcode.io/practice",
+    "source": "other"
+  },
+  {
+    "skill": "DSA",
+    "level": "beginner",
+    "title": "GeeksforGeeks — DSA Tutorial",
+    "url": "https://www.geeksforgeeks.org/dsa/dsa-tutorial-learn-data-structures-and-algorithms/",
+    "source": "docs"
+  },
+  {
+    "skill": "DSA",
+    "level": "intermediate",
+    "title": "Tech Interview Handbook — interview preparation guide",
+    "url": "https://www.techinterviewhandbook.org/",
+    "source": "docs"
+  },
+  {
+    "skill": "System Design",
+    "level": "beginner",
+    "title": "ByteByteGo — system design explainers",
+    "url": "https://www.youtube.com/@ByteByteGo",
+    "source": "youtube"
+  },
+  {
+    "skill": "System Design",
+    "level": "intermediate",
+    "title": "Gaurav Sen — system design walkthroughs",
+    "url": "https://www.youtube.com/@gkcs",
+    "source": "youtube"
+  },
+  {
+    "skill": "System Design",
+    "level": "beginner",
+    "title": "Hello Interview — Design Bitly (guide and video walkthrough)",
+    "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/bitly",
+    "source": "docs"
+  },
+  {
+    "skill": "System Design",
+    "level": "advanced",
+    "title": "Hello Interview — Design YouTube (guide and video walkthrough)",
+    "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/youtube",
+    "source": "docs"
+  },
+  {
+    "skill": "System Design",
+    "level": "beginner",
+    "title": "KodeKloud — System Design for Beginners (2026)",
+    "url": "https://www.youtube.com/watch?v=SE2KF-vxvS0",
+    "source": "youtube"
+  },
+  {
+    "skill": "Behavioral",
+    "level": "intermediate",
+    "title": "Exponent — mock interviews and behavioral preparation",
+    "url": "https://www.youtube.com/@tryexponent",
+    "source": "youtube"
+  },
+  {
+    "skill": "Behavioral",
+    "level": "beginner",
+    "title": "UCL CareersLab — Interview Skills: STAR Technique",
+    "url": "https://www.youtube.com/watch?v=p56ZvaoU7FQ",
+    "source": "youtube"
+  },
+  {
+    "skill": "Behavioral",
+    "level": "intermediate",
+    "title": "Tech Interview Handbook — behavioral interview preparation",
+    "url": "https://www.techinterviewhandbook.org/behavioral-interview/",
+    "source": "docs"
+  },
+  {
+    "skill": "Behavioral",
+    "level": "beginner",
+    "title": "Salesforce — Use the STAR Method to Ace Your Next Job Interview",
+    "url": "https://www.salesforce.com/blog/use-the-star-method-to-ace-your-next-job-interview/",
+    "source": "docs"
+  },
+  {
+    "skill": "SQL",
+    "level": "advanced",
+    "title": "Quest2Offer — 10 senior SQL interview questions",
+    "url": "https://www.youtube.com/watch?v=G3ze2AVOaB0",
+    "source": "youtube"
+  },
+  {
+    "skill": "SQL",
+    "level": "beginner",
+    "title": "SQLBolt — interactive SQL lessons",
+    "url": "https://sqlbolt.com/",
+    "source": "other"
+  },
+  {
+    "skill": "SQL",
+    "level": "beginner",
+    "title": "Select Star SQL — an interactive SQL book",
+    "url": "https://selectstarsql.com/",
+    "source": "other"
+  },
+  {
+    "skill": "SQL",
+    "level": "intermediate",
+    "title": "HackerRank — SQL practice challenges",
+    "url": "https://www.hackerrank.com/domains/sql",
+    "source": "other"
+  },
+  {
+    "skill": "SQL",
+    "level": "beginner",
+    "title": "W3Schools — SQL Tutorial",
+    "url": "https://www.w3schools.com/sql/",
+    "source": "docs"
+  },
+  {
+    "skill": "SQL",
+    "level": "beginner",
+    "title": "ThoughtSpot — SQL Tutorial",
+    "url": "https://www.thoughtspot.com/sql-tutorial",
+    "source": "docs"
+  },
+  {
+    "skill": "OA / MCQ",
+    "level": "beginner",
+    "title": "Mark Benliyan — Cracking the Coding Assessment for Software Engineers",
+    "url": "https://www.youtube.com/watch?v=N2QsXu_aKG4",
+    "source": "youtube"
+  },
+  {
+    "skill": "OA / MCQ",
+    "level": "beginner",
+    "title": "Amazon SDE Online Assessment Guide",
+    "url": "https://www.youtube.com/watch?v=2-s7b3HmnAQ",
+    "source": "youtube"
+  },
+  {
+    "skill": "OA / MCQ",
+    "level": "intermediate",
+    "title": "Grind 75 — customize your coding practice plan",
+    "url": "https://www.techinterviewhandbook.org/grind75/",
+    "source": "other"
+  },
+  {
+    "skill": "OA / MCQ",
+    "level": "intermediate",
+    "title": "LeetCode — problem set",
+    "url": "https://leetcode.com/problemset/",
+    "source": "other"
+  },
+  {
+    "skill": "OA / MCQ",
+    "level": "intermediate",
+    "title": "HackerRank — algorithm challenges",
+    "url": "https://www.hackerrank.com/domains/algorithms",
+    "source": "other"
+  },
+  {
+    "skill": "Resume / ATS",
+    "level": "beginner",
+    "title": "Jobscan — How to Make an ATS-Friendly Resume in 2026",
+    "url": "https://www.youtube.com/watch?v=Bon1BvjL7N0",
+    "source": "youtube"
+  },
+  {
+    "skill": "Resume / ATS",
+    "level": "beginner",
+    "title": "Tech Interview Handbook — software engineer resume guide",
+    "url": "https://www.techinterviewhandbook.org/resume/",
+    "source": "docs"
+  },
+  {
+    "skill": "Resume / ATS",
+    "level": "beginner",
+    "title": "Jake's Resume — LaTeX template",
+    "url": "https://github.com/jakegut/resume",
+    "source": "other"
+  },
+  {
+    "skill": "Resume / ATS",
+    "level": "intermediate",
+    "title": "ATS Screener — open-source resume checking tool",
+    "url": "https://ats-screener.vercel.app/",
+    "source": "other"
+  }
+]

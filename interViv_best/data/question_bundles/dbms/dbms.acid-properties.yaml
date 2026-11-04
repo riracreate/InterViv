@@ -1,0 +1,155 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.acid-properties
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: Transactions
+  difficulty: easy
+  question: What are ACID properties?
+  reference_answer: ACID stands for Atomicity (a transaction fully succeeds or fully fails — no partial
+    state), Consistency (a transaction brings the database from one valid state to another, maintaining
+    all constraints), Isolation (concurrent transactions execute as if they were serial — intermediate
+    states are hidden), and Durability (once committed, changes survive system failures). These properties
+    ensure correctness and reliability of database transactions.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 170
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Easy
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.acid-properties
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: Transactions
+  difficulty: easy
+  question: What are ACID properties?
+  reference_answer: ACID stands for Atomicity (a transaction fully succeeds or fully fails — no partial
+    state), Consistency (a transaction brings the database from one valid state to another, maintaining
+    all constraints), Isolation (concurrent transactions execute as if they were serial — intermediate
+    states are hidden), and Durability (once committed, changes survive system failures). These properties
+    ensure correctness and reliability of database transactions.
+  acceptable_variants:
+  - 'ACID: atomicity, consistency, isolation, durability for reliable transactions.'
+  keywords:
+  - ACID
+  - atomicity
+  - consistency
+  - isolation
+  - durability
+  required_concepts:
+  - id: ACID
+    descriptor: Transaction correctness properties
+    aliases:
+    - acid properties
+    expected_propositions:
+    - ACID means atomicity consistency isolation durability
+    positive_examples: []
+    negative_cases: []
+  - id: atomicity
+    descriptor: All-or-nothing transaction outcome
+    aliases:
+    - atomic
+    expected_propositions:
+    - atomicity means all succeed or all fail
+    positive_examples: []
+    negative_cases: []
+  - id: consistency
+    descriptor: Constraints preserved across transactions
+    aliases:
+    - consistent state
+    expected_propositions:
+    - consistency preserves database constraints
+    positive_examples: []
+    negative_cases: []
+  - id: isolation
+    descriptor: Concurrent transactions do not interfere incorrectly
+    aliases:
+    - isolated
+    expected_propositions:
+    - isolation hides intermediate states of concurrent transactions
+    positive_examples: []
+    negative_cases: []
+  - id: durability
+    descriptor: Committed changes survive failures
+    aliases:
+    - durable
+    expected_propositions:
+    - durability means committed data survives crashes
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: transaction
+    descriptor: Unit of work bound by ACID
+    aliases:
+    - txn
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: acid_means_fast
+    description: Treating ACID as a performance feature
+    candidate_patterns:
+    - ACID makes databases faster
+    - ACID is about speed
+  depth_markers:
+  - commit
+  - rollback
+  - crash recovery
+  rubric_descriptors:
+    coverage: Names and briefly defines A, C, I, D.
+    accuracy: Does not redefine ACID as throughput optimisation.
+    depth: Mentions commit/rollback or crash survival.
+    clarity: Keeps each property distinct.
+  followups: []
+  calibration_examples:
+  - answer: ACID is Atomicity (all or nothing), Consistency (constraints hold), Isolation (concurrency
+      safety), Durability (survives crashes).
+    author_level: 3
+    note: strong
+  - answer: ACID is important for databases.
+    author_level: 1
+    note: partial
+  - answer: ACID makes databases faster.
+    author_level: 0
+    note: incorrect
+  - answer: Atomicity, consistency, isolation, durability.
+    author_level: 2
+    note: concise-correct
+  - answer: Something about transactions.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 170
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Easy
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

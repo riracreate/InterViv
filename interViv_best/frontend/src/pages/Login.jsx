@@ -1,34 +1,33 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, LogIn } from 'lucide-react';
 import { login } from '../lib/api';
-
-function validate(email, password) {
-  if (!email.trim()) return 'Email is required.';
-  if (!email.includes('@')) return 'Enter a valid email address.';
-  if (!password) return 'Password is required.';
-  return '';
-}
+import { authDestination } from '../lib/authRedirect';
+import { hasFieldErrors, validateLoginFields } from '../lib/authForm';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const next = authDestination(location, window.location.origin);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    const validation = validate(email, password);
-    if (validation) {
-      setError(validation);
+    const validation = validateLoginFields({ email, password });
+    setFieldErrors(validation);
+    if (hasFieldErrors(validation)) {
+      setError('');
       return;
     }
     setError('');
     setLoading(true);
     try {
       await login({ email, password });
-      navigate('/upload');
+      navigate(next, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed.');
     } finally {
@@ -51,7 +50,7 @@ export default function Login() {
         <section className="grid flex-1 items-center gap-10 py-12 lg:grid-cols-[0.92fr_1.08fr]">
           <div className="max-w-xl">
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-700">interViv account</p>
-            <h1 className="mt-4 text-5xl font-normal leading-[0.96] tracking-normal sm:text-6xl" style={{ fontFamily: "'Instrument Serif', serif" }}>
+            <h1 className="mt-4 text-5xl font-normal leading-[0.96] tracking-normal sm:text-6xl" style={{ fontFamily: "var(--font-display)" }}>
               Continue your readiness practice.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
@@ -61,6 +60,7 @@ export default function Login() {
 
           <form
             onSubmit={handleSubmit}
+            noValidate
             className="w-full rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-8"
           >
             <div className="flex items-center justify-between gap-4">
@@ -74,34 +74,54 @@ export default function Login() {
             </div>
 
             {error && (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div role="alert" className="app-form-error mt-5">
                 {error}
               </div>
             )}
 
-            <label className="mt-6 block text-sm font-medium text-slate-700">
-              Email
+            <div className="mt-6">
+              <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                className="app-field mt-2"
                 placeholder="you@example.com"
                 autoComplete="email"
+                aria-invalid={fieldErrors.email ? 'true' : undefined}
+                aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
               />
-            </label>
+              {fieldErrors.email && (
+                <p id="login-email-error" role="alert" className="app-field-error-text">
+                  {fieldErrors.email}
+                </p>
+              )}
+            </div>
 
-            <label className="mt-4 block text-sm font-medium text-slate-700">
-              Password
+            <div className="mt-4">
+              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
+                Password
+              </label>
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100"
+                className="app-field mt-2"
                 placeholder="Your password"
                 autoComplete="current-password"
+                aria-invalid={fieldErrors.password ? 'true' : undefined}
+                aria-describedby={fieldErrors.password ? 'login-password-error' : undefined}
               />
-            </label>
+              {fieldErrors.password && (
+                <p id="login-password-error" role="alert" className="app-field-error-text">
+                  {fieldErrors.password}
+                </p>
+              )}
+            </div>
 
             <button
               type="submit"
@@ -113,7 +133,7 @@ export default function Login() {
 
             <p className="mt-5 text-center text-sm text-slate-600">
               Don&apos;t have an account?{' '}
-              <Link to="/signup" className="font-semibold text-cyan-700 hover:text-cyan-800">
+              <Link to="/signup" state={{ next }} className="font-semibold text-cyan-700 hover:text-cyan-800">
                 Sign up
               </Link>
             </p>
@@ -123,4 +143,3 @@ export default function Login() {
     </main>
   );
 }
-

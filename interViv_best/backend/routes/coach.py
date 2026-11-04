@@ -1,0 +1,219 @@
+"""Guidance coach routes — one-shot plan + multi-turn conversation (Phase 4B)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel, Field, model_validator
+
+from backend.db import get_database
+from backend.db.user_target import get_user_target
+from backend.routes.auth import require_authenticated, require_user
+from backend.routes.session import StartSessionRequest, start_session
+from modules.coach_conversation import (
+    MAX_MESSAGE_CHARS,
+    clear_conversation,
+    get_conversation,
+    get_or_create_conversation,
+    owner_key,
+    post_message,
+    update_goals,
+)
+from modules.guidance_coach import (
+    MAX_INPUT_CHARS,
+    build_coach_plan,
+    cap_practice_skills,
+)
+from modules.jobs_explorer import build_practice_start_payload
+
+
+router = APIRouter(prefix="/coach", tags=["coach"], dependencies=[Depends(require_authenticated)])
+
+
+class CoachPlanRequest(BaseModel):
+    jd_text: str | None = None
+    goal_text: str | None = None
+    include_dashboard: bool = True
+    role_id: str | None = None
+
+    @model_validator(mode="after")
+    def require_one_field(self) -> "CoachPlanRequest":
+        jd = (self.jd_text or "").strip()
+        goal = (self.goal_text or "").strip()
+        if not jd and not goal:
+            raise ValueError("Provide jd_text and/or goal_text.")
+        if len(jd) > MAX_INPUT_CHARS or len(goal) > MAX_INPUT_CHARS:
+            raise ValueError(f"Input exceeds {MAX_INPUT_CHARS} characters.")
+        return self
+
+
+class CoachStartPracticeRequest(BaseModel):
+    skills: list[str] = Field(default_factory=list)
+    round_plan: list[str] | None = None
+
+
+class ConversationGoalsRequest(BaseModel):
+    confirmed_goal: str | None = None
+    role_id: str | None = None
+    hours_per_week: int | None = Field(default=None, ge=1, le=40)
+    planning_context_skills: list[str] = Field(default_factory=list)
+    adzuna_context: dict[str, Any] | None = None
+
+
+class ConversationMessageRequest(BaseModel):
+    text: str = ""
+    action: str | None = None
+    action_payload: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def bound_text(self) -> "ConversationMessageRequest":
+        if len(self.text or "") > MAX_MESSAGE_CHARS:
+            raise ValueError(f"Message exceeds {MAX_MESSAGE_CHARS} characters.")
+        return self
+
+
+@router.post("/plan")
+def coach_plan(
+    body: CoachPlanRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    role_id = body.role_id
+    if not role_id:
+        db = get_database()
+        candidate = db["candidates"].find_one({"user_id": user["id"]})
+        if candidate:
+            role_id = candidate.get("target_role_id") or candidate.get("role_id")
+        role_id = role_id or get_user_target(user)["role_id"]
+
+    return build_coach_plan(
+        jd_text=body.jd_text,
+        goal_text=body.goal_text,
+        user_id=str(user["id"]),
+        role_id=str(role_id) if role_id else None,
+        include_dashboard=bool(body.include_dashboard),
+    )
+
+
+@router.post("/start-practice")
+def coach_start_practice(
+    body: CoachStartPracticeRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    skills = cap_practice_skills(body.skills)
+    if not skills:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No recognizable skills to practice. Unsupported content is "
+                "not silently substituted."
+            ),
+        )
+
+    db = get_database()
+    candidate = db["candidates"].find_one({"user_id": user["id"]})
+    candidate_id = str(candidate["candidate_id"]) if candidate else ""
+
+    start_body = build_practice_start_payload(skills=skills, candidate_id=candidate_id or None)
+    # Do not silently fill DSA when the caller provided skills that mapped empty —
+    # build_practice_start_payload may still default; refuse if skills were intended.
+    if not skills:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported skill selection — refusing silent substitution.",
+        )
+    if body.round_plan:
+        cleaned = [r for r in body.round_plan if r in {"technical_short_answer", "mcq", "sql"}]
+        if cleaned:
+            start_body["round_plan"] = cleaned[:8]
+            start_body["round_type"] = cleaned[0]
+
+    request = StartSessionRequest(**start_body)
+    session = start_session(request, authorization=authorization)
+    return {
+        **session,
+        "round_plan": start_body.get("round_plan"),
+        "navigate": f"/interview/{session.get('session_id')}",
+        "skills": skills,
+    }
+
+
+@router.post("/conversations")
+def create_conversation(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = require_user(authorization)
+    doc = get_or_create_conversation(
+        user_id=str(user["id"]),
+        role_id=get_user_target(user)["role_id"],
+    )
+    return {"conversation": doc}
+
+
+@router.get("/conversations/{conversation_id}")
+def read_conversation(
+    conversation_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    doc = get_conversation(conversation_id, owner=owner_key(str(user["id"])))
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    return {"conversation": doc}
+
+
+@router.patch("/conversations/{conversation_id}/goals")
+def patch_goals(
+    conversation_id: str,
+    body: ConversationGoalsRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    try:
+        doc = update_goals(
+            conversation_id,
+            owner=owner_key(str(user["id"])),
+            confirmed_goal=body.confirmed_goal,
+            role_id=body.role_id or get_user_target(user)["role_id"],
+            hours_per_week=body.hours_per_week,
+            planning_context_skills=body.planning_context_skills,
+            adzuna_context=body.adzuna_context,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return {"conversation": doc}
+
+
+@router.post("/conversations/{conversation_id}/messages")
+def send_message(
+    conversation_id: str,
+    body: ConversationMessageRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    try:
+        result = post_message(
+            conversation_id,
+            owner=owner_key(str(user["id"])),
+            user_id=str(user["id"]),
+            text=body.text,
+            action=body.action,
+            action_payload=body.action_payload,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return result
+
+
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = require_user(authorization)
+    ok = clear_conversation(conversation_id, owner=owner_key(str(user["id"])))
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    return {"cleared": True}

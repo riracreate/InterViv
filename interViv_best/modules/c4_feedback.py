@@ -42,6 +42,16 @@ _GUARD_FEEDBACK = {
         "weakness":    "The content doesn't overlap with what the question is asking about.",
         "improvement": "Re-read the question and focus your answer on its specific topic.",
     },
+    "truncated_fragment": {
+        "headline":    "Your answer stops mid-sentence.",
+        "weakness":    "The explanation ends before the point is made, so the key idea is missing.",
+        "improvement": "Finish the thought: state the concept, how it works, and one example.",
+    },
+    "entity_swap": {
+        "headline":    "Your answer mixes up the two things being compared.",
+        "weakness":    "Properties of one side are attributed to the other, so the comparison is reversed.",
+        "improvement": "For each side, state its defining properties in its own sentence, then contrast them.",
+    },
 }
 
 

@@ -1,6 +1,8 @@
 # interViv - Interview Readiness Platform
 
-interViv is an **Interview Readiness Platform**. LLMs are used only for interview question generation; scoring, feedback, readiness calculations, roadmaps, and gap analysis are deterministic Python.
+interViv is an **Interview Readiness Platform**. Core scoring, readiness calculations, roadmaps, and gap analysis run in Python. Optional LLM integrations provide question generation and coaching; offline practice works without provider credentials.
+
+Start with the persistent local launcher below. See the [current maintenance results](docs/maintenance_2026-11-02.md) and [improvement roadmap](docs/IMPROVEMENT_ROADMAP.md) for verified behavior, remaining limitations, and next priorities. The winner map below records the project's assembly history rather than the current setup contract.
 
 This folder is a curated assembly of the **best files** from all versions of the project.
 Every file was chosen by reading and comparing its equivalent across all four codebases:
@@ -45,23 +47,116 @@ Every file was chosen by reading and comparing its equivalent across all four co
 
 ## Setup
 
-```bash
-# 1. Python backend
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env. Set DATABASE_URL for PostgreSQL persistence, or leave it blank for demo memory mode.
-uvicorn backend.main:app --reload --port 8000
+For this checkout, with dependencies already installed:
 
-# 2. Frontend
-cd frontend
-npm install
-npm run dev
-# Opens at http://localhost:5173
+```bash
+# From interViv_best/
+.venv/bin/python scripts/run_local.py
 ```
+
+Open <http://127.0.0.1:5173>. This starts both services, applies migrations,
+and persists accounts and progress in `local-data/interviv-local.sqlite3`.
+The launcher selects this local database even if a different `DATABASE_URL`
+is present in your shell. By default it disables live LLM and job fetching,
+requires no downloads at startup, and leaves logs in `local-data/local-run/`.
+Cached semantic models are used when available; a fresh machine may use the
+existing lexical fallback until the model has been provisioned.
+
+To enable the local coding runner and live job search while keeping interview
+questions offline, use:
+
+```bash
+.venv/bin/python scripts/run_local.py --with-executor --live-jobs
+```
+
+Live Adzuna results require `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` in the local
+`.env`; Greenhouse uses public feeds. The default command remains offline. The
+coding runner needs Docker, and downloaded runtimes may need setup once.
+
+To run Python coding and NumPy ML Primitives rounds without Docker, use the
+trusted local runner instead:
+
+```bash
+.venv/bin/python scripts/run_local.py --trusted-local-execution
+```
+
+It runs each submission in a fresh local worker process with time, memory,
+output and import limits. It is meant for your own code on your own machine
+and is not a security sandbox. The backend accepts it only when
+`ENVIRONMENT=development` and the bind host is loopback; other deployments
+ignore it. JavaScript, Java and C++ still need Piston. For coding rounds,
+Piston takes priority when it is running; ML Primitives always use the local
+runner. The flags can be combined, for example
+`--trusted-local-execution --live-jobs`.
+
+For a fresh checkout, install dependencies first (network access required):
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+(cd frontend && npm ci)
+cp .env.example .env
+.venv/bin/python scripts/run_local.py
+```
+
+`requirements-tested.txt` captures versions from the tested Python 3.12
+environment. It is a constraints file, not a complete cross-platform hash
+lock; fresh Linux/container installation still needs verification in CI.
+
+### Local services
+
+| Port | Process | Start | Required |
+|------|---------|-------|----------|
+| `8000` | FastAPI backend (uvicorn) | local launcher | yes |
+| `5173` | Vite frontend | local launcher | yes |
+| `19000` | Piston coding executor (Docker, loopback only) | `docker compose -f compose.coding.yml up executor` | only for Run/Submit on `/problems` |
+| — | Trusted local runner (worker processes, no port) | `--trusted-local-execution` | alternative to Piston for Python coding and ML Primitives |
+| `11434` | Ollama (`gemma2:2b`) for coding hints | system Ollama | no; curated hints are the fallback |
+
+Create an account via `/signup`. There is no built-in demo account.
+The local launcher keeps accounts across restarts. Starting uvicorn directly
+without a `DATABASE_URL` instead uses disposable in-memory storage in
+development; production configuration now rejects a missing database.
+
+Press Ctrl+C in the launcher's terminal to stop its backend and frontend.
+If you separately started the coding executor, stop it with
+`docker compose -f compose.coding.yml stop`.
+
+### Coding practice executor (Piston)
+
+Candidate code runs only in a local Piston container bound to
+`127.0.0.1:19000`. `backend/execution.py` rejects every other URL (public
+emkc.org included). Scoring is a deterministic visible + hidden test
+comparison; no model judges code.
+
+```bash
+# one-time: fetch and checksum the four approved runtimes into a local mirror
+python scripts/setup_coding_runtimes.py --download ~/piston-cache
+CODING_RUNTIME_CACHE=~/piston-cache docker compose -f compose.coding.yml up -d
+python scripts/setup_coding_runtimes.py --install     # python 3.12, node 20, java 15, gcc 10
+docker stop interviv-coding-runtime-cache-1           # setup-only container
+
+# then, for the backend:
+export CODING_EXECUTOR_URL=http://127.0.0.1:19000
+```
+
+If the editor shows **"<Language> execution is unavailable. Your draft can
+still be saved."** for every language, the backend cannot reach Piston (or the
+runtime is not installed). `GET /problems/execution/status` reports
+per-language availability; the UI reads that endpoint, so the warning follows
+the selected language but the cause is shared. Drafts still autosave.
+
+Optional env: `CODING_RATE_LIMIT_PER_MINUTE` (default 30), `CODING_COACH_URL`
+(default `http://127.0.0.1:11434`), `CODING_COACH_MODEL` (default `gemma2:2b`).
+Security evidence, including the trusted local runner's limits:
+`docs/coding_execution_security.md`.
 
 ### PostgreSQL and Auth
 
-Task 1 adds SQLAlchemy/Alembic persistence and JWT auth:
+For a separately configured PostgreSQL backend, set `DATABASE_URL` in `.env`
+and apply migrations before starting uvicorn. Start the frontend separately
+with `npm run dev -- --host 127.0.0.1 --port 5173` from `frontend/`.
+The convenience local launcher always selects its local SQLite database.
 
 ```bash
 docker compose up postgres
@@ -75,7 +170,12 @@ Auth endpoints:
 - `POST /auth/login`
 - `GET /auth/me`
 
-If `DATABASE_URL` is missing, the backend keeps the in-memory fallback for local demos and CI.
+If `DATABASE_URL` is missing, the backend keeps the in-memory fallback only
+for local demos and tests. Production also requires an explicit JWT secret
+and allowed CORS origins. `/health` checks liveness; `/ready` checks database
+connectivity, migration state, practice packs, and configured Redis access.
+Use Redis for authentication limits shared across multiple backend workers;
+without Redis, counters are local to each process.
 
 The SQLAlchemy path is exercised end-to-end (signup → login → session →
 answer → dashboard, plus company seeding and the skill graph) by
@@ -102,10 +202,13 @@ Evidence is tracked in `docs/post_phase2_task_1.md` through
 
 ### Question Generation
 
-Live interview questions are generated by an LLM by default:
+The example configuration defaults to offline CSV questions. To opt into live
+generation when starting a separately configured backend:
 
 ```bash
 QUESTION_GENERATION_MODE=llm
+QUESTION_REQUIRE_LLM=true
+LLM_LIVE_FETCH=1
 QUESTION_LLM_PROVIDER=auto
 OPENAI_API_KEY=...
 # or
@@ -165,7 +268,9 @@ interViv_best/
 │   │   ├── styles/
 │   │   │   ├── theme.css          fade-rise animations
 │   │   │   └── fonts.css          CSS vars for fonts
-│   │   ├── App.jsx                Routes: / /upload /interview/:id /dashboard
+│   │   ├── App.jsx                Routes: / /login /signup /home /practice /problems /learn /resources /ats /jobs /coach /upload /interview/:id /dashboard /gap-analysis /roadmap
+│   │   ├── lib/appNav.js          Nav destinations for the hamburger panel
+│   │   ├── components/AppNav.jsx  Brand + hamburger slide panel (no profile/sign-out control)
 │   │   ├── main.jsx               React entry point
 │   │   ├── lib/api.js             All API calls + buildAnswerMetrics
 │   │   ├── pages/
@@ -250,3 +355,43 @@ Calibration: after round 2 → 85% raw + 15% session average
 - ✅ Deployment hardening hooks for Sentry, Redis cache/rate limits, and warm-up
 - ✅ Dark glass premium UI (Velorah aesthetic)
 - ✅ Landing page with video background
+
+---
+
+## App shell and demo path
+
+Login and signup land on `/home`. The nav is a brand link plus a hamburger
+that opens a translucent panel of destinations (`frontend/src/lib/appNav.js`):
+Home, Progress, Practice, Gap, Roadmap, Problems, Learn, Resources, Resume
+check, Jobs, Coach, Resume upload. Gap and Roadmap deep-link once a target
+company/role is set; otherwise they point at `/home#target`. Sign out lives on
+the Account page, not in the nav.
+
+Logged-in student happy path:
+
+1. `/home` — pick a target company/role; prepare cards for OA, Coding, SQL, Resources
+2. `/practice` — Interview, **OA** (MCQ), **SQL**, or custom session builder
+3. `/problems` — coding practice: Monaco editor, Python/JavaScript/Java/C++, Run (visible tests) and Submit (hidden tests) via local Piston; Coach tab gives up to 3 hints (Gemma via Ollama, curated fallback). Hints are logged as assistance and never change the score.
+4. `/interview/:sessionId` — verbal rounds with deterministic NLP scoring
+5. `/resources` — 32 curated links browsable by skill and category (`docs/resources_curation.md`)
+6. `/coach` — paste a goal or JD → plan with skill chips + links (maps to lexicon; **does not score interviews**)
+7. `/ats` — score resume vs role → Practice / Resources for a missing skill
+8. `/jobs` — Apply opens Adzuna `redirect_url` in a new tab; **Practice for this role** starts a session
+9. `/dashboard` — progress, last ATS total (if scored), learning signals, entry cards
+
+### Env (optional pieces)
+
+| Var | Notes |
+|-----|--------|
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Question gen + coach phrase extract; coach falls back to lexicon if unset |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Live India jobs; without keys the explorer uses fixture / documented empty state |
+| `SENTRY_TRACES_SAMPLE_RATE=0.1` | Optional tracing sample rate |
+| `CODING_EXECUTOR_URL=http://127.0.0.1:19000` | Enables Run/Submit on `/problems`; only this loopback URL is accepted |
+| `CODING_COACH_URL` / `CODING_COACH_MODEL` | Ollama endpoint/model for coding hints; curated hints if unreachable |
+
+Honest labels:
+
+- OA+SQL ≠ “coding interview”; `/problems` is the test-based coding judge and needs Piston running
+- ATS layout: `extract_layout_unchecked` (no invented multi-column penalties)
+- Jobs need Adzuna keys for live listings; else fixture
+- Paper notes: report **Krippendorff α**, not Cronbach; `LENGTH_RATIO_MULTIPLIER_ENABLED` stays **off**; **506** ambiguous annotation groups remain human-only / quarantined

@@ -39,7 +39,7 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
 )
-from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -83,6 +83,7 @@ def build_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 
     Expected columns: answer_text (or answer), ideal_answer, ideal_keywords, label.
     """
+    df = df.fillna("")
     scorer = NLPScorer()
     rows: list[list[float]] = []
     labels: list[str] = []
@@ -106,6 +107,25 @@ def build_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         labels.append(str(row.get("label", "Average")))
 
     return np.array(rows), np.array(labels)
+
+
+def split_by_question(df: pd.DataFrame):
+    """Reserve unseen questions; run CV only within the remaining questions."""
+    if "question" not in df.columns:
+        raise ValueError("Grouped evaluation requires a question column.")
+    groups = df["question"].fillna("").map(lambda q: " ".join(str(q).casefold().split())).to_numpy()
+    if any(not q for q in groups):
+        raise ValueError("Every training row must have a nonempty question.")
+    labels = df["label"].to_numpy()
+    train, test = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(df, labels, groups))
+    if len(set(groups[train])) < 5:
+        raise ValueError("At least five training question groups are required for cross-validation.")
+    if set(labels[train]) != set(labels):
+        raise ValueError("The grouped training split must contain every label.")
+    cv = list(StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42).split(
+        np.zeros(len(train)), labels[train], groups[train]
+    ))
+    return train, test, cv, groups
 
 
 # ── Model factory ─────────────────────────────────────────────────────────────
@@ -194,6 +214,8 @@ def main() -> None:
         default=str(PROJECT_ROOT / "modules" / "model_metadata.json"),
         help="Where to write model_metadata.json",
     )
+    parser.add_argument("--evaluate-only", action="store_true", help="Write a research evaluation without replacing the production model or metadata.")
+    parser.add_argument("--report-out", default=str(PROJECT_ROOT / "research" / "grouped_evaluation.json"))
     args = parser.parse_args()
     balanced = args.balanced == "true"
 
@@ -209,21 +231,20 @@ def main() -> None:
 
     classes = sorted(np.unique(y).tolist())
 
-    # ── 5-fold cross-validated metrics ────────────────────────────────────────
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    # Reserve entire questions before model selection. Answers to a question
+    # must never cross the train/validation boundary.
+    train, test, cv, groups = split_by_question(df)
+    X_train, X_test, y_train, y_test = X[train], X[test], y[train], y[test]
 
-    cv_acc = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="accuracy")
-    cv_f1 = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="f1_macro")
-    cv_f1w = cross_val_score(make_pipeline(args.model_type, balanced), X, y, cv=cv, scoring="f1_weighted")
+    cv_acc = cross_val_score(make_pipeline(args.model_type, balanced), X_train, y_train, cv=cv, scoring="accuracy")
+    cv_f1 = cross_val_score(make_pipeline(args.model_type, balanced), X_train, y_train, cv=cv, scoring="f1_macro")
+    cv_f1w = cross_val_score(make_pipeline(args.model_type, balanced), X_train, y_train, cv=cv, scoring="f1_weighted")
 
     log.info("5-fold CV accuracy:    %.4f ± %.4f", cv_acc.mean(), cv_acc.std())
     log.info("5-fold CV F1 macro:    %.4f ± %.4f", cv_f1.mean(), cv_f1.std())
     log.info("5-fold CV F1 weighted: %.4f ± %.4f", cv_f1w.mean(), cv_f1w.std())
 
     # ── Held-out evaluation for confusion matrix + per-class numbers ─────────
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
     eval_pipeline = make_pipeline(args.model_type, balanced=balanced)
     _fit_with_balance(eval_pipeline, X_train, y_train, args.model_type, balanced)
 
@@ -253,6 +274,35 @@ def main() -> None:
         }
         for cls in classes
     }
+
+    evaluation = {
+        "evaluation_protocol": "question-grouped-holdout-v1",
+        "random_seed": 42,
+        "dataset_sha256": hashlib.sha256(Path(args.dataset).read_bytes()).hexdigest(),
+        "dataset_rows": len(df),
+        "question_groups": len(set(groups)),
+        "train_rows": len(train),
+        "validation_rows": len(test),
+        "train_question_groups": len(set(groups[train])),
+        "validation_question_groups": len(set(groups[test])),
+        "overlapping_question_groups": len(set(groups[train]) & set(groups[test])),
+        "validation_accuracy": val_acc,
+        "validation_f1_macro": val_f1_macro,
+        "cv_training_groups_f1_macro_mean": float(cv_f1.mean()),
+        "cv_training_groups_f1_macro_std": float(cv_f1.std()),
+        "per_class": per_class,
+        "confusion_matrix": cm,
+        "labels": classes,
+        "sklearn_version": sklearn.__version__,
+        "feature_extractor": "current NLPScorer.get_feature_scores; empty CSV fields normalized to empty strings",
+        "limitations": "Classifier agreement with dataset labels, not human agreement or interview readiness. No production artifact changed in evaluate-only mode.",
+    }
+    if args.evaluate_only:
+        report_path = Path(args.report_out)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(evaluation, indent=2) + "\n")
+        log.info("Grouped evaluation saved → %s; production model unchanged", report_path)
+        return
 
     # ── Final fit on FULL dataset for the saved artifact ──────────────────────
     final_pipeline = make_pipeline(args.model_type, balanced=balanced)
@@ -301,10 +351,10 @@ def main() -> None:
         ],
         "evaluation_note": (
             f"{type(final_pipeline.named_steps['clf']).__name__} retrained on the "
-            "891-row balanced ml_training_data.csv with class balancing enabled. "
-            "5-fold stratified CV "
-            "and held-out 20% test reported."
+            f"{len(df)}-row dataset; balancing={balanced}. "
+            "5-fold question-grouped CV on the training partition and a disjoint-question holdout reported."
         ),
+        "evaluation": evaluation,
     }
 
     metadata_path = Path(args.metadata_out)

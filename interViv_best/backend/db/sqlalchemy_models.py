@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -115,6 +117,9 @@ class CandidateRow(Base):
     sub_domain_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     elo_ratings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     session_history: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Resume layout/section analysis for ATS scoring (nullable: rows created
+    # before 20261103_0017 lost it and need a re-upload).
+    ats_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -140,6 +145,21 @@ class SessionRow(Base):
     rounds_per_skill: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     total_rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     template_id: Mapped[str | None] = mapped_column(ForeignKey("interview_templates.id"), nullable=True)
+    # Phase B block contract (nullable so legacy rows stay valid).
+    round_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    round_config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    block_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expanded_plan_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    allow_unknown_topic_fallback: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Phase 3B: why next-question progression stopped (content_blocked sessions).
+    progression_blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 4A: assessment vs coached practice; optional follow-ups opt-in.
+    practice_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    allow_optional_follow_ups: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Acceptance: optimistic-concurrency revision for atomic follow-up
+    # allocation. Only the allocator reads/writes it; full-doc rewrites
+    # leave it untouched.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     rounds: Mapped[list["RoundRow"]] = relationship(
         back_populates="session",
@@ -187,6 +207,27 @@ class RoundRow(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="in_progress", nullable=False)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase B block identity (nullable so legacy rounds stay valid).
+    block_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    block_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    block_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    block_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Phase D assistance marking (nullable: legacy rounds read as unassisted).
+    assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    assistance_kinds: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Phase 3A immutable attempt snapshot (nullable: pre-snapshot rounds).
+    attempt_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 4A assessment eligibility (nullable: legacy → legacy_unknown at read).
+    assessment_eligibility: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    eligibility_policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    eligibility_exclusion_reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    eligibility_exposure_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    is_follow_up: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    follow_up_parent_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    follow_up_identity: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    # Server-only round metadata (see sqlalchemy_store.ROUND_PRIVATE_META_KEYS).
+    private_meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[SessionRow] = relationship(back_populates="rounds")
 
@@ -286,3 +327,525 @@ class SQLProblemCaseRow(Base):
         UniqueConstraint("problem_id", "sort_order", name="uq_sql_problem_cases_order"),
         CheckConstraint("case_type IN ('visible_sample', 'hidden_case')", name="ck_sql_problem_cases_type"),
     )
+
+
+class LearningEventRow(Base):
+    """Persisted effectiveness signals (Elo deltas, skill attempts)."""
+
+    __tablename__ = "learning_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    skill: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class RoadmapProgressRow(Base):
+    """Per-user roadmap block completion for 7/14/30 day plans."""
+
+    __tablename__ = "roadmap_progress"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    plan_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_blocks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    blocks_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_id", "plan_days", name="uq_roadmap_progress_user_role_days"),
+        CheckConstraint("plan_days IN (7, 14, 30)", name="ck_roadmap_progress_plan_days"),
+    )
+
+
+class LearningResourceRow(Base):
+    """Curated lecture/solution links for Phase 2 skills (no scrape / no API)."""
+
+    __tablename__ = "learning_resources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Soft reference to MCQ/SQL bank item id (no single questions table).
+    question_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("skill_id", "url", name="uq_learning_resources_skill_url"),
+        CheckConstraint(
+            "level IN ('beginner', 'intermediate', 'advanced')",
+            name="ck_learning_resources_level",
+        ),
+        CheckConstraint(
+            "source IN ('youtube', 'docs', 'other')",
+            name="ck_learning_resources_source",
+        ),
+    )
+
+
+class AtsRunRow(Base):
+    """Persisted ATS checker runs (deterministic scores + flags)."""
+
+    __tablename__ = "ats_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resume_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    jd_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    parse_score: Mapped[float] = mapped_column(Float, nullable=False)
+    section_score: Mapped[float] = mapped_column(Float, nullable=False)
+    keyword_score: Mapped[float] = mapped_column(Float, nullable=False)
+    heuristic_score: Mapped[float] = mapped_column(Float, nullable=False)
+    total: Mapped[float] = mapped_column(Float, nullable=False)
+    flags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    missing_skills: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    present_skills: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class JobsCacheRow(Base):
+    """Cached Adzuna (or fixture) job cards — snippet + metadata only."""
+
+    __tablename__ = "jobs_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snippet: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    redirect_url: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_jobs_cache_provider_external"),
+    )
+
+
+class JobsSearchCacheRow(Base):
+    """Query-level cache so identical searches skip Adzuna within TTL."""
+
+    __tablename__ = "jobs_search_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    page: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    results_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class PracticePresetRow(Base):
+    """User-scoped, versioned Phase B practice presets."""
+
+    __tablename__ = "practice_presets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocks_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class BuilderDraftRow(Base):
+    """One autosaved Phase B builder draft per user."""
+
+    __tablename__ = "builder_drafts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocks_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AnswerDraftRow(Base):
+    """In-progress answers keyed by session and round (owned drafts only)."""
+
+    __tablename__ = "answer_drafts"
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    round_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    draft_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class CodingSubmissionRow(Base):
+    """Phase C coding submit attempts: candidate source plus outcome counts.
+
+    One row per submit attempt (retries after an unavailable outcome
+    each record their own row). Hidden inputs, expected outputs,
+    reference solutions, and hidden stdout/stderr are never stored.
+    """
+
+    __tablename__ = "coding_submissions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    problem_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    language: Mapped[str] = mapped_column(String(16), nullable=False, default="python")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    visible_passed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    visible_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hidden_passed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hidden_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class TargetContextRow(Base):
+    """Phase D shared target context: one row per user.
+
+    Carries company, role, the selected job or JD, and the relevant
+    resume reference so every hop (jobs, coach, ATS, gap, roadmap,
+    practice) can prefill from one server-validated source instead of
+    re-prompting. Selecting a target is intent, not evidence: nothing
+    here feeds mastery or readiness math.
+    """
+
+    __tablename__ = "target_contexts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    jd_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    jd_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class RetrySetRow(Base):
+    """Phase D retry set: a persisted practice set drawn from missed topics."""
+
+    __tablename__ = "retry_sets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    items_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="missed-topics")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class BookmarkRow(Base):
+    """Phase D bookmarked problem/question (user + item identity)."""
+
+    __tablename__ = "bookmarks"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    item_type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AssistanceEventRow(Base):
+    """Phase D hint/solution-use metadata, recorded at the point of use.
+
+    Append-only. A round is marked assisted when an event exists for one
+    of its items before submit; learning surfaces keep assisted and
+    unassisted populations separate. Scores are never altered.
+    """
+
+    __tablename__ = "assistance_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class TeachingExposureRow(Base):
+    """Phase 4A durable teaching-delivery record (authoritative for eligibility).
+
+    Distinct from generation or status polls. Idempotent on delivery_id.
+    """
+
+    __tablename__ = "teaching_exposures"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    content_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    block_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    item_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    item_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    content_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    concept_topic_scope_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    delivered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    delivery_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class ReviewScheduleRow(Base):
+    """Phase I spaced-review schedule for a notebook miss (or coding unavailable).
+
+    Interval ladder is applied in backend.review_schedule. Reviews never feed
+    measured mastery; coding rows stay review_available=False.
+    """
+
+    __tablename__ = "review_schedules"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    skill: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    originating_assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    miss_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    interval_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_review_assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    review_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    unavailable_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "item_type", "item_id",
+            name="uq_review_schedules_user_item",
+        ),
+    )
+
+
+class SystemDesignAttemptRow(Base):
+    """Phase E system-design attempt: design text plus self-assessment rubric.
+
+    Evaluation mode is always structured_self_assessment. Incomplete
+    ratings store score=NULL (never a fabricated zero). No diagram
+    correctness claim is stored.
+    """
+
+    __tablename__ = "system_design_attempts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    answer_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rubric_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evaluation_mode: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="structured_self_assessment"
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    incomplete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class MLPrimitivesAttemptRow(Base):
+    """Submitted source plus, when an executor ran it, its grading result."""
+
+    __tablename__ = "ml_primitives_attempts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    block_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    problem_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    problem_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    language: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 20261103_0017: grading outcome (NULL for source-only/unavailable rows).
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    grader_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+# Phase 1A: reviewed question bundles. Content is immutable per version; only
+# ``status`` moves, and every move is appended to ``bundle_status_audit``.
+BUNDLE_STATUSES = ("draft", "in_review", "reviewed", "rejected", "retired")
+BUNDLE_DECISIONS = ("approve", "reject", "adjudicate_approve", "adjudicate_reject")
+
+
+class QuestionBundleRow(Base):
+    __tablename__ = "question_bundles"
+
+    bundle_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    skill: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class QuestionBundleVersionRow(Base):
+    """One immutable content version. No writer updates ``content_json``."""
+
+    __tablename__ = "question_bundle_versions"
+
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)  # "<bundle_id>@<version>"
+    bundle_id: Mapped[str] = mapped_column(ForeignKey("question_bundles.bundle_id"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    attribution_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    author_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    status_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("bundle_id", "version", name="uq_bundle_versions_bundle_version"),
+        UniqueConstraint("bundle_id", "content_hash", name="uq_bundle_versions_bundle_hash"),
+        CheckConstraint("version >= 1", name="ck_bundle_versions_version_positive"),
+        CheckConstraint(
+            "status IN ('draft','in_review','reviewed','rejected','retired')",
+            name="ck_bundle_versions_status",
+        ),
+    )
+
+
+class BundleReviewDecisionRow(Base):
+    """A human decision bound to the exact content hash it reviewed."""
+
+    __tablename__ = "bundle_review_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version_id: Mapped[str] = mapped_column(ForeignKey("question_bundle_versions.id"), nullable=False, index=True)
+    bundle_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    checklist_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    reasons: Mapped[str] = mapped_column(Text, nullable=False)
+    calibration_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "reviewer_id", name="uq_bundle_review_version_reviewer"),
+        CheckConstraint(
+            "decision IN ('approve','reject','adjudicate_approve','adjudicate_reject')",
+            name="ck_bundle_review_decision",
+        ),
+    )
+
+
+class BundleStatusAuditRow(Base):
+    __tablename__ = "bundle_status_audit"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version_id: Mapped[str] = mapped_column(ForeignKey("question_bundle_versions.id"), nullable=False, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class NarrationJobRow(Base):
+    """Durable outbox for post-submit narration work (Phase 3A).
+
+    One row per scored round; the id is deterministic
+    (``"<session_id>:<round>:narration"``) so enqueue is idempotent by
+    primary key. The worker renders a deterministic artifact from the
+    stored rules feedback — no live generation in Phase 3A.
+    """
+
+    __tablename__ = "narration_jobs"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feedback_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    skill: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    final_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    artifact_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','processing','done','failed','skipped')",
+            name="ck_narration_jobs_status",
+        ),
+    )
+
+
+class StudyPlanRow(Base):
+    """Versioned deterministic study plans (Phase 4B)."""
+
+    __tablename__ = "study_plans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    role_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    plan_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("plan_id", "version", name="uq_study_plans_plan_version"),
+        Index("ix_study_plans_user_scope_active", "user_id", "scope_key", "is_active"),
+    )
+
+
+class CoachConversationRow(Base):
+    """Owned multi-turn planning coach conversations (Phase 4B)."""
+
+    __tablename__ = "coach_conversations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_key: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    conversation_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+

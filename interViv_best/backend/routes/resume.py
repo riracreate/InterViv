@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -15,10 +15,14 @@ from backend.integrations import (
     map_skills_to_domains,
 )
 from backend.models.candidate import CandidateDocument
-from backend.routes.auth import get_user_from_authorization
+from backend.routes.auth import get_user_from_authorization, require_authenticated
 from modules.skill_graph import StudentSkillGraph
 
-router = APIRouter(prefix="/resume", tags=["resume"])
+router = APIRouter(
+    prefix="/resume",
+    tags=["resume"],
+    dependencies=[Depends(require_authenticated)],
+)
 LOGGER = logging.getLogger(__name__)
 MAX_RESUME_BYTES = 5 * 1024 * 1024
 
@@ -67,12 +71,27 @@ async def parse_resume(
                 "resume_parser.py does not expose parse_resume(pdf_path)."
             )
 
+        analysis: dict | None = None
         try:
-            parsed_skills = parser_module.parse_resume(str(temp_path))
-        except Exception as parse_exc:
-            LOGGER.warning("Resume parsing failed; using safe fallback skills.")
-            parsed_skills = ["Python"]
+            if hasattr(parser_module, "analyze_resume"):
+                analysis = parser_module.analyze_resume(str(temp_path))
+                parsed_skills = (analysis or {}).get("skills") or []
+            else:
+                parsed_skills = parser_module.parse_resume(str(temp_path))
+        except Exception as exc:
+            LOGGER.warning("Resume text extraction failed.")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="We could not read this PDF. Upload a text-based PDF or choose your skills manually.",
+            ) from exc
 
+        if analysis is not None and (
+            not analysis.get("extract_ok") or analysis.get("likely_garbage")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="We could not read this PDF. Upload a text-based PDF or choose your skills manually.",
+            )
         skills = _normalize_skills(parsed_skills)
         domain_profile = map_skills_to_domains(skills)
         candidate_id = str(uuid4())
@@ -88,6 +107,30 @@ async def parse_resume(
         candidate_doc = candidate.to_mongo()
         if user:
             candidate_doc["user_id"] = user["id"]
+        if analysis:
+            candidate_doc["ats_snapshot"] = {
+                "skills": analysis.get("skills") or skills,
+                "sections": analysis.get("sections") or {},
+                "section_order_ok": analysis.get("section_order_ok"),
+                "experience_bullets": analysis.get("experience_bullets") or [],
+                "extract_ok": analysis.get("extract_ok"),
+                "likely_garbage": analysis.get("likely_garbage"),
+                "layout_checked": analysis.get("layout_checked", False),
+                "layout": analysis.get("layout"),
+                "evidence_skills": analysis.get("evidence_skills"),
+                "evidence_sections_found": analysis.get("evidence_sections_found", False),
+                "text_hash": analysis.get("text_hash"),
+                "char_count": analysis.get("char_count"),
+            }
+        else:
+            candidate_doc["ats_snapshot"] = {
+                "skills": skills,
+                "sections": {},
+                "extract_ok": None,
+                "layout_checked": False,
+                "experience_bullets": [],
+                "text_hash": None,
+            }
         try:
             get_database()["candidates"].insert_one(candidate_doc)
             if user:

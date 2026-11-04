@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&display=swap");
+/* Phase P: no Google Fonts CDN by default (offline contract). Opt-in URL retained in fonts.css. */
 @import "./styles/fonts.css";
 @import "./styles/theme.css";
 
@@ -6,14 +6,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme tokens */
-:root {
-  --font-display: "Instrument Serif", serif;
-  --font-body: "Barlow", sans-serif;
-  --color-background: #FFFFFF;
-  --color-foreground: #000000;
-  --color-muted: #6F6F6F;
-}
+/* Theme tokens live in ./styles/theme.css (imported above).
+   Keep only base/reset here so light home and dark session share one token source. */
 
 /* ─── Base ─── */
 @layer base {
@@ -31,15 +25,15 @@
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    color: #000000;
-    background: #FFFFFF;
+    color: var(--color-ink);
+    background: var(--color-surface);
     min-height: 100vh;
     overflow-x: hidden;
   }
 
   ::selection {
-    background: rgba(0, 0, 0, 0.08);
-    color: #000000;
+    background: rgba(14, 116, 144, 0.15);
+    color: var(--color-ink);
   }
 
   /* Custom scrollbar */
@@ -59,22 +53,15 @@
 }
 
 @layer utilities {
+  /* Historical names; both are plain light cards in the unified theme. */
   .glass-panel {
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.06) 0%,
-      rgba(255, 255, 255, 0.03) 100%
-    );
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    box-shadow: var(--shadow-card);
   }
 
   .glass-soft {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(0, 0, 0, 0.28);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
   }
 }

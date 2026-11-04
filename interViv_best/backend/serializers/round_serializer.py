@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.db.round_meta import ROUND_PRIVATE_META_KEYS
+
 
 DEFAULT_REVIEW_POLICY = "none"
 SUPPORTED_REVIEW_POLICIES = {"none", "after_session"}
@@ -76,6 +78,11 @@ def sanitize_round_for_client(
 ) -> dict[str, Any]:
     """Return a strictly sanitized copy of a round document for candidate delivery."""
     cleaned = dict(round_doc)
+    # Attempt snapshots are server-side only (frozen answers and grading
+    # inputs); they never travel to clients on any round type or policy.
+    cleaned.pop("attempt_snapshot", None)
+    for key in ROUND_PRIVATE_META_KEYS:
+        cleaned.pop(key, None)
     round_type = cleaned.get("round_type", "technical_short_answer")
     config = dict(cleaned.get("config_json") or {})
 
@@ -93,6 +100,43 @@ def sanitize_round_for_client(
     allow_review = is_session_completed and (effective_policy == "after_session")
 
     q_ctx = dict(cleaned.get("question_context") or {})
+
+    if round_type == "ml_primitives":
+        from backend.ml_primitives.catalog import public_problem
+
+        # Rebuild content from the public-only reader, then allowlist round
+        # fields. Stored private oracle material cannot escape on any policy.
+        public = public_problem(config["problem_id"])
+        safe_keys = (
+            "round", "round_type", "status", "difficulty", "skill",
+            "block_id", "block_position", "block_category", "block_index", "block_total",
+            "started_at", "expires_at", "submitted_at",
+        )
+        result = {key: cleaned[key] for key in safe_keys if key in cleaned}
+        result.update(question=public["title"], question_context=public, final_score=None)
+        artifact = cleaned.get("artifact_json") or {}
+        if artifact.get("evaluation") == "ml_primitives" and cleaned.get("final_score") is not None:
+            # Graded result: public fields only (case ids, pass/fail, error
+            # kinds, property names, static findings). No inputs or oracle.
+            result["final_score"] = cleaned["final_score"]
+            for key in ("feedback", "answer_text", "evaluation_mode", "evidence_kind",
+                        "assessment_eligibility", "elo_before", "elo_after"):
+                if key in cleaned:
+                    result[key] = cleaned[key]
+            result["artifact_json"] = {
+                key: artifact[key] for key in (
+                    "evaluation", "problem_id", "grader_version", "status", "cases",
+                    "cases_passed", "cases_total", "properties", "static_findings",
+                    "execution_status", "final_score",
+                ) if key in artifact
+            }
+        result["config_json"] = {
+            key: config[key] for key in (
+                "duration_minutes", "attempt_policy", "review_policy",
+                "problem_id", "problem_version", "language", "scoring_available",
+            ) if key in config
+        }
+        return result
 
     if round_type == "mcq":
         # Sanitize assigned questions in question_context
@@ -160,5 +204,58 @@ def sanitize_round_for_client(
         # Sanitize SQL artifact_json to safe aggregate evidence
         if "artifact_json" in cleaned and cleaned["artifact_json"]:
             cleaned["artifact_json"] = sanitize_sql_artifact_for_client(cleaned["artifact_json"])
+
+    elif round_type == "coding":
+        # Coding never exposes hidden tests, reference solutions, or
+        # hidden execution detail under any review policy.
+        for forbidden in ("hidden_tests", "reference_solution",
+                          "mutant_solution", "hidden_stdout",
+                          "hidden_stderr"):
+            q_ctx.pop(forbidden, None)
+        visible = []
+        for case in (q_ctx.get("visible_tests") or []):
+            visible.append({
+                "input": dict(case.get("input") or {}),
+                "expected": case.get("expected"),
+            })
+        q_ctx["visible_tests"] = visible
+        cleaned["question_context"] = q_ctx
+
+        artifact = dict(cleaned.get("artifact_json") or {})
+        if artifact:
+            cleaned["artifact_json"] = {
+                "evaluation": artifact.get("evaluation", "coding"),
+                "problem_id": artifact.get("problem_id"),
+                "visible": {
+                    "passed": (artifact.get("visible") or {}).get("passed"),
+                    "total": (artifact.get("visible") or {}).get("total"),
+                    "cases": [
+                        {"passed": bool(c.get("passed")),
+                         "error": c.get("error")}
+                        for c in ((artifact.get("visible") or {}).get("cases") or [])
+                    ],
+                },
+                "hidden": {
+                    "passed": (artifact.get("hidden") or {}).get("passed"),
+                    "total": (artifact.get("hidden") or {}).get("total"),
+                },
+                "capped": artifact.get("capped"),
+                "final_score": artifact.get("final_score"),
+            }
+
+    elif round_type == "technical_short_answer":
+        # Pre-answer / active-round: rebuild from an explicit allowlist.
+        # Reference answers, keywords, concepts, and rubrics stay server-side.
+        from modules.bundle_scoring import candidate_technical_context
+
+        cleaned["question_context"] = candidate_technical_context(q_ctx)
+
+    # Top-level reference material never rides on candidate round payloads.
+    # Dashboard may attach ideals only after a completed assessment.
+    for forbidden in (
+        "ideal_answer", "ideal_keywords", "ideal_keywords_list",
+        "reference_answer", "keywords",
+    ):
+        cleaned.pop(forbidden, None)
 
     return cleaned

@@ -1,0 +1,153 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.generators
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Iteration and generators
+  difficulty: medium
+  question: What are Python generators and when would you use them?
+  reference_answer: Generators are functions that use yield to produce a sequence of values lazily, one
+    at a time, instead of building the entire sequence in memory. When called, a generator function returns
+    a generator iterator. Each call to next() resumes execution until the next yield. They are ideal for
+    large or infinite sequences, streaming data, and pipelines. Compared to list comprehensions, generator
+    expressions use less memory.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 14
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Medium
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.generators
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Iteration and generators
+  difficulty: medium
+  question: What are Python generators and when would you use them?
+  reference_answer: Generators are functions that use yield to produce a sequence of values lazily, one
+    at a time, instead of building the entire sequence in memory. When called, a generator function returns
+    a generator iterator. Each call to next() resumes execution until the next yield. They are ideal for
+    large or infinite sequences, streaming data, and pipelines. Compared to list comprehensions, generator
+    expressions use less memory.
+  acceptable_variants:
+  - Generators yield items one at a time without storing the whole sequence.
+  keywords:
+  - generator
+  - yield
+  - lazy
+  - iterator
+  - memory
+  required_concepts:
+  - id: generator
+    descriptor: Generator function/iterator that yields values
+    aliases:
+    - generators
+    - generator function
+    - generator iterator
+    expected_propositions:
+    - yield produces values lazily
+    - generator returns an iterator
+    positive_examples:
+    - A generator uses yield to produce one value at a time.
+    negative_cases:
+    - Calling a generator builds the full list in memory.
+  - id: yield
+    descriptor: yield suspends and resumes generator execution
+    aliases:
+    - yielding
+    expected_propositions:
+    - yield pauses execution until next
+    positive_examples:
+    - next() resumes until the next yield
+    negative_cases:
+    - yield is the same as return
+  - id: lazy_evaluation
+    descriptor: Values computed on demand rather than all at once
+    aliases:
+    - lazy
+    - lazily
+    - on demand
+    expected_propositions:
+    - values are produced on demand
+    positive_examples:
+    - Streaming large files with a generator avoids loading everything.
+    negative_cases:
+    - Generators always allocate the full sequence first.
+  optional_concepts:
+  - id: memory_efficiency
+    descriptor: Lower memory vs materialised sequences
+    aliases:
+    - memory efficient
+    - less memory
+    expected_propositions:
+    - generators use less memory than lists
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: generators_are_lists
+    description: Treating generators as eagerly built lists
+    candidate_patterns:
+    - builds the entire list
+    - same as a list
+    - stores all values
+  depth_markers:
+  - infinite sequences
+  - generator expressions
+  - pipelines
+  - streaming
+  rubric_descriptors:
+    coverage: Mentions generators/yield and laziness with correct roles.
+    accuracy: Does not claim generators materialise full sequences like lists.
+    depth: Notes streaming, infinite sequences, or generator expressions.
+    clarity: States identity vs use-case without conflating list comprehensions.
+  followups: []
+  calibration_examples:
+  - answer: Generators use yield to produce values lazily one at a time, saving memory for large streams.
+    author_level: 3
+    note: strong
+  - answer: Generators use yield.
+    author_level: 1
+    note: term-only / partial
+  - answer: A generator builds the entire list then returns it.
+    author_level: 0
+    note: incorrect / misconception
+  - answer: yield produces values lazily; next() resumes until the next yield.
+    author_level: 2
+    note: concise-correct
+  - answer: You can use generators for data.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 14
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Medium
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

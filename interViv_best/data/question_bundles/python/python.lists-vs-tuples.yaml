@@ -1,0 +1,137 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.lists-vs-tuples
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Core data structures
+  difficulty: easy
+  question: Explain the difference between lists and tuples in Python.
+  reference_answer: Lists are mutable ordered sequences defined with square brackets; tuples are immutable
+    ordered sequences defined with parentheses. Because tuples are immutable they are hashable and can
+    be used as dictionary keys or set members. Tuples are generally faster to iterate and use less memory.
+    Use a list when you need to modify the collection; use a tuple when the data should not change.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 5
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Easy
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.lists-vs-tuples
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Core data structures
+  difficulty: easy
+  question: Explain the difference between lists and tuples in Python.
+  reference_answer: Lists are mutable ordered sequences defined with square brackets; tuples are immutable
+    ordered sequences defined with parentheses. Because tuples are immutable they are hashable and can
+    be used as dictionary keys or set members. Tuples are generally faster to iterate and use less memory.
+    Use a list when you need to modify the collection; use a tuple when the data should not change.
+  acceptable_variants:
+  - Lists are mutable sequences; tuples are immutable sequences.
+  keywords:
+  - list
+  - tuple
+  - mutable
+  - immutable
+  required_concepts:
+  - id: list
+    descriptor: Mutable ordered sequence
+    aliases:
+    - lists
+    expected_propositions:
+    - lists are mutable
+    positive_examples: []
+    negative_cases: []
+  - id: tuple
+    descriptor: Immutable ordered sequence
+    aliases:
+    - tuples
+    expected_propositions:
+    - tuples are immutable
+    positive_examples: []
+    negative_cases: []
+  - id: mutable
+    descriptor: Can be changed in place
+    aliases:
+    - mutability
+    expected_propositions:
+    - lists can be changed after creation
+    positive_examples: []
+    negative_cases: []
+  - id: immutable
+    descriptor: Cannot be changed in place
+    aliases:
+    - immutability
+    expected_propositions:
+    - tuples cannot be modified in place
+    positive_examples: []
+    negative_cases: []
+  optional_concepts: []
+  misconceptions:
+  - id: tuples_are_faster_only_reason
+    description: Claiming tuples exist only because they are faster
+    candidate_patterns:
+    - tuples only exist for speed
+    - lists and tuples are the same except speed
+  depth_markers:
+  - hashable
+  - dict keys
+  - fixed structure
+  rubric_descriptors:
+    coverage: States mutability difference for lists vs tuples.
+    accuracy: Does not claim they differ only by performance.
+    depth: Mentions hashability or use as dict keys / fixed records.
+    clarity: Clear contrast without mixing sets/dicts.
+  followups: []
+  calibration_examples:
+  - answer: Lists are mutable ordered sequences; tuples are immutable and can be dict keys when elements
+      are hashable.
+    author_level: 3
+    note: strong
+  - answer: Lists and tuples store sequences.
+    author_level: 1
+    note: partial
+  - answer: Tuples are just faster lists; otherwise identical.
+    author_level: 0
+    note: incorrect
+  - answer: Lists are mutable; tuples are immutable.
+    author_level: 2
+    note: concise-correct
+  - answer: Use whichever you like.
+    author_level: 0
+    note: ambiguous/unhelpful
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 5
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Easy
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

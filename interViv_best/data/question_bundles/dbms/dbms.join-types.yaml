@@ -1,0 +1,142 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.join-types
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: SQL joins
+  difficulty: easy
+  question: What is a JOIN and explain the different types?
+  reference_answer: A JOIN combines rows from two tables based on a related column. INNER JOIN returns
+    rows where there is a match in both tables. LEFT JOIN returns all rows from the left table and matched
+    rows from the right (NULLs for unmatched). RIGHT JOIN is the mirror. FULL OUTER JOIN returns all rows
+    from both tables. CROSS JOIN is the Cartesian product. SELF JOIN joins a table with itself. Choose
+    based on which unmatched rows you want to keep.
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 179
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Easy
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.join-types
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: SQL joins
+  difficulty: easy
+  question: What is a JOIN and explain the different types?
+  reference_answer: A JOIN combines rows from two tables based on a related column. INNER JOIN returns
+    rows where there is a match in both tables. LEFT JOIN returns all rows from the left table and matched
+    rows from the right (NULLs for unmatched). RIGHT JOIN is the mirror. FULL OUTER JOIN returns all rows
+    from both tables. CROSS JOIN is the Cartesian product. SELF JOIN joins a table with itself. Choose
+    based on which unmatched rows you want to keep.
+  acceptable_variants:
+  - JOIN combines related rows; INNER keeps matches; LEFT keeps all left rows with NULLs for non-matches.
+  keywords:
+  - JOIN
+  - INNER
+  - LEFT
+  - RIGHT
+  - matching rows
+  required_concepts:
+  - id: JOIN
+    descriptor: Combine rows from related tables
+    aliases:
+    - join
+    - joins
+    expected_propositions:
+    - JOIN combines rows based on related columns
+    positive_examples: []
+    negative_cases: []
+  - id: INNER
+    descriptor: Inner join returns matching rows only
+    aliases:
+    - inner join
+    expected_propositions:
+    - inner join keeps only matching rows
+    positive_examples: []
+    negative_cases: []
+  - id: LEFT
+    descriptor: Left outer join keeps all left rows
+    aliases:
+    - left join
+    - left outer
+    expected_propositions:
+    - left join keeps all rows from the left table
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: RIGHT
+    descriptor: Right outer join keeps all right rows
+    aliases:
+    - right join
+    expected_propositions:
+    - right join keeps all rows from the right table
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: join_is_union
+    description: Confusing JOIN with UNION
+    candidate_patterns:
+    - join stacks rows like union
+    - join is the same as union
+  depth_markers:
+  - ON condition
+  - NULL padded
+  - cross join
+  rubric_descriptors:
+    coverage: Defines JOIN and contrasts INNER vs outer (LEFT).
+    accuracy: Does not equate JOIN with UNION.
+    depth: Mentions NULL padding or join condition.
+    clarity: Keeps join types distinct.
+  followups: []
+  calibration_examples:
+  - answer: A JOIN combines related rows. INNER returns matches only; LEFT keeps all left rows and pads
+      NULLs when no match.
+    author_level: 3
+    note: strong
+  - answer: Joins combine tables.
+    author_level: 1
+    note: partial
+  - answer: A join stacks rows like UNION.
+    author_level: 0
+    note: incorrect
+  - answer: INNER keeps matches; LEFT keeps all left rows.
+    author_level: 2
+    note: concise-correct
+  - answer: SQL has joins.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 179
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Easy
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

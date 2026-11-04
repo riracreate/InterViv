@@ -28,6 +28,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.runtime_env import apply_runtime_env  # noqa: E402
+
+apply_runtime_env()
+
 from backend.scoring.pipeline import run_scoring_pipeline  # noqa: E402
 
 
@@ -134,11 +138,27 @@ CASES: list[Case] = [
     ),
     Case(
         name="gibberish",
-        answer="qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+        answer="xqoizv pfuejq zvoykx jwiqpz kxuevb qopzjx wuvkqi",
         min_score=0.0,
         max_score=25.0,
         expect_guard="gibberish",
-        notes="Guard v1 — low vowel ratio / not real words should cap hard.",
+        notes=(
+            "Guard — letter strings that are not words should cap hard. The "
+            "vowel share (0.26) clears the whole-text vowel rule, so the "
+            "per-word nonsense check is what fires."
+        ),
+    ),
+    Case(
+        name="repeated_characters",
+        answer="qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+        min_score=0.0,
+        max_score=25.0,
+        expect_guard="repetition",
+        notes=(
+            "Guard — tokens built from repeated characters are caught by the "
+            "repeated-character rule, which runs before the gibberish rule. "
+            "This text was the original 'gibberish' case."
+        ),
     ),
     Case(
         name="excessive_repetition",
@@ -183,6 +203,40 @@ CASES: list[Case] = [
             "Guard v2 (Task 2) — off-topic answer with zero keyword overlap "
             "and low semantic similarity must be capped."
         ),
+    ),
+    Case(
+        name="entity_swap",
+        answer=(
+            "UDP is connection-oriented: it does a three-way handshake, then "
+            "guarantees reliable ordered delivery with acknowledgements and "
+            "retransmission, plus flow control and congestion control. TCP is "
+            "connectionless and best-effort, with no handshake and no ordering "
+            "guarantee, so it has lower overhead and latency, which suits "
+            "streaming, gaming and DNS."
+        ),
+        min_score=0.0,
+        max_score=35.0,
+        expect_guard="entity_swap",
+        notes=(
+            "TCP and UDP properties exchanged. Before the guard this scored "
+            "88 (correct version: 90) because embeddings and keywords ignore "
+            "which side a property is attached to."
+        ),
+        context=_ctx({
+            "question": "What is the difference between TCP and UDP?",
+            "ideal_answer": (
+                "TCP is a connection-oriented protocol that establishes a "
+                "connection with a three-way handshake and guarantees reliable, "
+                "ordered delivery using acknowledgements, retransmission, flow "
+                "control and congestion control. UDP is connectionless and "
+                "best-effort: it has no handshake, no ordering or delivery "
+                "guarantee, and lower overhead, so it suits latency-sensitive "
+                "uses like video streaming, gaming and DNS."
+            ),
+            "ideal_keywords": "connection-oriented, connectionless, handshake, reliable, ordered, best-effort, latency, overhead",
+            "keywords": ["connection-oriented", "connectionless", "handshake", "reliable"],
+            "skill": "CN",
+        }),
     ),
 ]
 

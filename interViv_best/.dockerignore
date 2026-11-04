@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv
+local-data
+private
+frontend
+tests
+docs
+research
+__pycache__
+**/__pycache__
+.pytest_cache
+.git
+.DS_Store
+*.log

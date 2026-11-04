@@ -20,6 +20,10 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!!")
 
+from datetime import datetime, timezone  # noqa: E402
+
+from backend.auth.security import create_access_token, hash_password  # noqa: E402
+from backend.db import get_database  # noqa: E402
 from backend.main import app  # noqa: E402
 from modules.company_graph import get_company_graph  # noqa: E402
 from modules.gap_analysis import (  # noqa: E402
@@ -96,6 +100,18 @@ def test_unknown_role_raises() -> None:
         GapAnalyzer().compute_gap(user_id="anyone", role_id="not_a_real_role")
 
 
+def _owner(user_id: str) -> dict[str, str]:
+    get_database()["users"].insert_one({
+        "id": user_id,
+        "email": f"{user_id}@example.com",
+        "name": user_id,
+        "password_hash": hash_password("passw0rd123"),
+        "created_at": datetime.now(timezone.utc),
+        "last_active_at": datetime.now(timezone.utc),
+    })
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+
+
 def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> None:
     sg = StudentSkillGraph("u-route-spec")
     sg.initialize_from_resume(["Python", "DSA", "DBMS"])
@@ -103,7 +119,10 @@ def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> Non
     sg.update_after_round("DSA", 45.0, "medium")
     sg.update_after_round("DBMS", 60.0, "medium")
 
-    resp = client.get("/gap-analysis/u-route-spec/amazon_sde_intern")
+    resp = client.get(
+        "/gap-analysis/u-route-spec/amazon_sde_intern",
+        headers=_owner("u-route-spec"),
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["company_id"] == "amazon"
@@ -113,7 +132,7 @@ def test_route_returns_spec_readiness_for_seeded_user(client: TestClient) -> Non
 
 
 def test_route_404_on_unknown_role(client: TestClient) -> None:
-    resp = client.get("/gap-analysis/anyone/no_such_role")
+    resp = client.get("/gap-analysis/anyone/no_such_role", headers=_owner("anyone"))
     assert resp.status_code == 404
 
 
@@ -144,3 +163,50 @@ def test_me_route_returns_my_readiness(client: TestClient) -> None:
     body = resp.json()
     assert body["user_id"] == uid
     assert 40 <= body["overall_readiness_percentage"] <= 70
+
+
+# ── Conservative readiness ────────────────────────────────────────────────────
+
+from modules.gap_analysis import ESTABLISHED_MIN_ATTEMPTS, conservative_level  # noqa: E402
+
+
+def test_conservative_level_shrinks_thin_high_evidence() -> None:
+    assert abs(conservative_level(100.0, 1) - 66.67) < 0.01
+    assert abs(conservative_level(80.0, 3) - 68.0) < 0.01
+    assert abs(conservative_level(80.0, 5) - 71.43) < 0.01
+    # Only the rolling window's scores stand behind the mean.
+    assert conservative_level(80.0, 40) == conservative_level(80.0, 5)
+
+
+def test_conservative_level_never_exceeds_observed() -> None:
+    assert conservative_level(20.0, 1) == 20.0
+    assert conservative_level(50.0, 1) == 50.0
+
+
+def test_single_lucky_attempt_is_provisional_and_discounted() -> None:
+    role = _amazon_role()
+    report = compute_gap_for_levels(role, {"DSA": (100.0, 1)})
+    dsa = next(g for g in report.per_skill_gap if g.skill == "DSA")
+    assert dsa.per_skill_readiness == 100.0
+    assert dsa.evidence_level == "provisional"
+    assert dsa.conservative_readiness < 80.0
+    assert report.overall_readiness_conservative < report.overall_readiness_percentage
+    assert report.provisional_skill_count == 1
+
+
+def test_established_skill_after_min_attempts() -> None:
+    role = _amazon_role()
+    report = compute_gap_for_levels(role, {"DSA": (45.0, ESTABLISHED_MIN_ATTEMPTS)})
+    dsa = next(g for g in report.per_skill_gap if g.skill == "DSA")
+    assert dsa.evidence_level == "established"
+    assert dsa.conservative_level <= dsa.student_level
+    assert report.provisional_skill_count == 0
+
+
+def test_untested_skills_have_no_conservative_figure() -> None:
+    report = compute_gap_for_levels(_amazon_role(), {})
+    assert all(g.evidence_level == "untested" and g.conservative_readiness == 0.0 for g in report.per_skill_gap)
+    assert report.overall_readiness_conservative == 0.0
+    payload = report.to_dict()
+    assert payload["overall_readiness_conservative"] == 0.0
+    assert payload["established_min_attempts"] == ESTABLISHED_MIN_ATTEMPTS

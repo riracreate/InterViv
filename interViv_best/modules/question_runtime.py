@@ -60,6 +60,10 @@ class QuestionCacheContext:
     sub_domain: str | None
     difficulty: str
     target_concepts: tuple[str, ...] = ()
+    company: str | None = None
+    role: str | None = None
+    resume_skills: tuple[str, ...] = ()
+    weak_skills: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,15 +97,23 @@ def _normalise_concepts(concepts: tuple[str, ...] | list[str] | None) -> list[st
     )
 
 
+def _optional_token(value: str | None) -> str:
+    return (value or "").strip().lower().replace(" ", "_")
+
+
 def question_cache_key(context: QuestionCacheContext) -> str:
     payload = {
         "skill": _normalise(context.skill),
         "sub_domain": _normalise(context.sub_domain),
         "difficulty": _normalise(context.difficulty),
         "target_concepts": _normalise_concepts(context.target_concepts),
+        "company": _optional_token(context.company),
+        "role": _optional_token(context.role),
+        "resume_skills": _normalise_concepts(context.resume_skills),
+        "weak_skills": _normalise_concepts(context.weak_skills),
     }
     compact = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return f"interviv:question:v1:{compact}"
+    return f"interviv:question:v2:{compact}"
 
 
 def _display_list(items: tuple[str, ...] | list[str] | None) -> str:
@@ -356,11 +368,23 @@ def call_llm_with_cache_retry(
     *,
     asked: list[str] | None = None,
 ) -> str | None:
-    """Return raw LLM content or ``None`` after retries/fallback-worthy errors."""
+    """Return raw LLM content or ``None`` after retries/fallback-worthy errors.
+
+    Phase Q: ``LLM_LIVE_FETCH`` and ``QUESTION_GENERATION_MODE`` are enforced
+    here so adaptive and non-adaptive callers share one outbound boundary.
+    """
+    from modules.llm_outbound_gate import question_llm_outbound_allowed
+
     _set_last_error(None)
     cached = _cache_get(context, asked or [])
     if cached:
         return cached
+
+    if not question_llm_outbound_allowed():
+        _set_last_error(
+            "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
+        )
+        return None
 
     provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:
@@ -499,6 +523,11 @@ def _load_structured_bank() -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         _STRUCTURED_BANK = [row for row in csv.DictReader(handle) if row.get("question")]
     return _STRUCTURED_BANK
+
+
+def structured_bank_rows() -> list[dict[str, str]]:
+    """Cached structured-bank rows selection filters (read-only shared rows)."""
+    return _load_structured_bank()
 
 
 def _normalised_match(row_value: str | None, target: str | None) -> bool:
@@ -645,6 +674,10 @@ def generate_question(
             sub_domain=sub_domain or "general",
             difficulty=difficulty,
             target_concepts=tuple(target_concepts or ()),
+            company=market.company,
+            role=market.role,
+            resume_skills=tuple(market.resume_skills or ()),
+            weak_skills=tuple(market.weak_skills or ()),
         )
         raw = call_llm_with_cache_retry(prompt, context, asked=asked)
         payload = parse_llm_json(raw or "")

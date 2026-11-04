@@ -1,7 +1,20 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { uploadResume, startSession, saveInterviewState, fetchMe } from '../lib/api';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { uploadResume, startSession, saveInterviewState, fetchMe, saveTargetContext } from '../lib/api';
+import { readScoped, writeScoped } from '../lib/accountStorage';
+import { dedupeDomainSkills, filterDomains, selectedCount } from '../lib/skillDomains';
+import {
+  WIZARD_STORAGE_NAME,
+  WIZARD_STORAGE_VERSION,
+  previousStep,
+  resolveWizardStep,
+  restoreWizard,
+  serializeWizard,
+  stepFromSearch,
+} from '../lib/uploadWizard';
 import CompanySelector from '../components/CompanySelector';
+import AccountMenu from '../components/AccountMenu';
+import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
 const ROUNDS_PER_SKILL = 3;
 
@@ -93,6 +106,8 @@ const DOMAIN_PRESETS = [
 ];
 
 const ALL_SUGGESTED_SKILLS = Array.from(new Set(DOMAIN_PRESETS.flatMap(d => d.skills)));
+// Picker view: each skill listed once, under its first domain.
+const PICKER_DOMAINS = dedupeDomainSkills(DOMAIN_PRESETS);
 
 function mergeUnique(...groups) {
   const seen = new Set();
@@ -119,8 +134,13 @@ function withoutSkill(list, skill) {
 
 export default function Upload() {
   const navigate = useNavigate();
-  const [step, setStep] = useState('upload');
+  const location = useLocation();
+  const [, setSearchParams] = useSearchParams();
   const [file, setFile] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [userId, setUserId] = useState(null);
+  const [profile, setProfile] = useState({ name: '', email: '' });
+  const [restored, setRestored] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [extractedSkills, setExtractedSkills] = useState([]);
@@ -131,18 +151,70 @@ export default function Upload() {
   const [error, setError] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [targetSelection, setTargetSelection] = useState({ companyId: '', roleId: '' });
+  const [skillQuery, setSkillQuery] = useState('');
 
+  // The URL owns the step (?step=upload|skills|domains), so browser Back and
+  // Forward move through the wizard; an unreachable step resolves to the
+  // nearest valid one.
+  const wizard = { candidateId, fileName, extractedSkills, domainProfile, selectedSkills, targetSelection };
+  const requestedStep = stepFromSearch(location.search);
+  const step = resolveWizardStep(requestedStep || 'upload', wizard);
+
+  const goToStep = useCallback((next, { replace = false } = {}) => {
+    setSearchParams({ step: next }, { replace, state: { wizardFrom: step } });
+  }, [setSearchParams, step]);
+
+  // Restore this account's wizard before applying defaults.
   useEffect(() => {
     let cancelled = false;
     fetchMe()
-      .then(() => { if (!cancelled) setIsAuthenticated(true); })
-      .catch(() => { if (!cancelled) setIsAuthenticated(false); });
+      .then((me) => {
+        if (cancelled) return;
+        const u = me.user || me;
+        const id = u.id || u.user_id || null;
+        setIsAuthenticated(true);
+        setUserId(id);
+        setProfile({ name: u.name || '', email: u.email || '' });
+        const saved = restoreWizard(readScoped('session', id, WIZARD_STORAGE_NAME, WIZARD_STORAGE_VERSION));
+        setCandidateId(saved.candidateId);
+        setFileName(saved.fileName);
+        setExtractedSkills(saved.extractedSkills);
+        setDomainProfile(saved.domainProfile);
+        setSelectedSkills(saved.selectedSkills);
+        const target = saved.targetSelection.companyId && saved.targetSelection.roleId
+          ? saved.targetSelection
+          : { companyId: u.target_company_id || '', roleId: u.target_role_id || '' };
+        setTargetSelection(target);
+      })
+      .catch(() => { if (!cancelled) setIsAuthenticated(false); })
+      .finally(() => { if (!cancelled) setRestored(true); });
     return () => { cancelled = true; };
   }, []);
 
+  // Persist wizard metadata per account (never resume bytes).
+  useEffect(() => {
+    if (!restored || !userId) return;
+    writeScoped('session', userId, WIZARD_STORAGE_NAME, serializeWizard(wizard), WIZARD_STORAGE_VERSION);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restored, userId, candidateId, fileName, extractedSkills, domainProfile, selectedSkills, targetSelection]);
+
+  // Replace an invalid or unreachable ?step= with the nearest valid step.
+  useEffect(() => {
+    if (!restored) return;
+    if (requestedStep !== step) setSearchParams({ step }, { replace: true });
+  }, [restored, requestedStep, step, setSearchParams]);
+
+  const goBack = () => {
+    const prev = previousStep(step);
+    if (!prev) { navigate('/home'); return; }
+    if (location.state?.wizardFrom === prev) navigate(-1);
+    else goToStep(prev, { replace: true });
+  };
+
   const handleFile = (f) => {
-    if (f && f.type === 'application/pdf') { setFile(f); setError(''); }
-    else setError('Please upload a PDF file.');
+    const problem = resumeFileError(f);
+    if (problem) { setFile(null); setError(problem); return; }
+    setFile(f); setError('');
   };
 
   const handleDrop = useCallback((e) => {
@@ -153,16 +225,24 @@ export default function Upload() {
 
   const processResume = async () => {
     if (!file) return;
+    const problem = resumeFileError(file);
+    if (problem) { setError(problem); return; }
     setIsProcessing(true);
     setError('');
     try {
       const r = await uploadResume(file);
       const detected = r.skills || [];
       setCandidateId(r.candidate_id);
+      setFileName(file.name);
       setExtractedSkills(detected);
       setDomainProfile(r.domain_profile || {});
       setSelectedSkills(detected.slice(0, 3));
-      setStep('skills');
+      goToStep('skills');
+      // Carry the resume forward: later hops (ATS, coach, gaps) prefill
+      // from the shared target context instead of re-prompting.
+      if (r.candidate_id) {
+        saveTargetContext({ resume_ref: r.candidate_id }).catch(() => {});
+      }
     } catch (err) {
       setError(err.message || 'Resume processing failed.');
     } finally {
@@ -205,6 +285,7 @@ export default function Upload() {
         question: r.question,
         difficulty: r.difficulty,
         round_type: r.round_type || 'technical_short_answer',
+        block_category: r.block_category || null,
         question_context: r.question_context || {},
         config_json: r.config_json || {},
         expires_at: r.expires_at || null,
@@ -225,33 +306,33 @@ export default function Upload() {
   const chooseDomainPreset = (domain) => {
     const skills = domain.skills || [domain.short];
     setCandidateId('');
+    setFileName('');
     setExtractedSkills(skills);
     setDomainProfile(skills.reduce((profile, skill) => ({ ...profile, [skill]: 'general' }), {}));
     setSelectedSkills(skills.slice(0, Math.min(3, skills.length)));
-    setStep('skills');
+    goToStep('skills');
   };
 
   const suggestedSkills = mergeUnique(ALL_SUGGESTED_SKILLS, extractedSkills);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[var(--color-surface)]">
       {/* Nav */}
-      <nav className="w-full border-b border-black/5">
+      <nav className="w-full border-b border-[var(--color-border)]">
         <div className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}
-            className="text-2xl tracking-tight text-black"
-            style={{ fontFamily: "'Instrument Serif', serif" }}>
+          <a href="/home" onClick={(e) => { e.preventDefault(); navigate('/home'); }}
+            className="text-2xl tracking-tight text-[var(--color-ink)]"
+            style={{ fontFamily: "var(--font-display)" }}>
             interViv<sup className="text-xs align-super">©</sup>
           </a>
-          <button onClick={() => {
-            if (step === 'domains') setStep('skills');
-            else if (step === 'skills') setStep('upload');
-            else navigate('/');
-          }}
-            className="text-sm text-[#6F6F6F] hover:text-black transition-colors cursor-pointer"
-            style={{ fontFamily: "'Inter', sans-serif" }}>
-            ← {step === 'upload' ? 'Home' : 'Back'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={goBack}
+              type="button"
+              className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}>
+              ← {step === 'upload' ? 'Home' : 'Back'}
+            </button>
+            <AccountMenu userName={profile.name} userEmail={profile.email} fetchProfile={false} />
+          </div>
         </div>
       </nav>
 
@@ -268,19 +349,19 @@ export default function Upload() {
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-full text-xs font-medium flex items-center justify-center border transition-all duration-300"
                     style={{
-                      backgroundColor: isActive ? '#000' : 'transparent',
-                      color: isActive ? '#fff' : '#6F6F6F',
-                      borderColor: isActive ? '#000' : '#E0E0E0',
-                      fontFamily: "'Inter', sans-serif",
+                      backgroundColor: isActive ? 'var(--color-ink)' : 'transparent',
+                      color: isActive ? '#fff' : 'var(--color-ink-muted)',
+                      borderColor: isActive ? 'var(--color-ink)' : 'var(--color-border)',
+                      fontFamily: "var(--font-body)",
                     }}>
                     {isDone ? '✓' : i + 1}
                   </div>
                   <span className="text-xs font-medium hidden sm:inline"
-                    style={{ fontFamily: "'Inter', sans-serif", color: isActive ? '#000' : '#6F6F6F' }}>
+                    style={{ fontFamily: "var(--font-body)", color: isActive ? 'var(--color-ink)' : 'var(--color-ink-muted)' }}>
                     {s}
                   </span>
                 </div>
-                {i < 2 && <div className="flex-1 h-px" style={{ backgroundColor: i < stepIndex ? '#000' : '#E0E0E0' }} />}
+                {i < 2 && <div className="flex-1 h-px" style={{ backgroundColor: i < stepIndex ? 'var(--color-ink)' : 'var(--color-border)' }} />}
               </React.Fragment>
             );
           })}
@@ -290,10 +371,10 @@ export default function Upload() {
         {step === 'upload' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: 'var(--color-ink)', letterSpacing: '-1.5px' }}>
               Upload your profile
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: 'var(--color-ink-muted)' }}>
               Our resume parser extracts your skills and builds your interview profile.
             </p>
 
@@ -303,50 +384,61 @@ export default function Upload() {
               onDrop={handleDrop}
               onClick={() => !file && document.getElementById('fileInput').click()}
               className="rounded-2xl p-20 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 border-2 border-dashed"
-              style={{ borderColor: file ? '#000' : dragOver ? '#000' : '#E0E0E0', backgroundColor: file ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+              style={{ borderColor: file ? 'var(--color-ink)' : dragOver ? 'var(--color-ink)' : 'var(--color-border)', backgroundColor: file ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
               {file ? (
                 <div className="text-center">
                   <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink)" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   </div>
-                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>{file.name}</p>
-                  <p className="text-xs font-medium tracking-wider uppercase text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>Ready to process</p>
+                  <p className="text-lg font-medium text-[var(--color-ink)] mb-1" style={{ fontFamily: "var(--font-body)" }}>{file.name}</p>
+                  <p className="text-xs font-medium tracking-wider uppercase text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>Ready to process</p>
                   <button onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                    className="mt-3 text-xs text-[#6F6F6F] hover:text-black transition-colors"
-                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    className="mt-3 text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors"
+                    style={{ fontFamily: "var(--font-body)" }}>
                     ✕ Remove
                   </button>
                 </div>
               ) : (
                 <div className="text-center">
                   <div className="w-14 h-14 rounded-xl bg-black/5 flex items-center justify-center mb-5 mx-auto">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink-muted)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </div>
-                  <p className="text-lg font-medium text-black mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>Drag and drop your PDF resume</p>
-                  <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>Maximum file size 10MB</p>
+                  <p className="text-lg font-medium text-[var(--color-ink)] mb-1" style={{ fontFamily: "var(--font-body)" }}>Drag and drop your PDF resume</p>
+                  <p className="text-sm text-[var(--color-ink-muted)] mb-6" style={{ fontFamily: "var(--font-body)" }}>Maximum file size {MAX_RESUME_LABEL}</p>
                   <input type="file" accept=".pdf" className="hidden" id="fileInput" onChange={(e) => handleFile(e.target.files[0])} />
                   <label htmlFor="fileInput"
-                    className="rounded-full px-6 py-2.5 text-sm text-black cursor-pointer border border-black/15 hover:border-black/30 transition-colors"
-                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    className="rounded-full px-6 py-2.5 text-sm text-[var(--color-ink)] cursor-pointer border border-[var(--color-border)] hover:border-black/30 transition-colors"
+                    style={{ fontFamily: "var(--font-body)" }}>
                     Select File
                   </label>
                 </div>
               )}
             </div>
 
-            {error && <p className="mt-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+            {error && <p className="app-form-error mt-4" role="alert">{error}</p>}
+
+            {candidateId && !file && (
+              <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-white p-4 flex flex-wrap items-center justify-between gap-3" data-testid="upload-restored">
+                <p className="text-sm text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+                  Resume already processed{fileName ? `: ${fileName}` : ''}. Upload a new PDF above, or keep these skills.
+                </p>
+                <button type="button" onClick={() => goToStep('skills')} className="app-button">
+                  Continue with these skills →
+                </button>
+              </div>
+            )}
 
             {/* Quick start without resume */}
             <div className="mt-8">
-              <p className="text-sm text-[#6F6F6F] mb-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <p className="text-sm text-[var(--color-ink-muted)] mb-4" style={{ fontFamily: "var(--font-body)" }}>
                 Or pick domains directly to start immediately:
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {DOMAIN_PRESETS.map(d => (
                   <button key={d.short} onClick={() => chooseDomainPreset(d)}
-                    className="rounded-2xl border border-black/8 p-4 text-left hover:border-black/20 transition-all cursor-pointer">
-                    <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{d.name}</p>
-                    <p className="text-xs text-[#6F6F6F] mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    className="rounded-2xl border border-[var(--color-border)] bg-white p-4 text-left hover:border-black/20 transition-all cursor-pointer">
+                    <p className="text-sm font-medium text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>{d.name}</p>
+                    <p className="text-xs text-[var(--color-ink-muted)] mt-1" style={{ fontFamily: "var(--font-body)" }}>
                       {d.skills.slice(0, 3).join(' · ')}
                     </p>
                   </button>
@@ -355,9 +447,8 @@ export default function Upload() {
             </div>
 
             {file && (
-              <button disabled={isProcessing} onClick={processResume}
-                className="w-full mt-6 rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-                style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+              <button type="button" disabled={isProcessing} onClick={processResume}
+                className="app-button app-button-primary w-full mt-6" style={{ padding: '16px 20px' }}>
                 {isProcessing ? 'Extracting Intelligence...' : 'Continue →'}
               </button>
             )}
@@ -368,20 +459,20 @@ export default function Upload() {
         {step === 'skills' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: 'var(--color-ink)', letterSpacing: '-1.5px' }}>
               Extracted intelligence
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: 'var(--color-ink-muted)' }}>
               We identified these core competencies from your resume. Select the ones to practice.
             </p>
 
-            <div className="rounded-2xl border border-black/8 p-8 mb-6">
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-8 mb-6">
               <div className="flex items-center justify-between gap-3 mb-4">
-                <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
+                  style={{ fontFamily: "var(--font-body)" }}>
                   {extractedSkills.length ? 'Detected skills' : 'Choose skills'}
                 </p>
-                <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                <p className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                   Tap chips to select or remove
                 </p>
               </div>
@@ -390,10 +481,10 @@ export default function Upload() {
                   <button key={skill} onClick={() => toggleSkill(skill)}
                     className="rounded-full px-4 py-2 text-sm border transition-all cursor-pointer"
                     style={{
-                      fontFamily: "'Inter', sans-serif",
-                      borderColor: hasSkill(selectedSkills, skill) ? '#000' : 'rgba(0,0,0,0.08)',
-                      backgroundColor: hasSkill(selectedSkills, skill) ? '#000' : 'transparent',
-                      color: hasSkill(selectedSkills, skill) ? '#fff' : '#000',
+                      fontFamily: "var(--font-body)",
+                      borderColor: hasSkill(selectedSkills, skill) ? 'var(--color-ink)' : 'rgba(0,0,0,0.08)',
+                      backgroundColor: hasSkill(selectedSkills, skill) ? 'var(--color-ink)' : 'transparent',
+                      color: hasSkill(selectedSkills, skill) ? '#fff' : 'var(--color-ink)',
                     }}>
                     {skill}
                   </button>
@@ -401,58 +492,98 @@ export default function Upload() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-black/8 p-6 mb-6">
-              <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-4"
-                style={{ fontFamily: "'Inter', sans-serif" }}>
+            {selectedSkills.length > 0 && (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 mb-4" data-testid="upload-selected-skills">
+                <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)] mb-2"
+                  style={{ fontFamily: "var(--font-body)" }}>
+                  Selected
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedSkills.map((skill) => (
+                    <button key={skill} type="button" onClick={() => toggleSkill(skill)}
+                      aria-label={`Remove ${skill}`}
+                      className="rounded-full bg-[var(--color-ink)] px-3 py-1 text-xs text-white">
+                      {skill} ×
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 mb-6" data-testid="upload-domain-picker">
+              <label htmlFor="skill-search" className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
+                style={{ fontFamily: "var(--font-body)" }}>
                 Add more skills or languages
-              </p>
-              <div className="space-y-5">
-                {DOMAIN_PRESETS.map(domain => (
-                  <div key={domain.short}>
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>
-                        {domain.name}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setExtractedSkills(prev => mergeUnique(prev, domain.skills));
-                          setSelectedSkills(prev => mergeUnique(prev, domain.skills));
-                        }}
-                        className="text-xs text-[#6F6F6F] hover:text-black transition-colors"
-                        style={{ fontFamily: "'Inter', sans-serif" }}
-                      >
-                        Select all
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {domain.skills.map(skill => {
-                        const active = hasSkill(selectedSkills, skill);
-                        return (
-                          <button
-                            key={`${domain.short}-${skill}`}
-                            type="button"
-                            onClick={() => toggleSkill(skill)}
-                            className="rounded-full px-3 py-1.5 text-xs border transition-all cursor-pointer"
-                            style={{
-                              fontFamily: "'Inter', sans-serif",
-                              borderColor: active ? '#000' : 'rgba(0,0,0,0.10)',
-                              backgroundColor: active ? '#000' : 'rgba(0,0,0,0.02)',
-                              color: active ? '#fff' : '#000',
-                            }}
-                          >
-                            {skill}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+              </label>
+              <input
+                id="skill-search"
+                type="search"
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+                placeholder="Search skills or domains (e.g. SQL, React, Kafka)"
+                className="mt-3 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm"
+              />
+              <div className="mt-4 space-y-2">
+                {filterDomains(PICKER_DOMAINS, skillQuery).map((domain) => {
+                  const count = selectedCount(domain, selectedSkills);
+                  return (
+                    <details key={domain.short} open={Boolean(skillQuery.trim())} className="rounded-xl border border-[var(--color-border)] px-3 py-2">
+                      <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-medium text-[var(--color-ink)]"
+                        style={{ fontFamily: "var(--font-body)" }}>
+                        <span>{domain.name}</span>
+                        <span className="text-xs font-normal text-[var(--color-ink-muted)]">
+                          {count ? `${count} selected · ` : ''}{domain.skills.length} skills
+                        </span>
+                      </summary>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {domain.skills.map(skill => {
+                          const active = hasSkill(selectedSkills, skill);
+                          return (
+                            <button
+                              key={`${domain.short}-${skill}`}
+                              type="button"
+                              onClick={() => toggleSkill(skill)}
+                              aria-pressed={active}
+                              className="rounded-full px-3 py-1.5 text-xs border transition-all cursor-pointer"
+                              style={{
+                                fontFamily: "var(--font-body)",
+                                borderColor: active ? 'var(--color-ink)' : 'rgba(0,0,0,0.10)',
+                                backgroundColor: active ? 'var(--color-ink)' : 'rgba(0,0,0,0.02)',
+                                color: active ? '#fff' : 'var(--color-ink)',
+                              }}
+                            >
+                              {skill}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExtractedSkills(prev => mergeUnique(prev, domain.skills));
+                            setSelectedSkills(prev => mergeUnique(prev, domain.skills));
+                          }}
+                          className="text-xs text-[var(--color-ink-muted)] underline hover:text-[var(--color-ink)]"
+                          style={{ fontFamily: "var(--font-body)" }}
+                        >
+                          Select all
+                        </button>
+                      </div>
+                    </details>
+                  );
+                })}
+                {filterDomains(PICKER_DOMAINS, skillQuery).length === 0 && (
+                  <p className="text-sm text-[var(--color-ink-muted)]">
+                    No listed skill matches “{skillQuery}”.{' '}
+                    <button type="button" className="underline" onClick={() => { toggleSkill(skillQuery.trim()); setSkillQuery(''); }}>
+                      Add “{skillQuery.trim()}”
+                    </button>
+                  </p>
+                )}
               </div>
             </div>
 
             {selectedSkills.length > 0 && (
-              <p className="text-sm text-[#6F6F6F] mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <p className="text-sm text-[var(--color-ink-muted)] mb-6" style={{ fontFamily: "var(--font-body)" }}>
                 {selectedSkills.length} skill{selectedSkills.length > 1 ? 's' : ''} selected · {selectedSkills.length * ROUNDS_PER_SKILL} total rounds
               </p>
             )}
@@ -461,13 +592,16 @@ export default function Upload() {
               <CompanySelector
                 isAuthenticated={isAuthenticated}
                 onSelectionChange={setTargetSelection}
+                // The selector unmounts on Review; when it remounts it must
+                // start from the live selection, not a page-load snapshot.
+                initialCompanyId={targetSelection.companyId}
+                initialRoleId={targetSelection.roleId}
               />
             </div>
 
-            <button onClick={() => setStep('domains')} disabled={selectedSkills.length === 0}
-              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-30"
-              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
-              Choose Interview Domains →
+            <button type="button" onClick={() => goToStep('domains')} disabled={selectedSkills.length === 0}
+              className="app-button app-button-primary w-full" style={{ padding: '16px 20px' }}>
+              Review and start →
             </button>
           </div>
         )}
@@ -476,33 +610,32 @@ export default function Upload() {
         {step === 'domains' && (
           <div className="animate-fade-rise">
             <h1 className="text-4xl md:text-5xl tracking-tight mb-3"
-              style={{ fontFamily: "'Instrument Serif', serif", color: '#000', letterSpacing: '-1.5px' }}>
+              style={{ fontFamily: "var(--font-display)", color: 'var(--color-ink)', letterSpacing: '-1.5px' }}>
               Ready to begin
             </h1>
-            <p className="text-base mb-10" style={{ fontFamily: "'Inter', sans-serif", color: '#6F6F6F' }}>
+            <p className="text-base mb-10" style={{ fontFamily: "var(--font-body)", color: 'var(--color-ink-muted)' }}>
               Your adaptive session is configured. Each skill is tested in rotation.
             </p>
 
-            <div className="rounded-2xl border border-black/8 overflow-hidden mb-8">
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white overflow-hidden mb-8">
               {(selectedSkills.length > 0 ? selectedSkills : DOMAIN_PRESETS.slice(0, 3).map(d => d.short)).map((skill, i) => (
-                <div key={skill} className="px-6 py-4 border-b border-black/5 last:border-0 flex items-center justify-between">
+                <div key={skill} className="px-6 py-4 border-b border-[var(--color-border)] last:border-0 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold"
-                      style={{ fontFamily: "'Inter', sans-serif" }}>{i + 1}</span>
-                    <span className="text-sm font-medium text-black" style={{ fontFamily: "'Inter', sans-serif" }}>{skill}</span>
+                    <span className="w-7 h-7 rounded-full bg-[var(--color-ink)] text-white flex items-center justify-center text-xs font-bold"
+                      style={{ fontFamily: "var(--font-body)" }}>{i + 1}</span>
+                    <span className="text-sm font-medium text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>{skill}</span>
                   </div>
-                  <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <span className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                     Rounds {i * ROUNDS_PER_SKILL + 1}–{(i + 1) * ROUNDS_PER_SKILL}
                   </span>
                 </div>
               ))}
             </div>
 
-            {error && <p className="mb-4 text-sm text-red-600" style={{ fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+            {error && <p className="app-form-error mb-4" role="alert">{error}</p>}
 
-            <button disabled={isStarting} onClick={startInterview}
-              className="w-full rounded-full py-4 text-sm font-medium text-white cursor-pointer transition-transform hover:scale-[1.01] disabled:opacity-50"
-              style={{ backgroundColor: '#000', fontFamily: "'Inter', sans-serif" }}>
+            <button type="button" disabled={isStarting} onClick={startInterview}
+              className="app-button app-button-primary w-full" style={{ padding: '16px 20px' }}>
               {isStarting ? 'Starting Session...' : `Start Interview · ${(selectedSkills.length || 1) * ROUNDS_PER_SKILL} Rounds →`}
             </button>
           </div>

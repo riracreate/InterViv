@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Play, Send, Database, Table, CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
-import { runSqlQuery } from '../lib/api';
+import { runSqlQuery, saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 
 export default function SQLRound({
@@ -17,7 +17,11 @@ export default function SQLRound({
   onSubmit,
   onNextRound,
   sessionComplete = false,
+  submitted = null,
+  nextBusy = false,
 }) {
+  // Result view follows the submission status, scored or not.
+  const closed = submitted ?? (currentScore !== null);
   const [query, setQuery] = useState(
     questionContext?.reference_query
       ? ''
@@ -27,13 +31,47 @@ export default function SQLRound({
   const [isRunningQuery, setIsRunningQuery] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
   const [previewError, setPreviewError] = useState(null);
+  const [draftNotice, setDraftNotice] = useState('');
+  const draftTimer = useRef(null);
+  const draftLoadedFor = useRef('');
   const [secondsRemaining, setSecondsRemaining] = useState(() =>
     computeSecondsRemaining(expiresAt, configJson?.duration_minutes || 25)
   );
 
+  useEffect(() => {
+    const key = `${sessionId}:${round}`;
+    if (!sessionId || closed || draftLoadedFor.current === key) return undefined;
+    draftLoadedFor.current = key;
+    let cancelled = false;
+    fetchAnswerDraft(sessionId, round)
+      .then((data) => {
+        if (cancelled) return;
+        const saved = String(data?.draft?.answer_text || '').trim();
+        if (saved) {
+          setQuery(saved);
+          setDraftNotice('Restored your saved query.');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, round, closed]);
+
+  useEffect(() => {
+    if (!sessionId || closed || !query.trim()) return undefined;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      saveAnswerDraft(sessionId, { round, answer_text: query }).catch(() => {});
+    }, 1500);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [query, sessionId, round, closed]);
+
   // Countdown timer
   useEffect(() => {
-    if (currentScore !== null || isScoring || secondsRemaining <= 0) return undefined;
+    if (closed || isScoring || secondsRemaining <= 0) return undefined;
     const interval = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
@@ -45,7 +83,7 @@ export default function SQLRound({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [currentScore, isScoring, secondsRemaining]);
+  }, [closed, isScoring, secondsRemaining]);
 
   const schemaDdl = questionContext?.schema_ddl || '';
   const sampleCases = questionContext?.sample_cases || [];
@@ -75,7 +113,7 @@ export default function SQLRound({
   };
 
   const handleFinalSubmit = () => {
-    if (isScoring || currentScore !== null || !query.trim()) return;
+    if (isScoring || closed || !query.trim()) return;
     onSubmit({ answer_text: query.trim() });
   };
 
@@ -88,7 +126,7 @@ export default function SQLRound({
   return (
     <div className="flex flex-col gap-5 p-6 max-w-6xl mx-auto w-full" data-testid="sql-round-container">
       {/* Top Header Bar */}
-      <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
+      <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-sm flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold uppercase">
             SQL Round
@@ -113,11 +151,11 @@ export default function SQLRound({
 
           <button
             onClick={handleFinalSubmit}
-            disabled={isScoring || !query.trim() || currentScore !== null}
+            disabled={isScoring || !query.trim() || closed}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition"
           >
             <Send className="w-3 h-3" />
-            <span>{isScoring ? 'Submitting...' : currentScore !== null ? 'Submitted' : 'Submit Final Solution'}</span>
+            <span>{isScoring ? 'Submitting...' : closed ? 'Submitted' : 'Submit Final Solution'}</span>
           </button>
         </div>
       </div>
@@ -125,7 +163,7 @@ export default function SQLRound({
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Left Column: Problem, Schema, and Sample Data */}
-        <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col overflow-hidden h-[540px]">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col overflow-hidden h-[540px]">
           {/* Tabs */}
           <div className="flex border-b border-gray-100 bg-gray-50/70 p-1.5 gap-1">
             <button
@@ -196,9 +234,12 @@ export default function SQLRound({
         {/* Right Column: Query Editor & Output */}
         <div className="flex flex-col gap-4 h-[540px]">
           {/* Query Editor Box */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">SQL Query Editor</span>
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">
+                SQL Query Editor
+                {draftNotice && <span className="ml-2 normal-case text-blue-600" role="status">{draftNotice}</span>}
+              </span>
               <button
                 onClick={handleRunQuery}
                 disabled={isRunningQuery || isScoring || !query.trim()}
@@ -212,7 +253,7 @@ export default function SQLRound({
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              disabled={currentScore !== null || isScoring}
+              disabled={closed || isScoring}
               placeholder="SELECT ... FROM ...;"
               className="flex-1 w-full p-4 font-mono text-xs text-gray-900 bg-white focus:outline-none resize-none leading-relaxed"
               spellCheck={false}
@@ -220,7 +261,7 @@ export default function SQLRound({
           </div>
 
           {/* Results / Feedback Panel */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col h-[230px] overflow-hidden">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col h-[230px] overflow-hidden">
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">Query Execution Output</span>
               {previewResult && (
@@ -280,21 +321,22 @@ export default function SQLRound({
       </div>
 
       {/* Submission Score & Test Case Results */}
-      {currentScore !== null && (
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="sql-review-summary">
+      {closed && (
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="sql-review-summary">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Evaluation Score</span>
-              <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{currentScore.toFixed(1)}%</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{currentScore == null ? 'Not scored' : `${currentScore.toFixed(1)}%`}</h3>
               <p className="text-xs text-gray-500 mt-1">{currentFeedback || 'Query scored deterministically across all test cases.'}</p>
             </div>
 
             {onNextRound && (
               <button
                 onClick={onNextRound}
-                className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
+                disabled={nextBusy}
+                className="px-5 py-2.5 bg-gray-900 hover:bg-[var(--color-ink)] text-white rounded-xl text-sm font-medium transition"
               >
-                {sessionComplete ? 'View Summary' : 'Next Round'}
+                {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next Round')}
               </button>
             )}
           </div>

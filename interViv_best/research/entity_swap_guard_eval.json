@@ -1,0 +1,395 @@
+{
+  "dataset": "data/interview_dataset_v6.csv",
+  "seed": 42,
+  "comparison_rows": 294,
+  "comparison_questions": 97,
+  "tune_questions": 77,
+  "heldout_questions": 20,
+  "selection_rule": "max swap recall on tune split with Good FP rate <= 0.01",
+  "tune_grid": [
+    {
+      "min_crossed": 1,
+      "ratio": 1.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 1,
+      "ratio": 1.5,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 1,
+      "ratio": 2.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 1,
+      "ratio": 3.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8269
+    },
+    {
+      "min_crossed": 2,
+      "ratio": 1.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 2,
+      "ratio": 1.5,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 2,
+      "ratio": 2.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8462
+    },
+    {
+      "min_crossed": 2,
+      "ratio": 3.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8269
+    },
+    {
+      "min_crossed": 3,
+      "ratio": 1.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8269
+    },
+    {
+      "min_crossed": 3,
+      "ratio": 1.5,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8269
+    },
+    {
+      "min_crossed": 3,
+      "ratio": 2.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8269
+    },
+    {
+      "min_crossed": 3,
+      "ratio": 3.0,
+      "by_label": {
+        "Good": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Average": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        },
+        "Poor": {
+          "n": 78,
+          "applicable": 57,
+          "fired": 0,
+          "fire_rate": 0.0
+        }
+      },
+      "good_fp_rate": 0.0,
+      "synthetic_swaps": 52,
+      "swap_recall": 0.8077
+    }
+  ],
+  "chosen_on_tune": {
+    "min_crossed": 2,
+    "ratio": 2.0
+  },
+  "shipped_thresholds": {
+    "min_crossed": 2,
+    "ratio": 2.0
+  },
+  "heldout_with_shipped_thresholds": {
+    "min_crossed": 2,
+    "ratio": 2.0,
+    "by_label": {
+      "Good": {
+        "n": 20,
+        "applicable": 17,
+        "fired": 0,
+        "fire_rate": 0.0
+      },
+      "Average": {
+        "n": 20,
+        "applicable": 17,
+        "fired": 0,
+        "fire_rate": 0.0
+      },
+      "Poor": {
+        "n": 20,
+        "applicable": 17,
+        "fired": 0,
+        "fire_rate": 0.0
+      }
+    },
+    "good_fp_rate": 0.0,
+    "synthetic_swaps": 16,
+    "swap_recall": 0.875
+  },
+  "pooled_real_answers_shipped_thresholds": {
+    "Good": {
+      "n": 110,
+      "applicable": 86,
+      "fired": 0,
+      "fired_examples": []
+    },
+    "Average": {
+      "n": 64,
+      "applicable": 60,
+      "fired": 0,
+      "fired_examples": []
+    },
+    "Poor": {
+      "n": 110,
+      "applicable": 86,
+      "fired": 0,
+      "fired_examples": []
+    }
+  },
+  "notes": [
+    "Synthetic swaps exchange the two entity names, so they are symmetric by construction; real one-directional misattributions are not measured.",
+    "v2 rules (both-direction requirement, pronoun openers, no parenthesis split, shared-head exclusion) were added after inspecting two false positives in the pooled data, which includes the held-out questions. Held-out numbers are therefore not fully untouched.",
+    "Small samples: an observed 0 false positives on n Good answers bounds the true rate at about 3/n (95%)."
+  ]
+}

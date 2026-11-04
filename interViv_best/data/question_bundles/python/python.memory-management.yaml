@@ -1,0 +1,132 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: python.memory-management
+  version: 1
+  category: technical_short_answer
+  skill: Python
+  topic: Memory management
+  difficulty: hard
+  question: How does Python's memory management work?
+  reference_answer: 'CPython uses reference counting as the primary memory management strategy: every
+    object tracks how many references point to it, and when the count drops to zero the memory is immediately
+    freed. To handle reference cycles (A → B → A), CPython also runs a cyclic garbage collector. Memory
+    is allocated from private heaps managed by CPython''s allocator, with small objects pooled for efficiency.
+    The gc module exposes the cyclic collector and lets you trigger or tune collection.'
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 11
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Hard
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: python.memory-management
+  version: 2
+  category: technical_short_answer
+  skill: Python
+  topic: Memory management
+  difficulty: hard
+  question: How does Python's memory management work?
+  reference_answer: 'CPython uses reference counting as the primary memory management strategy: every
+    object tracks how many references point to it, and when the count drops to zero the memory is immediately
+    freed. To handle reference cycles (A → B → A), CPython also runs a cyclic garbage collector. Memory
+    is allocated from private heaps managed by CPython''s allocator, with small objects pooled for efficiency.
+    The gc module exposes the cyclic collector and lets you trigger or tune collection.'
+  acceptable_variants:
+  - CPython uses reference counting plus a cyclic garbage collector.
+  keywords:
+  - reference counting
+  - garbage collection
+  - cycles
+  - CPython
+  required_concepts:
+  - id: reference counting
+    descriptor: CPython tracks references to free objects
+    aliases:
+    - refcount
+    - reference counts
+    expected_propositions:
+    - reference counting frees objects when count hits zero
+    positive_examples: []
+    negative_cases: []
+  - id: garbage collection
+    descriptor: Cyclic GC supplements reference counting
+    aliases:
+    - gc
+    - cyclic garbage collector
+    expected_propositions:
+    - garbage collector handles reference cycles
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: GIL
+    descriptor: GIL simplifies refcount updates
+    aliases:
+    - global interpreter lock
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: python_has_no_gc
+    description: Claiming Python never garbage-collects
+    candidate_patterns:
+    - python has no garbage collection
+    - only malloc free
+    - never frees memory
+  depth_markers:
+  - reference cycles
+  - generational
+  - arenas
+  rubric_descriptors:
+    coverage: Names reference counting and GC roles.
+    accuracy: Does not deny GC or claim manual free is required.
+    depth: Mentions cycles or generational GC.
+    clarity: Separates allocator details from ownership model.
+  followups: []
+  calibration_examples:
+  - answer: CPython frees objects via reference counting and uses a cyclic GC for reference cycles.
+    author_level: 3
+    note: strong
+  - answer: Python manages memory automatically.
+    author_level: 1
+    note: partial
+  - answer: Python has no garbage collection and never frees memory.
+    author_level: 0
+    note: incorrect
+  - answer: Reference counting plus a garbage collector for cycles.
+    author_level: 2
+    note: concise-correct
+  - answer: Memory pools somehow.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 11
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Hard
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

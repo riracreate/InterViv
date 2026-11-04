@@ -1,0 +1,131 @@
+# Canonical bundle content. Review state is NOT stored here; see the DB.
+# This file lists immutable versions. Editing content = add a new version entry.
+# v1 = imported CSV (empty concepts). v2 = Phase 1B concept authorship DRAFT.
+- bundle_id: dbms.isolation-levels
+  version: 1
+  category: technical_short_answer
+  skill: DBMS
+  topic: Transactions
+  difficulty: hard
+  question: What is a transaction isolation level?
+  reference_answer: 'Isolation levels define how and when changes by one transaction are visible to others.
+    Read Uncommitted: can see uncommitted changes (dirty reads). Read Committed: only sees committed data
+    (default in many DBs). Repeatable Read: same rows return same data within a transaction (prevents
+    non-repeatable reads but allows phantom reads). Serializable: fully serial execution, no anomalies.
+    Higher isolation reduces anomalies but increases contention and may lower throughput.'
+  acceptable_variants: []
+  keywords: []
+  required_concepts: []
+  optional_concepts: []
+  misconceptions: []
+  depth_markers: []
+  rubric_descriptors: {}
+  followups: []
+  calibration_examples: []
+  source: imported_csv
+  author: dataset:interview_dataset_v6.csv#curated_v3
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 188
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Hard
+    note: 'Question and reference copied verbatim from the dataset row. Concept lists, misconceptions
+      and rubric descriptors are intentionally empty: nothing here has been reviewed, and authoring them
+      is a new draft version.'
+- bundle_id: dbms.isolation-levels
+  version: 2
+  category: technical_short_answer
+  skill: DBMS
+  topic: Transactions
+  difficulty: hard
+  question: What is a transaction isolation level?
+  reference_answer: 'Isolation levels define how and when changes by one transaction are visible to others.
+    Read Uncommitted: can see uncommitted changes (dirty reads). Read Committed: only sees committed data
+    (default in many DBs). Repeatable Read: same rows return same data within a transaction (prevents
+    non-repeatable reads but allows phantom reads). Serializable: fully serial execution, no anomalies.
+    Higher isolation reduces anomalies but increases contention and may lower throughput.'
+  acceptable_variants:
+  - Isolation levels trade concurrency for anomaly prevention (dirty/nonrepeatable/phantom reads).
+  keywords:
+  - isolation level
+  - dirty read
+  - phantom
+  - serializable
+  required_concepts:
+  - id: isolation
+    descriptor: How concurrent transactions see each other's work
+    aliases:
+    - transaction isolation
+    expected_propositions:
+    - isolation levels control concurrent visibility
+    positive_examples: []
+    negative_cases: []
+  - id: transaction
+    descriptor: Unit of work whose isolation level is set
+    aliases:
+    - transactions
+    expected_propositions:
+    - isolation levels apply to transactions
+    positive_examples: []
+    negative_cases: []
+  optional_concepts:
+  - id: consistency
+    descriptor: Tradeoffs between isolation and anomalies
+    aliases: []
+    expected_propositions: []
+    positive_examples: []
+    negative_cases: []
+  misconceptions:
+  - id: serializable_is_only_level
+    description: Claiming only one isolation level exists
+    candidate_patterns:
+    - only serializable exists
+    - all databases are always serializable
+  depth_markers:
+  - dirty read
+  - nonrepeatable read
+  - phantom read
+  - read committed
+  - repeatable read
+  rubric_descriptors:
+    coverage: Explains isolation levels control concurrent visibility.
+    accuracy: Does not claim a single universal isolation mode.
+    depth: Names anomalies or standard levels.
+    clarity: Links anomalies to levels without inventing SQL syntax.
+  followups: []
+  calibration_examples:
+  - answer: Isolation levels control what concurrent transactions can see; lower levels allow anomalies
+      like dirty or phantom reads.
+    author_level: 3
+    note: strong
+  - answer: Isolation is part of ACID.
+    author_level: 1
+    note: partial
+  - answer: Databases only have serializable isolation.
+    author_level: 0
+    note: incorrect
+  - answer: Isolation levels trade concurrency against anomalies like dirty reads.
+    author_level: 2
+    note: concise-correct
+  - answer: Related to locking maybe.
+    author_level: 1
+    note: ambiguous
+  source: human_authored
+  author: phase1b-dev:concept-authorship
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 188
+    dataset_source_label: curated_v3
+    dataset_sub_domain: dbms_core
+    dataset_skill_label: DBMS
+    dataset_difficulty_label: Hard
+    note: v2 adds concept/rubric authorship for the Python/DBMS pilot. Status remains draft until genuine
+      human review.
+    original_question_source: data/interview_dataset_v6.csv
+    original_author: dataset:interview_dataset_v6.csv#curated_v3
+    original_version: 1
+    concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
+      and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
+      not human ground truth. Question and reference text remain from the original imported CSV row.

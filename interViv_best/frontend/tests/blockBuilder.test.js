@@ -1,0 +1,169 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  STANDALONE_MODES,
+  addBlock,
+  removeBlock,
+  moveBlock,
+  duplicateBlock,
+  formatBlockLabel,
+  blockCategoryButtonLabel,
+  totalTimeSummary,
+  validateBuilderBlocks,
+  mapBlocksToStartPayload,
+  mapStandaloneToStartPayload,
+  validatePresetPayload,
+  validateDraftPayload,
+  applyTargetPrefill,
+} from '../src/lib/practiceBuilder.js';
+
+test('standalone entries cover Verbal, OA, SQL, coding, system design, ML primitives, and interview', () => {
+  const ids = STANDALONE_MODES.map((m) => m.id).sort();
+  assert.deepEqual(ids, ['coding', 'interview', 'ml_primitives', 'oa', 'sql', 'system_design', 'verbal']);
+  const verbal = STANDALONE_MODES.find((m) => m.id === 'verbal');
+  assert.match(verbal.blurb, /English MCQ/i);
+  assert.doesNotMatch(verbal.blurb, /speak|voice|HR question/i);
+  const sd = STANDALONE_MODES.find((m) => m.id === 'system_design');
+  assert.match(sd.blurb, /practice estimate/i);
+  assert.match(sd.blurb, /self-assessment ratings are optional/i);
+});
+
+test('adding Verbal never erases the existing sequence', () => {
+  let blocks = addBlock([], 'oa');
+  assert.equal(blocks.length, 1);
+  blocks = addBlock(blocks, 'verbal');
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(blocks.map((b) => b.category), ['oa', 'verbal']);
+});
+
+test('builder reorder and repeat use button-friendly pure helpers', () => {
+  let blocks = addBlock(addBlock([], 'oa'), 'sql');
+  const firstId = blocks[0].id;
+  blocks = moveBlock(blocks, blocks[1].id, 'up');
+  assert.equal(blocks[0].category, 'sql');
+  blocks = duplicateBlock(blocks, firstId);
+  assert.equal(blocks.length, 3);
+  blocks = removeBlock(blocks, firstId);
+  assert.equal(blocks.length, 2);
+});
+
+test('block labels use human text, never raw round names', () => {
+  assert.equal(formatBlockLabel({ category: 'oa', count: 12 }), 'OA · 12 questions');
+  assert.equal(formatBlockLabel({ category: 'verbal', count: 1 }), 'Verbal · 1 question');
+  assert.equal(formatBlockLabel({ category: 'sql', count: 2 }), 'SQL · 2 problems');
+  assert.match(formatBlockLabel({ category: 'interview', count: 3 }), /Interview · 3 questions/);
+  assert.equal(
+    formatBlockLabel({ category: 'system_design', count: 1 }),
+    'System design · 1 prompt',
+  );
+  assert.equal(blockCategoryButtonLabel('system_design'), 'System design');
+  assert.equal(blockCategoryButtonLabel('interview'), 'Interview');
+  assert.notEqual(blockCategoryButtonLabel('system_design'), 'Interview');
+  assert.equal(
+    formatBlockLabel({ category: 'ml_primitives', count: 2 }),
+    'ML primitives · 2 problems (ungraded)',
+  );
+  assert.equal(blockCategoryButtonLabel('ml_primitives'), 'ML primitives');
+});
+
+test('standalone system design maps to a system_design block', () => {
+  const mapped = mapStandaloneToStartPayload('system_design', {
+    count: 1,
+    durationMinutes: 25,
+  });
+  assert.equal(mapped.error, undefined);
+  assert.equal(mapped.payload.blocks[0].category, 'system_design');
+  assert.equal(mapped.payload.blocks[0].round_type, 'system_design');
+  assert.equal(mapped.payload.blocks[0].count, 1);
+});
+
+test('total-time summary separates timed minutes and untimed blocks', () => {
+  const summary = totalTimeSummary([
+    { duration_minutes: 20 },
+    { duration_minutes: 25 },
+    {},
+  ]);
+  assert.equal(summary.timedMinutes, 45);
+  assert.equal(summary.untimedBlocks, 1);
+  assert.equal(summary.blockCount, 3);
+});
+
+test('builder validation keeps Verbal and OA distinct', () => {
+  const mixed = validateBuilderBlocks([
+    { round_type: 'mcq', category: 'oa', skills: ['Verbal Ability'], count: 5 },
+  ]);
+  assert.match(mixed, /must not include Verbal Ability/);
+  const verbalOk = validateBuilderBlocks([
+    { round_type: 'mcq', category: 'verbal', skills: ['Verbal Ability'], count: 5 },
+  ]);
+  assert.equal(verbalOk, null);
+});
+
+test('standalone OA rejects Verbal topics; standalone Verbal is fixed', () => {
+  const bad = mapStandaloneToStartPayload('oa', { skills: ['Verbal Ability'], count: 5 });
+  assert.match(bad.error, /must not include Verbal Ability/);
+  const good = mapStandaloneToStartPayload('verbal', { count: 10, durationMinutes: 15 });
+  assert.equal(good.error, undefined);
+  assert.equal(good.payload.blocks[0].category, 'verbal');
+  assert.deepEqual(good.payload.blocks[0].skills, ['Verbal Ability']);
+});
+
+test('coding blocks validate count, round type, and topics', () => {
+  const base = { round_type: 'coding', category: 'coding', skills: ['DSA'], count: 2, duration_minutes: 30 };
+  assert.equal(validateBuilderBlocks([base]), null);
+  assert.match(validateBuilderBlocks([{ ...base, count: 6 }]), /Coding count must be 1–5/);
+  assert.match(validateBuilderBlocks([{ ...base, round_type: 'sql' }]), /Coding blocks are coding rounds/);
+  assert.match(
+    validateBuilderBlocks([{ ...base, skills: ['Verbal Ability'] }]),
+    /must not include Verbal Ability/
+  );
+  assert.equal(formatBlockLabel({ category: 'coding', count: 1 }), 'Coding · 1 problem');
+});
+
+test('standalone coding maps to a one-problem block with optional pin', () => {
+  const auto = mapStandaloneToStartPayload('coding', { durationMinutes: 30 });
+  assert.equal(auto.error, undefined);
+  assert.equal(auto.payload.blocks[0].round_type, 'coding');
+  assert.equal(auto.payload.blocks[0].count, 1);
+  const pinned = mapStandaloneToStartPayload('coding', { problemId: 'coding_two_sum' });
+  assert.equal(pinned.error, undefined);
+  assert.deepEqual(pinned.payload.blocks[0].problem_ids, ['coding_two_sum']);
+});
+
+test('blocks map to a server-validated plan with requested order', () => {
+  const { error, payload } = mapBlocksToStartPayload([
+    { id: 'a', round_type: 'mcq', category: 'verbal', skills: ['Verbal Ability'], count: 5, duration_minutes: 10 },
+    { id: 'b', round_type: 'sql', category: 'sql', skills: ['SQL'], count: 1, duration_minutes: 15 },
+  ]);
+  assert.equal(error, undefined);
+  assert.equal(payload.blocks.length, 2);
+  assert.equal(payload.blocks[0].id, 'a');
+  assert.equal(payload.blocks[1].id, 'b');
+});
+
+test('preset and draft payloads enforce versions', () => {
+  const presetBad = validatePresetPayload({ version: 99, name: 'x', blocks: [] });
+  assert.match(presetBad, /Unsupported preset version/);
+  const draftBad = validateDraftPayload({ version: 99, blocks: [] });
+  assert.match(draftBad, /Unsupported draft version/);
+  const presetOk = validatePresetPayload({
+    version: 1,
+    name: 'DBMS sprint',
+    blocks: [{ round_type: 'mcq', category: 'oa', skills: ['DBMS'], count: 5, duration_minutes: 10 }],
+  });
+  assert.equal(presetOk, null);
+});
+
+test('target prefill never overrides an explicit topic list', () => {
+  const required = ['DSA', 'OOP', 'DBMS'];
+  const filled = applyTargetPrefill([], required, false);
+  assert.equal(filled.applied, true);
+  assert.deepEqual(filled.skills, required);
+  const kept = applyTargetPrefill(['Python'], required, true);
+  assert.equal(kept.applied, false);
+  assert.deepEqual(kept.skills, ['Python']);
+  const emptyRequired = applyTargetPrefill(['DBMS'], [], false);
+  assert.equal(emptyRequired.applied, false);
+  assert.deepEqual(emptyRequired.skills, ['DBMS']);
+});

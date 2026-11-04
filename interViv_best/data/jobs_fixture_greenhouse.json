@@ -1,0 +1,105 @@
+{
+  "note": "Sample listings for offline practice (JOBS_LIVE_FETCH=0). Not real openings; companies are fictional.",
+  "jobs": [
+    {
+      "token": "sample",
+      "company": "Example Payments",
+      "external_id": "sample-001",
+      "title": "Software Engineer, Backend (sample)",
+      "location": "Remote \u2014 India",
+      "redirect_url": "",
+      "snippet": "Build and operate Python and Go services behind a REST API. Work with PostgreSQL, Redis and Kafka; own on-call for the services you ship.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Design Tools",
+      "external_id": "sample-002",
+      "title": "Frontend Engineer (sample)",
+      "location": "Bengaluru, India",
+      "redirect_url": "",
+      "snippet": "Ship React and TypeScript features, improve rendering performance and accessibility, and work closely with designers.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Analytics",
+      "external_id": "sample-003",
+      "title": "Data Engineer (sample)",
+      "location": "Hyderabad, India",
+      "redirect_url": "",
+      "snippet": "Design ETL pipelines with Spark and Airflow, model data in SQL warehouses, and keep data quality checks green.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Search",
+      "external_id": "sample-004",
+      "title": "Machine Learning Engineer (sample)",
+      "location": "Remote",
+      "redirect_url": "",
+      "snippet": "Train and evaluate ranking models with PyTorch and scikit-learn, run experiments, and deploy models behind low-latency APIs.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Cloud",
+      "external_id": "sample-005",
+      "title": "Site Reliability Engineer (sample)",
+      "location": "Pune, India",
+      "redirect_url": "",
+      "snippet": "Run Kubernetes on AWS, automate with Terraform, define SLOs and alerting, and lead incident reviews.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Marketplace",
+      "external_id": "sample-006",
+      "title": "Software Engineer Intern (sample)",
+      "location": "Bengaluru, India",
+      "redirect_url": "",
+      "snippet": "Work on Java and Spring Boot services, write unit tests, and learn system design from code reviews. DSA and DBMS fundamentals expected.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Commerce",
+      "external_id": "sample-007",
+      "title": "Full Stack Engineer (sample)",
+      "location": "Remote \u2014 India",
+      "redirect_url": "",
+      "snippet": "Build Node.js APIs and React interfaces, design MongoDB schemas, and add caching for hot paths.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Fintech",
+      "external_id": "sample-008",
+      "title": "Security Engineer (sample)",
+      "location": "Mumbai, India",
+      "redirect_url": "",
+      "snippet": "Threat-model new features, review authentication flows against OWASP guidance, and run cryptography and network security reviews.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Social",
+      "external_id": "sample-009",
+      "title": "Android Engineer (sample)",
+      "location": "Gurugram, India",
+      "redirect_url": "",
+      "snippet": "Build Kotlin features for a large Android app, profile performance, and collaborate on APIs with backend engineers.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "token": "sample",
+      "company": "Example Health",
+      "external_id": "sample-010",
+      "title": "Data Scientist (sample)",
+      "location": "Remote",
+      "redirect_url": "",
+      "snippet": "Analyze experiments with Python and SQL, build forecasting models, and explain results to product teams.",
+      "updated_at": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

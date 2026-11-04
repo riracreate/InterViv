@@ -24,6 +24,21 @@ class Settings:
     jwt_algorithm: str
     jwt_access_token_minutes: int
     enable_admin_endpoints: bool
+    # Phase 1A: authenticated users allowed to act on admin bundle-review routes.
+    # Empty (default) means every review action is 403 even when the router is mounted.
+    admin_user_emails: frozenset[str]
+    # Phase 1A/1B: selector flag. Default off. When on, technical interview
+    # selection uses reviewed bundles only (no draft/legacy scored fallback).
+    reviewed_bundles_only: bool
+    # Phase 1B: experimental concept evaluator (research/admin). Default off;
+    # never feeds production scoring, mastery, Elo, or readiness.
+    experimental_concept_evaluator: bool
+    length_ratio_multiplier_enabled: bool
+    adzuna_app_id: str | None
+    adzuna_app_key: str | None
+    jobs_live_fetch: bool
+    jobs_cache_ttl_seconds: int
+    jobs_rate_limit_per_minute: int
     interview_module_paths: list[Path]
     interview_model_paths: list[Path]
     interview_data_paths: list[Path]
@@ -53,6 +68,8 @@ def _validate_security_settings(settings: Settings) -> Settings:
             )
         if "*" in settings.cors_origins:
             raise RuntimeError("Production CORS_ORIGINS must not contain '*'.")
+        if not settings.database_url:
+            raise RuntimeError("Production requires DATABASE_URL; in-memory storage is for development only.")
     return settings
 
 
@@ -94,7 +111,7 @@ def get_settings() -> Settings:
         project_root=project_root,
         modules_dir=modules_dir,
         environment=(os.getenv("ENVIRONMENT") or "development").strip().lower(),
-        database_url=os.getenv("DATABASE_URL") or None,
+        database_url=(os.getenv("DATABASE_URL") or "").strip() or None,
         mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
         mongodb_db=os.getenv("MONGODB_DB", "adaptive_mock_interview"),
         mongodb_timeout_ms=int(os.getenv("MONGODB_TIMEOUT_MS", "2000")),
@@ -110,6 +127,17 @@ def get_settings() -> Settings:
         jwt_algorithm=(os.getenv("JWT_ALGORITHM") or "HS256").strip().upper(),
         jwt_access_token_minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "1440")),
         enable_admin_endpoints=_env_bool("ENABLE_ADMIN_ENDPOINTS", False),
+        admin_user_emails=frozenset(
+            item.lower() for item in _split_csv(os.getenv("ADMIN_USER_EMAILS", ""))
+        ),
+        reviewed_bundles_only=_env_bool("REVIEWED_BUNDLES_ONLY", False),
+        experimental_concept_evaluator=_env_bool("EXPERIMENTAL_CONCEPT_EVALUATOR", False),
+        length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
+        adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
+        adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
+        jobs_live_fetch=_env_bool("JOBS_LIVE_FETCH", False),
+        jobs_cache_ttl_seconds=int(os.getenv("JOBS_CACHE_TTL_SECONDS", str(6 * 3600))),
+        jobs_rate_limit_per_minute=int(os.getenv("JOBS_RATE_LIMIT_PER_MINUTE", "30")),
         interview_module_paths=_resolve_paths(
             os.getenv("INTERVIEW_MODULE_PATHS"),
             default_module_paths,

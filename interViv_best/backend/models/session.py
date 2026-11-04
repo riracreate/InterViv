@@ -31,6 +31,12 @@ class RoundDocument(BaseModel):
     expires_at: datetime | None = None
     status: str = "in_progress"
     submitted_at: datetime | None = None
+    # Phase B block identity (optional for legacy rounds).
+    block_id: str | None = None
+    block_position: int | None = None
+    block_category: str | None = None
+    block_index: int | None = None
+    block_total: int | None = None
 
 
 class SessionDocument(BaseModel):

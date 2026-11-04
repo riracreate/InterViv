@@ -26,7 +26,6 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes!
 from backend.auth.security import create_access_token, hash_password
 from backend.db import get_database
 from backend.main import app
-from backend.serializers.round_serializer import sanitize_round_for_client
 
 
 @pytest.fixture
@@ -435,45 +434,108 @@ def test_mcq_zero_llm_calls_enforced(client: TestClient, test_user: dict[str, st
         assert mock_qb.call_count == 0
 
 
-def test_mcq_review_policy_zero_leakage():
-    """Verify sanitize_round_for_client strictly blocks answer keys unless after_session AND completed."""
-    round_fixture = {
-        "round": 1,
-        "round_type": "mcq",
-        "config_json": {"review_policy": "after_session"},
-        "question_context": {
-            "questions": [
-                {
-                    "id": "q1",
-                    "stem": "What is 2+2?",
-                    "options_json": [{"id": "a", "text": "3"}, {"id": "b", "text": "4"}],
-                    "correct_option_ids": ["b"],
-                    "explanation": "2+2 equals 4.",
-                }
-            ],
-            "correct_option_ids": ["b"],
-            "explanation": "top level leak",
+def test_mcq_review_policy_zero_leakage(client: TestClient, test_user: dict[str, str]):
+    """Review policy leakage asserted on real start / resume / completed GET.
+
+    Replaces the prior hand-built sanitize_round_for_client fixture that could
+    not regress when the route payload shape changed.
+    """
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+    # Active session with after_session policy: must NOT leak keys.
+    start = client.post(
+        "/session/start",
+        headers=headers,
+        json={
+            "blocks": [{
+                "round_type": "mcq",
+                "category": "oa",
+                "skills": ["DBMS"],
+                "count": 2,
+                "duration_minutes": 20,
+                "review_policy": "after_session",
+            }],
         },
-    }
+    )
+    assert start.status_code == 200, start.text
+    body = start.json()
+    session_id = body["session_id"]
+    for q in body.get("questions") or []:
+        assert "correct_option_ids" not in q
+        assert "explanation" not in q
+    resume = client.get(f"/session/{session_id}", headers=headers)
+    assert resume.status_code == 200
+    for q in (resume.json().get("questions")
+              or (resume.json().get("question_context") or {}).get("questions")
+              or []):
+        assert "correct_option_ids" not in q
+        assert "explanation" not in q
 
-    # Active session: must NOT leak even if review_policy is 'after_session'
-    active_sanitized = sanitize_round_for_client(round_fixture, is_session_completed=False)
-    q = active_sanitized["question_context"]["questions"][0]
-    assert "correct_option_ids" not in q
-    assert "explanation" not in q
-    assert "correct_option_ids" not in active_sanitized["question_context"]
-    assert "explanation" not in active_sanitized["question_context"]
+    # Completed + review_policy none: still no keys.
+    answers = [
+        {"question_id": q["id"], "selected_option_ids": [q["options"][0]["id"]]}
+        for q in (body.get("questions") or [])
+    ]
+    submit = client.post(
+        "/session/answer",
+        headers=headers,
+        json={"session_id": session_id, "round": 1, "answers": answers},
+    )
+    assert submit.status_code == 200, submit.text
+    # Force review_policy none on stored round and mark completed.
+    db = get_database()
+    session = db["sessions"].find_one({"session_id": session_id})
+    rounds = list(session.get("rounds") or [])
+    cfg = dict(rounds[0].get("config_json") or {})
+    cfg["review_policy"] = "none"
+    rounds[0]["config_json"] = cfg
+    db["sessions"].update_one(
+        {"session_id": session_id},
+        {"$set": {"rounds": rounds, "status": "completed"}},
+    )
+    done_none = client.get(f"/session/{session_id}", headers=headers)
+    assert done_none.status_code == 200
+    for q in (done_none.json().get("questions")
+              or (done_none.json().get("question_context") or {}).get("questions")
+              or []):
+        assert "correct_option_ids" not in q
+        assert "explanation" not in q
 
-    # Completed session with default 'none' policy: must NOT leak
-    completed_none_fixture = dict(round_fixture)
-    completed_none_fixture["config_json"] = {"review_policy": "none"}
-    none_sanitized = sanitize_round_for_client(completed_none_fixture, is_session_completed=True)
-    q_none = none_sanitized["question_context"]["questions"][0]
-    assert "correct_option_ids" not in q_none
-    assert "explanation" not in q_none
-
-    # Completed session with 'after_session' policy: allowed to see answers and explanations
-    revealed_sanitized = sanitize_round_for_client(round_fixture, is_session_completed=True)
-    q_rev = revealed_sanitized["question_context"]["questions"][0]
-    assert q_rev["correct_option_ids"] == ["b"]
-    assert q_rev["explanation"] == "2+2 equals 4."
+    # Completed + after_session: keys may be revealed.
+    start2 = client.post(
+        "/session/start",
+        headers=headers,
+        json={
+            "blocks": [{
+                "round_type": "mcq",
+                "category": "oa",
+                "skills": ["DBMS"],
+                "count": 2,
+                "duration_minutes": 20,
+                "review_policy": "after_session",
+            }],
+        },
+    )
+    assert start2.status_code == 200, start2.text
+    body2 = start2.json()
+    sid2 = body2["session_id"]
+    answers2 = [
+        {"question_id": q["id"], "selected_option_ids": [q["options"][0]["id"]]}
+        for q in (body2.get("questions") or [])
+    ]
+    assert client.post(
+        "/session/answer",
+        headers=headers,
+        json={"session_id": sid2, "round": 1, "answers": answers2},
+    ).status_code == 200
+    db["sessions"].update_one(
+        {"session_id": sid2},
+        {"$set": {"status": "completed"}},
+    )
+    revealed = client.get(f"/session/{sid2}", headers=headers)
+    assert revealed.status_code == 200
+    active = revealed.json().get("active_round") or {}
+    questions = (active.get("question_context") or {}).get("questions") or []
+    # After session completion with after_session, correct ids are allowed.
+    assert questions
+    assert any("correct_option_ids" in q for q in questions)

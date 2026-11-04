@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { hasAuthToken } from '../lib/api';
 
 /* ═══════════════════════════════════════════════════════════
    PREMIUM NON-NATURE BACKGROUND
@@ -82,23 +83,23 @@ function PremiumBackground() {
    ═══════════════════════════════════════════════════════════ */
 function Navbar() {
   const navigate = useNavigate();
+  const signedIn = hasAuthToken();
 
   const menuItems = [
-    { label: 'Home', active: true },
-    { label: 'Practice', active: false, action: () => navigate('/upload') },
-    { label: 'Dashboard', active: false, action: () => navigate('/dashboard') },
-    { label: 'Login', active: false, action: () => navigate('/login') },
+    { label: 'Home', to: '/home' },
+    { label: 'Practice', to: '/practice' },
+    { label: 'Progress', to: '/dashboard' },
   ];
 
   return (
     <nav className="relative z-10 w-full">
-      <div className="flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-6 sm:px-8 max-w-7xl mx-auto">
         {/* Logo */}
         <a
           href="/"
           onClick={(e) => { e.preventDefault(); navigate('/'); }}
           className="text-3xl tracking-tight text-black"
-          style={{ fontFamily: "'Instrument Serif', serif" }}
+          style={{ fontFamily: "var(--font-display)" }}
         >
           interViv<sup className="text-sm align-super">©</sup>
         </a>
@@ -108,12 +109,12 @@ function Navbar() {
           {menuItems.map((item) => (
             <li key={item.label}>
               <a
-                href="#"
-                onClick={(e) => { e.preventDefault(); item.action && item.action(); }}
-                className="text-sm transition-colors duration-200 hover:text-black"
+                href={item.to}
+                onClick={(e) => { e.preventDefault(); navigate(item.to); }}
+                className="text-sm transition-colors duration-200 hover:!text-black"
                 style={{
-                  fontFamily: "'Inter', sans-serif",
-                  color: item.active ? '#000000' : '#6F6F6F',
+                  fontFamily: "var(--font-body)",
+                  color: 'var(--color-muted)',
                 }}
               >
                 {item.label}
@@ -122,17 +123,23 @@ function Navbar() {
           ))}
         </ul>
 
-        {/* CTA Button */}
-        <button
-          onClick={() => navigate('/signup')}
-          className="rounded-full px-6 py-2.5 text-sm text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
-          style={{
-            backgroundColor: '#000000',
-            fontFamily: "'Inter', sans-serif",
-          }}
-        >
-          Sign up
-        </button>
+        {/* Account actions: one way back in when signed in */}
+        <div className="flex items-center gap-3">
+          {signedIn ? (
+            <button type="button" onClick={() => navigate('/home')} className="app-button app-button-primary">
+              Go to Home
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => navigate('/login')} className="app-button">
+                Login
+              </button>
+              <button type="button" onClick={() => navigate('/signup')} className="app-button app-button-primary">
+                Sign up
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </nav>
   );
@@ -153,24 +160,24 @@ function HeroSection() {
       <h1
         className="animate-fade-rise text-5xl sm:text-7xl md:text-8xl max-w-7xl font-normal"
         style={{
-          fontFamily: "'Instrument Serif', serif",
+          fontFamily: "var(--font-display)",
           lineHeight: 0.95,
           letterSpacing: 0,
-          color: '#000000',
+          color: 'var(--color-foreground)',
         }}
       >
         Beyond{' '}
-        <em style={{ color: '#6F6F6F', fontStyle: 'italic' }}>preparation,</em>
+        <em style={{ color: 'var(--color-muted)', fontStyle: 'italic' }}>preparation,</em>
         <br />
         we build{' '}
-        <em style={{ color: '#6F6F6F', fontStyle: 'italic' }}>confidence.</em>
+        <em style={{ color: 'var(--color-muted)', fontStyle: 'italic' }}>confidence.</em>
       </h1>
 
       {/* Description */}
       <p
         className="animate-fade-rise-delay text-base sm:text-lg max-w-2xl mt-8 leading-relaxed"
         style={{
-          fontFamily: "'Inter', sans-serif",
+          fontFamily: "var(--font-body)",
           color: '#334155',
           textShadow: '0 1px 18px rgba(255,255,255,0.96)',
         }}
@@ -182,12 +189,10 @@ function HeroSection() {
 
       {/* CTA Button */}
       <button
+        type="button"
         onClick={() => navigate('/upload')}
-        className="animate-fade-rise-delay-2 rounded-full px-14 py-5 text-base mt-20 text-white cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
-        style={{
-          backgroundColor: '#000000',
-          fontFamily: "'Inter', sans-serif",
-        }}
+        className="animate-fade-rise-delay-2 app-button app-button-primary mt-20"
+        style={{ padding: '20px 56px', fontSize: 'var(--text-base)' }}
       >
         Start Interview
       </button>

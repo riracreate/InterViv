@@ -1,4 +1,14 @@
+/*
+ * Typography — offline by default (Phase P).
+ *
+ * Display/body names still prefer Instrument Serif / Barlow when the OS has
+ * them installed. No network request is made to load them.
+ *
+ * Owner opt-in for Google Fonts (online branded builds only) — paste as the
+ * first line of src/index.css:
+ * @import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&display=swap");
+ */
 :root {
-  --font-display: 'Instrument Serif', serif;
-  --font-body: 'Barlow', sans-serif;
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }

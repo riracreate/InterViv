@@ -3,44 +3,57 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from backend.auth.security import create_access_token, decode_access_token, hash_password, verify_password
+from backend.auth.security import MAX_PASSWORD_CHARACTERS, create_access_token, decode_access_token, hash_password, verify_password
+from backend.auth.throttling import check_auth_rate_limit
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.user_target import get_user_target
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class SignupRequest(BaseModel):
-    email: str
-    password: str = Field(min_length=8)
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_CHARACTERS)
     name: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=MAX_PASSWORD_CHARACTERS)
 
 
 def _public_user(user: dict) -> dict[str, object]:
+    target = get_user_target(user)
     return {
         "id": user["id"],
         "email": user["email"],
         "name": user.get("name"),
-        "target_company_id": user.get("target_company_id"),
-        "target_role_id": user.get("target_role_id"),
+        "target_company_id": target["company_id"],
+        "target_role_id": target["role_id"],
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }
 
 
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def _bearer_token(authorization: str | None) -> str:
     if not authorization:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header.")
+        raise _unauthorized("Missing Authorization header.")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Expected Bearer token.")
+        raise _unauthorized("Expected Bearer token.")
     return token.strip()
 
 
@@ -68,10 +81,10 @@ def get_user_from_authorization(authorization: str | None) -> dict | None:
     try:
         payload = decode_access_token(token)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.") from exc
+        raise _unauthorized("Invalid or expired token.") from exc
     user_id = str(payload.get("sub") or "")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject.")
+        raise _unauthorized("Invalid token subject.")
     try:
         user = get_database()["users"].find_one({"id": user_id})
     except Exception as exc:
@@ -79,23 +92,25 @@ def get_user_from_authorization(authorization: str | None) -> dict | None:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         raise
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists.")
+        raise _unauthorized("User no longer exists.")
     return user
 
 
 def require_user(authorization: str | None) -> dict:
     user = get_user_from_authorization(authorization)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication is required.",
-        )
+        raise _unauthorized("Authentication is required.")
     return user
 
 
-def require_matching_user(user_id: str, authorization: str | None) -> dict | None:
-    if not authorization:
-        return None
+def require_authenticated(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict:
+    """Router dependency. Runs before the handler reads a body."""
+    return require_user(authorization)
+
+
+def require_matching_user(user_id: str, authorization: str | None) -> dict:
     user = require_user(authorization)
     if str(user.get("id")) != str(user_id):
         raise HTTPException(
@@ -106,8 +121,9 @@ def require_matching_user(user_id: str, authorization: str | None) -> dict | Non
 
 
 @router.post("/signup")
-def signup(request: SignupRequest) -> dict[str, object]:
+def signup(request: SignupRequest, http_request: Request) -> dict[str, object]:
     email = _normalize_email(request.email)
+    check_auth_rate_limit(http_request, email, action="signup")
     _validate_password(request.password)
     now = datetime.now(timezone.utc)
     try:
@@ -138,8 +154,9 @@ def signup(request: SignupRequest) -> dict[str, object]:
 
 
 @router.post("/login")
-def login(request: LoginRequest) -> dict[str, object]:
+def login(request: LoginRequest, http_request: Request) -> dict[str, object]:
     email = _normalize_email(request.email)
+    check_auth_rate_limit(http_request, email, action="login")
     try:
         users = get_database()["users"]
         user = users.find_one({"email": email})
@@ -157,9 +174,7 @@ def login(request: LoginRequest) -> dict[str, object]:
     return {"access_token": create_access_token(user["id"]), "token_type": "bearer", "user": _public_user(user)}
 
 
-@router.get("/me")
+@router.get("/me", dependencies=[Depends(require_authenticated)])
 def me(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    user = get_user_from_authorization(authorization)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header.")
+    user = require_user(authorization)
     return {"user": _public_user(user)}

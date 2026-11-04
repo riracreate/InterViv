@@ -13,15 +13,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
+from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
+from backend.db.transactions import atomic
 from backend.db.company_seed import (
     company_slug_to_db_id,
     role_slug_to_db_id,
 )
-from backend.routes.auth import _public_user, get_user_from_authorization
+from backend.routes.auth import (
+    _public_user,
+    get_user_from_authorization,
+    require_authenticated,
+)
 from modules.company_graph import (
     Company,
     CompanyHiringGraph,
@@ -103,7 +109,16 @@ class TargetUpdate(BaseModel):
     target_role_id: str | None = None
 
 
-@router.patch("/auth/me/target")
+def _stored_target_id(slug: str, lookup, unknown: str) -> Any:
+    if not get_settings().database_url:
+        return slug
+    resolved = lookup(slug)
+    if resolved is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=unknown)
+    return resolved
+
+
+@router.patch("/auth/me/target", dependencies=[Depends(require_authenticated)])
 def patch_my_target(
     request: TargetUpdate,
     authorization: str | None = Header(default=None),
@@ -125,7 +140,7 @@ def patch_my_target(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown company '{company_slug}'."
             )
-        target_company_id_value = company_slug_to_db_id(company_slug) or company_slug
+        target_company_id_value = _stored_target_id(company_slug, company_slug_to_db_id, "Unknown company")
 
         if role_slug is not None:
             role = graph.get_role(company_slug, role_slug)
@@ -134,7 +149,7 @@ def patch_my_target(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Role '{role_slug}' not found for company '{company_slug}'.",
                 )
-            target_role_id_value = role_slug_to_db_id(role_slug) or role_slug
+            target_role_id_value = _stored_target_id(role_slug, role_slug_to_db_id, "Unknown role")
 
     update_payload: dict[str, Any] = {
         "target_company_id": target_company_id_value,
@@ -143,9 +158,31 @@ def patch_my_target(
     }
 
     try:
-        users = get_database()["users"]
-        users.update_one({"id": user["id"]}, {"$set": update_payload})
-        refreshed = users.find_one({"id": user["id"]}) or user
+        db = get_database()
+        with atomic(db):
+            users = db["users"]
+            users.update_one({"id": user["id"]}, {"$set": update_payload})
+            refreshed = users.find_one({"id": user["id"]}) or user
+            current = db["target_contexts"].find_one({"user_id": user["id"]}) or {}
+            merged = {
+                "user_id": user["id"],
+                "company_id": company_slug,
+                "role_id": role_slug,
+                "job_id": current.get("job_id"),
+                "jd_source": current.get("jd_source"),
+                "jd_text": current.get("jd_text"),
+                "resume_ref": current.get("resume_ref"),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            if any(
+                merged.get(key)
+                for key in ("company_id", "role_id", "job_id", "jd_text", "resume_ref")
+            ):
+                db["target_contexts"].update_one(
+                    {"user_id": user["id"]}, {"$set": merged}, upsert=True
+                )
+            else:
+                db["target_contexts"].delete_one({"user_id": user["id"]})
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
             raise HTTPException(

@@ -10,6 +10,8 @@ from typing import Any
 
 from backend.config import get_settings
 
+MAX_PASSWORD_CHARACTERS = 1024
+PBKDF2_ITERATIONS = 600_000
 
 def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
@@ -30,21 +32,27 @@ def _load_bcrypt():
 
 
 def hash_password(password: str) -> str:
-    bcrypt = _load_bcrypt()
-    if bcrypt is not None:
-        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
+    if len(password) > MAX_PASSWORD_CHARACTERS:
+        raise ValueError(f"Password must be at most {MAX_PASSWORD_CHARACTERS} characters.")
+    # New hashes support full Unicode passphrases without bcrypt's 72-byte
+    # limit. Verification below preserves existing bcrypt and PBKDF2 accounts.
     salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 260_000)
-    return "pbkdf2_sha256$260000$" + _b64url_encode(salt) + "$" + _b64url_encode(digest)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}$" + _b64url_encode(salt) + "$" + _b64url_encode(digest)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    if len(password) > MAX_PASSWORD_CHARACTERS:
+        return False
     if password_hash.startswith("$2"):
         bcrypt = _load_bcrypt()
         if bcrypt is None:
             return False
-        return bool(bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")))
+        try:
+            return bool(bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")))
+        except ValueError:
+            # Overlong input or a malformed legacy hash must not become a 500.
+            return False
 
     if password_hash.startswith("pbkdf2_sha256$"):
         try:

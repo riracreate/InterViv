@@ -1,7 +1,7 @@
 # interViv — ICONAT 2026 Research and Writing Pack
 
-Prepared: 3 July 2026  
-Target track: **Machine Learning, Cloud and Data Analytics**  
+Prepared: 3 July 2026
+Target track: **Machine Learning, Cloud and Data Analytics**
 Purpose: structured source material for a conference paper; this is **not** the full paper.
 
 ## 0. Submission alert and evidence boundary

@@ -4,15 +4,15 @@ import { Clock, Calendar, BriefcaseBusiness, Target } from "lucide-react";
 
 function StatPill(props: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 backdrop-blur-xl">
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-white/80">
+    <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 backdrop-blur-xl">
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-surface)] text-[var(--color-ink)]">
         {props.icon}
       </div>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-white/45" style={{ fontFamily: "var(--font-body)" }}>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
           {props.label}
         </div>
-        <div className="truncate text-sm text-white/85" style={{ fontFamily: "var(--font-body)" }}>
+        <div className="truncate text-sm text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
           {props.value}
         </div>
       </div>
@@ -21,26 +21,26 @@ function StatPill(props: { icon: React.ReactNode; label: string; value: string }
 }
 
 function ScoreRing(props: {
-  score: number;
+  score: number | null;
   accentRingClass: string;
   accentTextClass: string;
 }) {
   const radius = 46;
   const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, Math.min(100, props.score));
+  const progress = props.score == null ? 0 : Math.max(0, Math.min(100, props.score));
   const offset = circumference - (progress / 100) * circumference;
 
   return (
     <div className="relative grid h-[140px] w-[140px] place-items-center">
       <div className={`absolute inset-0 rounded-full bg-gradient-to-b ${props.accentRingClass} blur-2xl opacity-60`} />
-      <div className="absolute inset-[10px] rounded-full border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.60)]" />
+      <div className="absolute inset-[10px] rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.60)]" />
 
       <svg className="relative h-[120px] w-[120px] -rotate-90" viewBox="0 0 120 120">
         <circle
           cx="60"
           cy="60"
           r={radius}
-          stroke="rgba(255,255,255,0.10)"
+          stroke="#cbd5e1"
           strokeWidth="10"
           fill="transparent"
         />
@@ -65,9 +65,9 @@ function ScoreRing(props: {
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center">
           <div className={`text-4xl font-semibold ${props.accentTextClass}`} style={{ fontFamily: "var(--font-body)" }}>
-            {progress}
+            {props.score == null ? "—" : progress}
           </div>
-          <div className="mt-0.5 text-[11px] uppercase tracking-[0.22em] text-white/55" style={{ fontFamily: "var(--font-body)" }}>
+          <div className="mt-0.5 text-[11px] uppercase tracking-[0.22em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             Overall
           </div>
         </div>
@@ -77,7 +77,7 @@ function ScoreRing(props: {
 }
 
 export function ScoreHero(props: {
-  overallScore: number;
+  overallScore: number | null;
   gradeLabel: string;
   deltaLabel: string;
   sessionTitle: string;
@@ -94,14 +94,14 @@ export function ScoreHero(props: {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <div
-              className="text-3xl sm:text-4xl font-normal italic tracking-tight text-white"
+              className="text-3xl sm:text-4xl font-normal italic tracking-tight text-[var(--color-ink)]"
               style={{ fontFamily: "var(--font-display)" }}
             >
               Results Dashboard
             </div>
           </div>
 
-          <p className="mt-2 max-w-2xl text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             A premium snapshot of your performance—clarity, quality, and progression across an adaptive interview.
           </p>
 
@@ -116,14 +116,14 @@ export function ScoreHero(props: {
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center lg:flex-col lg:items-end">
           <ScoreRing score={props.overallScore} accentRingClass={props.accentRingClass} accentTextClass={props.accentTextClass} />
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 backdrop-blur-xl">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-white/45" style={{ fontFamily: "var(--font-body)" }}>
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 backdrop-blur-xl">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
               Verdict
             </div>
-            <div className="mt-0.5 text-sm text-white/85" style={{ fontFamily: "var(--font-body)" }}>
-              <span className="font-semibold text-white">{props.gradeLabel}</span>{" "}
-              <span className="text-white/55">·</span>{" "}
-              <span className="text-white/70">{props.deltaLabel}</span>
+            <div className="mt-0.5 text-sm text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+              <span className="font-semibold text-[var(--color-ink)]">{props.gradeLabel}</span>{" "}
+              <span className="text-[var(--color-ink-muted)]">·</span>{" "}
+              <span className="text-[var(--color-ink-muted)]">{props.deltaLabel}</span>
             </div>
           </div>
         </div>

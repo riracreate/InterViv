@@ -34,6 +34,26 @@ class ConceptMasteryNode:
 _MEMORY_MASTERY: dict[str, dict[str, dict[str, ConceptMasteryNode]]] = {}
 
 
+def reset_memory_store() -> None:
+    """Test helper — clears in-memory concept mastery."""
+    _MEMORY_MASTERY.clear()
+
+
+def snapshot_memory_store() -> dict[str, Any]:
+    import copy
+
+    return {"mastery": copy.deepcopy(_MEMORY_MASTERY)}
+
+
+def restore_memory_store(snapshot: dict[str, Any] | None) -> None:
+    if not snapshot:
+        return
+    import copy
+
+    _MEMORY_MASTERY.clear()
+    _MEMORY_MASTERY.update(copy.deepcopy(snapshot.get("mastery") or {}))
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 

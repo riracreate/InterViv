@@ -1,0 +1,15 @@
+{
+  "id": "softmax_stable.v1",
+  "version": 1,
+  "title": "Stable softmax",
+  "difficulty": "easy",
+  "topics": ["softmax", "numerical stability"],
+  "constraints": [
+    "Use only NumPy. Do not import sklearn, scipy, or other libraries.",
+    "logits has shape (batch, classes) and dtype float64.",
+    "Return a float64 array of the same shape.",
+    "Vectorize over the batch axis; do not write a Python for-loop over rows."
+  ],
+  "function": "softmax",
+  "starter_code": "import numpy as np\n\n\ndef softmax(logits):\n    \"\"\"Map logits to a (batch, classes) probability array.\"\"\"\n    raise NotImplementedError\n"
+}

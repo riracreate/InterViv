@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('page title is interViv and index.html has no Velorah branding', () => {
+  const html = readFileSync(join(root, 'index.html'), 'utf8');
+  assert.match(html, /<title>interViv<\/title>/);
+  assert.equal(/velorah/i.test(html), false);
+});
+
+test('session report Back returns in-app, else to Progress (never the landing page)', () => {
+  const src = readFileSync(join(root, 'src/pages/Dashboard.tsx'), 'utf8');
+  assert.match(src, /backDestination\(location, '\/dashboard'\)/);
+  assert.doesNotMatch(src, /navigate\('\/'\)/);
+});
+
+test('interview camera uses one callback ref on its only video element', () => {
+  // The blocking calibration screen (and its second <video>) was removed.
+  const src = readFileSync(join(root, 'src/pages/Interview.jsx'), 'utf8');
+  const attaches = [...src.matchAll(/ref=\{attachVideoEl\}/g)];
+  assert.equal(attaches.length, 1);
+  assert.match(src, /node\.srcObject = stream/);
+});
+
+test('resource links always have an empty-state message', () => {
+  const src = readFileSync(join(root, 'src/components/ResourceLinks.jsx'), 'utf8');
+  assert.match(src, /emptyMessage = "No curated resources for this skill yet\."/);
+  assert.doesNotMatch(src, /emptyMessage \? <p role="status">/);
+});
+
+test('tailwind font tokens use loaded CSS variables', () => {
+  const src = readFileSync(join(root, 'tailwind.config.js'), 'utf8');
+  assert.match(src, /var\(--font-display\)/);
+  assert.match(src, /var\(--font-body\)/);
+  assert.equal(/velorah/i.test(src), false);
+});

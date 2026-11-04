@@ -17,11 +17,11 @@ function RadarTooltip(props: any) {
   const row = props.payload[0]?.payload as RadarDatum | undefined;
   if (!row) return null;
   return (
-    <div className="rounded-2xl border border-white/12 bg-black/70 px-3 py-2 text-xs text-white/90 backdrop-blur-2xl shadow-[0_18px_70px_rgba(0,0,0,0.65)]">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-white/50" style={{ fontFamily: "var(--font-body)" }}>
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-ink)] backdrop-blur-2xl shadow-[0_18px_70px_rgba(0,0,0,0.65)]">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
         {row.skill}
       </div>
-      <div className="mt-0.5 text-sm font-semibold text-cyan-100" style={{ fontFamily: "var(--font-body)" }}>
+      <div className="mt-0.5 text-sm font-semibold text-[var(--color-accent)]" style={{ fontFamily: "var(--font-body)" }}>
         {Math.round(row.value)}%
       </div>
     </div>
@@ -39,7 +39,7 @@ export function SkillRadar(props: { data: RadarDatum[] }) {
       <div className="relative flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-white/85">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-surface)] text-[var(--color-ink)]">
               <Eye className="h-4 w-4" />
             </div>
             <div>
@@ -49,7 +49,7 @@ export function SkillRadar(props: { data: RadarDatum[] }) {
               >
                 Skill Radar
               </div>
-              <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
+              <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                 Your strongest visual signal—multi-skill performance across the session.
               </p>
             </div>
@@ -57,10 +57,10 @@ export function SkillRadar(props: { data: RadarDatum[] }) {
         </div>
 
         <div className="hidden sm:block text-right">
-          <div className="text-xs uppercase tracking-[0.18em] text-white/45" style={{ fontFamily: "var(--font-body)" }}>
+          <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             Scale
           </div>
-          <div className="text-sm text-white/75" style={{ fontFamily: "var(--font-body)" }}>
+          <div className="text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             0 → 100
           </div>
         </div>
@@ -69,16 +69,16 @@ export function SkillRadar(props: { data: RadarDatum[] }) {
       <div className="relative mt-6 h-[320px] sm:h-[360px] lg:h-[420px]">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={props.data} outerRadius="72%">
-            <PolarGrid stroke="rgba(255,255,255,0.10)" />
+            <PolarGrid stroke="#cbd5e1" />
             <PolarAngleAxis
               dataKey="skill"
-              tick={{ fill: "rgba(255,255,255,0.72)", fontSize: 12, fontFamily: "var(--font-body)" }}
+              tick={{ fill: "#475569", fontSize: 12, fontFamily: "var(--font-body)" }}
             />
             <PolarRadiusAxis
               angle={90}
               domain={[0, 100]}
-              tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 10, fontFamily: "var(--font-body)" }}
-              stroke="rgba(255,255,255,0.10)"
+              tick={{ fill: "#64748b", fontSize: 10, fontFamily: "var(--font-body)" }}
+              stroke="#cbd5e1"
             />
             <Tooltip content={<RadarTooltip />} />
             <Radar
