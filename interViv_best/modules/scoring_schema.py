@@ -135,10 +135,12 @@ def build_concepts_summary(
     *,
     covered_concepts: list[str] | tuple[str, ...] | None,
     missing_concepts: list[str] | tuple[str, ...] | None,
-) -> dict[str, list[str]]:
+    question_concepts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "covered": [str(item) for item in (covered_concepts or []) if str(item).strip()],
         "missing": [str(item) for item in (missing_concepts or []) if str(item).strip()],
+        **(question_concepts or {}),
     }
 
 

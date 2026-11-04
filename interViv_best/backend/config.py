@@ -7,6 +7,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Frozen scoring runtime: changing either value requires a new golden capture.
+SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+SEMANTIC_MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+
 
 @dataclass(frozen=True)
 class Settings:

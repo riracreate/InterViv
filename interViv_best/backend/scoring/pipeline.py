@@ -40,6 +40,7 @@ from modules.scoring_schema import (
     build_guard_summary,
     build_rubric_scores,
 )
+from modules.question_concepts import question_concepts_summary
 
 logger = logging.getLogger(__name__)
 
@@ -731,9 +732,20 @@ def run_scoring_pipeline(
         length_ratio=length_ratio,
         score_cap=guard_score_cap,
     )
+    # Additive diagnostics only. Expected bank concepts were extracted offline;
+    # the calibrated feature, guard, rubric and score paths above are untouched.
+    from modules.nlp_scorer import _get_semantic_scorer
+
+    scoped_concepts = question_concepts_summary(
+        answer_text=answer_text,
+        question_context=question_context,
+        keyword_details=keyword_details,
+        semantic_scorer=_get_semantic_scorer() if semantic_available else None,
+    )
     concepts = build_concepts_summary(
         covered_concepts=covered_concepts,
         missing_concepts=missing_concepts,
+        question_concepts=scoped_concepts,
     )
     guard_summary = build_guard_summary(
         guard,

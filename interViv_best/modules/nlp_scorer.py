@@ -294,6 +294,16 @@ def _keyword_coverage_details(
                     round(semantic_similarity, 4)
                     if semantic_similarity is not None else None
                 ),
+                # Additive trace only; retain the existing 0.72 credit rule.
+                # None means cosine was not computed (exact/alias/unavailable).
+                "similarity": (
+                    round(float(semantic_similarity), 4)
+                    if semantic_similarity is not None else None
+                ),
+                "method": (
+                    "exact" if exact_hit else "alias" if alias_hit
+                    else "semantic" if semantic_hit else "not_matched"
+                ),
                 "token_overlap": round(token_overlap, 4),
             }
         )

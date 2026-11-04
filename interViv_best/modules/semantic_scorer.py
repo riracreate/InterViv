@@ -10,9 +10,11 @@ from __future__ import annotations
 import logging
 import os
 
+from backend.config import SEMANTIC_MODEL_NAME, SEMANTIC_MODEL_REVISION
+
 _logger = logging.getLogger(__name__)
 
-_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+_MODEL_NAME = SEMANTIC_MODEL_NAME
 _model = None          # global cache
 _model_load_error = False   # set True after a failed load so we don't retry
 _model_load_error_reason: str | None = None
@@ -39,7 +41,7 @@ def _get_model():
         return None
     try:
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(_MODEL_NAME)
+        _model = SentenceTransformer(_MODEL_NAME, revision=SEMANTIC_MODEL_REVISION)
         _logger.info("SemanticScorer: loaded %s", _MODEL_NAME)
         return _model
     except Exception as exc:

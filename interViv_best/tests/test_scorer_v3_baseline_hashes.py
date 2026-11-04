@@ -1,4 +1,4 @@
-"""Fast check that frozen v3 asset hashes match the working tree.
+"""Check frozen v3 assets and the pre-Step-1 source record.
 
 v3 = v2 + a letter-pair nonsense check built from the question bank's own text,
 an exemption for words the question's reference material uses, and a rule that
@@ -15,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SUMS_PATH = ROOT / "data" / "baselines" / "v3" / "SHA256SUMS.json"
 FIXTURE_PATH = ROOT / "tests" / "fixtures" / "scorer_v3_baseline.json"
 V2_FIXTURE_PATH = ROOT / "tests" / "fixtures" / "scorer_v2_baseline.json"
+STEP1_FIXTURE_PATH = ROOT / "tests" / "fixtures" / "step1_golden_prechange.json"
+# Approved additive Step 1 changes. Their v3 hashes remain frozen in both the
+# v3 manifest and the snapshot committed before edits. Behavioral equality is
+# enforced by test_step1_golden_regression across every legacy output field.
+STEP1_CHANGED_SOURCES = {
+    "backend/scoring/pipeline.py", "modules/nlp_scorer.py",
+    "modules/scoring_schema.py", "modules/semantic_scorer.py",
+}
 
 
 def test_v3_baseline_artifacts_exist() -> None:
@@ -27,8 +35,9 @@ def test_v3_baseline_artifacts_exist() -> None:
     assert len(fixture["items"]) == 11
 
 
-def test_v3_sha256sums_match_working_tree() -> None:
+def test_v3_sha256sums_match_unchanged_assets_and_pre_step1_record() -> None:
     manifest = json.loads(SUMS_PATH.read_text())
+    pre_step1 = json.loads(STEP1_FIXTURE_PATH.read_text())["capture"]["source_sha256"]
     assert manifest["algorithm"] == "sha256"
     mismatches = []
     for rel, meta in manifest["files"].items():
@@ -36,7 +45,8 @@ def test_v3_sha256sums_match_working_tree() -> None:
         if not path.is_file():
             mismatches.append(f"missing {rel}")
             continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = (pre_step1[rel] if rel in STEP1_CHANGED_SOURCES
+                  else hashlib.sha256(path.read_bytes()).hexdigest())
         if digest != meta["sha256"]:
             mismatches.append(f"{rel}: {digest} != {meta['sha256']}")
     assert mismatches == []
