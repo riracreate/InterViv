@@ -1,10 +1,11 @@
-/* Shared design tokens — light home and dark session dashboards both consume these.
-   Surfaces may differ (light vs dark) but type scale, spacing, status, and radius stay shared. */
+/* Shared design tokens (overhaul Phase 6): one light theme for every page —
+   system sans-serif type, slate background, white surfaces, slate borders. */
 
 :root {
   /* Type — names prefer branded faces when installed; no CDN (Phase P). */
-  --font-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --font-body: "Barlow", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
@@ -37,15 +38,16 @@
   --color-danger-soft: #fff1f2;
   --color-accent: #0e7490;
 
-  /* Light home defaults */
-  --color-surface: #f6f8fb;
+  /* Light theme (slate) */
+  --color-surface: #f8fafc;
   --color-card: #ffffff;
-  --color-ink: #020617;
+  --color-ink: #0f172a;
   --color-ink-muted: #475569;
   --color-border: #e2e8f0;
-  --color-background: #ffffff;
-  --color-foreground: #000000;
-  --color-muted: #6f6f6f;
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-muted: #64748b;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
 
   /* Dark session surface (same token names, session scope overrides) */
   --color-session-bg: #0a0a0a;

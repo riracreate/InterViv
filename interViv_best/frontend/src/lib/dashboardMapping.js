@@ -2,7 +2,7 @@
  * Maps /dashboard/:sessionId API payloads into session-dashboard view models.
  * Pure functions — no React — so node:test can cover them without a DOM.
  */
-import { unscoredReasonLabel } from "./accountOverview.js";
+import { sessionLabel, unscoredReasonLabel } from "./accountOverview.js";
 import { formatMcqAnswerSummary, mapMcqReview } from "./mcqReviewMapping.js";
 
 function clamp01(n) {
@@ -176,14 +176,9 @@ export function buildReviewSummaryProps(session, mapped) {
     ).length || 1,
   }));
 
-  if (prioritySkills.length === 0 && overallScore != null) {
-    const skills = session?.skills || (session?.skill ? [session.skill] : []);
-    prioritySkills = skills.map((skill) => ({
-      skill,
-      score: overallScore,
-      attempts: completed.length || 1,
-    }));
-  }
+  // No per-skill measurement means no per-skill priority (never the overall
+  // average copied onto every skill).
+  prioritySkills = prioritySkills.filter((p) => Number.isFinite(p.score));
 
   prioritySkills = [...prioritySkills].sort((a, b) => a.score - b.score);
 
@@ -235,24 +230,17 @@ export function mapRealDataToDashboard(session) {
 
   const gradeLabel = blended ? "Mixed session" : gradeFor(average);
 
+  // Only measured values are shown. Missing components are omitted, never
+  // derived from the average (no "avg × 0.9" stand-ins, no padded axes).
+  const realValue = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const layers = measured && !blended ? [
-    { label: "Layer 1", subtitle: "Content & Relevance", score: session.averages?.nlp_score ?? avg },
-    { label: "Layer 2", subtitle: "Quality & Depth", score: session.averages?.kg_score ?? avg * 0.9 },
-    { label: "Layer 3", subtitle: "Classifier Signal", score: avg * 0.95 },
-  ] : [];
+    { label: "Content coverage", subtitle: "Semantic and keyword match", score: realValue(session.averages?.nlp_score) },
+    { label: "Concept depth", subtitle: "Required concepts covered", score: realValue(session.averages?.kg_score) },
+  ].filter((layer) => layer.score != null) : [];
 
-  const radarSkills = !measured || blended ? [] : Object.keys(topicScores).length > 0
-    ? Object.entries(topicScores).map(([skill, value]) => ({ skill, value }))
-    : skills.map((s) => ({ skill: s, value: avg }));
-
-  if (measured && !blended && radarSkills.length < 3) {
-    const extras = [
-      { skill: "Clarity", value: avg * 0.9 },
-      { skill: "Structure", value: avg * 0.85 },
-      { skill: "Depth", value: avg },
-    ];
-    while (radarSkills.length < 3) radarSkills.push(extras[radarSkills.length]);
-  }
+  const radarSkills = !measured || blended ? [] : Object.entries(topicScores)
+    .map(([skill, value]) => ({ skill, value: realValue(value) }))
+    .filter((point) => point.value != null);
 
   const diffProgression = (session.difficulty_progression || []).map((d, i) => ({
     t: `R${i + 1}`,
@@ -338,12 +326,6 @@ export function mapRealDataToDashboard(session) {
   if (measured && strengths.length === 0 && unscored.length === 0) {
     strengths.push({ title: "Participation", detail: "You completed all rounds — consistency is key." });
   }
-  if (measured && weaknesses.length === 0) {
-    weaknesses.push({
-      title: "Push for depth",
-      detail: "Try to include trade-offs, examples, and edge cases in each answer.",
-    });
-  }
 
   const nextStepText = session.next_step || "Continue practising with harder questions to improve your Elo.";
   const measuredBlockCount = (session?.block_results || []).filter(
@@ -352,8 +334,8 @@ export function mapRealDataToDashboard(session) {
   const feedbackCards = [
     {
       id: "c1",
-      title: "C4 — Context",
-      tag: "Structure",
+      title: "Summary",
+      tag: "Overview",
       body: blended
         ? `This session combined ${measuredBlockCount} measured blocks with different metrics. See per-block results below — scores are not blended into one percentage. ${nextStepText}`
         : measured
@@ -362,20 +344,20 @@ export function mapRealDataToDashboard(session) {
     },
     {
       id: "c2",
-      title: "C4 — Containers",
-      tag: "Clarity",
+      title: "Difficulty and Elo",
+      tag: "Progress",
       body: `Difficulty adapted across ${completed.length} rounds. Final Elo: ${finalElo}.`,
     },
     {
       id: "c3",
-      title: "C4 — Components",
-      tag: "Signal",
+      title: "Skills covered",
+      tag: "Coverage",
       body: `Skills tested: ${skills.join(", ")}.`,
     },
     {
       id: "c4",
-      title: "C4 — Code",
-      tag: "Delivery",
+      title: "Best round",
+      tag: "Highlight",
       body: completed.length
         ? `Your best round scored ${Math.round(Math.max(...completed.map((r) => r.final_score ?? 0), 0))}%. Aim to replicate that depth.`
         : "No scored rounds in this session.",
@@ -384,14 +366,14 @@ export function mapRealDataToDashboard(session) {
 
   const mapped = {
     session: {
-      title: "Adaptive Mock Interview",
+      title: `${sessionLabel(rounds.map((r) => r.round_type || "technical_short_answer"))} session`,
       role: skills.join(" + "),
       dateLabel: new Date(session.started_at || Date.now()).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
       }),
-      durationLabel: `${completed.length} rounds`,
+      durationLabel: `${completed.length} of ${Number(session.total_rounds) || rounds.length} rounds scored`,
       skillFocus: skills[0] || "General",
     },
     overall: blended

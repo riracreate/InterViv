@@ -30,7 +30,7 @@ export function BlockResults(props: { blocks: BlockResultView[] }) {
         >
           Per-block results
         </div>
-        <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
           Each block carries its own metric. Block scores are never blended into one percentage.
         </p>
       </div>
@@ -39,42 +39,42 @@ export function BlockResults(props: { blocks: BlockResultView[] }) {
         {props.blocks.map((block) => (
           <div
             key={`${block.position}-${block.title}`}
-            className="rounded-2xl border border-white/10 bg-black/25 p-4 backdrop-blur-xl"
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 backdrop-blur-xl"
           >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.18em] text-white/50" style={{ fontFamily: "var(--font-body)" }}>
+                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                   {block.title}
                 </div>
-                <div className="mt-1 text-base text-white/90" style={{ fontFamily: "var(--font-body)" }}>
+                <div className="mt-1 text-base text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
                   {block.metric}
                   {block.skills.length > 0 && (
-                    <span className="text-white/55"> · {block.skills.join(", ")}</span>
+                    <span className="text-[var(--color-ink-muted)]"> · {block.skills.join(", ")}</span>
                   )}
                 </div>
               </div>
               <div className="text-right">
                 {block.average != null ? (
-                  <div className="text-2xl font-semibold text-white" style={{ fontFamily: "var(--font-body)" }}>
+                  <div className="text-2xl font-semibold text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
                     {Math.round(block.average)}%
                   </div>
                 ) : (
-                  <div className="text-lg font-medium text-white/60" style={{ fontFamily: "var(--font-body)" }}>
+                  <div className="text-lg font-medium text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                     Not measured
                   </div>
                 )}
-                <div className="text-xs text-white/50" style={{ fontFamily: "var(--font-body)" }}>
+                <div className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                   {countsLine(block)}
                 </div>
               </div>
             </div>
             {block.selfReportedAverage != null && (
-              <p className="mt-2 text-xs leading-5 text-white/55" style={{ fontFamily: "var(--font-body)" }}>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                 Self-reported {Math.round(block.selfReportedAverage)}% — kept separate from measured scores.
               </p>
             )}
             {block.suggestion && (
-              <p className="mt-2 text-xs leading-5 text-cyan-100/80" style={{ fontFamily: "var(--font-body)" }}>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-accent)]" style={{ fontFamily: "var(--font-body)" }}>
                 {block.suggestion}
               </p>
             )}

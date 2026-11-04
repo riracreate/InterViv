@@ -11,9 +11,9 @@ function Column(props: {
 }) {
   const icon =
     props.tone === "good" ? (
-      <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
     ) : (
-      <XCircle className="h-4 w-4 text-rose-200" />
+      <XCircle className="h-4 w-4 text-rose-700" />
     );
 
   const glow =
@@ -22,10 +22,10 @@ function Column(props: {
       : "from-rose-400/15 via-transparent to-transparent";
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-2xl">
+    <div className="relative overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 backdrop-blur-2xl">
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${glow}`} />
       <div className="relative flex items-start gap-3">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5">{icon}</div>
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-surface)]">{icon}</div>
         <div className="min-w-0">
           <div
             className="text-xl sm:text-2xl font-normal italic tracking-tight"
@@ -33,7 +33,7 @@ function Column(props: {
           >
             {props.title}
           </div>
-          <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             {props.subtitle}
           </p>
         </div>
@@ -41,11 +41,11 @@ function Column(props: {
 
       <div className="relative mt-5 grid gap-3">
         {props.items.map((it) => (
-          <div key={it.title} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-sm font-semibold text-white" style={{ fontFamily: "var(--font-body)" }}>
+          <div key={it.title} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="text-sm font-semibold text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
               {it.title}
             </div>
-            <div className="mt-1 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
+            <div className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
               {it.detail}
             </div>
           </div>
@@ -66,7 +66,7 @@ export function StrengthsWeaknesses(props: { strengths: Item[]; weaknesses: Item
           >
             Strengths & Weaknesses
           </div>
-          <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
             High-signal highlights—what to keep, and what to tighten next session.
           </p>
         </div>

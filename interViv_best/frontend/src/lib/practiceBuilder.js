@@ -51,10 +51,25 @@ export const STANDALONE_MODES = [
   { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
   { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
-  { id: 'system_design', title: 'System design', blurb: 'Design prompts with an explicit self-assessment rubric (no auto diagram scoring).' },
-  { id: 'ml_primitives', title: 'ML primitives', blurb: 'Implement numerical algorithms in Python. Submissions are stored; scoring is unavailable.' },
+  { id: 'system_design', title: 'System design', blurb: 'Written design notes get a practice estimate per criterion; self-assessment ratings are optional (no auto diagram scoring).' },
+  { id: 'ml_primitives', title: 'ML primitives', blurb: 'Implement numerical algorithms with NumPy. Graded when the local runner is on; otherwise submissions are stored ungraded.' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
 ];
+
+/**
+ * Practice home groups every mode into four tracks (overhaul Phase 6).
+ * Verbal Ability is an English MCQ section, so it sits with OA & SQL.
+ */
+export const PRACTICE_TRACKS = [
+  { id: 'mock', title: 'AI mock interview', blurb: 'Spoken or typed interview questions with rubric feedback.', modes: ['interview', 'full'] },
+  { id: 'coding_ml', title: 'Coding & ML', blurb: 'Solve problems against visible and hidden tests.', modes: ['coding', 'problems', 'ml_primitives'] },
+  { id: 'oa_sql', title: 'OA & SQL', blurb: 'Timed MCQs and SQL queries, as in online assessments.', modes: ['oa', 'verbal', 'sql', 'oa_sql'] },
+  { id: 'design_custom', title: 'System design & custom', blurb: 'Design prompts, or build your own round mix.', modes: ['system_design', 'custom'] },
+];
+
+export function modeById(id) {
+  return [...STANDALONE_MODES, ...PRACTICE_MODES].find((m) => m.id === id) || null;
+}
 
 export const BLOCK_CATEGORIES = ['verbal', 'oa', 'sql', 'coding', 'system_design', 'ml_primitives', 'interview'];
 

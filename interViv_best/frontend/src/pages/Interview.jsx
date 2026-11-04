@@ -31,6 +31,8 @@ import MLPrimitivesRound from '../components/MLPrimitivesRound';
 import SystemDesignRound from '../components/SystemDesignRound';
 import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
+import { createSpeaker } from '../lib/speech/tts';
+import { createRecognitionController, deliverySignals, recognitionClass } from '../lib/speech/stt';
 
 const DEADLINE_TRANSCRIPTION_NOTICE =
   'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
@@ -88,6 +90,17 @@ export default function Interview({ sessionState = null }) {
   );
   const [pendingRound, setPendingRound] = useState(initState.pendingRound || null);
   const [actionError, setActionError] = useState('');
+  // Opt-in read-aloud of questions and feedback; recognition pauses meanwhile.
+  const [readAloud, setReadAloud] = useState(false);
+  const speakerRef = useRef(null);
+  if (speakerRef.current === null && typeof window !== 'undefined') {
+    speakerRef.current = createSpeaker({
+      win: window,
+      onStart: () => recognitionRef.current?.pause?.(),
+      onEnd: () => recognitionRef.current?.resume?.(),
+    });
+  }
+  const spokenKeyRef = useRef('');
   const showingResult = isShowingResult(phase);
   const locked = inputsLocked(phase);
   const [currentArtifact, setCurrentArtifact] = useState(initState.currentArtifact || null);
@@ -165,9 +178,15 @@ export default function Interview({ sessionState = null }) {
     micStreamRef.current = null;
   }, []);
 
+  // Speaking-time accounting for the advisory WPM indicator.
+  const recordedMsRef = useRef(0);
+  const recordingSinceRef = useRef(null);
   const stopRecording = useCallback(() => {
-    try { recognitionRef.current?.stop(); }
-    catch { /* recognition was already stopped */ }
+    recognitionRef.current?.stop?.();
+    if (recordingSinceRef.current != null) {
+      recordedMsRef.current += Date.now() - recordingSinceRef.current;
+      recordingSinceRef.current = null;
+    }
     stopMicrophone();
     setIsRecording(false);
     setInterimText('');
@@ -278,53 +297,53 @@ export default function Interview({ sessionState = null }) {
     };
   }, [usesInterviewMedia]);
 
+  // Browser speech recognition: restarts after normal pauses while the
+  // candidate keeps recording; stops on permission errors, submit, exit or
+  // repeated failures. It owns the microphone (no competing getUserMedia).
   useEffect(() => {
-    if (!usesInterviewMedia) {
+    const Recognition = recognitionClass(window);
+    if (!usesInterviewMedia || !Recognition) {
       recognitionRef.current = null;
-      return undefined;
-    }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      recognitionRef.current = null;
-      setUseServerSTT(true);
-      setMicError('');
-      return undefined;
-    }
-    const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-    rec.onstart = () => {
-      setMicError('');
-      setIsRecording(true);
-    };
-    rec.onresult = (e) => {
-      let final = '', interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t + ' ';
-        else interim += t;
+      if (usesInterviewMedia && !Recognition) {
+        setUseServerSTT(true);
+        setMicError('');
       }
-      if (final) { setTranscript(p => p + final); setInterimText(''); }
-      else setInterimText(interim);
-    };
-    rec.onerror = (e) => {
-      const errorName = e.error === 'not-allowed' ? 'NotAllowedError' : e.error;
-      setMicError(mediaErrorMessage({ name: errorName }, 'Microphone'));
-      stopMicrophone();
-      setIsRecording(false);
-    };
-    rec.onend = () => {
-      stopMicrophone();
-      setIsRecording(false);
-      setInterimText('');
-    };
-    recognitionRef.current = rec;
+      return undefined;
+    }
+    const controller = createRecognitionController({
+      Recognition,
+      onResult: (finalText, interim) => {
+        if (finalText) { setTranscript((prev) => prev + finalText); setInterimText(''); }
+        else setInterimText(interim);
+      },
+      onState: (state, detail) => {
+        if (state === 'listening') {
+          setMicError('');
+          setIsRecording(true);
+          if (recordingSinceRef.current == null) recordingSinceRef.current = Date.now();
+        } else if (state === 'idle' || state === 'error') {
+          if (recordingSinceRef.current != null) {
+            recordedMsRef.current += Date.now() - recordingSinceRef.current;
+            recordingSinceRef.current = null;
+          }
+          setIsRecording(false);
+          setInterimText('');
+          if (state === 'error') {
+            const name = detail === 'not-allowed' || detail === 'service-not-allowed' ? 'NotAllowedError' : detail;
+            if (name === 'NotAllowedError') setAvState(AV_STATES.PERMISSION_DENIED);
+            setMicError(detail === 'repeated'
+              ? 'Speech recognition kept failing. You can type your answer or switch to server transcription.'
+              : mediaErrorMessage({ name }, 'Microphone'));
+          }
+        }
+      },
+    });
+    recognitionRef.current = controller;
     return () => {
-      try { rec.abort(); }
-      catch { /* recognition was never started */ }
+      controller.abort();
+      recognitionRef.current = null;
     };
-  }, [stopMicrophone, usesInterviewMedia]);
+  }, [usesInterviewMedia]);
 
   useEffect(() => {
     let cancelled = false;
@@ -478,11 +497,27 @@ export default function Interview({ sessionState = null }) {
 
   useEffect(() => {
     return () => {
+      speakerRef.current?.cancel();
       stopServerRecording(true);
       stopCamera();
       stopMicrophone();
     };
   }, [stopCamera, stopMicrophone, stopServerRecording]);
+
+  // Read the question aloud when a round opens, and the feedback summary
+  // when its result arrives; once each, only when the candidate opted in.
+  useEffect(() => {
+    if (!readAloud || roundType !== 'technical_short_answer') return;
+    const speaker = speakerRef.current;
+    if (!speaker?.supported) return;
+    if (phase === PHASES.ANSWERING && question) {
+      const key = `q:${round}:${question}`;
+      if (spokenKeyRef.current !== key) { spokenKeyRef.current = key; speaker.speak(question); }
+    } else if (showingResult && currentFeedback) {
+      const key = `f:${round}`;
+      if (spokenKeyRef.current !== key) { spokenKeyRef.current = key; speaker.speak(currentFeedback); }
+    }
+  }, [readAloud, phase, question, round, roundType, showingResult, currentFeedback]);
 
   useEffect(() => {
     if (!sessionId || sessionComplete) return;
@@ -603,22 +638,10 @@ export default function Interview({ sessionState = null }) {
       setMicError('Speech recognition is not supported in this browser.');
       return;
     }
-
-    try {
-      setMicError('');
-      await ensureMicrophone();
-      recognitionRef.current.start();
-      setIsRecording(true);
-    } catch (err) {
-      if (err?.name === 'InvalidStateError') {
-        setIsRecording(true);
-        return;
-      }
-      setMicError(mediaErrorMessage(err, 'Microphone'));
-      stopMicrophone();
-      setIsRecording(false);
-    }
-  }, [ensureMicrophone, isRecording, stopMicrophone, stopRecording]);
+    setMicError('');
+    // The recognizer asks for the microphone itself.
+    recognitionRef.current.start();
+  }, [isRecording, stopRecording]);
 
   const toggleServerRecording = useCallback(async () => {
     if (serverRecording) {
@@ -740,11 +763,20 @@ export default function Interview({ sessionState = null }) {
       if (isRecording) stopRecording();
       if (serverRecording) stopServerRecording(false);
     }
+    speakerRef.current?.cancel();
     setIsScoring(true);
     setActionError('');
     setPhase(PHASES.SUBMITTING);
     try {
       const metrics = (!isMcq && !isSystemDesign) ? buildAnswerMetrics(answerText) : {};
+      if (roundType === 'technical_short_answer') {
+        // Delivery signals are stored with the attempt; they never change the score.
+        const signals = deliverySignals(answerText, recordedMsRef.current);
+        if (signals.wpm != null) metrics.wpm = signals.wpm;
+        if (recognitionRef.current?.restartCount != null && recordedMsRef.current > 0) {
+          metrics.pause_count = recognitionRef.current.restartCount;
+        }
+      }
       const engagement = isVideoOn ? modeOfLabels(engagementSamplesRef.current) : null;
       // No calibration baseline is captured, so the delta is unmeasured.
       const engagementDelta = null;
@@ -798,8 +830,8 @@ export default function Interview({ sessionState = null }) {
       let feedbackWithMode = feedback;
       if (resp.scoring_mode === 'lexical_fallback_degraded') {
         feedbackWithMode = (
-          'Scoring mode: lexical fallback (semantic scorer unavailable). '
-          + 'This score is not equivalent to a full semantic-scorer result.'
+          'Approximate score: the meaning-based scorer was unavailable, so this answer was '
+          + 'scored by keyword matching only.'
           + (feedback ? `\n\n${feedback}` : '')
         );
       } else if (resp.scoring_mode === 'self_reported') {
@@ -900,6 +932,7 @@ export default function Interview({ sessionState = null }) {
   }, [isScoring, phase, roundType, submitAnswer, timeLeft]);
 
   const stopRoundActivity = () => {
+    speakerRef.current?.cancel();
     feedbackPollRef.current = clearFeedbackPollInterval(feedbackPollRef.current);
     feedbackRoundRef.current = null;
     stopRecording();
@@ -933,6 +966,8 @@ export default function Interview({ sessionState = null }) {
     setEligibilityLabel('');
     setFollowUpNote(''); setFollowUpBusy(false);
     setActionError('');
+    recordedMsRef.current = 0;
+    recordingSinceRef.current = null;
     clearEngagementSamples();
   };
 
@@ -1035,7 +1070,11 @@ export default function Interview({ sessionState = null }) {
   const fmt = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
   const scoreColor = (score) => score >= 75 ? '#16A34A' : score >= 50 ? '#D97706' : '#DC2626';
   const progress = progressPercent({ round, totalRounds, phase });
-  const answerWordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+  const delivery = deliverySignals(
+    transcript,
+    recordedMsRef.current + (recordingSinceRef.current != null ? nowMs - recordingSinceRef.current : 0),
+  );
+  const answerWordCount = delivery.words;
   const serverSttActive = useServerSTT || !hasBrowserSTT;
   const canSubmit = transcript.trim().length > 0 && !isScoring && phase === PHASES.ANSWERING && !serverRecording && !serverTranscribing && isSupportedRoundType(roundType);
   const voiceButtonBusy = serverSttActive ? (serverRecording || serverTranscribing) : isRecording;
@@ -1074,7 +1113,7 @@ export default function Interview({ sessionState = null }) {
         ? 'bg-blue-500'
         : engagementStatus === 'Uncertain'
           ? 'bg-amber-500'
-          : 'bg-[#6F6F6F]/30';
+          : 'bg-slate-300';
   // Typed round components share one contract: their result stays visible
   // after submission (scored or not) until Next opens the next round.
   const roundProps = {
@@ -1097,15 +1136,15 @@ export default function Interview({ sessionState = null }) {
   const roundKey = `${sessionId}:${round}`;
 
   return (
-    <div className="h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden">
-      <header className="h-14 px-6 flex items-center justify-between border-b border-black/5 shrink-0 sticky top-0 bg-white z-10">
+    <div className="h-screen bg-[var(--color-surface)] flex flex-col overflow-y-auto lg:overflow-hidden">
+      <header className="h-14 px-6 flex items-center justify-between border-b border-[var(--color-border)] shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
           <button type="button" onClick={saveAndExit} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}
             title="Your progress is saved on the server. A running timer keeps running.">
             ← Save &amp; Exit
           </button>
           <div className="h-4 w-px bg-black/10" />
-          <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F]"
+          <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
             style={{ fontFamily: "var(--font-body)" }}>{currentSkill || 'Live Session'}</span>
         </div>
         <div className="flex items-center gap-5">
@@ -1113,26 +1152,26 @@ export default function Interview({ sessionState = null }) {
             <div className="w-24 h-1.5 bg-black/5 rounded-full overflow-hidden">
               <div className="h-full bg-black rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>{round}/{totalRounds}</span>
+            <span className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>{round}/{totalRounds}</span>
           </div>
           {usesInterviewMedia && roundType === 'technical_short_answer' && (
             <span
-              className={`text-sm font-mono ${timeLeft <= 15 ? 'text-red-500' : 'text-[#6F6F6F]'}`}
+              className={`text-sm font-mono ${timeLeft <= 15 ? 'text-red-500' : 'text-[var(--color-ink-muted)]'}`}
               title="Time left in this round"
             >
               {fmt(timeLeft)}
             </span>
           )}
-          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-black/[0.03] text-[#6F6F6F]"
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-black/[0.03] text-[var(--color-ink-muted)]"
             style={{ fontFamily: "var(--font-body)" }}>Elo {elo}</span>
           <div className="hidden md:flex gap-1">
             {allSkills.map(s => (
               <span key={s} className="text-[10px] px-2 py-1 rounded-full border"
                 style={{
                   fontFamily: "var(--font-body)",
-                  borderColor: s === currentSkill ? '#000' : '#E0E0E0',
-                  backgroundColor: s === currentSkill ? '#000' : 'transparent',
-                  color: s === currentSkill ? '#fff' : '#6F6F6F',
+                  borderColor: s === currentSkill ? 'var(--color-ink)' : 'var(--color-border)',
+                  backgroundColor: s === currentSkill ? 'var(--color-ink)' : 'transparent',
+                  color: s === currentSkill ? '#fff' : 'var(--color-ink-muted)',
                 }}>
                 {s}
               </span>
@@ -1180,7 +1219,7 @@ export default function Interview({ sessionState = null }) {
         </div>
       ) : (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
-        <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/8 bg-white flex flex-col min-h-0">
+        <div className="relative flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
             {/* Only after a requested mic/camera actually failed. */}
@@ -1205,17 +1244,17 @@ export default function Interview({ sessionState = null }) {
                 />
               </div>
             ) : null}
-            <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
-              <div className={`w-2 h-2 rounded-full ${isRecording || serverRecording ? 'bg-red-500 animate-pulse' : serverTranscribing ? 'bg-blue-500 animate-pulse' : micError ? 'bg-amber-500' : 'bg-[#6F6F6F]/30'}`} />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
+            <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-[var(--color-border)]">
+              <div className={`w-2 h-2 rounded-full ${isRecording || serverRecording ? 'bg-red-500 animate-pulse' : serverTranscribing ? 'bg-blue-500 animate-pulse' : micError ? 'bg-amber-500' : 'bg-slate-300'}`} />
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {voiceStatus}
               </span>
             </div>
             {isVideoOn && (
-              <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-black/8">
+              <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-[var(--color-border)]">
                 <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
                   style={{ fontFamily: "var(--font-body)" }}>
                   Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
                 </span>
@@ -1226,16 +1265,16 @@ export default function Interview({ sessionState = null }) {
           {/* Question — the primary focus of the screen */}
           <div className="flex-1 flex flex-col justify-center px-8 md:px-12 py-6 overflow-y-auto min-h-0">
             <div className="flex items-center gap-3 mb-5 flex-wrap">
-              <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[#6F6F6F]"
+              <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
                 Question {String(round).padStart(2, '0')} / {String(totalRounds).padStart(2, '0')}
               </span>
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[#6F6F6F] capitalize"
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[var(--color-ink-muted)] capitalize"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {currentSkill} · {difficulty}
               </span>
             </div>
-            <p className="text-2xl md:text-3xl lg:text-[34px] font-normal text-black leading-[1.3] max-w-3xl"
+            <p className="text-2xl md:text-3xl lg:text-[34px] font-normal text-[var(--color-ink)] leading-[1.3] max-w-3xl"
               style={{ fontFamily: "var(--font-display)" }}>
               {question || 'Loading…'}
             </p>
@@ -1243,7 +1282,7 @@ export default function Interview({ sessionState = null }) {
 
           {/* Collapsible self-view — never covers question/answer on mobile */}
           <div
-            className={`absolute bottom-4 right-4 rounded-xl overflow-hidden border border-black/10 bg-black/[0.04] shadow-md transition-all ${
+            className={`absolute bottom-4 right-4 rounded-xl overflow-hidden border border-[var(--color-border)] bg-black/[0.04] shadow-md transition-all ${
               cameraCollapsed ? 'w-auto' : 'w-36 lg:w-48 aspect-video'
             }`}
             data-testid="interview-camera-panel"
@@ -1251,7 +1290,7 @@ export default function Interview({ sessionState = null }) {
             {cameraCollapsed ? (
               <button
                 type="button"
-                className="px-3 py-2 text-[10px] uppercase tracking-wider text-[#6F6F6F]"
+                className="px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--color-ink-muted)]"
                 style={{ fontFamily: 'var(--font-body)' }}
                 onClick={() => setCameraCollapsed(false)}
                 aria-expanded="false"
@@ -1274,11 +1313,11 @@ export default function Interview({ sessionState = null }) {
                   ? <video ref={attachVideoEl} autoPlay playsInline muted className="w-full h-full object-cover" />
                   : (
                     <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-2 text-center aspect-video">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F6F6F" strokeWidth="1.2">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink-muted)" strokeWidth="1.2">
                         <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
                         <line x1="1" y1="1" x2="23" y2="23"/>
                       </svg>
-                      <span className="text-[9px] text-[#6F6F6F] leading-tight" style={{ fontFamily: "var(--font-body)" }}>
+                      <span className="text-[9px] text-[var(--color-ink-muted)] leading-tight" style={{ fontFamily: "var(--font-body)" }}>
                         {cameraError || 'Camera Off'}
                       </span>
                     </div>
@@ -1313,9 +1352,9 @@ export default function Interview({ sessionState = null }) {
               </p>
             </div>
           ) : (
-          <div className="rounded-2xl border border-black/8 p-5 flex-1 flex flex-col min-h-0">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6F6F6F]"
+              <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
                 Answer Draft
                 {draftNotice && (
@@ -1324,11 +1363,27 @@ export default function Interview({ sessionState = null }) {
               </h3>
               <div className="flex items-center gap-3">
                 {answerWordCount > 0 && (
-                  <span className="text-[10px] text-[#6F6F6F]/60" style={{ fontFamily: "var(--font-body)" }}>
-                    {answerWordCount} words
+                  <span className="text-[10px] text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }} data-testid="delivery-words">
+                    {answerWordCount} words{delivery.wpm != null ? ` · ~${delivery.wpm} wpm` : ''}
                   </span>
                 )}
-                <label className="flex items-center gap-1.5 text-[10px] text-[#6F6F6F] select-none"
+                {speakerRef.current?.supported && (
+                  <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)] select-none" style={{ fontFamily: "var(--font-body)" }}>
+                    <input
+                      type="checkbox"
+                      checked={readAloud}
+                      onChange={(e) => {
+                        setReadAloud(e.target.checked);
+                        spokenKeyRef.current = '';
+                        if (!e.target.checked) speakerRef.current?.cancel();
+                      }}
+                      className="h-3 w-3 accent-black"
+                      data-testid="read-aloud-toggle"
+                    />
+                    Read aloud
+                  </label>
+                )}
+                <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)] select-none"
                   style={{ fontFamily: "var(--font-body)" }}>
                   <input
                     type="checkbox"
@@ -1355,11 +1410,22 @@ export default function Interview({ sessionState = null }) {
               }}
               disabled={locked}
               placeholder={isRecording || serverRecording ? 'Listening...' : serverTranscribing ? 'Transcribing...' : 'Type your answer here or use the microphone.'}
-              className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[#333] outline-none transition-colors placeholder:text-[#6F6F6F]/40 focus:border-black/10 focus:bg-black/[0.015] disabled:cursor-default"
+              className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[var(--color-ink)] outline-none transition-colors placeholder:text-[var(--color-ink-muted)] focus:border-[var(--color-border)] focus:bg-black/[0.015] disabled:cursor-default"
               style={{ fontFamily: "var(--font-body)" }}
             />
+            {!locked && answerWordCount > 0 && (
+              <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)]" data-testid="delivery-checklist"
+                style={{ fontFamily: "var(--font-body)" }}>
+                <span>Structure (advisory, not scored):</span>
+                {[['concept', 'Concept'], ['tradeoff', 'Trade-off'], ['example', 'Example']].map(([key, label]) => (
+                  <span key={key} className={`rounded-full border px-2 py-0.5 ${delivery.checklist[key] ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-[var(--color-border)]'}`}>
+                    {delivery.checklist[key] ? '✓ ' : ''}{label}
+                  </span>
+                ))}
+              </p>
+            )}
             {interimText && !locked && (
-              <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-xs italic text-[#6F6F6F]/70"
+              <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-xs italic text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {interimText}
               </p>
@@ -1374,31 +1440,31 @@ export default function Interview({ sessionState = null }) {
           )}
 
           {showingResult && (
-            <div className="rounded-2xl border border-black/8 p-5" data-testid="verbal-review">
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5" data-testid="verbal-review">
               <div className="text-3xl font-normal mb-1 text-center"
-                style={{ fontFamily: "var(--font-display)", color: currentScore == null ? '#6F6F6F' : scoreColor(currentScore) }}>
+                style={{ fontFamily: "var(--font-display)", color: currentScore == null ? 'var(--color-ink-muted)' : scoreColor(currentScore) }}>
                 {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
               </div>
               {eligibilityLabel && (
-                <p className="text-[11px] uppercase tracking-wider text-center text-[#6F6F6F] mb-2"
+                <p className="text-[11px] uppercase tracking-wider text-center text-[var(--color-ink-muted)] mb-2"
                   style={{ fontFamily: "var(--font-body)" }}>
                   {eligibilityLabel}
                 </p>
               )}
               {currentFeedback && (
-                <p className="text-xs text-[#6F6F6F] text-center mt-1 leading-relaxed"
+                <p className="text-xs text-[var(--color-ink-muted)] text-center mt-1 leading-relaxed"
                   style={{ fontFamily: "var(--font-body)" }}>
                   {currentFeedback}
                 </p>
               )}
               {feedbackSourceLabel && (
-                <p className="mt-2 text-[10px] uppercase tracking-wider text-center text-[#6F6F6F]"
+                <p className="mt-2 text-[10px] uppercase tracking-wider text-center text-[var(--color-ink-muted)]"
                   style={{ fontFamily: "var(--font-body)" }}>
                   Source: {feedbackSourceLabel}
                 </p>
               )}
               {feedbackDetails && (
-                <details className="mt-2 text-[11px] text-[#6F6F6F]">
+                <details className="mt-2 text-[11px] text-[var(--color-ink-muted)]">
                   <summary className="cursor-pointer text-center">Feedback details</summary>
                   <ul className="mt-1 space-y-0.5 text-left px-2">
                     {feedbackDetails.validation && <li>Validation: {feedbackDetails.validation}</li>}
@@ -1426,13 +1492,13 @@ export default function Interview({ sessionState = null }) {
                     const pct = Math.max(0, Math.min(100, val * 10));
                     return (
                       <div key={dim} className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase tracking-wider text-[#6F6F6F] w-[68px] shrink-0 capitalize"
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--color-ink-muted)] w-[68px] shrink-0 capitalize"
                           style={{ fontFamily: "var(--font-body)" }}>{dim}</span>
                         <div className="flex-1 h-1.5 rounded-full bg-black/5 overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-500"
                             style={{ width: `${pct}%`, backgroundColor: scoreColor(pct) }} />
                         </div>
-                        <span className="text-[10px] text-[#6F6F6F] w-7 text-right tabular-nums"
+                        <span className="text-[10px] text-[var(--color-ink-muted)] w-7 text-right tabular-nums"
                           style={{ fontFamily: "var(--font-body)" }}>{val.toFixed(1)}</span>
                       </div>
                     );
@@ -1440,15 +1506,15 @@ export default function Interview({ sessionState = null }) {
                 </div>
               )}
               {currentConcepts?.missing?.length > 0 && (
-                <p className="mt-3 text-[11px] text-[#6F6F6F] leading-relaxed"
+                <p className="mt-3 text-[11px] text-[var(--color-ink-muted)] leading-relaxed"
                   style={{ fontFamily: "var(--font-body)" }}>
-                  <span className="font-medium text-black">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
+                  <span className="font-medium text-[var(--color-ink)]">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
               {roundType === 'technical_short_answer' && phase === PHASES.REVIEWING && !followUpNote && (
                 <button
                   type="button"
-                  className="mt-4 w-full rounded-xl border border-black/10 px-3 py-2 text-xs text-[#333] disabled:opacity-50"
+                  className="mt-4 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-ink)] disabled:opacity-50"
                   style={{ fontFamily: "var(--font-body)" }}
                   disabled={followUpBusy}
                   onClick={async () => {
@@ -1478,7 +1544,7 @@ export default function Interview({ sessionState = null }) {
                 </button>
               )}
               {followUpNote && (
-                <p className="mt-3 text-[11px] text-[#6F6F6F] text-center" style={{ fontFamily: "var(--font-body)" }}>
+                <p className="mt-3 text-[11px] text-[var(--color-ink-muted)] text-center" style={{ fontFamily: "var(--font-body)" }}>
                   {followUpNote}
                 </p>
               )}
@@ -1490,7 +1556,7 @@ export default function Interview({ sessionState = null }) {
               onClick={() => setIsVideoOn(p => !p)}
               aria-label={isVideoOn ? 'Turn camera off' : 'Turn camera on'}
               title={isVideoOn ? 'Turn camera off' : 'Turn camera on'}
-              className={`w-11 h-11 rounded-full flex items-center justify-center cursor-pointer transition-all border ${!isVideoOn ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-black/10 text-[#6F6F6F]'}`}>
+              className={`w-11 h-11 rounded-full flex items-center justify-center cursor-pointer transition-all border ${!isVideoOn ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-[var(--color-border)] text-[var(--color-ink-muted)]'}`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 {isVideoOn
                   ? <><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></>
@@ -1504,7 +1570,7 @@ export default function Interview({ sessionState = null }) {
               disabled={voiceButtonDisabled}
               aria-label={serverSttActive ? (serverRecording ? 'Stop server transcription recording' : 'Record with server transcription') : (isRecording ? 'Stop microphone' : 'Start microphone')}
               title={serverSttActive ? (serverRecording ? 'Stop server transcription recording' : 'Record with server transcription') : (isRecording ? 'Stop microphone' : 'Start microphone')}
-              className={`${serverSttActive ? 'h-11 min-w-[142px] px-4 gap-2' : 'w-11 h-11'} rounded-full flex items-center justify-center cursor-pointer transition-all border disabled:cursor-not-allowed disabled:opacity-40 ${voiceButtonBusy ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-black/10 text-[#6F6F6F]'}`}>
+              className={`${serverSttActive ? 'h-11 min-w-[142px] px-4 gap-2' : 'w-11 h-11'} rounded-full flex items-center justify-center cursor-pointer transition-all border disabled:cursor-not-allowed disabled:opacity-40 ${voiceButtonBusy ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-[var(--color-border)] text-[var(--color-ink-muted)]'}`}>
               {serverTranscribing
                 ? <span className="w-3.5 h-3.5 border border-current/30 border-t-current rounded-full animate-spin" />
                 : voiceButtonBusy
@@ -1521,7 +1587,7 @@ export default function Interview({ sessionState = null }) {
             {!showingResult && (
               <button onClick={() => submitAnswer()} disabled={!canSubmit}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:cursor-not-allowed disabled:opacity-35"
-                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+                style={{ backgroundColor: 'var(--color-ink)', fontFamily: "var(--font-body)" }}>
                 {isScoring
                   ? <span className="flex items-center justify-center gap-2">
                       <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin"/>Scoring...
@@ -1536,13 +1602,13 @@ export default function Interview({ sessionState = null }) {
                 onClick={phase === PHASES.BLOCKED ? handleContinueBlocked : handleNext}
                 disabled={continueBusy || phase === PHASES.ACTIVATING}
                 className="flex-1 rounded-full py-3 text-sm font-medium text-white cursor-pointer hover:scale-[1.01] transition-transform disabled:opacity-50"
-                style={{ backgroundColor: '#000', fontFamily: "var(--font-body)" }}>
+                style={{ backgroundColor: 'var(--color-ink)', fontFamily: "var(--font-body)" }}>
                 {nextLabel}
               </button>
             )}
 
             <button onClick={resetAnswer} disabled={locked} aria-label="Clear answer draft" title="Clear answer draft"
-              className="w-9 h-9 rounded-full flex items-center justify-center border border-black/10 text-[#6F6F6F] cursor-pointer">
+              className="w-9 h-9 rounded-full flex items-center justify-center border border-[var(--color-border)] text-[var(--color-ink-muted)] cursor-pointer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
               </svg>

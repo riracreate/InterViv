@@ -126,7 +126,7 @@ export default function SQLRound({
   return (
     <div className="flex flex-col gap-5 p-6 max-w-6xl mx-auto w-full" data-testid="sql-round-container">
       {/* Top Header Bar */}
-      <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
+      <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-sm flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold uppercase">
             SQL Round
@@ -163,7 +163,7 @@ export default function SQLRound({
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Left Column: Problem, Schema, and Sample Data */}
-        <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col overflow-hidden h-[540px]">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col overflow-hidden h-[540px]">
           {/* Tabs */}
           <div className="flex border-b border-gray-100 bg-gray-50/70 p-1.5 gap-1">
             <button
@@ -234,7 +234,7 @@ export default function SQLRound({
         {/* Right Column: Query Editor & Output */}
         <div className="flex flex-col gap-4 h-[540px]">
           {/* Query Editor Box */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">
                 SQL Query Editor
@@ -261,7 +261,7 @@ export default function SQLRound({
           </div>
 
           {/* Results / Feedback Panel */}
-          <div className="rounded-2xl border border-black/10 bg-white shadow-sm flex flex-col h-[230px] overflow-hidden">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm flex flex-col h-[230px] overflow-hidden">
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider font-mono">Query Execution Output</span>
               {previewResult && (
@@ -322,7 +322,7 @@ export default function SQLRound({
 
       {/* Submission Score & Test Case Results */}
       {closed && (
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="sql-review-summary">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm flex flex-col gap-4" data-testid="sql-review-summary">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Evaluation Score</span>
@@ -334,7 +334,7 @@ export default function SQLRound({
               <button
                 onClick={onNextRound}
                 disabled={nextBusy}
-                className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
+                className="px-5 py-2.5 bg-gray-900 hover:bg-[var(--color-ink)] text-white rounded-xl text-sm font-medium transition"
               >
                 {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next Round')}
               </button>

@@ -1,21 +1,32 @@
 /**
- * Primary destinations for the signed-in app shell (unified).
- * Gap / Roadmap need a target role for a deep link; without one they point at
- * Home's target picker so the items stay visible in the nav.
+ * Signed-in navigation (overhaul Phase 6): five primary destinations.
+ *
+ *   Home · Practice · Coding Arena · Career & Resume ▾ · Progress
+ *
+ * Career & Resume groups Resume upload, Resume check and Jobs. Learn,
+ * Resources, Coach, Gap analysis and Roadmap are secondary: reachable from
+ * the "More" menu and from contextual links on the pages that need them.
+ * Gap / Roadmap need a target role; without one they point at Home's target
+ * picker and are never marked active.
  */
 
-export const PRIMARY_NAV_ITEMS = [
-  { to: '/home', label: 'Home' },
-  { to: '/dashboard', label: 'Progress' },
-  { to: '/practice', label: 'Practice' },
-  { to: '/problems', label: 'Problems' },
-  { to: '/learn', label: 'Learn' },
-  { to: '/resources', label: 'Resources' },
+export const CAREER_ITEMS = [
+  { to: '/upload', label: 'Resume upload' },
   { to: '/ats', label: 'Resume check' },
   { to: '/jobs', label: 'Jobs' },
-  { to: '/coach', label: 'Coach' },
-  { to: '/upload', label: 'Resume upload' },
 ];
+
+/** Primary destinations in order; a group renders as a dropdown. */
+export const PRIMARY_NAV = [
+  { to: '/home', label: 'Home' },
+  { to: '/practice', label: 'Practice' },
+  { to: '/problems', label: 'Coding Arena' },
+  { label: 'Career & Resume', id: 'career', children: CAREER_ITEMS },
+  { to: '/dashboard', label: 'Progress' },
+];
+
+/** Every primary link, flattened (groups expanded). */
+export const PRIMARY_NAV_ITEMS = PRIMARY_NAV.flatMap((item) => item.children || [item]);
 
 /** @param {{ userId?: string, roleId?: string }} opts */
 export function contextualNavItems({ userId, roleId } = {}) {
@@ -23,7 +34,7 @@ export function contextualNavItems({ userId, roleId } = {}) {
     return [
       {
         to: `/gap-analysis/${encodeURIComponent(userId)}/${encodeURIComponent(roleId)}`,
-        label: 'Gap',
+        label: 'Gap analysis',
       },
       {
         to: `/roadmap/${encodeURIComponent(userId)}/${encodeURIComponent(roleId)}?days=30`,
@@ -32,31 +43,17 @@ export function contextualNavItems({ userId, roleId } = {}) {
     ];
   }
   return [
-    { to: '/home#target', label: 'Gap' },
+    { to: '/home#target', label: 'Gap analysis' },
     { to: '/home#target', label: 'Roadmap' },
   ];
 }
 
-/** Destinations shown inline on desktop, in brief order. */
-export const DESKTOP_NAV_ITEMS = [
-  { to: '/home', label: 'Home' },
-  { to: '/practice', label: 'Practice' },
-  { to: '/dashboard', label: 'Progress' },
-  { to: '/jobs', label: 'Jobs' },
-];
-
-/**
- * Destinations grouped under the desktop "More" menu. Coding Problems is
- * listed here as well as through Home and Practice so it stays findable.
- */
-export function moreNavItems({ userId, roleId } = {}) {
+/** Secondary destinations (desktop "More" menu). */
+export function secondaryNavItems({ userId, roleId } = {}) {
   return [
-    { to: '/problems', label: 'Problems' },
     { to: '/learn', label: 'Learn' },
     { to: '/resources', label: 'Resources' },
-    { to: '/ats', label: 'Resume check' },
     { to: '/coach', label: 'Coach' },
-    { to: '/upload', label: 'Resume upload' },
     ...contextualNavItems({ userId, roleId }),
   ];
 }
@@ -78,13 +75,15 @@ export function isNavActive(pathname, itemTo) {
   return path === base || path.startsWith(`${base}/`);
 }
 
-/** Core trio, then Gap/Roadmap, then the rest of PRIMARY. */
-export function navDestinations({ userId, roleId } = {}) {
-  const core = PRIMARY_NAV_ITEMS.filter((i) =>
-    ['/home', '/dashboard', '/practice'].includes(i.to)
-  );
-  const rest = PRIMARY_NAV_ITEMS.filter(
-    (i) => !['/home', '/dashboard', '/practice'].includes(i.to)
-  );
-  return [...core, ...contextualNavItems({ userId, roleId }), ...rest];
+/** A group is active when any of its children is. */
+export function isGroupActive(pathname, group) {
+  return (group.children || []).some((child) => isNavActive(pathname, child.to));
+}
+
+/** Small-screen menu sections: primary first, then secondary. */
+export function mobileNavSections({ userId, roleId } = {}) {
+  return [
+    { title: 'Navigate', items: PRIMARY_NAV_ITEMS },
+    { title: 'More', items: secondaryNavItems({ userId, roleId }) },
+  ];
 }

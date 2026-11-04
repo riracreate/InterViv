@@ -27,7 +27,7 @@ export function McqRoundReview(props: { review: McqReviewView | null }) {
         >
           MCQ review
         </div>
-        <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
           {review.keysVisible
             ? "Answer keys and explanations are shown because this session is completed and review policy is after_session."
             : review.reviewPolicy === "none"
@@ -39,28 +39,28 @@ export function McqRoundReview(props: { review: McqReviewView | null }) {
         {review.items.map((item, index) => (
           <article
             key={item.id}
-            className="rounded-2xl border border-white/10 bg-black/25 p-4"
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
             data-testid="mcq-review-item"
           >
-            <p className="text-sm text-white/90" style={{ fontFamily: "var(--font-body)" }}>
-              <span className="text-white/50">Q{index + 1}. </span>
+            <p className="text-sm text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+              <span className="text-[var(--color-ink-muted)]">Q{index + 1}. </span>
               {item.stem}
             </p>
-            <p className="mt-2 text-xs text-white/70" style={{ fontFamily: "var(--font-body)" }}>
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
               Your answer: {item.selectedLabels.length ? item.selectedLabels.join(", ") : "No selection"}
               {item.isCorrect != null && (
-                <span className={item.isCorrect ? " text-emerald-200" : " text-rose-200"}>
+                <span className={item.isCorrect ? " text-emerald-700" : " text-rose-700"}>
                   {item.isCorrect ? " · correct" : " · incorrect"}
                 </span>
               )}
             </p>
             {review.keysVisible && item.correctLabels.length > 0 && (
-              <p className="mt-1 text-xs text-cyan-100/85" style={{ fontFamily: "var(--font-body)" }}>
+              <p className="mt-1 text-xs text-[var(--color-accent)]" style={{ fontFamily: "var(--font-body)" }}>
                 Correct: {item.correctLabels.join(", ")}
               </p>
             )}
             {review.keysVisible && item.explanation && (
-              <p className="mt-2 text-xs leading-5 text-white/60" style={{ fontFamily: "var(--font-body)" }}>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
                 {item.explanation}
               </p>
             )}

@@ -139,40 +139,40 @@ export default function SystemDesignRound({
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-6" data-testid="system-design-round">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[#6F6F6F]">
+        <div className="flex items-center gap-2 text-[var(--color-ink-muted)]">
           <LayoutTemplate size={16} />
           <span className="text-xs font-medium uppercase tracking-wider">
             System design · {contentMode ? 'practice estimate' : 'self-assessment'}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-sm text-[#6F6F6F]">
+        <div className="flex items-center gap-2 text-sm text-[var(--color-ink-muted)]">
           <Clock size={14} />
           <span>{mm}:{ss}</span>
         </div>
       </div>
 
       <h2
-        className="text-2xl text-black"
+        className="text-2xl text-[var(--color-ink)]"
         style={{ fontFamily: "var(--font-display)" }}
       >
         {question || questionContext?.title || 'System design prompt'}
       </h2>
-      <p className="text-sm leading-relaxed text-[#333]">
+      <p className="text-sm leading-relaxed text-[var(--color-ink)]">
         {questionContext?.prompt || ''}
       </p>
       {(questionContext?.constraints || []).length > 0 ? (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-[#555]">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--color-ink-muted)]">
           {questionContext.constraints.map((c) => (
             <li key={c}>{c}</li>
           ))}
         </ul>
       ) : null}
 
-      <div className="rounded-xl border border-black/10 bg-black/[0.02] px-4 py-3 text-sm">
-        <div className="font-medium text-black">Evaluation boundary</div>
-        <p className="mt-1 text-[#444]">{boundary}</p>
+      <div className="rounded-xl border border-[var(--color-border)] bg-black/[0.02] px-4 py-3 text-sm">
+        <div className="font-medium text-[var(--color-ink)]">Evaluation boundary</div>
+        <p className="mt-1 text-[var(--color-ink)]">{boundary}</p>
         {!contentMode ? (
-          <p className="mt-2 text-xs uppercase tracking-wider text-[#6F6F6F]">
+          <p className="mt-2 text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">
             Mode: {mode}
           </p>
         ) : null}
@@ -184,10 +184,10 @@ export default function SystemDesignRound({
 
       {!closed ? (
         <>
-          <label className="block text-sm font-medium text-black">
+          <label className="block text-sm font-medium text-[var(--color-ink)]">
             Design notes (text)
             <textarea
-              className="mt-2 min-h-[180px] w-full rounded-xl border border-black/10 p-3 text-sm"
+              className="mt-2 min-h-[180px] w-full rounded-xl border border-[var(--color-border)] p-3 text-sm"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="Outline requirements, APIs, storage, scale, and trade-offs. Diagrams are optional notes only — not auto-validated."
@@ -196,7 +196,7 @@ export default function SystemDesignRound({
           </label>
 
           <div className="space-y-3">
-            <div className="text-sm font-medium text-black">
+            <div className="text-sm font-medium text-[var(--color-ink)]">
               {contentMode
                 ? 'Optional self-ratings (1–5) — count for 30% only when all four are set'
                 : 'Rubric self-ratings (1–5)'}
@@ -204,15 +204,15 @@ export default function SystemDesignRound({
             {rubric.map((criterion) => (
               <div
                 key={criterion.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/8 px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2"
               >
                 <div>
                   <div className="text-sm font-medium">{criterion.name}</div>
-                  <div className="text-xs text-[#6F6F6F]">{criterion.description}</div>
+                  <div className="text-xs text-[var(--color-ink-muted)]">{criterion.description}</div>
                 </div>
                 <select
                   aria-label={`Rating for ${criterion.name}`}
-                  className="rounded-md border border-black/15 px-2 py-1 text-sm"
+                  className="rounded-md border border-[var(--color-border)] px-2 py-1 text-sm"
                   value={ratings[criterion.id] ?? ''}
                   onChange={(e) =>
                     setRatings((prev) => ({ ...prev, [criterion.id]: e.target.value }))
@@ -236,23 +236,23 @@ export default function SystemDesignRound({
             type="button"
             onClick={handleSubmit}
             disabled={isScoring}
-            className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-ink)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
           >
             <Send size={14} />
             {isScoring ? 'Recording…' : contentMode ? 'Submit design' : 'Submit self-assessment'}
           </button>
         </>
       ) : (
-        <div className="space-y-3 rounded-xl border border-black/10 p-4" data-testid="system-design-review">
-          <div className="text-sm text-[#6F6F6F]">
+        <div className="space-y-3 rounded-xl border border-[var(--color-border)] p-4" data-testid="system-design-review">
+          <div className="text-sm text-[var(--color-ink-muted)]">
             {currentArtifact?.evaluation_mode === CONTENT_MODE ? 'Practice estimate' : 'Self-assessment score'}
           </div>
           <div className="text-3xl font-medium">{currentScore == null ? 'Not scored' : Number(currentScore).toFixed(1)}</div>
-          <p className="text-sm text-[#444]">{currentFeedback}</p>
+          <p className="text-sm text-[var(--color-ink)]">{currentFeedback}</p>
           {currentArtifact?.evaluation_mode === CONTENT_MODE ? (
             <ContentBreakdown artifact={currentArtifact} />
           ) : currentArtifact?.evaluation_mode ? (
-            <p className="text-xs uppercase tracking-wider text-[#6F6F6F]">
+            <p className="text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">
               {currentArtifact.evaluation_mode}
             </p>
           ) : null}
@@ -262,7 +262,7 @@ export default function SystemDesignRound({
               type="button"
               onClick={onNextRound}
               disabled={nextBusy}
-              className="inline-flex items-center gap-2 rounded-xl border border-black/15 px-4 py-2 text-sm disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm disabled:opacity-50"
             >
               <RefreshCw size={14} />
               {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next')}
@@ -283,24 +283,24 @@ export function ContentBreakdown({ artifact }) {
   if (!criteria.length) return null;
   return (
     <div className="space-y-3" data-testid="system-design-content-breakdown">
-      <p className="text-xs text-[#6F6F6F]">
+      <p className="text-xs text-[var(--color-ink-muted)]">
         {artifact.formula ? `Score: ${artifact.formula}. ` : ''}Excluded from Elo and readiness.
       </p>
       {criteria.map((c) => (
-        <div key={c.id} className="rounded-lg border border-black/8 px-3 py-2">
+        <div key={c.id} className="rounded-lg border border-[var(--color-border)] px-3 py-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">{c.name}</span>
             <span className="tabular-nums">{Math.round(c.score)}/100</span>
           </div>
           {c.excerpts?.length ? (
-            <ul className="mt-1 space-y-1 text-xs text-[#444]">
+            <ul className="mt-1 space-y-1 text-xs text-[var(--color-ink)]">
               {c.excerpts.slice(0, 3).map((e) => (
                 <li key={e.concept}><span className="font-medium">{e.concept}:</span> “{e.excerpt}”</li>
               ))}
             </ul>
           ) : null}
           {c.missing?.length ? (
-            <p className="mt-1 text-xs text-[#6F6F6F]">Not covered: {c.missing.join(', ')}</p>
+            <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Not covered: {c.missing.join(', ')}</p>
           ) : null}
         </div>
       ))}
@@ -321,17 +321,17 @@ export function CalibrationPanel({ calibration }) {
   if (!calibration) return null;
   if (!calibration.available) {
     return calibration.reason
-      ? <p className="text-xs text-[#6F6F6F]" data-testid="sd-calibration-unavailable">{calibration.reason}</p>
+      ? <p className="text-xs text-[var(--color-ink-muted)]" data-testid="sd-calibration-unavailable">{calibration.reason}</p>
       : null;
   }
   const rows = calibration.criteria || [];
   const flagged = rows.filter((row) => row.overconfident);
   return (
-    <div className="space-y-2 rounded-lg border border-black/10 bg-black/[0.02] p-3" data-testid="sd-calibration">
+    <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-black/[0.02] p-3" data-testid="sd-calibration">
       <div className="text-sm font-medium">Your ratings vs. what your notes mention</div>
       <ul className="space-y-2 text-sm">
         {rows.map((row) => (
-          <li key={row.id} className={row.overconfident ? 'text-amber-800' : 'text-[#444]'}>
+          <li key={row.id} className={row.overconfident ? 'text-amber-800' : 'text-[var(--color-ink)]'}>
             <span className="font-medium">{row.name}</span>
             {`: you rated ${row.self_rating} · notes show ${row.evidence_level}`}
             {row.overconfident && row.not_mentioned?.length > 0 && (
@@ -340,7 +340,7 @@ export function CalibrationPanel({ calibration }) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-[#6F6F6F]">
+      <p className="text-xs text-[var(--color-ink-muted)]">
         {flagged.length > 0
           ? 'Highlighted criteria are rated well above what the notes show. Try covering them in your next design.'
           : 'Your notes back up your ratings.'}

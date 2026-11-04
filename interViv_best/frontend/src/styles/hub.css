@@ -3,7 +3,7 @@
 .hub-page .hub-container { max-width: 1180px; margin: auto; padding: var(--space-6) var(--space-8) 0; }
 .hub-page a, .hub-page button, .hub-page summary { -webkit-tap-highlight-color: transparent; }
 .hub-page :is(a, button, summary, select):focus-visible { outline: 3px solid var(--color-accent); outline-offset: 4px; }
-.hub-page h1, .hub-page h2, .hub-page .hub-featured h3 { font-family: var(--font-display); font-weight: 400; letter-spacing: -.02em; }
+.hub-page h1, .hub-page h2, .hub-page .hub-featured h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.02em; }
 .hub-page h1 { margin: 16px 0; font-size: clamp(3rem, 7vw, 5rem); line-height: 1.04; overflow-wrap: anywhere; }
 .hub-page h2 { font-size: clamp(2rem, 4vw, 2.7rem); line-height: 1.15; }
 .hub-page em { color: var(--color-muted); font-weight: 400; }

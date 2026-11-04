@@ -6,20 +6,20 @@ type Card = {
   id: string;
   title: string;
   body: string;
-  tag: "Signal" | "Structure" | "Delivery" | "Clarity";
+  tag: string;
 };
 
 function tagMeta(tag: Card["tag"]) {
   switch (tag) {
-    case "Signal":
-      return { icon: <ScanEye className="h-4 w-4" />, pill: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100" };
-    case "Structure":
-      return { icon: <ListChecks className="h-4 w-4" />, pill: "border-blue-300/20 bg-blue-300/10 text-blue-100" };
-    case "Delivery":
-      return { icon: <Mic2 className="h-4 w-4" />, pill: "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-100" };
-    case "Clarity":
+    case "Coverage":
+      return { icon: <ScanEye className="h-4 w-4" />, pill: "border-cyan-300/20 bg-cyan-300/10 text-[var(--color-accent)]" };
+    case "Overview":
+      return { icon: <ListChecks className="h-4 w-4" />, pill: "border-blue-300/20 bg-blue-300/10 text-blue-700" };
+    case "Highlight":
+      return { icon: <Mic2 className="h-4 w-4" />, pill: "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-700" };
+    case "Progress":
     default:
-      return { icon: <Brain className="h-4 w-4" />, pill: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100" };
+      return { icon: <Brain className="h-4 w-4" />, pill: "border-emerald-300/20 bg-emerald-300/10 text-emerald-700" };
   }
 }
 
@@ -36,8 +36,8 @@ export function FeedbackCards(props: { cards: Card[] }) {
           >
             Detailed Feedback
           </div>
-          <p className="mt-1 text-sm text-white/65" style={{ fontFamily: "var(--font-body)" }}>
-            C4-aligned notes you can act on immediately.
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
+            Plain-language notes from this session you can act on.
           </p>
         </div>
       </div>
@@ -47,7 +47,7 @@ export function FeedbackCards(props: { cards: Card[] }) {
           const isOpen = open === c.id;
           const meta = tagMeta(c.tag);
           return (
-            <div key={c.id} className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-2xl">
+            <div key={c.id} className="relative overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 backdrop-blur-2xl">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.08),transparent_38%),radial-gradient(circle_at_80%_30%,rgba(59,130,246,0.06),transparent_45%)]" />
               <button
                 type="button"
@@ -56,11 +56,11 @@ export function FeedbackCards(props: { cards: Card[] }) {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/5 text-white/85">
+                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[var(--color-surface)] text-[var(--color-ink)]">
                       {meta.icon}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-base font-semibold text-white" style={{ fontFamily: "var(--font-body)" }}>
+                      <div className="text-base font-semibold text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
                         {c.title}
                       </div>
                       <span className={`mt-2 inline-flex items-center rounded-full border px-3 py-1 text-[11px] ${meta.pill}`}>
@@ -68,7 +68,7 @@ export function FeedbackCards(props: { cards: Card[] }) {
                       </span>
                     </div>
                   </div>
-                  <ChevronDown className={`h-4 w-4 text-white/50 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown className={`h-4 w-4 text-[var(--color-ink-muted)] transition-transform ${isOpen ? "rotate-180" : ""}`} />
                 </div>
               </button>
 
@@ -79,7 +79,7 @@ export function FeedbackCards(props: { cards: Card[] }) {
                     animate={{ opacity: 1, height: "auto", y: 0 }}
                     exit={{ opacity: 0, height: 0, y: -4 }}
                     transition={{ duration: 0.25 }}
-                    className="relative mt-4 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm leading-relaxed text-white/75"
+                    className="relative mt-4 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm leading-relaxed text-[var(--color-ink-muted)]"
                     style={{ fontFamily: "var(--font-body)" }}
                   >
                     {c.body}

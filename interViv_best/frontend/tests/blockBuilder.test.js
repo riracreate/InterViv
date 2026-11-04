@@ -25,7 +25,8 @@ test('standalone entries cover Verbal, OA, SQL, coding, system design, ML primit
   assert.match(verbal.blurb, /English MCQ/i);
   assert.doesNotMatch(verbal.blurb, /speak|voice|HR question/i);
   const sd = STANDALONE_MODES.find((m) => m.id === 'system_design');
-  assert.match(sd.blurb, /self-assessment/i);
+  assert.match(sd.blurb, /practice estimate/i);
+  assert.match(sd.blurb, /self-assessment ratings are optional/i);
 });
 
 test('adding Verbal never erases the existing sequence', () => {

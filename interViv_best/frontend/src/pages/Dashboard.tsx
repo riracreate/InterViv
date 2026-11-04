@@ -1,24 +1,15 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import { backDestination } from "../lib/backNavigation";
 import { motion } from "motion/react";
 import {
   ArrowLeft,
-  BarChart3,
-  Clock,
   Download,
-  Map,
-  Play,
-  RotateCcw,
   Share2,
   Sparkles,
-  Target,
-  Upload,
 } from "lucide-react";
-import { fetchDashboard, fetchLearningSignals, fetchAtsRuns, fetchMe, fetchAccountOverview } from "../lib/api";
+import { fetchDashboard } from "../lib/api";
 import { mapRealDataToDashboard, scoreAccent } from "../lib/dashboardMapping";
-import { displayScore, observedReadinessNote, sessionLabel } from "../lib/accountOverview";
-import AppNav from "../components/AppNav";
 import AccountMenu from "../components/AccountMenu";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
@@ -48,8 +39,8 @@ const item = {
 
 function GlassButton({ icon, label, variant = "primary", onClick }) {
   const base = "group inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 active:translate-y-[1px]";
-  const primary   = "bg-white/10 text-white border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.55)] hover:bg-white/14 hover:border-white/25";
-  const secondary = "bg-black/20 text-white/90 border border-white/10 hover:bg-black/30 hover:border-white/18";
+  const primary   = "bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-border)] shadow-sm hover:bg-[var(--color-surface)] hover:border-[var(--color-border)]";
+  const secondary = "bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:border-[var(--color-border)]";
   return (
     <button className={`${base} ${variant === "secondary" ? secondary : primary}`} type="button" onClick={onClick}>
       <span className="opacity-90 group-hover:opacity-100 transition-opacity">{icon}</span>
@@ -58,279 +49,38 @@ function GlassButton({ icon, label, variant = "primary", onClick }) {
   );
 }
 
-function DashboardCard({ icon, title, value = null, detail, action = null, muted = false }) {
+export const REPORT_TABS = [
+  { id: "overview", label: "Overview & readiness" },
+  { id: "rounds", label: "Round review" },
+  { id: "skills", label: "Skills & next steps" },
+] as const;
+
+/** One strength, one weakness and one next action, with a practice CTA. */
+export function ExecutiveSummary({ data, onPractice }) {
+  const strength = data.highlights.strengths[0];
+  const weakness = data.highlights.weaknesses[0];
+  const prioritySkills = (data.reviewSummary?.prioritySkills || []).map((p) => p.skill).slice(0, 3);
   return (
-    <div className="flex min-h-[172px] flex-col justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-sm">
-      <div>
-        <div className="flex items-start justify-between gap-4">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-[var(--radius-card)] ${muted ? "bg-slate-100 text-slate-500" : "bg-[var(--color-ink)] text-white"}`}>
-            {icon}
-          </div>
-          {value && <span className="rounded-md bg-[var(--color-success-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-success)]">{value}</span>}
-        </div>
-        <h3 className="mt-4 text-lg font-semibold tracking-normal text-[var(--color-ink)]">{title}</h3>
-        <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{detail}</p>
+    <section aria-label="Summary" data-testid="report-summary" className="grid gap-4 md:grid-cols-3">
+      <div className="glass-panel rounded-2xl p-4">
+        <p className="text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">Strength</p>
+        <p className="mt-1 font-medium">{strength ? strength.title : "Not enough measured rounds yet"}</p>
+        {strength && <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{strength.detail}</p>}
       </div>
-      {action && <div className="mt-5 border-t border-[var(--color-border)] pt-3 text-sm font-semibold text-[var(--color-ink)]">{action}</div>}
-    </div>
-  );
-}
-
-function formatFrac(value) {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return `${Math.round(Number(value) * 100)}%`;
-}
-
-function LearningSignalsBlock({ signals }) {
-  const topDelta = (signals?.elo_deltas || []).slice(-3).reverse();
-  const topRevisit = (signals?.revisit_rates || []).slice(0, 3);
-  const roadmap = signals?.roadmap_completion || {};
-
-  return (
-    <section className="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold tracking-normal text-[var(--color-ink)]">Learning signals</h2>
-        <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">Elo · revisit · roadmap</p>
+      <div className="glass-panel rounded-2xl p-4">
+        <p className="text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">To improve</p>
+        <p className="mt-1 font-medium">{weakness ? weakness.title : "No weak area measured"}</p>
+        {weakness && <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{weakness.detail}</p>}
       </div>
-      {!signals ? (
-        <p className="mt-3 text-sm leading-6 text-[var(--color-ink-muted)]">
-          Sign in and complete practice rounds to see Elo deltas, revisit rates, and roadmap completion.
-        </p>
-      ) : (
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">Elo delta</p>
-            {topDelta.length === 0 ? (
-              <p className="mt-2 text-sm text-[var(--color-ink-muted)]">No Elo events yet.</p>
-            ) : (
-              <ul className="mt-2 space-y-1.5 text-sm text-[var(--color-ink)]">
-                {topDelta.map((row) => (
-                  <li key={`${row.skill}-${row.session_id}`}>
-                    {row.skill}: {row.delta >= 0 ? "+" : ""}{row.delta}
-                    <span className="text-[var(--color-ink-muted)]"> (cum {row.cumulative_delta >= 0 ? "+" : ""}{row.cumulative_delta})</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">Revisit rate</p>
-            {topRevisit.length === 0 ? (
-              <p className="mt-2 text-sm text-[var(--color-ink-muted)]">No skill retries yet.</p>
-            ) : (
-              <ul className="mt-2 space-y-1.5 text-sm text-[var(--color-ink)]">
-                {topRevisit.map((row) => (
-                  <li key={row.skill}>
-                    {row.skill}: {formatFrac(row.rate)}
-                    <span className="text-[var(--color-ink-muted)]"> ({row.retries}/{row.sessions})</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">Roadmap</p>
-            <ul className="mt-2 space-y-1.5 text-sm text-[var(--color-ink)]">
-              <li>7d: {formatFrac(roadmap["7"])}</li>
-              <li>14d: {formatFrac(roadmap["14"])}</li>
-              <li>30d: {formatFrac(roadmap["30"])}</li>
-            </ul>
-          </div>
-        </div>
-      )}
+      <div className="glass-panel rounded-2xl p-4">
+        <p className="text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">Next action</p>
+        <p className="mt-1 text-sm text-[var(--color-ink)]">{data.reviewSummary?.nextStep}</p>
+        <button type="button" onClick={() => onPractice(prioritySkills)} data-testid="report-practice-next"
+          className="mt-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-surface)]">
+          {prioritySkills.length ? `Practice ${prioritySkills.join(", ")}` : "Practice next"} →
+        </button>
+      </div>
     </section>
-  );
-}
-
-function DashboardHome() {
-  const [signals, setSignals] = useState(null);
-  const [lastAts, setLastAts] = useState(null);
-  const [navUser, setNavUser] = useState({ userId: null, roleId: null });
-  const [overview, setOverview] = useState(null);
-  const [overviewError, setOverviewError] = useState("");
-  const [overviewLoading, setOverviewLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchLearningSignals()
-      .then((data) => {
-        if (!cancelled) setSignals(data);
-      })
-      .catch(() => {
-        if (!cancelled) setSignals(null);
-      });
-    fetchAtsRuns(1)
-      .then((data) => {
-        if (!cancelled) setLastAts(data.runs?.[0]?.total ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setLastAts(null);
-      });
-    fetchMe()
-      .then((me) => {
-        if (cancelled) return;
-        const u = me.user || me;
-        setNavUser({
-          userId: u.id || u.user_id || null,
-          roleId: u.target_role_id || null,
-        });
-      })
-      .catch(() => {});
-    fetchAccountOverview()
-      .then((data) => {
-        if (cancelled) return;
-        setOverview(data);
-        setOverviewLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setOverviewError(err.message || "Progress is not available.");
-        setOverviewLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const scoredSessions = overviewLoading ? "…" : overviewError ? "Unavailable" : String(overview?.scored_session_count ?? 0);
-  const skillsMeasured = overviewLoading
-    ? "…"
-    : overviewError
-      ? "Unavailable"
-      : String((overview?.skills || []).filter((skill) => skill.attempts > 0).length);
-  const readinessValue = overviewLoading ? "…" : overviewError ? "Unavailable" : displayScore(overview?.readiness);
-  const history = overview?.history || [];
-  const recent = history.slice(0, 3);
-  const weakSkills = [...(overview?.skills || [])]
-    .filter((skill) => skill.attempts > 0)
-    .sort((a, b) => (a.current_score ?? 0) - (b.current_score ?? 0))
-    .slice(0, 3);
-
-  return (
-    <main className="dashboard-home min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
-      <div className="app-container">
-        <AppNav
-          brandTo="/home"
-          userId={navUser.userId}
-          roleId={navUser.roleId}
-          trailing={
-            <Link to="/upload" className="rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-3 py-1.5 text-sm font-semibold text-white">
-              Start Interview
-            </Link>
-          }
-        />
-
-        <section className="mt-8 border-b border-[var(--color-border)] pb-8">
-          <div className="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-end">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Interview Readiness Platform</p>
-              <h1 className="mt-3 max-w-3xl text-[length:var(--text-3xl)] font-semibold leading-tight tracking-normal text-[var(--color-ink)] sm:text-[length:var(--text-5xl)]">
-                Welcome back. Build readiness by company, role, resume, and skill.
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--color-ink-muted)]">
-                interViv is a company-style, role-style, resume-aware adaptive mock interview platform for students.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
-              <Link to="/coach" className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-ink)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-                Don’t know where to start
-              </Link>
-              <Link to="/practice" className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-300">
-                <Play className="h-4 w-4" />
-                Open Practice Hub
-              </Link>
-              <Link to="/upload" className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-300">
-                <Upload className="h-4 w-4" />
-                Resume Analysis
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-7 grid gap-3 border-y border-[var(--color-border)] py-4 sm:grid-cols-3">
-            <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">{scoredSessions}</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">scored sessions</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">{skillsMeasured}</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">skills measured</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-[var(--color-ink)]">{readinessValue}</p>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">readiness</p>
-            </div>
-          </div>
-        </section>
-
-        <LearningSignalsBlock signals={signals} />
-
-        {lastAts != null && (
-          <p className="mt-4 text-sm text-[var(--color-ink-muted)]">
-            Last ATS score: <Link to="/ats" className="font-semibold text-[var(--color-ink)] underline-offset-2 hover:underline">{Math.round(lastAts)}</Link>
-          </p>
-        )}
-
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <DashboardCard
-            icon={<BarChart3 className="h-5 w-5" />}
-            title="Overall Readiness"
-            value={overviewLoading ? null : readinessValue}
-            detail={
-              overviewError
-                ? overviewError
-                : overview?.readiness == null
-                  ? "Readiness is measured against a target role after you practice its required skills."
-                  : [`Based on ${overview.target?.tested_skill_count ?? 0} of ${overview.target?.required_skill_count ?? 0} required skills.`, observedReadinessNote(overview)].filter(Boolean).join(' ')
-            }
-            action={<Link to="/dashboard">Open Progress</Link>}
-          />
-          <DashboardCard
-            icon={<Target className="h-5 w-5" />}
-            title="Weak Skills"
-            detail={
-              overviewError
-                ? overviewError
-                : weakSkills.length === 0
-                  ? "Not measured. Skills appear here after scored rounds."
-                  : weakSkills.map((skill) => `${skill.name} ${displayScore(skill.current_score)}`).join(", ")
-            }
-            action={weakSkills.length === 0 ? "Empty until you practice" : `${weakSkills.length} lowest measured`}
-            muted={weakSkills.length === 0}
-          />
-          <DashboardCard
-            icon={<Clock className="h-5 w-5" />}
-            title="Recent Sessions"
-            detail={
-              overviewError
-                ? overviewError
-                : recent.length === 0
-                  ? "No scored sessions yet."
-                  : recent.map((session) => `${sessionLabel(session.round_types)} ${displayScore(session.average_score)}`).join(" · ")
-            }
-            action={recent.length === 0 ? "No sessions yet" : <Link to="/dashboard">View history</Link>}
-            muted={recent.length === 0}
-          />
-          <DashboardCard
-            icon={<RotateCcw className="h-5 w-5" />}
-            title="Replay / Past Questions"
-            detail="Open a session report to review answers and deterministic scoring breakdowns."
-            action={history.length === 0 ? "Available after a session" : `${history.length} reports`}
-            muted={history.length === 0}
-          />
-          <DashboardCard
-            icon={<Map className="h-5 w-5" />}
-            title="Recommended Roadmap"
-            detail={
-              overview?.target
-                ? `${overview.target.company_name} · ${overview.target.role_title}`
-                : "Select a target company and role, then generate a gap report."
-            }
-            action={overview?.target ? <Link to="/home#target">View target</Link> : "Target role required"}
-            muted={!overview?.target}
-          />
-        </section>
-      </div>
-    </main>
   );
 }
 
@@ -338,6 +88,17 @@ export default function Dashboard() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tab = REPORT_TABS.some((t) => t.id === requestedTab) ? requestedTab : "overview";
+  const selectTab = (id) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", id);
+    setSearchParams(next, { replace: true });
+  };
+  const practiceNext = (skills) => navigate("/practice?mode=full", {
+    state: skills.length ? { prefilledSkills: skills, prefillSource: "session report" } : undefined,
+  });
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(Boolean(sessionId));
   const [err, setErr] = useState('');
@@ -364,38 +125,34 @@ export default function Dashboard() {
   }
 
   const data = useMemo(() => raw ? mapRealDataToDashboard(raw) : null, [raw]);
-  const accent = data ? scoreAccent(data.overall.score) : { ring: "from-cyan-400/70 to-blue-500/70", text: "text-cyan-200" };
+  const accent = data ? scoreAccent(data.overall.score) : { ring: "from-cyan-400/70 to-blue-500/70", text: "text-[var(--color-accent)]" };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--color-surface)] flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mb-4 mx-auto" />
-          <p className="text-sm text-white/60" style={{ fontFamily: "var(--font-body)" }}>Loading results...</p>
+          <p className="text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>Loading results...</p>
         </div>
       </div>
     );
   }
 
-  if (!sessionId) {
-    return <DashboardHome />;
-  }
-
   if (err || !data) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--color-surface)] flex items-center justify-center">
         <div className="text-center">
-          <p role="alert" className="text-sm text-white/60 mb-4" style={{ fontFamily: "var(--font-body)" }}>
+          <p role="alert" className="text-sm text-[var(--color-ink-muted)] mb-4" style={{ fontFamily: "var(--font-body)" }}>
             {err || "Session not found."}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button onClick={() => setRetryCount((value) => value + 1)}
-              className="rounded-full px-6 py-2.5 text-sm text-white bg-white/10 border border-white/15 hover:bg-white/15 transition-all"
+              className="rounded-full px-6 py-2.5 text-sm text-[var(--color-ink)] bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-all"
               style={{ fontFamily: "var(--font-body)" }}>
               Try again
             </button>
             <button onClick={() => navigate('/upload')}
-              className="rounded-full px-6 py-2.5 text-sm text-white bg-white/10 border border-white/15 hover:bg-white/15 transition-all"
+              className="rounded-full px-6 py-2.5 text-sm text-[var(--color-ink)] bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-all"
               style={{ fontFamily: "var(--font-body)" }}>
               Start New Session
             </button>
@@ -406,7 +163,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="dashboard-session min-h-screen w-full bg-[var(--color-session-bg)] text-white selection:bg-cyan-300/20 selection:text-white">
+    <div className="min-h-screen w-full bg-[var(--color-surface)] text-[var(--color-ink)] selection:bg-cyan-300/20 selection:text-[var(--color-ink)]">
       <motion.div {...pageMotion} className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Back to wherever the report was opened from; Progress lists reports. */}
@@ -415,7 +172,7 @@ export default function Dashboard() {
               if (typeof target === 'number') navigate(target); else navigate(target);
             }}
             data-testid="report-back"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 backdrop-blur-xl transition hover:bg-white/8"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-ink)] backdrop-blur-xl transition hover:bg-[var(--color-surface)]"
             style={{ fontFamily: "var(--font-body)" }}>
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -424,7 +181,7 @@ export default function Dashboard() {
             {raw?.target_role_id && raw?.user_id && (
               <Link
                 to={`/gap-analysis/${encodeURIComponent(raw.user_id)}/${encodeURIComponent(raw.target_role_id)}`}
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-cyan-100 backdrop-blur-xl transition hover:bg-cyan-500/20"
+                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[var(--color-accent)] backdrop-blur-xl transition hover:bg-cyan-500/20"
                 style={{ fontFamily: "var(--font-body)" }}
                 data-testid="dashboard-to-gap-analysis"
               >
@@ -432,8 +189,8 @@ export default function Dashboard() {
               </Link>
             )}
             <AccountMenu />
-            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-white/75 backdrop-blur-xl">
-              <Sparkles className="h-3.5 w-3.5 text-cyan-200" />
+            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-ink-muted)] backdrop-blur-xl">
+              <Sparkles className="h-3.5 w-3.5 text-[var(--color-accent)]" />
               interViv Results
             </span>
           </div>
@@ -455,96 +212,110 @@ export default function Dashboard() {
             />
           </motion.div>
 
-          {data.reviewSummary && (
-            <motion.div variants={item} className="mt-8">
-              <ReviewSummary {...data.reviewSummary} />
-            </motion.div>
-          )}
-
-          {data.multiBlock && data.blocks.length > 1 && (
-            <motion.div variants={item} className="mt-8">
-              <BlockResults blocks={data.blocks} />
-            </motion.div>
-          )}
-
-          {(data.mcqReviews || []).length > 0 && (
-            <motion.div variants={item} className="mt-8 space-y-6">
-              {data.mcqReviews.map((review, index) => (
-                <McqRoundReview key={`mcq-review-${index}`} review={review} />
-              ))}
-            </motion.div>
-          )}
-
-          <motion.div variants={item} className="mt-8">
-            <Phase2InsightsPanel
-              userId={raw?.user_id || null}
-              targetRoleId={raw?.target_role_id || null}
-            />
+          <motion.div variants={item} className="mt-6">
+            <ExecutiveSummary data={data} onPractice={practiceNext} />
           </motion.div>
 
-          {data.overall.score != null && (
-            <div className="mt-8 grid gap-6 lg:grid-cols-12">
-              <motion.div variants={item} className="lg:col-span-5">
-                <LayerBreakdown layers={data.layers} />
-              </motion.div>
-              <motion.div variants={item} className="lg:col-span-7">
-                <SkillRadar data={data.radar} />
-              </motion.div>
-            </div>
-          )}
-
-          <div className="mt-8 grid gap-6 lg:grid-cols-12">
-            <motion.div variants={item} className="lg:col-span-5">
-              <PerformanceChart
-                finalRating={data.performance.finalRating}
-                difficulty={data.performance.difficulty}
-                score={data.performance.score}
-              />
-            </motion.div>
-            <motion.div variants={item} className="lg:col-span-7">
-              <RoundTimeline rounds={data.rounds} />
-            </motion.div>
+          <div role="tablist" aria-label="Report sections" className="mt-8 flex flex-wrap gap-2" data-testid="report-tabs">
+            {REPORT_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`report-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`report-panel-${t.id}`}
+                tabIndex={tab === t.id ? 0 : -1}
+                onClick={() => selectTab(t.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+                  const index = REPORT_TABS.findIndex((x) => x.id === tab);
+                  const step = e.key === "ArrowRight" ? 1 : REPORT_TABS.length - 1;
+                  const nextTab = REPORT_TABS[(index + step) % REPORT_TABS.length];
+                  selectTab(nextTab.id);
+                  document.getElementById(`report-tab-${nextTab.id}`)?.focus();
+                }}
+                className={`rounded-full border px-4 py-2 text-sm transition ${
+                  tab === t.id ? "border-[var(--color-border)] bg-[var(--color-surface)] font-semibold" : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)]"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          <motion.div variants={item} className="mt-8">
-            <ScoringBreakdownPanel rounds={data.rounds} />
-          </motion.div>
-
-          {(data.highlights.strengths.length > 0 || data.highlights.weaknesses.length > 0) && (
-            <motion.div variants={item} className="mt-8">
-              <StrengthsWeaknesses strengths={data.highlights.strengths} weaknesses={data.highlights.weaknesses} />
-            </motion.div>
-          )}
-
-          <motion.div variants={item} className="mt-8">
-            <FeedbackCards cards={data.feedbackCards as Array<{ id: string; title: string; tag: "Signal" | "Structure" | "Delivery" | "Clarity"; body: string }>} />
-          </motion.div>
-
-          <motion.div variants={item} className="mt-8">
-            <div className="glass-panel rounded-3xl p-5 sm:p-6">
-              <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                  <div className="text-2xl sm:text-3xl font-normal italic tracking-tight"
-                    style={{ fontFamily: "var(--font-display)" }}>
-                    Next moves
+          <div role="tabpanel" id={`report-panel-${tab}`} aria-labelledby={`report-tab-${tab}`} className="mt-6">
+            {tab === "overview" && (
+              <div className="space-y-8">
+                {data.reviewSummary && <ReviewSummary {...data.reviewSummary} />}
+                {data.multiBlock && data.blocks.length > 1 && <BlockResults blocks={data.blocks} />}
+                {data.overall.score != null && (data.layers.length > 0 || data.radar.length >= 3) && (
+                  <div className="grid gap-6 lg:grid-cols-12">
+                    {data.layers.length > 0 && (
+                      <div className="lg:col-span-5"><LayerBreakdown layers={data.layers} /></div>
+                    )}
+                    {data.radar.length >= 3 && (
+                      <div className="lg:col-span-7"><SkillRadar data={data.radar} /></div>
+                    )}
                   </div>
-                  <p className="mt-1 text-sm text-white/70" style={{ fontFamily: "var(--font-body)" }}>
-                    Export your report, copy its link, or jump into another adaptive session.
-                  </p>
-                </div>
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
-                  <div className="report-actions flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-                    <GlassButton variant="primary"   icon={<Download className="h-4 w-4 text-cyan-200" />}   label="Download Report" onClick={() => window.print()} />
-                    <GlassButton variant="secondary" icon={<Share2    className="h-4 w-4 text-white/85" />}   label="Copy report link"  onClick={copyReportLink} />
-                    <GlassButton variant="secondary" icon={<Sparkles  className="h-4 w-4 text-white/85" />}   label="New Interview"  onClick={() => navigate('/upload')} />
+                )}
+                <PerformanceChart
+                  finalRating={data.performance.finalRating}
+                  difficulty={data.performance.difficulty}
+                  score={data.performance.score}
+                />
+              </div>
+            )}
+
+            {tab === "rounds" && (
+              <div className="space-y-8">
+                <RoundTimeline rounds={data.rounds} />
+                {(data.mcqReviews || []).map((review, index) => (
+                  <McqRoundReview key={`mcq-review-${index}`} review={review} />
+                ))}
+                <details className="glass-panel rounded-3xl p-5" data-testid="report-scoring-details">
+                  <summary className="cursor-pointer text-sm font-medium">Scoring details (how each round was scored)</summary>
+                  <div className="mt-4"><ScoringBreakdownPanel rounds={data.rounds} /></div>
+                </details>
+              </div>
+            )}
+
+            {tab === "skills" && (
+              <div className="space-y-8">
+                <Phase2InsightsPanel
+                  userId={raw?.user_id || null}
+                  targetRoleId={raw?.target_role_id || null}
+                />
+                {(data.highlights.strengths.length > 0 || data.highlights.weaknesses.length > 0) && (
+                  <StrengthsWeaknesses strengths={data.highlights.strengths} weaknesses={data.highlights.weaknesses} />
+                )}
+                <FeedbackCards cards={data.feedbackCards} />
+                <div className="glass-panel rounded-3xl p-5 sm:p-6">
+                  <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                    <div>
+                      <div className="text-2xl sm:text-3xl font-normal tracking-tight"
+                        style={{ fontFamily: "var(--font-display)" }}>
+                        Next moves
+                      </div>
+                      <p className="mt-1 text-sm text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
+                        Export your report, copy its link, or start another session.
+                      </p>
+                    </div>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                      <div className="report-actions flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                        <GlassButton variant="primary"   icon={<Download className="h-4 w-4 text-[var(--color-accent)]" />}   label="Download report" onClick={() => window.print()} />
+                        <GlassButton variant="secondary" icon={<Share2    className="h-4 w-4 text-[var(--color-ink)]" />}   label="Copy report link"  onClick={copyReportLink} />
+                        <GlassButton variant="secondary" icon={<Sparkles  className="h-4 w-4 text-[var(--color-ink)]" />}   label="New session"  onClick={() => navigate('/practice')} />
+                      </div>
+                      <p aria-live="polite" className="text-sm text-[var(--color-ink-muted)] sm:text-right">
+                        {copyStatus || 'Reports require sign-in. Copying this link does not grant access on its own.'}
+                      </p>
+                    </div>
                   </div>
-                  <p aria-live="polite" className="text-sm text-white/70 sm:text-right">
-                    {copyStatus || 'Reports require sign-in. Copying this link does not grant access on its own.'}
-                  </p>
                 </div>
               </div>
-            </div>
-          </motion.div>
+            )}
+          </div>
         </motion.div>
       </motion.div>
     </div>

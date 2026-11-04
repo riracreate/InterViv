@@ -113,7 +113,7 @@ export default function MLPrimitivesRound({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-6" data-testid="ml-primitives-round">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4">
         <div><p className="text-sm text-gray-500">ML primitives · Python + NumPy · {questionContext.difficulty}</p>
           <h1 className="text-xl font-semibold">{questionContext.title}</h1></div>
         {!closed && (
@@ -132,7 +132,7 @@ export default function MLPrimitivesRound({
         </div>
       )}
       {closed && (
-        <section className="rounded-2xl border border-black/10 bg-white p-5" data-testid="ml-review-summary">
+        <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5" data-testid="ml-review-summary">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-wider text-gray-500">Numerical checks</p>
@@ -153,7 +153,7 @@ export default function MLPrimitivesRound({
           {cases.length > 0 && (
             <ul className="mt-4 grid gap-2 sm:grid-cols-2" aria-label="Case results">
               {cases.map(item => (
-                <li key={item.case_id} className="flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-sm">
+                <li key={item.case_id} className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm">
                   {item.passed
                     ? <CheckCircle2 size={16} className="text-emerald-600" aria-hidden="true" />
                     : <XCircle size={16} className="text-red-600" aria-hidden="true" />}
@@ -177,13 +177,13 @@ export default function MLPrimitivesRound({
         </section>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-2xl border border-black/10 bg-white p-5">
+        <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5">
           <h2 className="mb-3 font-semibold">Statement</h2>
           <div className="whitespace-pre-wrap text-sm leading-6">{questionContext.statement}</div>
           <h2 className="mb-2 mt-5 font-semibold">Constraints</h2>
           <ul className="list-disc space-y-1 pl-5 text-sm">{(questionContext.constraints || []).map(c => <li key={c}>{c}</li>)}</ul>
         </section>
-        <section className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white p-5">
+        <section className="flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-5">
           <label htmlFor="ml-source" className="font-semibold">Python solution</label>
           <textarea id="ml-source" aria-label="Python solution" value={source} disabled={!loaded || closed}
             onChange={e => setSource(e.target.value)} spellCheck={false} maxLength={100000}

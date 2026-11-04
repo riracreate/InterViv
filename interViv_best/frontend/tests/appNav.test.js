@@ -2,61 +2,44 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  DESKTOP_NAV_ITEMS,
+  CAREER_ITEMS,
+  PRIMARY_NAV,
   PRIMARY_NAV_ITEMS,
   contextualNavItems,
-  moreNavItems,
-  navDestinations,
+  isGroupActive,
+  mobileNavSections,
+  secondaryNavItems,
 } from '../src/lib/appNav.js';
 import { mapCoachPlan } from '../src/lib/coachMapping.js';
 
-test('primary nav includes unified destinations with Resources', () => {
-  const labels = PRIMARY_NAV_ITEMS.map((i) => i.label);
-  assert.deepEqual(labels, [
-    'Home',
-    'Progress',
-    'Practice',
-    'Problems',
-    'Learn',
-    'Resources',
-    'Resume check',
-    'Jobs',
-    'Coach',
-    'Resume upload',
-  ]);
+test('five primary destinations, with Career & Resume as a group', () => {
+  assert.deepEqual(PRIMARY_NAV.map((i) => i.label),
+    ['Home', 'Practice', 'Coding Arena', 'Career & Resume', 'Progress']);
+  assert.deepEqual(CAREER_ITEMS.map((i) => `${i.label}:${i.to}`),
+    ['Resume upload:/upload', 'Resume check:/ats', 'Jobs:/jobs']);
+  assert.equal(PRIMARY_NAV.find((i) => i.label === 'Coding Arena').to, '/problems');
+  assert.deepEqual(PRIMARY_NAV_ITEMS.map((i) => i.to),
+    ['/home', '/practice', '/problems', '/upload', '/ats', '/jobs', '/dashboard']);
 });
 
-test('nav destinations always include Gap and Roadmap', () => {
-  const labels = navDestinations({}).map((i) => i.label);
-  assert.ok(labels.includes('Gap'));
-  assert.ok(labels.includes('Roadmap'));
-  assert.ok(labels.includes('Resources'));
-  assert.ok(labels.includes('Problems'));
-
+test('Learn, Resources, Coach, Gap analysis and Roadmap are secondary', () => {
+  const labels = secondaryNavItems({}).map((i) => i.label);
+  assert.deepEqual(labels, ['Learn', 'Resources', 'Coach', 'Gap analysis', 'Roadmap']);
   const withTarget = contextualNavItems({ userId: 'u1', roleId: 'r1' });
   assert.match(withTarget[0].to, /\/gap-analysis\/u1\/r1/);
   assert.match(withTarget[1].to, /\/roadmap\/u1\/r1/);
+  assert.deepEqual(contextualNavItems({}).map((i) => i.to), ['/home#target', '/home#target']);
 });
 
-test('desktop nav shows Home, Practice, Progress and Jobs inline', () => {
-  assert.deepEqual(
-    DESKTOP_NAV_ITEMS.map((i) => `${i.label}:${i.to}`),
-    ['Home:/home', 'Practice:/practice', 'Progress:/dashboard', 'Jobs:/jobs'],
-  );
-});
-
-test('More menu keeps Problems findable alongside the other destinations', () => {
-  const labels = moreNavItems({}).map((i) => i.label);
-  assert.ok(labels.includes('Problems'));
-  assert.ok(labels.includes('Learn'));
-  assert.ok(labels.includes('Resources'));
-  assert.ok(labels.includes('Resume check'));
-  assert.ok(labels.includes('Coach'));
-  assert.ok(labels.includes('Resume upload'));
-  assert.ok(labels.includes('Gap'));
-  assert.ok(labels.includes('Roadmap'));
-  const desktopLabels = DESKTOP_NAV_ITEMS.map((i) => i.label);
-  assert.ok(!desktopLabels.includes('Problems'));
+test('the Career group is active on any of its pages; small screens list everything', () => {
+  const career = PRIMARY_NAV.find((i) => i.children);
+  assert.equal(isGroupActive('/ats', career), true);
+  assert.equal(isGroupActive('/practice', career), false);
+  const sections = mobileNavSections({});
+  const all = sections.flatMap((s) => s.items.map((i) => i.label));
+  for (const label of ['Home', 'Practice', 'Coding Arena', 'Resume upload', 'Resume check', 'Jobs', 'Progress', 'Learn', 'Coach']) {
+    assert.ok(all.includes(label), label);
+  }
 });
 
 test('coach steps hrefs include /practice or /jobs', () => {

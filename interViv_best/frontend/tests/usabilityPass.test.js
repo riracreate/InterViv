@@ -69,12 +69,13 @@ test('shared styles cover global focus, print and mobile history without sideway
   assert.match(progress, /data-label="Date"/);
 });
 
-test('navigation keeps a small-screen menu and a desktop More menu', () => {
+test('navigation keeps a small-screen menu, a desktop More menu and the Career group', () => {
   const nav = read('src/components/AppNav.jsx');
   assert.match(nav, /app-nav-desktop/);
-  assert.match(nav, /app-nav-more-button/);
+  assert.match(nav, /<NavDropdown id="more" label="More"[^>]*testIdPrefix="app-nav-more"/);
+  assert.match(nav, /data-testid=\{`\$\{testIdPrefix\}-button`\}/);
   assert.match(nav, /app-nav-menu-button/);
-  assert.match(nav, /More/);
+  assert.match(nav, /PRIMARY_NAV\.map/);
 });
 
 test('landing shows one way back in when signed in, login and sign up otherwise', () => {
@@ -120,5 +121,6 @@ test('progress and dashboard show the observed average beside the conservative r
   assert.equal(observedReadinessNote({ readiness: 80, readiness_observed: 80, readiness_provisional_skill_count: 0 }), '');
   assert.equal(observedReadinessNote({ readiness: null, readiness_observed: null }), '');
   assert.match(read('src/pages/Progress.jsx'), /observedReadinessNote\(data\)/);
-  assert.match(read('src/pages/Dashboard.tsx'), /observedReadinessNote\(overview\)/);
+  // The unused DashboardHome (its only other caller) was removed; /dashboard is Progress.
+  assert.doesNotMatch(read('src/pages/Dashboard.tsx'), /function DashboardHome/);
 });

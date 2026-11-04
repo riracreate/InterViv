@@ -145,9 +145,9 @@ export default function MCQRound({
     return (
       <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto w-full" data-testid="mcq-review-summary">
         {/* Score Header */}
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
-            <span className="text-xs uppercase tracking-wider text-[#6F6F6F] font-semibold">Assessment Completed</span>
+            <span className="text-xs uppercase tracking-wider text-[var(--color-ink-muted)] font-semibold">Assessment Completed</span>
             <h2 className="text-2xl font-bold text-gray-900 mt-1">Multiple Choice Results</h2>
             <p className="text-sm text-gray-500 mt-1">{currentFeedback || 'Your score has been computed deterministically.'}</p>
           </div>
@@ -160,7 +160,7 @@ export default function MCQRound({
               <button
                 onClick={onNextRound}
                 disabled={nextBusy}
-                className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-medium transition"
+                className="px-5 py-2.5 bg-gray-900 hover:bg-[var(--color-ink)] text-white rounded-xl text-sm font-medium transition"
               >
                 {sessionComplete ? 'View report' : (nextBusy ? 'Opening…' : 'Next Round')}
               </button>
@@ -195,7 +195,7 @@ export default function MCQRound({
 
         {/* Per-Question Details if available */}
         {artifactQuestions.length > 0 && (
-          <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-4">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm flex flex-col gap-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-700">Question Breakdown</h3>
             <div className="divide-y divide-gray-100">
               {artifactQuestions.map((res, idx) => (
@@ -236,7 +236,7 @@ export default function MCQRound({
   return (
     <div className="flex flex-col gap-5 p-6 max-w-4xl mx-auto w-full" data-testid="mcq-round-container">
       {/* Top Header Bar: Question count, timer, submit */}
-      <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm flex items-center justify-between gap-4">
+      <div className="rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-sm flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold uppercase">
             MCQ Assessment
@@ -272,7 +272,7 @@ export default function MCQRound({
       </div>
 
       {/* Question Navigation Palette */}
-      <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-black/5 bg-gray-50/70 items-center justify-center">
+      <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-[var(--color-border)] bg-gray-50/70 items-center justify-center">
         {questions.map((q, idx) => {
           const isAnswered = Boolean(answers[q.id]);
           const isCurrent = idx === currentIndex;
@@ -296,7 +296,7 @@ export default function MCQRound({
 
       {/* Main Question Card */}
       {currentQ ? (
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm flex flex-col gap-5">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm flex flex-col gap-5">
           {/* Metadata badges */}
           <div className="flex items-center gap-2">
             {currentQ.skill && (
@@ -383,7 +383,7 @@ export default function MCQRound({
           </div>
         </div>
       ) : (
-        <div className="p-8 text-center text-gray-500 bg-white rounded-2xl border border-black/10">
+        <div className="p-8 text-center text-gray-500 bg-white rounded-2xl border border-[var(--color-border)]">
           No MCQ questions loaded for this round.
         </div>
       )}

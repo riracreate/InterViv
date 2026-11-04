@@ -200,8 +200,12 @@ test('single-block session keeps its historical overall rendering', () => {
   assert.equal(mapped.multiBlock, false);
   assert.equal(mapped.overall.score, 62);
   assert.equal(mapped.overall.gradeLabel, 'Good');
-  assert.equal(mapped.layers.length, 3);
-  assert.ok(mapped.radar.length >= 3);
+  // Only measured components: layer 1 and 2 averages exist; no derived layer 3.
+  assert.deepEqual(mapped.layers.map((l) => [l.label, l.score]), [['Content coverage', 58], ['Concept depth', 55]]);
+  // Radar comes from real topic scores only — no padded "Clarity/Structure/Depth".
+  assert.deepEqual(mapped.radar, [{ skill: 'DBMS', value: 48 }, { skill: 'Python', value: 76 }]);
+  assert.ok(!mapped.feedbackCards.some((c) => /C4/.test(c.title)));
+  assert.match(mapped.session.title, /Interview session/);
   assert.equal(mapped.blocks.length, 1);
   assert.equal(mapped.blocks[0].average, 62.4);
 });
@@ -225,4 +229,18 @@ test('per-block zero is a score and null is no measurement', () => {
   assert.equal(mapped.blocks[1].average, null);
   assert.equal(mapped.blocks[1].unscored, 1);
   assert.equal(mapped.blocks[1].attempted, 0);
+});
+
+
+test('missing measurements are omitted, never derived from the average', () => {
+  const session = {
+    ...SAMPLE_SESSION,
+    averages: { final_score: 70 },  // no layer averages recorded
+    topic_scores: {},
+  };
+  const mapped = mapRealDataToDashboard(session);
+  assert.equal(mapped.overall.score, 70);
+  assert.deepEqual(mapped.layers, []);
+  assert.deepEqual(mapped.radar, []);
+  assert.ok(!mapped.highlights.weaknesses.some((w) => w.title === 'Push for depth'));
 });

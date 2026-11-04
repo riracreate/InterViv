@@ -105,7 +105,7 @@ export default function CompanySelector({
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-black/8 p-6 text-sm text-[#6F6F6F]"
+      <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 text-sm text-[var(--color-ink-muted)]"
            style={{ fontFamily: "var(--font-body)" }}>
         Loading target companies…
       </div>
@@ -122,14 +122,14 @@ export default function CompanySelector({
   }
 
   return (
-    <div className="rounded-2xl border border-black/8 p-6 space-y-4"
+    <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 space-y-4"
          data-testid="company-selector">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
+        <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)] mb-2"
            style={{ fontFamily: "var(--font-body)" }}>
           Pick your target (optional — skip for general practice)
         </p>
-        <h3 className="text-2xl tracking-tight text-black"
+        <h3 className="text-2xl tracking-tight text-[var(--color-ink)]"
             style={{ fontFamily: "var(--font-display)", letterSpacing: '-0.5px' }}>
           Target company &amp; role
         </h3>
@@ -137,7 +137,7 @@ export default function CompanySelector({
 
       <div className="grid md:grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-1 block"
+          <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)] mb-1 block"
                 style={{ fontFamily: "var(--font-body)" }}>
             Company
           </span>
@@ -147,7 +147,7 @@ export default function CompanySelector({
               setSelectedCompany(e.target.value);
               setSelectedRole('');
             }}
-            className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm bg-white"
+            className="w-full rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm bg-white"
             style={{ fontFamily: "var(--font-body)" }}
           >
             <option value="">— Select —</option>
@@ -158,7 +158,7 @@ export default function CompanySelector({
         </label>
 
         <label className="block">
-          <span className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-1 block"
+          <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)] mb-1 block"
                 style={{ fontFamily: "var(--font-body)" }}>
             Role
           </span>
@@ -166,7 +166,7 @@ export default function CompanySelector({
             value={selectedRole}
             disabled={!selectedCompany}
             onChange={(e) => setSelectedRole(e.target.value)}
-            className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm bg-white disabled:opacity-50"
+            className="w-full rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm bg-white disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)" }}
           >
             <option value="">— Select —</option>
@@ -178,8 +178,8 @@ export default function CompanySelector({
       </div>
 
       {selectedCompany && selectedRole && (
-        <div className="rounded-xl bg-black/[0.03] border border-black/5 p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-[#6F6F6F] mb-2"
+        <div className="rounded-xl bg-black/[0.03] border border-[var(--color-border)] p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-ink-muted)] mb-2"
              style={{ fontFamily: "var(--font-body)" }}>
             Skill profile for this role
           </p>
@@ -187,8 +187,8 @@ export default function CompanySelector({
             {(roles.find((r) => r.id === selectedRole)?.skill_requirements || []).map((req) => (
               <li key={req.skill} className="flex items-center justify-between text-sm"
                   style={{ fontFamily: "var(--font-body)" }}>
-                <span className="text-black">{req.display_name || req.skill}</span>
-                <span className="text-[#6F6F6F]">
+                <span className="text-[var(--color-ink)]">{req.display_name || req.skill}</span>
+                <span className="text-[var(--color-ink-muted)]">
                   target {Math.round(req.required_level)} · weight {Math.round((req.importance_weight || 0) * 100)}%
                 </span>
               </li>
@@ -210,7 +210,7 @@ export default function CompanySelector({
         {selectedRole && (
           <Link
             to={`/gap-analysis/${isAuthenticated ? 'me' : 'anonymous'}/${selectedRole}`}
-            className="rounded-full px-5 py-2 text-sm font-medium text-black border border-black/15 hover:border-black/30 cursor-pointer"
+            className="rounded-full px-5 py-2 text-sm font-medium text-[var(--color-ink)] border border-[var(--color-border)] hover:border-black/30 cursor-pointer"
             style={{ fontFamily: "var(--font-body)" }}
             data-testid="open-gap-analysis"
           >
@@ -220,7 +220,7 @@ export default function CompanySelector({
       </div>
 
       {saveMessage && (
-        <p className="text-xs text-[#6F6F6F]" style={{ fontFamily: "var(--font-body)" }}>
+        <p className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
           {saveMessage}
         </p>
       )}
@@ -228,10 +228,10 @@ export default function CompanySelector({
       {disclaimer && (
         <p
           data-testid="company-disclaimer"
-          className="text-xs text-[#6F6F6F] leading-relaxed border-t border-black/5 pt-3"
+          className="text-xs text-[var(--color-ink-muted)] leading-relaxed border-t border-[var(--color-border)] pt-3"
           style={{ fontFamily: "var(--font-body)" }}
         >
-          <span className="font-medium text-black">Note:</span> {disclaimer}
+          <span className="font-medium text-[var(--color-ink)]">Note:</span> {disclaimer}
         </p>
       )}
     </div>

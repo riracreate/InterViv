@@ -18,11 +18,13 @@ import CompanySelector from '../components/CompanySelector';
 import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
+import SkillChipInput from '../components/SkillChipInput';
+import { COMMON_SKILLS } from '../lib/skillChips';
 import { useAccountRetry } from '../lib/useAccountRetry';
 import {
   roleRequiredSkills,
-  PRACTICE_MODES,
-  STANDALONE_MODES,
+  PRACTICE_TRACKS,
+  modeById,
   BLOCK_CATEGORIES,
   PRESET_VERSION,
   BUILDER_DRAFT_VERSION,
@@ -418,8 +420,15 @@ export default function Practice() {
     setSearchParams(id ? { mode: id } : {});
   };
 
+  const skillSuggestions = useMemo(
+    () => [...new Set([...COMMON_SKILLS, ...Object.keys(topicMetadata || {})])],
+    [topicMetadata]
+  );
+
   const updateBlockSkills = (block, index, value) => {
-    const nextSkills = value.split(',').map((s) => s.trim()).filter(Boolean);
+    const nextSkills = Array.isArray(value)
+      ? value
+      : value.split(',').map((s) => s.trim()).filter(Boolean);
     if (block.category === 'interview' && block.topic && metadataReady) {
       const { cleared } = reconcileTopic(block.topic, nextSkills, topicMetadata);
       if (cleared) {
@@ -599,41 +608,28 @@ export default function Practice() {
         )}
 
         {!mode && (
-          <>
-            <section className="mt-6" data-testid="standalone-modes" aria-label="Standalone practice">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
-                Standalone practice
-              </h2>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                {STANDALONE_MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    data-mode={m.id}
-                    onClick={() => setMode(m.id)}
-                    className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
-                  >
-                    <h3 className="text-lg font-semibold text-[var(--color-ink)]">{m.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
-                  </button>
-                ))}
-              </div>
-            </section>
-            <section className="mt-8 grid gap-4 sm:grid-cols-2" data-testid="practice-modes" aria-label="Guided modes">
-              {PRACTICE_MODES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  data-mode={m.id}
-                  onClick={() => setMode(m.id)}
-                  className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
-                >
-                  <h2 className="text-lg font-semibold text-[var(--color-ink)]">{m.title}</h2>
-                  <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
-                </button>
-              ))}
-            </section>
-          </>
+          <div className="mt-6 space-y-8" data-testid="practice-tracks">
+            {PRACTICE_TRACKS.map((track) => (
+              <section key={track.id} aria-labelledby={`track-${track.id}`} data-track={track.id}>
+                <h2 id={`track-${track.id}`} className="text-lg font-semibold text-[var(--color-ink)]">{track.title}</h2>
+                <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{track.blurb}</p>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  {track.modes.map(modeById).filter(Boolean).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      data-mode={m.id}
+                      onClick={() => setMode(m.id)}
+                      className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
+                    >
+                      <h3 className="text-base font-semibold text-[var(--color-ink)]">{m.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         )}
 
         {mode && (
@@ -661,23 +657,19 @@ export default function Practice() {
                 onSelectionChange={setTarget}
               />
             </div>
-            <label className="mt-4 block text-sm text-[var(--color-ink-muted)]">
-              Skills (comma-separated)
-              <input
-                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-[var(--color-ink)]"
-                value={skills.join(', ')}
-                onChange={(e) => {
+            <div className="mt-4">
+              <SkillChipInput
+                label="Skills"
+                testId="practice-skills"
+                value={skills}
+                suggestions={skillSuggestions}
+                onChange={(next) => {
                   setSkillsExplicit(true);
                   setPrefillNote('');
-                  setSkills(
-                    e.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  );
+                  setSkills(next);
                 }}
               />
-            </label>
+            </div>
             {prefillNote && (
               <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{prefillNote}</p>
             )}
@@ -849,14 +841,15 @@ export default function Practice() {
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
               Technical MCQs restricted to your selected topics. Other subjects are never mixed in to fill the count.
             </p>
-            <label className="mt-4 block text-sm">
-              Topics (comma-separated, e.g. DBMS)
-              <input
-                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                value={standaloneTopics}
-                onChange={(e) => setStandaloneTopics(e.target.value)}
+            <div className="mt-4">
+              <SkillChipInput
+                label="Topics"
+                testId="oa-topics"
+                value={standaloneSkillList}
+                suggestions={skillSuggestions}
+                onChange={(next) => setStandaloneTopics(next.join(', '))}
               />
-            </label>
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <label className="text-sm">
                 Questions (1–30)
@@ -1068,14 +1061,15 @@ export default function Practice() {
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
               Technical/HR questions with text and voice input on the interview page.
             </p>
-            <label className="mt-4 block text-sm">
-              Skills (comma-separated)
-              <input
-                className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                value={standaloneTopics}
-                onChange={(e) => setStandaloneTopics(e.target.value)}
+            <div className="mt-4">
+              <SkillChipInput
+                label="Skills"
+                testId="interview-skills"
+                value={standaloneSkillList}
+                suggestions={skillSuggestions}
+                onChange={(next) => setStandaloneTopics(next.join(', '))}
               />
-            </label>
+            </div>
             {topicMetadataError && (
               <p className="mt-4 text-xs text-[var(--color-danger)]" role="alert">
                 {interviewTopicHeldOnMetadataError
@@ -1256,14 +1250,12 @@ export default function Practice() {
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         {block.category !== 'verbal' && block.category !== 'sql' && (
-                          <label className="text-xs text-[var(--color-ink-muted)]">
-                            {block.category === 'oa' ? 'Topics' : 'Skills'} (comma-separated)
-                            <input
-                              className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
-                              value={(block.skills || []).join(', ')}
-                              onChange={(e) => updateBlockSkills(block, index, e.target.value)}
-                            />
-                          </label>
+                          <SkillChipInput
+                            label={block.category === 'oa' ? 'Topics' : 'Skills'}
+                            value={block.skills || []}
+                            suggestions={skillSuggestions}
+                            onChange={(next) => updateBlockSkills(block, index, next)}
+                          />
                         )}
                         {block.category === 'interview' && (() => {
                           if (topicMetadataError) {
