@@ -111,6 +111,16 @@ test('upload actions use shared buttons and the danger status style', () => {
   assert.equal((src.match(/app-button app-button-primary w-full/g) || []).length, 3);
 });
 
+test('resume upload lives inside the Interview setup in Practice and not as a separate Practice header link', () => {
+  const practice = read('src/pages/Practice.jsx');
+  assert.match(practice, /<InterviewResumePanel/);
+  assert.doesNotMatch(practice, /to="\/upload"[\s\S]{0,120}Resume upload/);
+  const panel = read('src/components/InterviewResumePanel.jsx');
+  assert.match(panel, /uploadResume\(file\)/);
+  assert.match(panel, /resumeFileError\(file\)/);
+  assert.match(panel, /data-testid="interview-resume-panel"/);
+});
+
 test('progress and dashboard show the observed average beside the conservative readiness', async () => {
   const { observedReadinessNote } = await import('../src/lib/accountOverview.js');
   const overview = {

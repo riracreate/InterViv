@@ -4,7 +4,7 @@
  */
 
 export const PRACTICE_MODES = [
-  { id: 'full', title: 'Full interview', blurb: 'Multi-skill free-text interview with existing voice input.' },
+  { id: 'full', title: 'Full interview', blurb: 'Upload a resume or pick skills for a multi-skill interview with voice input.' },
   { id: 'oa_sql', title: 'OA + SQL', blurb: 'MCQ assessment followed by SQL problems (not a general coding judge).' },
   { id: 'problems', title: 'Problem practice', blurb: 'Browse existing MCQ, SQL, and coding bank items.' },
   { id: 'custom', title: 'Custom interview builder', blurb: 'Choose time, count, and a real round mix.' },

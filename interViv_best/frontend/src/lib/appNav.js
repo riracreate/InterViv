@@ -3,7 +3,8 @@
  *
  *   Home · Practice · Coding Arena · Career & Resume ▾ · Progress
  *
- * Career & Resume groups Resume upload, Resume check and Jobs. Learn,
+ * Career & Resume groups Resume check and Jobs (resume upload for interview
+ * rounds lives directly inside the Interview setup in Practice). Learn,
  * Resources, Coach, Gap analysis and Roadmap are secondary: reachable from
  * the "More" menu and from contextual links on the pages that need them.
  * Gap / Roadmap need a target role; without one they point at Home's target
@@ -11,7 +12,6 @@
  */
 
 export const CAREER_ITEMS = [
-  { to: '/upload', label: 'Resume upload' },
   { to: '/ats', label: 'Resume check' },
   { to: '/jobs', label: 'Jobs' },
 ];

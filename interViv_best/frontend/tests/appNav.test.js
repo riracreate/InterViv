@@ -16,10 +16,10 @@ test('five primary destinations, with Career & Resume as a group', () => {
   assert.deepEqual(PRIMARY_NAV.map((i) => i.label),
     ['Home', 'Practice', 'Coding Arena', 'Career & Resume', 'Progress']);
   assert.deepEqual(CAREER_ITEMS.map((i) => `${i.label}:${i.to}`),
-    ['Resume upload:/upload', 'Resume check:/ats', 'Jobs:/jobs']);
+    ['Resume check:/ats', 'Jobs:/jobs']);
   assert.equal(PRIMARY_NAV.find((i) => i.label === 'Coding Arena').to, '/problems');
   assert.deepEqual(PRIMARY_NAV_ITEMS.map((i) => i.to),
-    ['/home', '/practice', '/problems', '/upload', '/ats', '/jobs', '/dashboard']);
+    ['/home', '/practice', '/problems', '/ats', '/jobs', '/dashboard']);
 });
 
 test('Learn, Resources, Coach, Gap analysis and Roadmap are secondary', () => {
@@ -37,9 +37,10 @@ test('the Career group is active on any of its pages; small screens list everyth
   assert.equal(isGroupActive('/practice', career), false);
   const sections = mobileNavSections({});
   const all = sections.flatMap((s) => s.items.map((i) => i.label));
-  for (const label of ['Home', 'Practice', 'Coding Arena', 'Resume upload', 'Resume check', 'Jobs', 'Progress', 'Learn', 'Coach']) {
+  for (const label of ['Home', 'Practice', 'Coding Arena', 'Resume check', 'Jobs', 'Progress', 'Learn', 'Coach']) {
     assert.ok(all.includes(label), label);
   }
+  assert.ok(!all.includes('Resume upload'));
 });
 
 test('coach steps hrefs include /practice or /jobs', () => {
