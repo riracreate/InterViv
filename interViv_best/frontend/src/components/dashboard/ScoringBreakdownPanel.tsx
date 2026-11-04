@@ -121,6 +121,8 @@ function RoundBreakdown({ round }: { round: Round }) {
       ? "Lexical fallback (semantic scorer unavailable)"
       : scoringMode === "self_reported"
         ? "Self-reported (not measured)"
+        : scoringMode === "practice_estimate"
+          ? "Practice estimate (not measured)"
         : scoringMode === "full"
           ? "Full semantic scoring"
           : "Scoring mode unknown");
@@ -180,14 +182,16 @@ function RoundBreakdown({ round }: { round: Round }) {
                 </div>
               )}
 
-              {(scoringMode === "lexical_fallback_degraded" || scoringMode === "unknown" || scoringMode === "self_reported") && (
+              {(scoringMode === "lexical_fallback_degraded" || scoringMode === "unknown" || scoringMode === "self_reported" || scoringMode === "practice_estimate") && (
                 <div className="mb-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-2 text-sky-200 text-xs">
                   Scoring mode: <strong>{scoringModeLabel}</strong>
                   {scoringMode === "lexical_fallback_degraded"
                     ? ". This score used lexical fallback — it is not equivalent to a full semantic-scorer result."
                     : scoringMode === "unknown"
                       ? ". Mode was not recorded when this attempt was scored."
-                      : ". This result is self-reported and is not measured mastery."}
+                      : scoringMode === "practice_estimate"
+                        ? ". A heuristic estimate from your written notes; it is not measured mastery and does not change Elo or readiness."
+                        : ". This result is self-reported and is not measured mastery."}
                 </div>
               )}
 

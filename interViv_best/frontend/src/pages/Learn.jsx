@@ -21,6 +21,33 @@ import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import { useAccountRetry } from '../lib/useAccountRetry';
 
+/** Curated question hint: concept, schema, constructs or approach (no answers). */
+export function HintView({ hint }) {
+  if (!hint) return null;
+  const tables = hint.tables || [];
+  const lines = [
+    ...(hint.checklist || []),
+    ...(hint.constructs || []).map((c) => c.hint),
+    ...(hint.approach || []).map((a) => (typeof a === 'string' ? a : `${a.topic}: ${a.hint}`)),
+  ];
+  return (
+    <div className="mt-2 rounded border border-[var(--color-border)] bg-white p-2 text-xs" data-testid="learn-hint">
+      <p>{hint.guidance}</p>
+      {tables.length > 0 && (
+        <p className="mt-1 text-[var(--color-ink-muted)]">
+          Tables: {tables.map((t) => `${t.name}(${(t.columns || []).join(', ')})`).join(' · ')}
+          {hint.relationships?.length ? ` — joins: ${hint.relationships.join(', ')}` : ''}
+        </p>
+      )}
+      {lines.length > 0 && (
+        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+          {lines.slice(0, 5).map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Phase D+I learning hub: notebook, retry sets, spaced reviews, bookmarks. */
 export default function Learn() {
   const navigate = useNavigate();
@@ -451,15 +478,17 @@ export default function Learn() {
                     {viewed.error && (
                       <p className="mt-2 text-xs text-[var(--color-danger)]">{viewed.error}</p>
                     )}
-                    {viewed.hint && (
-                      <p className="mt-2 rounded border border-[var(--color-border)] bg-white p-2 text-xs">
-                        {viewed.hint.hint?.guidance}
-                      </p>
-                    )}
+                    {viewed.hint && <HintView hint={viewed.hint.hint} />}
                     {viewed.explanation?.available && (
-                      <p className="mt-2 rounded border border-[var(--color-border)] bg-white p-2 text-xs">
-                        {viewed.explanation.explanation}
-                      </p>
+                      <div className="mt-2 rounded border border-[var(--color-border)] bg-white p-2 text-xs" data-testid="learn-explanation">
+                        <p>{viewed.explanation.explanation}</p>
+                        {viewed.explanation.editorial?.solution_query && (
+                          <pre className="mt-2 overflow-x-auto rounded bg-slate-950 p-2 text-[11px] text-slate-100">{viewed.explanation.editorial.solution_query}</pre>
+                        )}
+                        {viewed.explanation.editorial?.solution_code && (
+                          <pre className="mt-2 overflow-x-auto rounded bg-slate-950 p-2 text-[11px] text-slate-100">{viewed.explanation.editorial.solution_code}</pre>
+                        )}
+                      </div>
                     )}
                   </li>
                 );

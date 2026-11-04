@@ -76,6 +76,70 @@ def test_cache_hit_does_not_call_provider() -> None:
         reset_memory_store()
 
 
+def test_switching_live_jobs_does_not_reuse_offline_fixture_cache(monkeypatch):
+    from modules import jobs_explorer
+
+    reset_memory_store()
+    monkeypatch.setattr(jobs_explorer, "user_skills_for_overlay", lambda user_id: None)
+    calls = []
+
+    def fetch(**kwargs):
+        source = "live" if get_settings().jobs_live_fetch else "fixture"
+        calls.append(source)
+        return load_fixture_jobs()[:1], source
+
+    monkeypatch.setattr(jobs_explorer, "fetch_adzuna", fetch)
+    try:
+        monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
+        get_settings.cache_clear()
+        offline = search_jobs(q="same search", where="", page=1, user_id="test")
+        assert offline["provenance"] == "fixture"
+        monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
+        get_settings.cache_clear()
+        online = search_jobs(q="same search", where="", page=1, user_id="test")
+        assert online["provenance"] == "live"
+        assert online["cache_hit"] is False
+        assert calls == ["fixture", "live"]
+    finally:
+        get_settings.cache_clear()
+        reset_memory_store()
+
+
+def test_empty_live_sql_search_reports_no_matches_not_sample_data(monkeypatch):
+    from contextlib import contextmanager
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from backend.db import sqlalchemy_store
+    from backend.db.sqlalchemy_models import JobsSearchCacheRow
+    from modules import jobs_explorer
+
+    engine = create_engine("sqlite:///:memory:")
+    JobsSearchCacheRow.__table__.create(engine)
+
+    @contextmanager
+    def session_scope():
+        with Session(engine) as session:
+            yield session
+            session.commit()
+
+    monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
+    get_settings.cache_clear()
+    monkeypatch.setattr(jobs_explorer, "_using_sql", lambda: True)
+    monkeypatch.setattr(jobs_explorer, "user_skills_for_overlay", lambda user_id: None)
+    monkeypatch.setattr(jobs_explorer, "fetch_adzuna", lambda **kwargs: ([], "live"))
+    monkeypatch.setattr(sqlalchemy_store, "session_scope", session_scope)
+    try:
+        result = search_jobs(q="no matches", where="", page=1, user_id="test")
+        assert result["jobs"] == []
+        assert result["provenance"] == "live"
+        assert result["empty_reason"] == "No openings matched this search."
+    finally:
+        get_settings.cache_clear()
+        engine.dispose()
+
+
 def test_default_jobs_live_fetch_skips_httpx(monkeypatch) -> None:
     """Under default JOBS_LIVE_FETCH=0, credentials must not trigger Adzuna HTTP."""
     reset_memory_store()

@@ -164,7 +164,8 @@ test('fresh coding round counts down from its configured duration with Submit en
 test('fresh system_design round counts down from its configured duration with Submit enabled', () => {
   const html = renderRound(payloads.fresh.system_design, SKIPPED);
   assertCountingDown(html, 'system_design');
-  assert.doesNotMatch(buttonAttributes(html, 'Submit self-assessment'), DISABLED);
+  // New rounds are content-evaluated (practice estimate); ratings are optional.
+  assert.doesNotMatch(buttonAttributes(html, 'Submit design'), DISABLED);
 });
 
 test('fresh ml_primitives round counts down from its configured duration and Submit is not time-locked', () => {

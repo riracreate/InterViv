@@ -117,8 +117,21 @@ def score_round(
         )
 
     if round_type == SYSTEM_DESIGN:
-        from modules.scoring.system_design import score_system_design_round
+        from modules.scoring.system_design import (
+            CONTENT_EVALUATION_MODE,
+            score_system_design_content_v1,
+            score_system_design_round,
+        )
 
+        # Rounds started as content-evaluated use the content estimate;
+        # rounds started under self-assessment keep their original scorer.
+        if (config or {}).get("evaluation_mode") == CONTENT_EVALUATION_MODE:
+            return score_system_design_content_v1(
+                answer=answer_text or "",
+                rubric_ratings=rubric_ratings,
+                question_context=question_context or {},
+                **kwargs,
+            )
         return score_system_design_round(
             answer=answer_text or "",
             rubric_ratings=rubric_ratings,

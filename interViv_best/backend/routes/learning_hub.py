@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from backend.learning_hints import item_editorial, item_hint, known_guidance_skills, skill_guidance
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
@@ -187,6 +188,21 @@ def _has_submitted_attempt(
     for session in sessions:
         for round_doc in session.get("rounds") or []:
             if round_doc.get("final_score") is None:
+                continue
+            if (item_type, item_id) in _round_items(round_doc):
+                return True
+    return False
+
+
+def _item_open_in_active_session(
+    sessions: list[dict[str, Any]], item_type: str, item_id: str
+) -> bool:
+    """True when the item sits in a not-yet-answered round of an open session."""
+    for session in sessions:
+        if session.get("status") == "completed":
+            continue
+        for round_doc in session.get("rounds") or []:
+            if round_doc.get("status") not in ("in_progress", "ready"):
                 continue
             if (item_type, item_id) in _round_items(round_doc):
                 return True
@@ -986,40 +1002,8 @@ def get_hint(
     user = require_user(authorization)
     item = _validate_item(item_type, item_id)
     skill = _item_skill(item_type, item)
-    if item_type == "mcq":
-        hint = {
-            "skill": skill,
-            "sub_domain": item.get("sub_domain"),
-            "difficulty": item.get("difficulty"),
-            "selection_mode": item.get("selection_mode", "single"),
-            "negative_marking": float(item.get("negative_marking", 0.0)),
-            "guidance": (
-                "Review the topic resources below, eliminate options "
-                "against the stem, then retry."
-            ),
-        }
-    elif item_type == "sql":
-        hint = {
-            "skill": skill,
-            "difficulty": item.get("difficulty"),
-            "has_schema": bool(item.get("schema_ddl")),
-            "guidance": (
-                "Study the schema and the visible sample case, then build "
-                "the query incrementally with Run."
-            ),
-        }
-    else:
-        hint = {
-            "skill": skill,
-            "topics": list(item.get("topics") or []),
-            "difficulty": item.get("difficulty"),
-            "function": item.get("function"),
-            "visible_example_count": len(item.get("visible_tests") or []),
-            "guidance": (
-                "Re-read the constraints and trace the visible examples by "
-                "hand before coding."
-            ),
-        }
+    # Curated concept/schema/constraint/approach guidance; no answers.
+    hint = item_hint(item_type, item, skill)
     try:
         db = get_database()
     except DatabaseConnectionError as exc:
@@ -1036,7 +1020,30 @@ def get_hint(
         "title": _item_title(item_type, item),
         "hint": hint,
         "editorial": None,
-        "editorial_reason": "No editorial is published for this item.",
+        "editorial_reason": (
+            "The worked solution unlocks after you submit an attempt on this item."
+            if item_type in ("sql", "coding") else
+            "The explanation unlocks after you submit an attempt on this question."
+        ),
+        "resources": _resources_for_skill(skill),
+    }
+
+
+@router.get("/learning/guidance")
+def get_guidance(
+    skill: str = Query(..., min_length=1, max_length=80),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """General study guidance for a skill. Not tied to any question, so
+    viewing it is never recorded and never changes assessment eligibility."""
+    require_user(authorization)
+    guidance = skill_guidance(skill)
+    return {
+        "skill": skill,
+        "available": guidance is not None,
+        "guidance": guidance,
+        "known_skills": None if guidance else known_guidance_skills(),
+        "recorded": False,
         "resources": _resources_for_skill(skill),
     }
 
@@ -1064,7 +1071,8 @@ def get_explanation(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
     skill = _item_skill(item_type, item)
-    if item_type != "mcq":
+    editorial = item_editorial(item_type, item) if item_type != "mcq" else None
+    if item_type != "mcq" and editorial is None:
         return {
             "item_type": item_type,
             "item_id": item_id,
@@ -1079,10 +1087,28 @@ def get_explanation(
             detail="This explanation unlocks after you submit an attempt "
             "on this question.",
         )
+    if _item_open_in_active_session(sessions, item_type, item_id):
+        # Review policy: never reveal a solution to an item that is still
+        # waiting to be answered in one of the user's open sessions.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Finish the session where this item is still open before viewing its solution.",
+        )
     _record_assistance(
         db, user_id=user_id,
         item_type=item_type, item_id=item_id, kind="explanation",
     )
+    if editorial is not None:
+        summary = "; ".join(c["hint"] for c in editorial.get("constructs") or []) or " ".join(
+            editorial.get("approach") or [])
+        return {
+            "item_type": item_type,
+            "item_id": item_id,
+            "available": True,
+            "explanation": summary or "Worked solution below.",
+            "editorial": editorial,
+            "resources": _resources_for_skill(skill),
+        }
     return {
         "item_type": item_type,
         "item_id": item_id,

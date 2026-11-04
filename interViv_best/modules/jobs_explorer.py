@@ -40,6 +40,17 @@ PROVIDER_ADZUNA = "adzuna"
 PROVIDER_GREENHOUSE = "greenhouse"
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = ROOT / "data" / "jobs_fixture_adzuna.json"
+GREENHOUSE_FIXTURE_PATH = ROOT / "data" / "jobs_fixture_greenhouse.json"
+GREENHOUSE_SAMPLE_DISCLAIMER = (
+    "Sample listings for offline practice: fictional companies, not real openings. "
+    "Start the app with --live-jobs for live Greenhouse boards."
+)
+
+
+def load_greenhouse_sample_jobs() -> list[dict[str, Any]]:
+    """Offline Greenhouse-shaped sample listings (no network)."""
+    data = json.loads(GREENHOUSE_FIXTURE_PATH.read_text(encoding="utf-8"))
+    return [dict(row) for row in data.get("jobs") or []]
 
 CACHE_TTL_DEFAULT = 6 * 3600
 MAX_RESULTS = 20
@@ -424,19 +435,31 @@ def search_jobs(
     country_code = normalize_country(country)
 
     cached = get_cached_search(q, where, page, country_code)
+    # A fixture cached in offline mode must not mask real jobs after the
+    # owner enables live search (or vice versa when returning offline).
+    expected_source = "live" if get_settings().jobs_live_fetch else "fixture"
+    if cached and cached.get("provenance") in {"live", "fixture"}:
+        if cached["provenance"] != expected_source:
+            cached = None
     cache_hit = cached is not None
     if cached is None:
         jobs, provenance = fetch_adzuna(
             q=q, where=where, page=page, country=country_code
         )
-        put_cached_search(
-            q, where, page, jobs, provenance=provenance, country=country_code
-        )
-        cached = get_cached_search(q, where, page, country_code)
-        assert cached is not None
-        jobs = cached["jobs"]
-        fetched_at = cached["fetched_at"]
-        provenance = cached["provenance"]
+        if not jobs and _using_sql():
+            # Older SQL cache rows derive provenance from their cards. An
+            # empty list cannot retain the source, so avoid caching it rather
+            # than mislabeling a live empty search as sample data.
+            fetched_at = _now()
+        else:
+            put_cached_search(
+                q, where, page, jobs, provenance=provenance, country=country_code
+            )
+            cached = get_cached_search(q, where, page, country_code)
+            assert cached is not None
+            jobs = cached["jobs"]
+            fetched_at = cached["fetched_at"]
+            provenance = cached["provenance"]
     else:
         jobs = cached["jobs"]
         provenance = cached["provenance"]
@@ -545,7 +568,11 @@ def search_greenhouse_jobs(
     page = max(1, int(page or 1))
     q = (q or "").strip()
     where = (where or "").strip()
-    key = f"greenhouse|{(q or '').lower()}|{where.lower()}|{page}"
+    # JOBS_LIVE_FETCH=0 means no board or description request at all; offline
+    # results are sample listings with their own cache key and label.
+    live = bool(get_settings().jobs_live_fetch)
+    provenance = "greenhouse" if live else "sample"
+    key = f"greenhouse|{provenance}|{(q or '').lower()}|{where.lower()}|{page}"
     cached = _SEARCH_MEMORY.get(key)
     cache_hit = False
     note = None
@@ -555,7 +582,7 @@ def search_greenhouse_jobs(
         fetched_at = cached["fetched_at"]
         note = cached.get("note")
     else:
-        listed = load_board_jobs()
+        listed = load_board_jobs() if live else load_greenhouse_sample_jobs()
         if not listed:
             fetched_at = _now()
             return {
@@ -579,16 +606,17 @@ def search_greenhouse_jobs(
             }
         matched, note = filter_jobs(listed, q=q, where=where)
         start = (page - 1) * GREENHOUSE_PAGE_SIZE
-        page_jobs = attach_descriptions(matched[start : start + GREENHOUSE_PAGE_SIZE])
+        page_slice = matched[start : start + GREENHOUSE_PAGE_SIZE]
+        page_jobs = attach_descriptions(page_slice) if live else page_slice
         jobs = [_greenhouse_card(job) for job in page_jobs]
         fetched_at = _now()
-        stamped = _stamp_provenance(jobs, provenance="greenhouse", fetched_at=fetched_at)
+        stamped = _stamp_provenance(jobs, provenance=provenance, fetched_at=fetched_at)
         for job in stamped:
             _upsert_job(job, fetched_at=fetched_at)
         _SEARCH_MEMORY[key] = {
             "fetched_at": fetched_at,
             "jobs": list(stamped),
-            "provenance": "greenhouse",
+            "provenance": provenance,
             "note": note,
         }
         jobs = stamped
@@ -611,9 +639,9 @@ def search_greenhouse_jobs(
                 "match_pct": match_pct(job.get("skills") or [], user_skills),
                 "redirect_url": job.get("redirect_url"),
                 "snippet": job.get("snippet"),
-                "provenance": "greenhouse",
+                "provenance": provenance,
                 "attribution": {
-                    "label": "Greenhouse",
+                    "label": "Greenhouse" if live else "Sample listing",
                     "jobs_href": job.get("redirect_url") or "https://www.greenhouse.com/",
                     "logo_href": "https://www.greenhouse.com/",
                 },
@@ -622,7 +650,10 @@ def search_greenhouse_jobs(
     fetched_iso = (
         fetched_at.isoformat() if isinstance(fetched_at, datetime) else str(fetched_at)
     )
-    empty_reason = None if cards else "No Greenhouse openings matched this search."
+    empty_reason = None if cards else (
+        "No Greenhouse openings matched this search." if live
+        else "No sample listings matched this search."
+    )
     return {
         "jobs": cards,
         "count": len(cards),
@@ -631,7 +662,8 @@ def search_greenhouse_jobs(
         "where": where,
         "country": None,
         "source": "greenhouse",
-        "provenance": "greenhouse",
+        "provenance": provenance,
+        "sample": not live,
         "cache_hit": cache_hit,
         "fetched_at": fetched_iso,
         "empty_reason": empty_reason,
@@ -640,7 +672,7 @@ def search_greenhouse_jobs(
             "Listings from public Greenhouse company boards. "
             "View job opens the original Greenhouse posting. "
             "interViv is not affiliated with Greenhouse."
-        ),
+        ) if live else GREENHOUSE_SAMPLE_DISCLAIMER,
     }
 
 

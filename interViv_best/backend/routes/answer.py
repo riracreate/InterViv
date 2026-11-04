@@ -49,6 +49,8 @@ from backend.routes.session import (
 )
 from backend.serializers.round_serializer import sanitize_round_for_client, sanitize_sql_artifact_for_client
 from backend.evidence_kind import (
+    SCORING_MODE_PRACTICE_ESTIMATE,
+    SYSTEM_DESIGN_CONTENT_MODE,
     scoring_mode_at_write,
     EVIDENCE_PRACTICE_REVIEW,
     EVIDENCE_SELF_REPORTED,
@@ -999,6 +1001,9 @@ def submit_answer(
             )
         )
         self_reported = evidence_kind == EVIDENCE_SELF_REPORTED
+        # Self-reported and practice-review results (e.g. the system-design
+        # content estimate) are shown but never move Elo or learning state.
+        practice_only = self_reported or evidence_kind == EVIDENCE_PRACTICE_REVIEW
 
         # Freeze eligibility at submission acceptance using exposures at or
         # before this server cutoff. Feedback released after commit cannot
@@ -1052,7 +1057,7 @@ def submit_answer(
                 )
 
         assessment_eligible = eligibility["decision"] == ELIGIBLE
-        if self_reported or is_spaced_review or not assessment_eligible:
+        if practice_only or is_spaced_review or not assessment_eligible:
             elo_after = elo_before
             next_difficulty = active_round.get("difficulty", "medium")
             difficulty_change = "same"
@@ -1094,10 +1099,14 @@ def submit_answer(
 
         # Persist this round (assisted already resolved above)
         _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
-        scoring_mode = scoring_mode_at_write(
-            self_reported=self_reported,
-            scoring_breakdown=_bd,
-            scoring_result=scoring_result,
+        scoring_mode = (
+            SCORING_MODE_PRACTICE_ESTIMATE
+            if scoring_result.get("evaluation_mode") == SYSTEM_DESIGN_CONTENT_MODE
+            else scoring_mode_at_write(
+                self_reported=self_reported,
+                scoring_breakdown=_bd,
+                scoring_result=scoring_result,
+            )
         )
         # Persist disclosure fields inside scoring_breakdown JSON — the
         # SQLAlchemy rounds table has no dedicated columns for them.
@@ -1341,7 +1350,7 @@ def submit_answer(
                         rotation_skill = _skill_for_round(session, next_round)
                         candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
                         candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
-                        if not self_reported and not is_spaced_review:
+                        if not practice_only and not is_spaced_review:
                             # The Elo commit below hasn't run yet; rotation must
                             # see this round's update exactly as if it had.
                             candidate_elos[current_skill] = elo_after
@@ -1643,7 +1652,7 @@ def submit_answer(
                         expected_revision=session.get("revision"),
                     )
                     if (
-                        not self_reported
+                        not practice_only
                         and not is_spaced_review
                         and assessment_eligible
                         and scoring_result.get("final_score") is not None
@@ -1670,7 +1679,7 @@ def submit_answer(
                         snapshot_digest=scored_snapshot.get("digest"),
                     )
                     if (
-                        not self_reported
+                        not practice_only
                         and not is_spaced_review
                         and assessment_eligible
                         and scoring_result.get("final_score") is not None

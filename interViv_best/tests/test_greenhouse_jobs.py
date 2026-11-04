@@ -81,6 +81,11 @@ def test_missing_city_keeps_keyword_matches() -> None:
 
 def test_search_pages_without_network(monkeypatch) -> None:
     reset_memory_store()
+    # Live mode with stubbed boards (offline mode serves sample listings).
+    from backend import config
+
+    monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
+    config.get_settings.cache_clear()
     boards = [
         {
             "token": "stripe",
@@ -133,6 +138,7 @@ def test_search_pages_without_network(monkeypatch) -> None:
     assert again["cache_hit"] is True
     assert calls["n"] == 0
     reset_memory_store()
+    config.get_settings.cache_clear()  # do not leak live mode into later tests
 
 
 def test_unknown_source_is_rejected() -> None:

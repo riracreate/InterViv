@@ -367,7 +367,11 @@ export default function Jobs() {
                     </button>
                   </div>
                 </div>
-                {job.provenance === 'greenhouse' ? (
+                {job.provenance === 'sample' ? (
+                  <p className="hub-caption" data-testid="jobs-sample-listing">
+                    Sample listing — fictional company, not a real opening
+                  </p>
+                ) : job.provenance === 'greenhouse' ? (
                   <p className="hub-caption" data-testid="jobs-by-greenhouse">
                     Public Greenhouse board
                   </p>

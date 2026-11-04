@@ -15,6 +15,7 @@ EVIDENCE_MEASURED = "measured"
 EVIDENCE_SELF_REPORTED = "self_reported"
 EVIDENCE_PRACTICE_REVIEW = "practice_review"
 SELF_ASSESSMENT_MODE = "structured_self_assessment"
+SYSTEM_DESIGN_CONTENT_MODE = "system_design_content_v1"
 
 # Scoring-mode labels persisted on each scored attempt at write time.
 # Pre-G.0 rows without this field must surface as unknown — never guessed.
@@ -22,6 +23,8 @@ SCORING_MODE_FULL = "full"
 SCORING_MODE_DEGRADED = "lexical_fallback_degraded"
 SCORING_MODE_SELF_REPORTED = "self_reported"
 SCORING_MODE_UNKNOWN = "unknown"
+# Heuristic practice estimate (system-design content, Phase 5): shown, never measured.
+SCORING_MODE_PRACTICE_ESTIMATE = "practice_estimate"
 
 
 def scoring_mode_at_write(
@@ -58,6 +61,7 @@ def scoring_mode_for_round(round_doc: dict[str, Any] | None) -> str:
         SCORING_MODE_FULL,
         SCORING_MODE_DEGRADED,
         SCORING_MODE_SELF_REPORTED,
+        SCORING_MODE_PRACTICE_ESTIMATE,
         SCORING_MODE_UNKNOWN,
     }
     mode = round_doc.get("scoring_mode")
@@ -76,6 +80,8 @@ def scoring_mode_label_for_display(mode: str) -> str:
         return "Lexical fallback (semantic scorer unavailable)"
     if mode == SCORING_MODE_SELF_REPORTED:
         return "Self-reported (not measured)"
+    if mode == SCORING_MODE_PRACTICE_ESTIMATE:
+        return "Practice estimate (not measured)"
     if mode == SCORING_MODE_FULL:
         return "Full semantic scoring"
     return "Scoring mode unknown"
@@ -107,6 +113,9 @@ def evidence_kind_for_round(
     round_type: str | None = None,
     evaluation_mode: str | None = None,
 ) -> str:
+    if evaluation_mode == SYSTEM_DESIGN_CONTENT_MODE:
+        # Heuristic practice estimate: visible, never measured mastery.
+        return EVIDENCE_PRACTICE_REVIEW
     if round_type == "system_design" or evaluation_mode == SELF_ASSESSMENT_MODE:
         return EVIDENCE_SELF_REPORTED
     return EVIDENCE_MEASURED

@@ -212,13 +212,14 @@ def test_self_assessment_excluded_from_gap_readiness_retry_notebook(
         json={
             "session_id": started.json()["session_id"],
             "round": 1,
-            "answer_text": "Self-rated design notes.",
+            "answer_text": 'Requirements: the service is read-heavy with about 100 reads per write and links expire after a TTL. API: POST /links creates a short code and GET /{code} returns a 302 redirect. Store codes in a key-value store, use base62 encoding of a unique counter, and cache hot links in Redis because redirects must be fast. Shard by code and keep replicas for availability.',
             "rubric_ratings": _full_ratings(),
         },
     )
     assert submit.status_code == 200, submit.text
-    assert submit.json()["scoring_mode"] == SCORING_MODE_SELF_REPORTED
-    assert submit.json()["evidence_kind"] == "self_reported"
+    # New system-design rounds are practice estimates; same exclusions apply.
+    assert submit.json()["scoring_mode"] == "practice_estimate"
+    assert submit.json()["evidence_kind"] == "practice_review"
 
     sid = started.json()["session_id"]
     progress = client.get("/dashboard/progress", headers=headers).json()
@@ -226,14 +227,14 @@ def test_self_assessment_excluded_from_gap_readiness_retry_notebook(
     for row in progress.get("history") or []:
         if row.get("session_id") == sid:
             assert row.get("average_score") is None
-            assert SCORING_MODE_SELF_REPORTED in (row.get("scoring_modes") or [])
+            assert "practice_estimate" in (row.get("scoring_modes") or [])
 
     # Session report must load even when feedback is a plain string (SD path).
     dash = client.get(f"/dashboard/{sid}", headers=headers)
     assert dash.status_code == 200, dash.text
     body = dash.json()
-    assert body["rounds"][0]["scoring_mode"] == SCORING_MODE_SELF_REPORTED
-    assert body.get("self_reported_average") == submit.json()["final_score"]
+    assert body["rounds"][0]["scoring_mode"] == "practice_estimate"
+    assert body["rounds"][0]["scoring_mode_label"] == "Practice estimate (not measured)"
     assert (body.get("averages") or {}).get("final_score") is None
 
     notebook = client.get("/learning/notebook/me", headers=headers).json()

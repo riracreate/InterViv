@@ -94,14 +94,18 @@ export default function SystemDesignRound({
     return () => clearInterval(interval);
   }, [closed, isScoring, secondsRemaining]);
 
-  const boundary =
-    evaluationBoundary
-    || questionContext?.evaluation_boundary
-    || 'Structured self-assessment only. Diagrams are not auto-scored.';
   const mode =
     evaluationMode
     || configJson?.evaluation_mode
     || 'structured_self_assessment';
+  const contentMode = mode === CONTENT_MODE;
+  const boundary =
+    evaluationBoundary
+    || (contentMode
+      ? 'Practice estimate from your written notes: concept coverage and explanation depth per criterion. '
+        + 'Not an architecture correctness verdict; it does not change Elo or readiness. Diagrams are not auto-scored.'
+      : questionContext?.evaluation_boundary || 'Structured self-assessment only. Diagrams are not auto-scored.');
+  const wordCount = (answer.match(/[A-Za-z0-9]+/g) || []).length;
 
   const handleSubmit = () => {
     setLocalError('');
@@ -109,12 +113,19 @@ export default function SystemDesignRound({
       const v = Number(ratings[c.id]);
       return !Number.isFinite(v) || v < 1 || v > 5;
     });
-    if (missing.length) {
+    if (contentMode && wordCount < MIN_WORDS) {
+      setLocalError(`Write at least ${MIN_WORDS} words of design notes before submitting.`);
+      return;
+    }
+    if (!contentMode && missing.length) {
       setLocalError('Rate every rubric criterion (1–5) before submitting.');
       return;
     }
+    // Content mode: self-ratings are optional and only count when all four are set.
     const rubric_ratings = Object.fromEntries(
-      rubric.map((c) => [c.id, Number(ratings[c.id])]),
+      rubric
+        .filter((c) => !missing.includes(c))
+        .map((c) => [c.id, Number(ratings[c.id])]),
     );
     onSubmit?.({
       answer_text: answer,
@@ -131,7 +142,7 @@ export default function SystemDesignRound({
         <div className="flex items-center gap-2 text-[#6F6F6F]">
           <LayoutTemplate size={16} />
           <span className="text-xs font-medium uppercase tracking-wider">
-            System design · self-assessment
+            System design · {contentMode ? 'practice estimate' : 'self-assessment'}
           </span>
         </div>
         <div className="flex items-center gap-2 text-sm text-[#6F6F6F]">
@@ -160,9 +171,11 @@ export default function SystemDesignRound({
       <div className="rounded-xl border border-black/10 bg-black/[0.02] px-4 py-3 text-sm">
         <div className="font-medium text-black">Evaluation boundary</div>
         <p className="mt-1 text-[#444]">{boundary}</p>
-        <p className="mt-2 text-xs uppercase tracking-wider text-[#6F6F6F]">
-          Mode: {mode}
-        </p>
+        {!contentMode ? (
+          <p className="mt-2 text-xs uppercase tracking-wider text-[#6F6F6F]">
+            Mode: {mode}
+          </p>
+        ) : null}
       </div>
 
       {draftNotice ? (
@@ -183,7 +196,11 @@ export default function SystemDesignRound({
           </label>
 
           <div className="space-y-3">
-            <div className="text-sm font-medium text-black">Rubric self-ratings (1–5)</div>
+            <div className="text-sm font-medium text-black">
+              {contentMode
+                ? 'Optional self-ratings (1–5) — count for 30% only when all four are set'
+                : 'Rubric self-ratings (1–5)'}
+            </div>
             {rubric.map((criterion) => (
               <div
                 key={criterion.id}
@@ -222,15 +239,19 @@ export default function SystemDesignRound({
             className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
           >
             <Send size={14} />
-            {isScoring ? 'Recording…' : 'Submit self-assessment'}
+            {isScoring ? 'Recording…' : contentMode ? 'Submit design' : 'Submit self-assessment'}
           </button>
         </>
       ) : (
-        <div className="space-y-3 rounded-xl border border-black/10 p-4">
-          <div className="text-sm text-[#6F6F6F]">Self-assessment score</div>
+        <div className="space-y-3 rounded-xl border border-black/10 p-4" data-testid="system-design-review">
+          <div className="text-sm text-[#6F6F6F]">
+            {currentArtifact?.evaluation_mode === CONTENT_MODE ? 'Practice estimate' : 'Self-assessment score'}
+          </div>
           <div className="text-3xl font-medium">{currentScore == null ? 'Not scored' : Number(currentScore).toFixed(1)}</div>
           <p className="text-sm text-[#444]">{currentFeedback}</p>
-          {currentArtifact?.evaluation_mode ? (
+          {currentArtifact?.evaluation_mode === CONTENT_MODE ? (
+            <ContentBreakdown artifact={currentArtifact} />
+          ) : currentArtifact?.evaluation_mode ? (
             <p className="text-xs uppercase tracking-wider text-[#6F6F6F]">
               {currentArtifact.evaluation_mode}
             </p>
@@ -249,6 +270,40 @@ export default function SystemDesignRound({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const CONTENT_MODE = 'system_design_content_v1';
+const MIN_WORDS = 20;
+
+/** Per-criterion content estimate: score, quoted evidence, missing concepts. */
+export function ContentBreakdown({ artifact }) {
+  const criteria = artifact?.criteria || [];
+  if (!criteria.length) return null;
+  return (
+    <div className="space-y-3" data-testid="system-design-content-breakdown">
+      <p className="text-xs text-[#6F6F6F]">
+        {artifact.formula ? `Score: ${artifact.formula}. ` : ''}Excluded from Elo and readiness.
+      </p>
+      {criteria.map((c) => (
+        <div key={c.id} className="rounded-lg border border-black/8 px-3 py-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">{c.name}</span>
+            <span className="tabular-nums">{Math.round(c.score)}/100</span>
+          </div>
+          {c.excerpts?.length ? (
+            <ul className="mt-1 space-y-1 text-xs text-[#444]">
+              {c.excerpts.slice(0, 3).map((e) => (
+                <li key={e.concept}><span className="font-medium">{e.concept}:</span> “{e.excerpt}”</li>
+              ))}
+            </ul>
+          ) : null}
+          {c.missing?.length ? (
+            <p className="mt-1 text-xs text-[#6F6F6F]">Not covered: {c.missing.join(', ')}</p>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

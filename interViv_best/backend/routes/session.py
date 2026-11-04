@@ -745,7 +745,9 @@ def build_round_document(
                 "attempt_policy": "single_submission_final",
                 "review_policy": cfg.get("review_policy", "none"),
                 "problem_id": prompt.get("id"),
-                "evaluation_mode": "structured_self_assessment",
+                # Overhaul Phase 5: written-content practice estimate
+                # (practice_review evidence; excluded from Elo/readiness).
+                "evaluation_mode": "system_design_content_v1",
             },
             question_context=public,
             started_at=now,

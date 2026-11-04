@@ -269,13 +269,14 @@ def test_system_design_compose_with_other_blocks(sa_url) -> None:
         json={
             "session_id": body["session_id"],
             "round": 1,
-            "answer_text": "Token bucket in Redis with local fallback.",
+            "answer_text": 'Requirements: limit each API key to 100 requests per minute and return 429 with a Retry-After header. Use a token bucket in Redis with an atomic Lua script so concurrent servers stay consistent. If Redis is down we fail open because availability matters more than strict accuracy.',
             "rubric_ratings": _full_ratings(),
         },
     )
     assert submit.status_code == 200, submit.text
     scored = submit.json()
-    assert scored["evaluation_mode"] == "structured_self_assessment"
+    # New rounds use the written-content practice estimate (Phase 5).
+    assert scored["evaluation_mode"] == "system_design_content_v1"
     assert scored["final_score"] is not None
     assert "diagram" in (scored.get("evaluation_boundary") or "").lower()
     _assert_no_leakage(scored)
@@ -437,13 +438,15 @@ def test_self_assessment_does_not_raise_measured_mastery(sa_url) -> None:
         json={
             "session_id": started.json()["session_id"],
             "round": 1,
-            "answer_text": "Self-rated perfect design.",
+            "answer_text": 'Requirements: the service is read-heavy with about 100 reads per write and links expire after a TTL. API: POST /links creates a short code and GET /{code} returns a 302 redirect. Store codes in a key-value store, use base62 encoding of a unique counter, and cache hot links in Redis because redirects must be fast. Shard by code and keep replicas for availability.',
             "rubric_ratings": _full_ratings(),
         },
     )
     assert submit.status_code == 200, submit.text
-    assert submit.json()["evidence_kind"] == "self_reported"
-    assert submit.json()["final_score"] == 75.0  # all ratings=4 → (4-1)/4*100
+    # Practice estimate: visible, but never measured mastery.
+    assert submit.json()["evidence_kind"] == "practice_review"
+    assert submit.json()["scoring_mode"] == "practice_estimate"
+    assert 0 < submit.json()["final_score"] < 100
     after = {
         node["name"]: (node.get("attempts") or 0, node.get("score"))
         for node in client.get("/skill-graph/me", headers=headers).json()["skills"]
@@ -458,7 +461,7 @@ def test_self_assessment_does_not_raise_measured_mastery(sa_url) -> None:
     for row in progress.get("history") or []:
         if row.get("session_id") == started.json()["session_id"]:
             assert row.get("average_score") is None
-            assert row.get("self_reported_rounds", 0) >= 1
+            assert "practice_estimate" in (row.get("scoring_modes") or [])
 
 
 # ── Calibration: self-rating vs what the design notes mention (advisory) ─────
