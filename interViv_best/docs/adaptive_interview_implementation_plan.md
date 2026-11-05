@@ -2,7 +2,9 @@
 
 Part I was merged by fast-forward at `dc5fdfe` after the requested clean-branch, consumer and storage checks. The latest approval authorizes Part II stage (a) **except PROBE_CONCEPT**. The pure policy, typed graph and band classifier are implemented on `codex/policy-stage-a`, with no session wiring. Concept probing is unimplemented with no flag or state field (removed in Step 0); review audit items 1–4 before designing it. Stage (b), live routing and dashboard changes remain unapproved and unimplemented.
 
-Read [the unlabeled worksheet](../data/audits/concept_review/blind_20_pairs.md), then [the read-only concept review](concept_probe_readonly_review.md), [stage-(a) results](policy_stage_a_report.md), and [proposed go-live criteria](adaptive_policy_go_live_criteria.md). The criteria require approval before stage (b), before viewing shadow logs. Neither the Tier-3 0.62 threshold nor Tier-2 keyword scoring is changed.
+Read the unlabeled worksheet (`data/audits/concept_review/blind_20_pairs.md`), then the read-only concept review (`docs/concept_probe_readonly_review.md`), [stage-(a) results](policy_stage_a_report.md), and [proposed go-live criteria](adaptive_policy_go_live_criteria.md). The criteria require approval before stage (b), before viewing shadow logs. Neither the Tier-3 0.62 threshold nor Tier-2 keyword scoring is changed.
+
+> **Branch note (Step 0, `codex/step0-slice1`):** only the pure modules, their tests and three docs were brought over from `codex/policy-stage-a` @ `307a6a5`. The audit artifacts under `data/audits/concept_review/` and `data/audits/policy_stage_a/`, the scripts `replay_concept_review.py`, `export_concept_review_samples.py`, `audit_concept_availability.py` and `evaluate_policy_stage_a.py`, the stage-(a) edit to `scripts/audit_question_concepts.py`, and `docs/concept_probe_readonly_review.md` exist only on `307a6a5`. References to them below point at that commit, not at this branch.
 
 ## Part I: implemented scope and guarantees
 
@@ -53,7 +55,7 @@ The external copy at `~/.gemini/antigravity/brain/bcff423f-5a75-466b-9224-94e8fc
 
 ### Data and concept quality findings
 
-See [the complete report](</Users/praneetsharma/Downloads/mega 2 copy/interViv_best/docs/step1_concept_quality_report.md>) and its JSON evidence. The report includes top 30 concepts per skill, explicit generic-term definitions, generic-dominated/empty-list shares, filtered availability, twenty hand-checked pairs and Tier-3 threshold behavior.
+See [the complete report](step1_concept_quality_report.md) and its JSON evidence. The report includes top 30 concepts per skill, explicit generic-term definitions, generic-dominated/empty-list shares, filtered availability, twenty hand-checked pairs and Tier-3 threshold behavior.
 
 There is one validation-source mismatch: form position 27 / row ID 54 is DBMS in the historical score CSV but HR in both the exact key/dataset pair. It is recorded rather than silently corrected. Current replay yields 6 nonanswer, 11 wrong, 13 vague, 11 adequate, 9 strong; historical tables are not substituted for current results.
 
@@ -235,7 +237,7 @@ The original 20-pair blind export has no assistant labels. Prior labels: 8 false
 
 All 2,319 rows were replayed: 207 vague. With confident-miss/filter/alternate-question/near-dedup gates and HR disabled, strict post-prompt availability is 33/207 (15.9%); permitting the next question to name its rubric target gives 35/207 (16.9%). These are cold-history proxies, not live probe rates. See the report for all skill denominators, top-30 ML/CN/OS concepts, generic-filter zeros and storage deltas.
 
-Stage (a) touches only the following files relative to `interViv_best` (Part I’s historical file scope above is unchanged):
+Stage (a) touches only the following files relative to `interViv_best` (Part I’s historical file scope above is unchanged). On `codex/step0-slice1`, rows marked † exist only on `307a6a5` (see the branch note at the top); Step 0 additionally touches `modules/follow_ups.py` (`non_follow_up_rounds`) and `tests/conftest.py`:
 
 | File | Purpose |
 |---|---|
@@ -244,24 +246,24 @@ Stage (a) touches only the following files relative to `interViv_best` (Part I�
 | `modules/adaptive_skill_graph.py` | Typed edges, canonical aliases and directional queries |
 | `modules/adaptive_policy.py` | Pure budget/dedup/selection/Elo functions; no concept probe |
 | `tests/test_adaptive_policy_stage_a.py` | Invariant and boundary tests |
-| `scripts/audit_question_concepts.py` | Delegate historic audit bands to configured classifier |
-| `scripts/replay_concept_review.py` | Full pinned scoring replay and all-bundle audit |
-| `scripts/export_concept_review_samples.py` | Blind export and fixed matched-pair sampling |
-| `scripts/audit_concept_availability.py` | Read-only target-in-prompt availability bounds |
-| `scripts/evaluate_policy_stage_a.py` | Seeded offline mechanics simulation |
-| `data/audits/concept_review/all_rows.jsonl` | All 2,319 scored rows/traces |
-| `data/audits/concept_review/full_replay_summary.json` | Aggregates, storage and source hashes |
-| `data/audits/concept_review/blind_20_pairs.json` | Unlabeled original pairs |
-| `data/audits/concept_review/blind_20_pairs.md` | Unlabeled human worksheet |
-| `data/audits/concept_review/prior_20_label_comparison.json` | Prior labels alongside similarity |
-| `data/audits/concept_review/matched_20_sample.json` | Stratified selection without judgments |
-| `data/audits/concept_review/matched_20_adjudication.json` | Assistant labels/reasons, clearly attributed |
-| `data/audits/concept_review/tier1_all_bundles.json` | All 72 reference/calibration evaluations |
-| `data/audits/concept_review/tier1_review_summary.json` | Per-bundle manual review and limitations |
-| `data/audits/concept_review/prompt_inclusive_availability.json` | Alternate question IDs by eligible target |
-| `data/audits/policy_stage_a/simulation_moves.jsonl` | Every simulated choice/outcome row |
-| `data/audits/policy_stage_a/simulation_summary.json` | Counts, directional coverage and provenance |
-| `docs/concept_probe_readonly_review.md` | Requested read-only review |
+| `scripts/audit_question_concepts.py` † | Delegate historic audit bands to configured classifier (stage-(a) edit not brought over; file here is the `dc5fdfe` version) |
+| `scripts/replay_concept_review.py` † | Full pinned scoring replay and all-bundle audit |
+| `scripts/export_concept_review_samples.py` † | Blind export and fixed matched-pair sampling |
+| `scripts/audit_concept_availability.py` † | Read-only target-in-prompt availability bounds |
+| `scripts/evaluate_policy_stage_a.py` † | Seeded offline mechanics simulation |
+| `data/audits/concept_review/all_rows.jsonl` † | All 2,319 scored rows/traces |
+| `data/audits/concept_review/full_replay_summary.json` † | Aggregates, storage and source hashes |
+| `data/audits/concept_review/blind_20_pairs.json` † | Unlabeled original pairs |
+| `data/audits/concept_review/blind_20_pairs.md` † | Unlabeled human worksheet |
+| `data/audits/concept_review/prior_20_label_comparison.json` † | Prior labels alongside similarity |
+| `data/audits/concept_review/matched_20_sample.json` † | Stratified selection without judgments |
+| `data/audits/concept_review/matched_20_adjudication.json` † | Assistant labels/reasons, clearly attributed |
+| `data/audits/concept_review/tier1_all_bundles.json` † | All 72 reference/calibration evaluations |
+| `data/audits/concept_review/tier1_review_summary.json` † | Per-bundle manual review and limitations |
+| `data/audits/concept_review/prompt_inclusive_availability.json` † | Alternate question IDs by eligible target |
+| `data/audits/policy_stage_a/simulation_moves.jsonl` † | Every simulated choice/outcome row |
+| `data/audits/policy_stage_a/simulation_summary.json` † | Counts, directional coverage and provenance |
+| `docs/concept_probe_readonly_review.md` † | Requested read-only review |
 | `docs/policy_stage_a_report.md` | Implementation behavior and test/simulation results |
 | `docs/adaptive_policy_go_live_criteria.md` | Proposed criteria for approval before shadow logs |
 | `docs/adaptive_interview_implementation_plan.md` | Latest approvals, exclusions and scope |
