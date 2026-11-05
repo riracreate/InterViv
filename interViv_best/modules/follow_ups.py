@@ -7,10 +7,22 @@ Rules:
   against MAX_TOTAL_ROUNDS (50). Skip optional when no spare capacity.
 - Do not renumber completed/assigned rounds; append with stable identity.
 - Concurrent requests must not schedule duplicate follow-ups.
+
+Two server-side initiators share these rules (``initiator`` and
+``placement`` are internal keyword arguments, never request fields):
+
+- ``candidate`` (default): the candidate's consented request. Appended
+  after every assigned round (``placement="append"``), unchanged.
+- ``system``: proposed during the parent's own attempt commit and
+  inserted immediately after the parent (``placement="after_parent"``).
+  Only plans whose mandatory specs all carry ``mandatory_index`` qualify,
+  never after the final mandatory round, never ahead of a materialized
+  round. The prompt is validated inside :func:`schedule_follow_up_in_session`.
 """
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 from uuid import uuid4
 
@@ -18,6 +30,14 @@ from backend.models.blocks import MAX_TOTAL_ROUNDS
 
 MAX_FOLLOWUPS_PER_PARENT = 1
 MAX_FOLLOWUPS_PER_INTERVIEW_BLOCK = 2
+
+INITIATOR_CANDIDATE = "candidate"
+INITIATOR_SYSTEM = "system"
+INITIATORS = frozenset({INITIATOR_CANDIDATE, INITIATOR_SYSTEM})
+PLACEMENT_APPEND = "append"
+PLACEMENT_AFTER_PARENT = "after_parent"
+PLACEMENTS = frozenset({PLACEMENT_APPEND, PLACEMENT_AFTER_PARENT})
+SYSTEM_FOLLOW_UP_DEFAULT_KIND = "clarification"
 
 
 def block_follow_up_limit(block: dict[str, Any] | None) -> int:
@@ -135,21 +155,87 @@ def parent_already_has_follow_up(
     return False
 
 
+def mandatory_plan_specs(session: dict[str, Any]) -> list[dict[str, Any]]:
+    """Mandatory ``expanded_plan`` entries (every non-follow-up entry)."""
+    return [
+        e
+        for e in (session.get("expanded_plan") or [])
+        if isinstance(e, dict) and not e.get("is_follow_up")
+    ]
+
+
+def follow_up_count(session: dict[str, Any]) -> int:
+    """Distinct follow-ups, pending or materialized, each counted once.
+
+    A materialized follow-up has both a plan entry and a round row carrying
+    the same ``follow_up_identity``; identity de-duplicates the pair.
+    Identity-less entries (legacy) count individually.
+    """
+    identities: set[str] = set()
+    anonymous = 0
+    for item in list(session.get("expanded_plan") or []) + list(session.get("rounds") or []):
+        if not isinstance(item, dict) or not item.get("is_follow_up"):
+            continue
+        identity = str(item.get("follow_up_identity") or "")
+        if identity:
+            identities.add(identity)
+        else:
+            anonymous += 1
+    return len(identities) + anonymous
+
+
+def mandatory_total(session: dict[str, Any]) -> int:
+    """Size of the mandatory plan: follow-ups never count."""
+    specs = mandatory_plan_specs(session)
+    if specs:
+        return len(specs)
+    return max(0, int(session.get("total_rounds") or 0) - follow_up_count(session))
+
+
 def mandatory_remaining(session: dict[str, Any], current_round: int) -> int:
-    """Rounds still required by the original mandatory plan (excluding follow-ups)."""
-    total = int(session.get("total_rounds") or 0)
-    # Count already-scheduled follow-ups so we can separate mandatory capacity.
+    """Rounds still required by the original mandatory plan (excluding follow-ups).
+
+    Pending and materialized follow-ups are both excluded from the mandatory
+    total, each once (see :func:`follow_up_count`).
+    """
     rounds = session.get("rounds") or []
-    follow_ups_scheduled = sum(1 for r in rounds if r.get("is_follow_up"))
-    expanded = session.get("expanded_plan") or []
-    mandatory_total = max(0, len(expanded) - follow_ups_scheduled) if expanded else max(0, total - follow_ups_scheduled)
     # Rounds at or before current that are mandatory.
     mandatory_done = sum(
         1
         for r in rounds
         if not r.get("is_follow_up") and int(r.get("round") or 0) <= int(current_round)
     )
-    return max(0, mandatory_total - mandatory_done)
+    return max(0, mandatory_total(session) - mandatory_done)
+
+
+def remaining_questions(session: dict[str, Any], after_round: int) -> int:
+    """Mandatory questions still to be asked after ``after_round``.
+
+    Same follow-up filter as :func:`mandatory_remaining`. Plan-backed
+    sessions count mandatory entries positioned after ``after_round``;
+    entries without a ``round`` fall back to :func:`mandatory_remaining`.
+    """
+    specs = mandatory_plan_specs(session)
+    if specs and all(_positive_int(s.get("round")) for s in specs):
+        return sum(1 for s in specs if int(s["round"]) > int(after_round))
+    return mandatory_remaining(session, after_round)
+
+
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def mandatory_indices_complete(session: dict[str, Any]) -> bool:
+    """True when every mandatory spec carries a distinct ``mandatory_index``.
+
+    Sessions created before indices were stamped (or without an expanded
+    plan) return False and never receive a system insertion.
+    """
+    specs = mandatory_plan_specs(session)
+    if not specs:
+        return False
+    indices = [s.get("mandatory_index") for s in specs]
+    return all(_positive_int(i) for i in indices) and len(set(indices)) == len(indices)
 
 
 def spare_capacity(session: dict[str, Any], current_round: int) -> int:
@@ -163,14 +249,50 @@ def spare_capacity(session: dict[str, Any], current_round: int) -> int:
     return max(0, hard_left - remaining_mandatory)
 
 
+def _placement_for(initiator: str, placement: str | None) -> str:
+    if initiator not in INITIATORS:
+        raise ValueError(f"Unknown follow-up initiator: {initiator!r}")
+    if placement is None:
+        return PLACEMENT_AFTER_PARENT if initiator == INITIATOR_SYSTEM else PLACEMENT_APPEND
+    if placement not in PLACEMENTS:
+        raise ValueError(f"Unknown follow-up placement: {placement!r}")
+    return placement
+
+
+def _after_parent_blocker(session: dict[str, Any], parent_round: int) -> str:
+    """Reason an immediate-next insertion is unsafe, or ``""`` when safe."""
+    if not mandatory_indices_complete(session):
+        return "mandatory_indices_incomplete"
+    if any(
+        int(r.get("round") or 0) > int(parent_round)
+        for r in (session.get("rounds") or [])
+        if isinstance(r, dict)
+    ):
+        # A later round row already exists: inserting would renumber it.
+        return "later_rounds_materialized"
+    if remaining_questions(session, parent_round) < 1:
+        # Never after the final mandatory round.
+        return "no_mandatory_remaining"
+    return ""
+
+
 def can_schedule_follow_up(
     *,
     session: dict[str, Any],
     parent_round_doc: dict[str, Any],
+    placement: str = PLACEMENT_APPEND,
 ) -> tuple[bool, str]:
-    """Return (ok, reason_if_not)."""
+    """Return (ok, reason_if_not).
+
+    Shared by both initiators. ``placement="after_parent"`` adds the
+    immediate-next safety checks on top of the shared caps.
+    """
     if parent_round_doc.get("is_follow_up"):
         return False, "recursive_follow_up_forbidden"
+    if placement == PLACEMENT_AFTER_PARENT:
+        blocker = _after_parent_blocker(session, int(parent_round_doc.get("round") or 0))
+        if blocker:
+            return False, blocker
     parent_round = int(parent_round_doc.get("round") or 0)
     rounds = list(session.get("rounds") or [])
     pending = pending_follow_ups(session)
@@ -252,20 +374,201 @@ def build_follow_up_plan_entry(
     }
 
 
+def build_system_follow_up_plan_entry(
+    *,
+    parent_round_doc: dict[str, Any],
+    prompt: str,
+    kind: str = SYSTEM_FOLLOW_UP_DEFAULT_KIND,
+) -> dict[str, Any]:
+    """Plan entry for a system-initiated, unscored follow-up.
+
+    Built directly from the supplied prompt; materialization never consults
+    the bank selector. The parent's skill is copied onto the spec (both
+    ``skill`` and ``skills``) so round-to-skill resolution needs no index.
+    No ``mandatory_index`` is stored: follow-ups are never mandatory.
+    """
+    parent_round = int(parent_round_doc.get("round") or 0)
+    skill = parent_round_doc.get("skill")
+    return {
+        "round_type": "technical_short_answer",
+        "skill": skill,
+        "skills": [skill] if skill else [],
+        "block_id": parent_round_doc.get("block_id"),
+        "block_position": parent_round_doc.get("block_position"),
+        "block_category": parent_round_doc.get("block_category") or "interview",
+        "is_follow_up": True,
+        "follow_up_parent_round": parent_round,
+        "follow_up_parent_identity": f"round:{parent_round}",
+        "follow_up_identity": f"followup:{parent_round}:{uuid4().hex[:8]}",
+        "follow_up_scoring": "unreviewed",
+        "follow_up_initiator": INITIATOR_SYSTEM,
+        "follow_up_kind": str(kind or SYSTEM_FOLLOW_UP_DEFAULT_KIND),
+        "purpose": "follow_up",
+        "clarification_prompt": str(prompt or "").strip(),
+        "review_policy": (parent_round_doc.get("config_json") or {}).get("review_policy", "none"),
+    }
+
+
+def is_system_follow_up(item: dict[str, Any] | None) -> bool:
+    """True for a system-initiated follow-up spec or round."""
+    if not isinstance(item, dict) or not item.get("is_follow_up"):
+        return False
+    initiator = item.get("follow_up_initiator") or (item.get("config_json") or {}).get(
+        "follow_up_initiator"
+    )
+    return initiator == INITIATOR_SYSTEM
+
+
+def build_system_follow_up_round(
+    spec: dict[str, Any],
+    *,
+    parent_round_doc: dict[str, Any] | None,
+    elo_before: float | None,
+) -> dict[str, Any]:
+    """Prepared (``ready``) round document for a system follow-up spec.
+
+    The question is the spec's validated prompt; no bank selection happens,
+    so a bank miss can never block it. Activation starts it like any round.
+    """
+    parent = parent_round_doc or {}
+    prompt = str(spec.get("clarification_prompt") or "").strip()
+    skill = spec.get("skill") or parent.get("skill")
+    difficulty = parent.get("difficulty") or "medium"
+    follow_up_keys = {
+        "is_follow_up": True,
+        "follow_up_parent_round": spec.get("follow_up_parent_round"),
+        "follow_up_identity": spec.get("follow_up_identity"),
+        "follow_up_scoring": spec.get("follow_up_scoring") or "unreviewed",
+    }
+    return {
+        "round": int(spec["round"]),
+        "skill": skill,
+        "round_type": "technical_short_answer",
+        "artifact_json": {},
+        "config_json": dict(follow_up_keys),
+        "question": prompt,
+        "answer_text": None,
+        "nlp_score": None,
+        "svm_label": None,
+        "kg_score": None,
+        "ner_entities": [],
+        "final_score": None,
+        "difficulty": difficulty,
+        "difficulty_change": None,
+        "feedback": {"content": [], "strengths": [], "next_step": ""},
+        "elo_before": elo_before,
+        "elo_after": None,
+        "question_context": {
+            "question": prompt,
+            "skill": skill,
+            "difficulty": difficulty,
+            "source": "system_follow_up",
+            "followups": [],
+        },
+        "started_at": None,
+        "expires_at": None,
+        "status": "ready",
+        "block_id": spec.get("block_id"),
+        "block_position": spec.get("block_position"),
+        "block_category": spec.get("block_category") or "interview",
+        "block_index": parent.get("block_index"),
+        "block_total": parent.get("block_total"),
+        "purpose": "follow_up",
+        **follow_up_keys,
+    }
+
+
+def _insert_after_parent(
+    session: dict[str, Any],
+    *,
+    parent_round: int,
+    plan_entry: dict[str, Any],
+) -> dict[str, Any]:
+    """Place ``plan_entry`` at ``parent_round + 1``; shift only later entries.
+
+    Callers have verified (``_after_parent_blocker``) that no round row
+    exists after the parent, so every shifted entry is unmaterialized.
+    ``mandatory_index`` values travel with their specs unchanged.
+    """
+    insert_round = int(parent_round) + 1
+    new_total = int(session.get("total_rounds") or 0) + 1
+    if new_total > MAX_TOTAL_ROUNDS:
+        return {"scheduled": False, "reason": "no_capacity"}
+    expanded: list[dict[str, Any]] = []
+    position = None
+    for entry in session.get("expanded_plan") or []:
+        entry = copy.deepcopy(entry)
+        round_number = int(entry.get("round") or 0) if isinstance(entry, dict) else 0
+        if round_number >= insert_round:
+            if position is None:
+                position = len(expanded)
+            entry["round"] = round_number + 1
+        expanded.append(entry)
+    new_entry = {**copy.deepcopy(plan_entry), "round": insert_round}
+    expanded.insert(len(expanded) if position is None else position, new_entry)
+    result: dict[str, Any] = {
+        "scheduled": True,
+        "reason": "",
+        "expanded_plan": expanded,
+        "total_rounds": new_total,
+        "follow_up_identity": plan_entry.get("follow_up_identity"),
+        "insert_at": insert_round,
+    }
+    round_plan = session.get("round_plan")
+    if isinstance(round_plan, list):
+        placeholder = list(round_plan)
+        placeholder.insert(min(parent_round, len(placeholder)), plan_entry.get("round_type") or "technical_short_answer")
+        result["round_plan"] = placeholder
+    return result
+
+
 def schedule_follow_up_in_session(
     session: dict[str, Any],
     *,
     parent_round_doc: dict[str, Any],
     plan_entry: dict[str, Any],
+    initiator: str = INITIATOR_CANDIDATE,
+    placement: str | None = None,
+    parent_answer: str | None = None,
+    question_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Append follow-up to expanded_plan and bump total_rounds. Mutates session copy fields.
+    """Schedule one follow-up. Returns updated fields to merge into the session.
 
     Caller must hold the session submit/schedule lock and persist atomically.
-    Returns updated fields to merge into the session document.
+    The input session is not mutated.
+
+    ``initiator`` and ``placement`` are server-side only. Candidate requests
+    (the default) append after every assigned round exactly as before.
+    System requests insert immediately after the parent and validate the
+    prompt here, against the candidate's submitted ``parent_answer`` and the
+    parent's ``question_context`` (rubric source); rejection changes nothing.
     """
-    ok, reason = can_schedule_follow_up(session=session, parent_round_doc=parent_round_doc)
+    placement = _placement_for(initiator, placement)
+    ok, reason = can_schedule_follow_up(
+        session=session, parent_round_doc=parent_round_doc, placement=placement
+    )
     if not ok:
         return {"scheduled": False, "reason": reason}
+    if initiator == INITIATOR_SYSTEM:
+        from modules.system_follow_ups import validate_system_prompt
+
+        ok, reason = validate_system_prompt(
+            plan_entry.get("clarification_prompt"),
+            parent_answer=parent_answer,
+            question_context=(
+                question_context
+                if question_context is not None
+                else parent_round_doc.get("question_context") or {}
+            ),
+        )
+        if not ok:
+            return {"scheduled": False, "reason": reason}
+    if placement == PLACEMENT_AFTER_PARENT:
+        return _insert_after_parent(
+            session,
+            parent_round=int(parent_round_doc.get("round") or 0),
+            plan_entry=plan_entry,
+        )
 
     expanded = list(session.get("expanded_plan") or [])
     # Insert after the parent's plan index when possible; else append.

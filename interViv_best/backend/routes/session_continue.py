@@ -35,6 +35,7 @@ from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
+from modules.follow_ups import build_system_follow_up_round, is_system_follow_up
 
 router = APIRouter(prefix="/session", tags=["session-continue"])
 
@@ -192,7 +193,23 @@ def continue_session(
                 next_payload: dict[str, Any] | None = None
 
                 try:
-                    if planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
+                    if is_system_follow_up(expanded_spec):
+                        # Same direct build as the submit path: a system
+                        # follow-up never consults the bank selector.
+                        follow_up_parent = next(
+                            (
+                                r for r in rounds
+                                if int(r.get("round") or 0)
+                                == int(expanded_spec.get("follow_up_parent_round") or 0)
+                            ),
+                            None,
+                        )
+                        next_payload = build_system_follow_up_round(
+                            expanded_spec,
+                            parent_round_doc=follow_up_parent,
+                            elo_before=(follow_up_parent or {}).get("elo_after"),
+                        )
+                    elif planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
                         spec_config: dict[str, Any] = {
                             "count": (expanded_spec or {}).get("count", 15),
                             "duration_minutes": (expanded_spec or {}).get("duration_minutes"),

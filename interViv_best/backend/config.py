@@ -59,6 +59,9 @@ class Settings:
     interview_module_paths: list[Path]
     interview_model_paths: list[Path]
     interview_data_paths: list[Path]
+    # Slice 1: system-initiated follow-ups. Default off; even when on, the
+    # shipped trigger proposes nothing (modules.system_follow_ups).
+    system_follow_ups_enabled: bool = False
 
 
 def _split_csv(value: str) -> list[str]:
@@ -167,5 +170,6 @@ def get_settings() -> Settings:
             os.getenv("INTERVIEW_DATA_PATHS"),
             default_data_paths,
         ),
+        system_follow_ups_enabled=_env_bool("SYSTEM_FOLLOW_UPS_ENABLED", False),
     )
     return _validate_security_settings(settings)

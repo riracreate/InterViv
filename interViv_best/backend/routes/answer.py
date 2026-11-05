@@ -78,6 +78,14 @@ from modules.assistance_policy import (
     is_follow_up_round,
 )
 from modules.teaching_exposures import list_exposures_for_eligibility
+from modules.follow_ups import (
+    INITIATOR_SYSTEM,
+    build_system_follow_up_plan_entry,
+    build_system_follow_up_round,
+    is_system_follow_up,
+    schedule_follow_up_in_session,
+)
+from modules.system_follow_ups import propose_system_follow_up
 
 router = APIRouter(prefix="/session", tags=["answer"])
 logger = logging.getLogger(__name__)
@@ -751,6 +759,9 @@ def submit_answer(
                 float(item["final_score"]) for item in rounds_so_far
             ) / len(rounds_so_far)
 
+        # Rubric source resolved for technical scoring (bundle content when
+        # pinned); reused by the system follow-up prompt check.
+        scoring_question_context: dict[str, Any] | None = None
         try:
             follow_up_scoring_pre = (
                 (active_round.get("config_json") or {}).get("follow_up_scoring")
@@ -1196,6 +1207,26 @@ def submit_answer(
             ),
         }
 
+        # Slice 1: a system follow-up is proposed ONCE per request, like the
+        # scoring result above; every commit attempt re-validates it against
+        # its own fresh read and inserts it inside the same revision-checked
+        # attempt commit (never as a separate allocation commit).
+        system_follow_up_entry: dict[str, Any] | None = None
+        if not is_follow_up_round(active_round):
+            proposal_parent = {**active_round, **scored_round_update}
+            proposal = propose_system_follow_up(
+                session=session,
+                parent_round_doc=proposal_parent,
+                parent_answer=request.answer_text,
+                scoring_result=scoring_result,
+            )
+            if proposal is not None:
+                system_follow_up_entry = build_system_follow_up_plan_entry(
+                    parent_round_doc=proposal_parent,
+                    prompt=proposal.prompt,
+                    kind=proposal.kind,
+                )
+
         from backend.db.sqlalchemy_store import SessionWriteConflict
 
         for _commit_attempt in range(MAX_SUBMIT_COMMIT_ATTEMPTS):
@@ -1285,6 +1316,38 @@ def submit_answer(
                 active_round = rounds[index]
                 break
 
+            # Insert before completion / next-round arithmetic so the
+            # follow-up becomes ``request.round + 1``. Re-validated on this
+            # attempt's read; a rejection leaves scheduling unchanged.
+            system_follow_up_changes: dict[str, Any] = {}
+            if system_follow_up_entry is not None:
+                placed = schedule_follow_up_in_session(
+                    {**session, "rounds": rounds},
+                    parent_round_doc=active_round,
+                    plan_entry=system_follow_up_entry,
+                    initiator=INITIATOR_SYSTEM,
+                    parent_answer=request.answer_text,
+                    question_context=(
+                        scoring_question_context
+                        or active_round.get("question_context")
+                        or {}
+                    ),
+                )
+                if placed.get("scheduled"):
+                    system_follow_up_changes = {
+                        key: placed[key]
+                        for key in ("expanded_plan", "total_rounds", "round_plan")
+                        if key in placed
+                    }
+                    session = {**session, **system_follow_up_changes}
+                else:
+                    logger.info(
+                        "System follow-up for session %s round %s not scheduled: %s",
+                        request.session_id,
+                        request.round,
+                        placed.get("reason"),
+                    )
+
             total_rounds = _total_rounds(session, settings)
 
             next_skill: str | None = None
@@ -1327,6 +1390,9 @@ def submit_answer(
                         (item for item in rounds if item.get("round") == next_round),
                         None,
                     )
+                    system_spec = _expanded_spec_for_round(session, next_round)
+                    if not is_system_follow_up(system_spec):
+                        system_spec = None
                     if existing_next is not None:
                         next_skill = existing_next.get("skill") or _skill_for_round(session, next_round)
                         next_round_type = existing_next.get("round_type")
@@ -1338,6 +1404,33 @@ def submit_answer(
                         next_block_category = existing_next.get("block_category")
                         # No write here: the reused round is already persisted and
                         # the session-level next values join the commit below.
+                    elif system_spec is not None:
+                        # System follow-up: built directly from its validated
+                        # prompt (no bank selector, so a bank miss cannot
+                        # block it), prepared as ``ready`` like any round.
+                        follow_up_parent = next(
+                            (
+                                item
+                                for item in rounds
+                                if int(item.get("round") or 0)
+                                == int(system_spec.get("follow_up_parent_round") or 0)
+                            ),
+                            None,
+                        )
+                        next_payload = build_system_follow_up_round(
+                            system_spec,
+                            parent_round_doc=follow_up_parent,
+                            elo_before=(follow_up_parent or {}).get("elo_after"),
+                        )
+                        rounds.append(next_payload)
+                        next_skill = next_payload.get("skill")
+                        next_round_type = next_payload["round_type"]
+                        response_next_difficulty = next_payload.get("difficulty")
+                        next_round_number = next_round
+                        next_round_status = next_payload["status"]
+                        next_block_id = next_payload.get("block_id")
+                        next_block_position = next_payload.get("block_position")
+                        next_block_category = next_payload.get("block_category")
                     else:
                         plan = session.get("round_plan") or []
                         planned_type = None
@@ -1637,6 +1730,10 @@ def submit_answer(
                 }
                 if progression_blocked_reason:
                     session_update["progression_blocked_reason"] = progression_blocked_reason
+                # Accepted system insertion: the changed plan joins this one
+                # revision-checked write with the scored parent and the
+                # prepared follow-up (Elo/learning follow in the same unit).
+                session_update.update(system_follow_up_changes)
                 if session_status == "completed":
                     session_update["completed_at"] = datetime.now(timezone.utc)
                     session_update["overall_readiness_score"] = (

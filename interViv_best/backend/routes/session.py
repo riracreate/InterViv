@@ -195,12 +195,22 @@ def _skill_for_round(session: dict, round_number: int) -> str:
     order). Legacy sessions rotate:
 
         skills = [A, B, C], rounds_per_skill = 3 → A A A B B B C C C
+
+    Resolution order: explicit spec skill, then the spec's
+    ``mandatory_index`` in the rotation formula, then the raw round number.
+    Without follow-up insertions ``mandatory_index == round``, so the
+    rotation is unchanged; with them, shifted mandatory specs keep the
+    skill of their original position.
     """
     spec = _expanded_spec_for_round(session, round_number)
+    position = int(round_number)
     if spec:
         skills = [s for s in (spec.get("skills") or []) if s]
         if skills:
             return skills[0]
+        index = spec.get("mandatory_index")
+        if isinstance(index, int) and not isinstance(index, bool) and index >= 1:
+            position = index
     skills = session.get("skills") or [session.get("skill")]
     skills = [s for s in skills if s]
     if not skills:
@@ -208,7 +218,7 @@ def _skill_for_round(session: dict, round_number: int) -> str:
 
     per = int(session.get("rounds_per_skill", 3))
     per = max(1, per)
-    idx = (int(round_number) - 1) // per
+    idx = (position - 1) // per
     if idx >= len(skills):
         idx = len(skills) - 1
     return skills[idx]

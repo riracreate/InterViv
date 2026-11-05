@@ -610,6 +610,10 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "negative_marking": 0.0,
                     "review_policy": block.get("review_policy", "none"),
                 })
+    # Every expanded spec is mandatory. Its index is fixed at creation and
+    # survives later follow-up insertions that shift ``round``.
+    for spec in expanded:
+        spec["mandatory_index"] = spec["round"]
     return expanded
 
 
