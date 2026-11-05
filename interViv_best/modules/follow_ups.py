@@ -74,6 +74,11 @@ def _block_for_id(session: dict[str, Any], block_id: str | None) -> dict[str, An
     return None
 
 
+def non_follow_up_rounds(rounds: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Rounds excluding follow-ups, order preserved (``is_follow_up`` detection)."""
+    return [r for r in (rounds or []) if not (isinstance(r, dict) and r.get("is_follow_up"))]
+
+
 def pending_follow_ups(session: dict[str, Any]) -> list[dict[str, Any]]:
     """Scheduled-but-unmaterialized follow-up entries from ``expanded_plan``.
 

@@ -17,6 +17,23 @@ def _sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
     cursor.close()
 
 
+from backend.config import get_settings as _get_settings
+from backend.db import _get_memory_db as _get_memory_db
+
+_CLEAR_CACHES = (_get_settings.cache_clear, _get_memory_db.cache_clear)
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_and_memory_db_caches():
+    # Retained references: monkeypatching get_settings/_get_memory_db in a
+    # test must not break cache teardown for the next test.
+    for clear in _CLEAR_CACHES:
+        clear()
+    yield
+    for clear in _CLEAR_CACHES:
+        clear()
+
+
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 # 32+ bytes so PyJWT does not warn about insecure HMAC key length (RFC 7518 §3.2).

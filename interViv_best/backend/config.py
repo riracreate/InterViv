@@ -11,6 +11,19 @@ from dotenv import load_dotenv
 SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 SEMANTIC_MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
 
+# Stage (a) pure policy constants. No session route imports the new policy.
+BAND_NONANSWER_MIN_WORDS = 8
+BAND_NONANSWER_MAX_SCORE = 40.0
+BAND_WRONG_MAX_SCORE = 52.0
+BAND_WRONG_MAX_CORRECTNESS = 5.0
+BAND_STRONG_MIN_SCORE = 72.0
+BAND_STRONG_MIN_CORRECTNESS = 7.5
+BAND_VAGUE_MAX_DEPTH = 4.2
+BAND_CALIBRATION_STATUS = "in_sample_n50"
+POLICY_NEUTRAL_ELO = 1200.0
+POLICY_DIFFICULTY_ELO = {"easy": 1000.0, "medium": 1200.0, "hard": 1400.0}
+POLICY_ELO_K = 32.0
+
 
 @dataclass(frozen=True)
 class Settings:
