@@ -22,7 +22,13 @@ from backend.round_lifecycle import (
     activate_round,
     prepare_round,
 )
-from backend.routes.answer import _difficulty_from_elo, _submit_locked, _total_rounds
+from backend.routes.answer import (
+    _difficulty_from_elo,
+    _planned_type_for,
+    _submit_locked,
+    _total_rounds,
+    preserved_target,
+)
 from backend.routes.session import (
     _expanded_spec_for_round,
     _get_next_question,
@@ -35,7 +41,11 @@ from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
-from modules.follow_ups import build_system_follow_up_round, is_system_follow_up
+from modules.follow_ups import (
+    build_system_follow_up_round,
+    is_system_follow_up,
+    non_follow_up_rounds,
+)
 
 router = APIRouter(prefix="/session", tags=["session-continue"])
 
@@ -47,7 +57,12 @@ MAX_CONTINUE_ATTEMPTS = 3
 
 
 def _asked_questions(rounds: list[dict]) -> list[str]:
-    return [str(item.get("question") or "") for item in rounds if item.get("question")]
+    # Follow-up prompts are not bank questions (selector isolation).
+    return [
+        str(item.get("question") or "")
+        for item in non_follow_up_rounds(rounds)
+        if item.get("question")
+    ]
 
 
 def _continued_response(
@@ -188,6 +203,16 @@ def continue_session(
                     if expanded_spec and expanded_spec.get("difficulty")
                     else _difficulty_from_elo(rotation_elo)
                 )
+                # A target preserved at a system insertion is reused verbatim
+                # when progression resumes here (same as the submit path).
+                preserved = preserved_target(
+                    expanded_spec, _planned_type_for(session, next_round, expanded_spec)
+                )
+                if preserved is not None:
+                    rotation_skill = preserved["rotation_skill"]
+                    rotation_elo = float(preserved["rotation_elo"])
+                    rotation_difficulty = preserved["rotation_difficulty"]
+                    session_skills = list(preserved["session_skills"])
 
                 blocked_reason: str | None = None
                 next_payload: dict[str, Any] | None = None
@@ -228,7 +253,11 @@ def continue_session(
                             skills=session_skills,
                             elo_before=rotation_elo,
                             difficulty=rotation_difficulty,
-                            sub_domain=(expanded_spec or {}).get("topic"),
+                            sub_domain=(
+                                preserved["sub_domain"]
+                                if preserved is not None
+                                else (expanded_spec or {}).get("topic")
+                            ),
                             round_config=spec_config,
                             user_id=session.get("user_id"),
                             target_company_id=session.get("target_company_id"),
@@ -252,30 +281,38 @@ def continue_session(
                             session_skills if expanded_spec
                             else (session.get("skills") or [session.get("skill")])
                         )
-                        target = adaptive_question_selector.choose_adaptive_target(
-                            user_id=str(session["user_id"]) if session.get("user_id") else None,
-                            fallback_skill=rotation_skill,
-                            fallback_difficulty=rotation_difficulty,
-                            session_skills=adaptive_skills,
-                            target_role_id=(
-                                str(session["target_role_id"])
-                                if session.get("target_role_id") else None
-                            ),
-                            candidate_elo_by_skill=candidate_elos,
-                        )
-                        next_skill = target.skill
-                        if expanded_spec:
-                            if next_skill not in set(session_skills):
-                                next_skill = rotation_skill
-                        next_difficulty = (
-                            str(expanded_spec.get("difficulty"))
-                            if expanded_spec and expanded_spec.get("difficulty")
-                            else target.difficulty
-                        )
-                        sub = (
-                            (expanded_spec or {}).get("topic")
-                            or _sub_domain_for_skill(candidate_doc, next_skill)
-                        )
+                        if preserved is not None:
+                            target = adaptive_question_selector.AdaptiveTarget(
+                                **preserved["adaptive_target"]
+                            )
+                            next_skill = preserved["next_skill"]
+                            next_difficulty = preserved["next_round_difficulty"]
+                            sub = preserved["sub_domain"]
+                        else:
+                            target = adaptive_question_selector.choose_adaptive_target(
+                                user_id=str(session["user_id"]) if session.get("user_id") else None,
+                                fallback_skill=rotation_skill,
+                                fallback_difficulty=rotation_difficulty,
+                                session_skills=adaptive_skills,
+                                target_role_id=(
+                                    str(session["target_role_id"])
+                                    if session.get("target_role_id") else None
+                                ),
+                                candidate_elo_by_skill=candidate_elos,
+                            )
+                            next_skill = target.skill
+                            if expanded_spec:
+                                if next_skill not in set(session_skills):
+                                    next_skill = rotation_skill
+                            next_difficulty = (
+                                str(expanded_spec.get("difficulty"))
+                                if expanded_spec and expanded_spec.get("difficulty")
+                                else target.difficulty
+                            )
+                            sub = (
+                                (expanded_spec or {}).get("topic")
+                                or _sub_domain_for_skill(candidate_doc, next_skill)
+                            )
                         question_payload = _get_next_question(
                             skill=next_skill,
                             sub_domain=sub,
@@ -294,8 +331,14 @@ def continue_session(
                             resume_skills=list(
                                 candidate_doc.get("resume_skills") or session_skills
                             ),
-                            weak_skills=list(target.target_concepts or []),
+                            weak_skills=(
+                                list(preserved["weak_skills"])
+                                if preserved is not None
+                                else list(target.target_concepts or [])
+                            ),
                         )
+                        if preserved is not None:
+                            question_payload["adaptive_target"] = target.to_dict()
                         _verify_served_topic(
                             requested=(expanded_spec or {}).get("topic"),
                             served=question_payload.get("sub_domain"),
@@ -316,8 +359,10 @@ def continue_session(
                             "difficulty": next_difficulty,
                             "difficulty_change": None,
                             "feedback": {"content": [], "strengths": [], "next_step": ""},
-                            "elo_before": float(
-                                candidate_elos.get(next_skill, settings.initial_elo)
+                            "elo_before": (
+                                float(preserved["next_skill_elo"])
+                                if preserved is not None
+                                else float(candidate_elos.get(next_skill, settings.initial_elo))
                             ),
                             "elo_after": None,
                             "question_context": question_payload,

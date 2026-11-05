@@ -1125,6 +1125,17 @@ def test_sql_write_conflict_retry_preserves_single_insert(sql_db, independent_wo
 # ── test 6: flag-off transcripts vs the pre-Slice-1 capture ──────────
 
 
+def _allow_follow_up_snapshot_flip(current, expected):
+    """B2 intended difference: NEW follow-up snapshots freeze
+    ``rules_replayable=false``. Only follow-up rounds, only True -> False."""
+    for now, then in zip(current["round_docs"], expected["round_docs"]):
+        if not now.get("is_follow_up"):
+            continue
+        assert now["attempt_snapshot"]["rules_replayable"] is False
+        assert then["attempt_snapshot"]["rules_replayable"] is True
+        now["attempt_snapshot"]["rules_replayable"] = True
+
+
 @pytest.mark.parametrize("which,fixture", [
     ("no_follow_up", "slice1_flag_off_transcript.json"),
     ("candidate_follow_up", "slice1_candidate_transcript.json"),
@@ -1143,6 +1154,7 @@ def test_transcript_matches_pre_slice1_capture(mem, monkeypatch, which, fixture,
     transcript = harness.RUNNERS[which](_client(), mem, headers, user_id)
     expected = json.loads((FIXTURES / fixture).read_text())
     current = harness.drop_paths(transcript, ADDITIVE_FIELDS)
+    _allow_follow_up_snapshot_flip(current, expected)
     assert json.dumps(current, sort_keys=True) == json.dumps(expected, sort_keys=True)
     # The only additive field is the server-only mandatory index on mandatory specs.
     mandatory = [s for s in transcript["session_doc"]["expanded_plan"] if not s.get("is_follow_up")]

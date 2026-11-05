@@ -1,0 +1,230 @@
+{
+ "frozen": {
+  "follow_up": {
+   "answer": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "excluded",
+   "config": {
+    "attempt_policy": null,
+    "review_policy": null
+   },
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "digest": "9c9befcee80b4dcc8b05e25176972957e0e2940983029aa2cf92ed60ea387b1e",
+   "eligibility_exclusion_reasons": [
+    "follow_up",
+    "unreviewed_follow_up"
+   ],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Unscored clarification follow-up."
+    ],
+    "next_step": "Continue with the remaining mandatory rounds.",
+    "strengths": [],
+    "weakness": []
+   },
+   "guard_applied": null,
+   "guard_softened": null,
+   "question": "Could you walk through a concrete example of that idea?",
+   "reference": {
+    "source": "follow_up_clarification"
+   },
+   "round": 2,
+   "round_type": "technical_short_answer",
+   "rules_replayable": true,
+   "scorer_provenance": {
+    "evaluation_mode": null,
+    "evidence_kind": "measured",
+    "scoring_mode": "measured",
+    "scoring_schema_version": "v3"
+   },
+   "scores": {
+    "final_score": null,
+    "kg_score": null,
+    "ner_entities": [],
+    "nlp_score": null,
+    "svm_label": null
+   },
+   "scoring_breakdown": {
+    "follow_up_scoring": "unreviewed",
+    "unscored_reason": "unreviewed_follow_up"
+   },
+   "scoring_mode": "measured",
+   "scoring_schema_version": "v3",
+   "skill": "DBMS",
+   "snapshot_version": 2,
+   "submitted_at": "2026-11-05T00:00:00+00:00"
+  },
+  "mandatory": {
+   "answer": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "eligible",
+   "config": {
+    "attempt_policy": null,
+    "review_policy": null
+   },
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "digest": "9c9176814a605a4d167d395dcfe2ca3e27bb3c7b9882bd1d21a615f49f7db270",
+   "eligibility_exclusion_reasons": [],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Clear."
+    ],
+    "next_step": "Add an example.",
+    "strengths": [
+     "structure"
+    ],
+    "weakness": []
+   },
+   "guard_applied": null,
+   "guard_softened": null,
+   "question": "What does normalization achieve in a relational schema?",
+   "reference": {
+    "ideal_keywords": "normalization",
+    "source": "v6"
+   },
+   "round": 1,
+   "round_type": "technical_short_answer",
+   "rules_replayable": true,
+   "scorer_provenance": {
+    "evaluation_mode": null,
+    "evidence_kind": "measured",
+    "scoring_mode": "measured",
+    "scoring_schema_version": "v3"
+   },
+   "scores": {
+    "final_score": 78.0,
+    "kg_score": 0.6,
+    "ner_entities": [],
+    "nlp_score": 7.1,
+    "svm_label": "Good"
+   },
+   "scoring_breakdown": {
+    "covered_concepts": [
+     "normalization"
+    ],
+    "missing_concepts": [],
+    "scoring_mode": "measured",
+    "semantic_scoring_available": true
+   },
+   "scoring_mode": "measured",
+   "scoring_schema_version": "v3",
+   "skill": "DBMS",
+   "snapshot_version": 2,
+   "submitted_at": "2026-11-05T00:00:00+00:00"
+  }
+ },
+ "inputs": {
+  "follow_up": {
+   "answer_text": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "excluded",
+   "config_json": {
+    "follow_up_parent_round": 1,
+    "is_follow_up": true
+   },
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "eligibility_exclusion_reasons": [
+    "follow_up",
+    "unreviewed_follow_up"
+   ],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Unscored clarification follow-up."
+    ],
+    "next_step": "Continue with the remaining mandatory rounds.",
+    "strengths": [],
+    "weakness": []
+   },
+   "final_score": null,
+   "follow_up_parent_round": 1,
+   "follow_up_scoring": "unreviewed",
+   "is_follow_up": true,
+   "kg_score": null,
+   "ner_entities": [],
+   "nlp_score": null,
+   "purpose": "follow_up",
+   "question": "Could you walk through a concrete example of that idea?",
+   "question_context": {
+    "followups": [],
+    "question": "Could you walk through a concrete example of that idea?",
+    "source": "follow_up_clarification"
+   },
+   "round": 2,
+   "round_type": "technical_short_answer",
+   "scoring_breakdown": {
+    "follow_up_scoring": "unreviewed",
+    "unscored_reason": "unreviewed_follow_up"
+   },
+   "scoring_mode": "measured",
+   "skill": "DBMS",
+   "submitted_at": "2026-11-05T00:00:00+00:00",
+   "svm_label": null
+  },
+  "mandatory": {
+   "answer_text": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "eligible",
+   "config_json": {},
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "eligibility_exclusion_reasons": [],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Clear."
+    ],
+    "next_step": "Add an example.",
+    "strengths": [
+     "structure"
+    ],
+    "weakness": []
+   },
+   "final_score": 78.0,
+   "kg_score": 0.6,
+   "ner_entities": [],
+   "nlp_score": 7.1,
+   "question": "What does normalization achieve in a relational schema?",
+   "question_context": {
+    "ideal_keywords": "normalization",
+    "question": "What does normalization achieve in a relational schema?",
+    "skill": "DBMS",
+    "source": "v6"
+   },
+   "round": 1,
+   "round_type": "technical_short_answer",
+   "scoring_breakdown": {
+    "covered_concepts": [
+     "normalization"
+    ],
+    "missing_concepts": [],
+    "scoring_mode": "measured",
+    "semantic_scoring_available": true
+   },
+   "scoring_mode": "measured",
+   "skill": "DBMS",
+   "submitted_at": "2026-11-05T00:00:00+00:00",
+   "svm_label": "Good"
+  },
+  "scoring_result": {
+   "scoring_schema_version": "v3"
+  }
+ }
+}

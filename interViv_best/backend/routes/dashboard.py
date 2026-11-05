@@ -74,6 +74,9 @@ def _sanitize_rounds(
             )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
+        # Slice 1 server-only keys (pre-existing private keys are unchanged here).
+        cleaned.pop("follow_up_initiator", None)
+        cleaned.pop("follow_up_kind", None)
         question_context = cleaned.get("question_context", {}) or {}
         # Reference ideals only after a completed assessment. content_blocked
         # and active sessions keep practice feedback but not solution keys.
@@ -266,13 +269,25 @@ def _record_report_review_exposures(
     Completing an assessment and opening the report is a feedback_reveal /
     explanation delivery for related-item eligibility. Failures are logged
     and never block the report payload.
+
+    System-initiated and unreviewed follow-ups record nothing, even with a
+    numeric score (decided on the stored rounds, which keep the server-only
+    initiator); reviewed, scored candidate follow-ups keep their exposure.
     """
     try:
+        from modules.follow_ups import report_exposure_exempt
         from modules.teaching_exposures import record_teaching_exposure
 
         db = get_database()
+        exempt = {
+            r.get("round")
+            for r in (session.get("rounds") or [])
+            if report_exposure_exempt(r)
+        }
         for item in sanitized_rounds:
             if item.get("final_score") is None:
+                continue
+            if item.get("round") in exempt:
                 continue
             round_number = item.get("round")
             item_type = str(item.get("round_type") or "technical_short_answer")

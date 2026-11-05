@@ -130,6 +130,77 @@ def _scorer_provenance(
     }
 
 
+def _is_follow_up_round(round_doc: dict[str, Any]) -> bool:
+    config = round_doc.get("config_json") or {}
+    return bool(
+        round_doc.get("is_follow_up") is True
+        or round_doc.get("purpose") == "follow_up"
+        or (isinstance(config, dict) and config.get("is_follow_up"))
+    )
+
+
+_FOLLOW_UP_REASONS = frozenset({"follow_up", "unreviewed_follow_up"})
+
+
+def snapshot_has_follow_up_markers(snapshot: dict[str, Any] | None) -> bool:
+    """Follow-up / unreviewed markers, including legacy nested ones.
+
+    Snapshots frozen before Slice 1 have no top-level follow-up flag; their
+    markers live in eligibility reasons and the scoring breakdown. This is
+    a read-time check: stored snapshots and digests are never rewritten.
+    """
+    if not isinstance(snapshot, dict):
+        return False
+    if snapshot.get("is_follow_up") is True:
+        return True
+    reasons = set(snapshot.get("eligibility_exclusion_reasons") or [])
+    breakdown = snapshot.get("scoring_breakdown") or {}
+    if not isinstance(breakdown, dict):
+        breakdown = {}
+    eligibility = breakdown.get("assessment_eligibility") or {}
+    if isinstance(eligibility, dict):
+        reasons |= set(eligibility.get("exclusion_reasons") or [])
+    reasons |= set(breakdown.get("eligibility_exclusion_reasons") or [])
+    if reasons & _FOLLOW_UP_REASONS:
+        return True
+    if breakdown.get("follow_up_scoring") or breakdown.get("unscored_reason") == "unreviewed_follow_up":
+        return True
+    config = snapshot.get("config") or {}
+    return isinstance(config, dict) and bool(config.get("is_follow_up") or config.get("follow_up_scoring"))
+
+
+_REPLAY_REQUIRED_KEYS = ("round", "question", "answer", "scores", "guard_applied", "rules_replayable")
+
+
+def replayable_snapshots(rounds: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Snapshots whose rules feedback may be replayed, in round order.
+
+    Uses the shared follow-up filter (``non_follow_up_rounds``), then keeps
+    only intact (digest-verified), rules-replayable snapshots with every
+    replay input present, no follow-up markers, and the same round number
+    and question as the round they are stored on.
+    """
+    from modules.follow_ups import non_follow_up_rounds
+
+    out = []
+    for round_doc in non_follow_up_rounds(list(rounds or [])):
+        snapshot = round_doc.get("attempt_snapshot")
+        if not isinstance(snapshot, dict) or not snapshot.get("rules_replayable"):
+            continue
+        if any(key not in snapshot for key in _REPLAY_REQUIRED_KEYS):
+            continue
+        if not isinstance(snapshot.get("scores"), dict):
+            continue
+        if snapshot.get("round") != round_doc.get("round"):
+            continue
+        if snapshot.get("question") != round_doc.get("question"):
+            continue
+        if snapshot_has_follow_up_markers(snapshot) or not verify_attempt_snapshot(snapshot):
+            continue
+        out.append(snapshot)
+    return out
+
+
 def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[str, Any]) -> dict[str, Any]:
     """Freeze the scored round's inputs and outputs into an immutable snapshot.
 
@@ -183,7 +254,11 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
             "review_policy": (config or {}).get("review_policy"),
         },
         "submitted_at": submitted_at,
-        "rules_replayable": round_type in RULES_REPLAYABLE_ROUND_TYPES,
+        # Follow-ups never replay rules feedback (Slice 1); every other
+        # round freezes exactly as before.
+        "rules_replayable": (
+            round_type in RULES_REPLAYABLE_ROUND_TYPES and not _is_follow_up_round(scored_round)
+        ),
         "reference": _reference_from_context(question_context),
         "scorer_provenance": _scorer_provenance(scored_round, scoring_result, breakdown),
     }
@@ -260,6 +335,10 @@ def regenerate_rules_feedback(snapshot: dict[str, Any] | None) -> dict[str, Any]
     stored at score time (guarantee enforced by test).
     """
     if not isinstance(snapshot, dict) or not snapshot.get("rules_replayable"):
+        return None
+    if snapshot_has_follow_up_markers(snapshot):
+        # Read-time guard for legacy follow-up snapshots frozen with
+        # rules_replayable=True; their digests are left untouched.
         return None
     from backend.integrations import normalize_feedback
     from modules.c4_feedback import generate_feedback

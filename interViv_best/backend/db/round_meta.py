@@ -13,6 +13,9 @@ ROUND_PRIVATE_META_KEYS: tuple[str, ...] = (
     "purpose",
     "wpm",
     "pause_count",
+    # Slice 1: who scheduled a follow-up and why (system follow-ups only).
+    "follow_up_initiator",
+    "follow_up_kind",
 )
 
 # Written into ``config_json`` before revision 20261103_0017; read back as a

@@ -1,13 +1,29 @@
 """Deterministic session harness for Slice 1 compatibility tests.
 
 Drives the real FastAPI routes on an isolated in-memory store with a
-stubbed question bank and scorer, then normalizes run-specific values
-(ids, timestamps, digests) so transcripts compare byte-for-byte across
-code versions. Uses only APIs that predate Slice 1, so the same module
+stubbed question bank and scorer, then normalizes run-specific values so
+transcripts compare byte-for-byte across code versions.
+
+Normalization (everything else is compared verbatim):
+
+- dropped keys (any depth): ``TIME_KEYS`` -- started_at, expires_at,
+  submitted_at, created_at, completed_at, updated_at, cutoff_at,
+  last_active_at, delivered_at, activated_at, digest, delivery_order,
+  server_time, last_practiced_at;
+- string replacements: session id -> ``<sid>`` (``<s1>``/``<s2>`` in the
+  account transcript), candidate id -> ``<cid>``, user id -> ``<uid>``,
+  block ids -> ``<blockN>``, follow-up identity suffix
+  ``followup:N:<id>``, any UUID -> ``<uuid>``, 32-64 hex runs -> ``<hex>``;
+- datetime objects -> ``"<datetime>"``; floats rounded to 6 places;
+  dict keys sorted; stored ``session_doc`` omits ``rounds``/``revision``;
+- order-only: exposures sorted after normalization; Progress
+  ``learning_signals.elo_deltas`` sorted (no stable order between events
+  written in quick succession). Uses only APIs that predate Slice 1, so the same module
 captures the pre-change baseline:
 
     python -m tests.slice1_harness --write tests/fixtures/slice1_flag_off_transcript.json no_follow_up
     python -m tests.slice1_harness --write tests/fixtures/slice1_candidate_transcript.json candidate_follow_up
+    python -m tests.slice1_harness --write tests/fixtures/slice1_account_transcript.json account_candidate_follow_ups
 """
 
 from __future__ import annotations
@@ -38,6 +54,7 @@ STUB_SCORES = {
     "beta answer about keys": 60.0,
     "gamma answer about processes": 40.0,
     "delta answer about scheduling": 90.0,
+    "zeta reviewed follow-up answer": 100.0,
 }
 
 
@@ -141,7 +158,12 @@ TRANSCRIPT_BLOCKS = [
     {"round_type": "technical_short_answer", "category": "interview",
      "skills": ["OS"], "count": 2, "allow_optional_follow_ups": True},
 ]
-TRANSCRIPT_ANSWERS = list(STUB_SCORES)
+TRANSCRIPT_ANSWERS = [
+    "alpha answer about normalization and indexing",
+    "beta answer about keys",
+    "gamma answer about processes",
+    "delta answer about scheduling",
+]
 
 
 def normalize(value: Any, replacements: dict[str, str]) -> Any:
@@ -294,7 +316,85 @@ def drop_paths(value: Any, patterns: list[tuple[str, ...]]) -> Any:
     return value
 
 
-RUNNERS = {"no_follow_up": run_transcript, "candidate_follow_up": run_candidate_transcript}
+def run_account_transcript(client, db, headers, user_id) -> dict[str, Any]:
+    """Account-level view of candidate follow-ups (readiness, graph, history).
+
+    Session 1: DBMS 80 then OS 60 (separate blocks, so the follow-up
+    request's DBMS exposure leaves the OS round eligible) plus a REVIEWED
+    candidate follow-up scored 100. The route never builds reviewed
+    follow-ups, so the pending entry is marked reviewed in storage before it
+    materializes -- identical seeding on every code version. Session 2:
+    OS 40 / 90 plus an unreviewed candidate follow-up.
+    """
+    steps: list[dict[str, Any]] = []
+
+    def record(name, response):
+        steps.append({"step": name, "status": response.status_code, "body": response.json()})
+        return response.json()
+
+    db["target_contexts"].insert_one({"user_id": user_id, "company_id": "tcs", "role_id": "tcs_swe"})
+    def interview(skill, count):
+        return {"round_type": "technical_short_answer", "category": "interview",
+                "skills": [skill], "count": count, "allow_optional_follow_ups": True}
+
+    plans = [
+        ("s1", [interview("DBMS", 1), interview("OS", 1)],
+         [TRANSCRIPT_ANSWERS[0], TRANSCRIPT_ANSWERS[1], "zeta reviewed follow-up answer"], True),
+        ("s2", [interview("OS", 2)],
+         [TRANSCRIPT_ANSWERS[2], TRANSCRIPT_ANSWERS[3], "epsilon follow-up answer"], False),
+    ]
+    replacements: dict[str, str] = {str(user_id): "<uid>"}
+    sids = []
+    for label, blocks, answers, reviewed in plans:
+        started = record(f"{label}_start", client.post("/session/start", headers=headers, json={
+            "blocks": blocks, "practice_mode": "coached_practice",
+        }))
+        sid = started["session_id"]
+        sids.append(sid)
+        replacements[sid] = f"<{label}>"
+        replacements[str(started.get("candidate_id") or "")] = "<cid>"
+        for position, block in enumerate(started.get("block_plan") or [], start=1):
+            replacements[str(block.get("id") or "")] = f"<{label}_block{position}>"
+        body = record(f"{label}_submit_1", client.post("/session/answer", headers=headers, json={
+            "session_id": sid, "round": 1, "answer_text": answers[0]}))
+        record(f"{label}_follow_up", client.post(f"/session/{sid}/follow-ups", headers=headers,
+                                                  json={"parent_round": 1, "accept_eligibility_consequence": True}))
+        if reviewed:
+            doc = db["sessions"].find_one({"session_id": sid})
+            plan = [dict(e, follow_up_scoring="reviewed") if e.get("is_follow_up") else e
+                    for e in doc["expanded_plan"]]
+            db["sessions"].update_one({"session_id": sid}, {"$set": {"expanded_plan": plan}})
+        for answer in answers[1:]:
+            number = body.get("next_round")
+            if body.get("next_round_status") != "ready":
+                break
+            record(f"{label}_activate_{number}", client.post(
+                f"/session/{sid}/rounds/{number}/activate", headers=headers))
+            body = record(f"{label}_submit_{number}", client.post("/session/answer", headers=headers, json={
+                "session_id": sid, "round": number, "answer_text": answer}))
+    record("progress_before_reports", client.get("/dashboard/progress", headers=headers))
+    for label, sid in zip(("s1", "s2"), sids):
+        record(f"{label}_report", client.get(f"/dashboard/{sid}", headers=headers))
+    record("progress_after_reports", client.get("/dashboard/progress", headers=headers))
+    exposures = [doc for sid in sids for doc in (db["teaching_exposures"].find({"session_id": sid}) or [])]
+    out = normalize({"steps": steps, "exposures": exposures}, replacements)
+    # Sort after normalization: raw session ids are random per run.
+    out["exposures"].sort(key=lambda doc: (str(doc.get("session_id")), str(doc.get("content_kind")),
+                                           int(doc.get("round") or 0)))
+    # Progress ``learning_signals.elo_deltas`` has no stable order between
+    # events written in quick succession; compare its contents, not order.
+    for step in out["steps"]:
+        signals = (step.get("body") or {}).get("learning_signals")
+        if isinstance(signals, dict) and isinstance(signals.get("elo_deltas"), list):
+            signals["elo_deltas"].sort(key=lambda item: json.dumps(item, sort_keys=True))
+    return out
+
+
+RUNNERS = {
+    "no_follow_up": run_transcript,
+    "candidate_follow_up": run_candidate_transcript,
+    "account_candidate_follow_ups": run_account_transcript,
+}
 
 
 def capture(path: str, which: str) -> None:
@@ -317,5 +417,5 @@ def capture(path: str, which: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 4 or sys.argv[1] != "--write" or sys.argv[3] not in RUNNERS:
-        raise SystemExit("usage: python -m tests.slice1_harness --write OUT.json {no_follow_up|candidate_follow_up}")
+        raise SystemExit("usage: python -m tests.slice1_harness --write OUT.json " + "|".join(RUNNERS))
     capture(sys.argv[2], sys.argv[3])

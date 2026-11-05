@@ -83,6 +83,7 @@ from modules.follow_ups import (
     build_system_follow_up_plan_entry,
     build_system_follow_up_round,
     is_system_follow_up,
+    non_follow_up_rounds,
     schedule_follow_up_in_session,
 )
 from modules.system_follow_ups import propose_system_follow_up
@@ -544,6 +545,176 @@ def _record_system_design_attempt(
         })
     except Exception:
         logger.warning("Failed to record system-design attempt.", exc_info=True)
+
+
+TYPED_ROUND_TYPES = ("mcq", "sql", "coding", "system_design", "ml_primitives")
+RESOLVED_TARGET_KEY = "resolved_next_target"
+RESOLVED_TARGET_VERSION = 1
+
+
+def _planned_type_for(session: dict, next_round: int, expanded_spec: dict | None) -> str | None:
+    plan = session.get("round_plan") or []
+    planned_type = None
+    if plan and next_round - 1 < len(plan):
+        planned_type = str(plan[next_round - 1])
+    if expanded_spec:
+        planned_type = str(expanded_spec.get("round_type") or planned_type)
+    return planned_type
+
+
+def _resolve_mandatory_target(
+    *,
+    session: dict,
+    next_round: int,
+    expanded_spec: dict | None,
+    planned_type: str | None,
+    candidate_doc: dict | None,
+    candidate_elos: dict[str, float],
+    elo_after: float,
+) -> tuple[dict[str, Any], Any]:
+    """Resolve the next mandatory round's target the way progression does.
+
+    Skill, difficulty, targeting context and Elo input -- everything except
+    bank selection. Returns ``(resolved, live_target)``; ``resolved`` is
+    JSON-ready so it can be preserved on a plan spec and reused verbatim.
+    """
+    rotation_skill = _skill_for_round(session, next_round)
+    rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
+    rotation_difficulty = _difficulty_from_elo(rotation_elo)
+    session_skills = list(session.get("skills") or [session.get("skill") or "DBMS"])
+    if expanded_spec:
+        spec_skills = [s for s in (expanded_spec.get("skills") or []) if s]
+        if spec_skills:
+            session_skills = spec_skills
+            rotation_skill = spec_skills[0]
+            rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
+            rotation_difficulty = (
+                str(expanded_spec.get("difficulty"))
+                if expanded_spec.get("difficulty")
+                else _difficulty_from_elo(rotation_elo)
+            )
+    resolved: dict[str, Any] = {
+        "version": RESOLVED_TARGET_VERSION,
+        "planned_type": planned_type,
+        "rotation_skill": rotation_skill,
+        "rotation_elo": rotation_elo,
+        "rotation_difficulty": rotation_difficulty,
+        "session_skills": list(session_skills),
+    }
+    if planned_type in TYPED_ROUND_TYPES:
+        resolved["sub_domain"] = _sub_domain_for_skill(candidate_doc, rotation_skill)
+        return resolved, None
+    session_user_id = session.get("user_id")
+    session_target_role = session.get("target_role_id")
+    # Block sessions constrain adaptation to the block's own skills; legacy
+    # sessions adapt across all session skills.
+    adaptive_skills = (
+        session_skills if expanded_spec
+        else (session.get("skills") or [session.get("skill")])
+    )
+    target = adaptive_question_selector.choose_adaptive_target(
+        user_id=str(session_user_id) if session_user_id else None,
+        fallback_skill=rotation_skill,
+        fallback_difficulty=rotation_difficulty,
+        session_skills=adaptive_skills,
+        target_role_id=str(session_target_role) if session_target_role else None,
+        candidate_elo_by_skill=candidate_elos,
+    )
+    next_skill = target.skill
+    if expanded_spec:
+        # Stay inside the requested block topics.
+        if next_skill not in set(session_skills):
+            next_skill = rotation_skill
+    next_skill_elo = float(
+        target.current_elo
+        if target.current_elo is not None
+        else candidate_elos.get(next_skill, elo_after)
+    )
+    next_round_difficulty = (
+        str(expanded_spec.get("difficulty"))
+        if expanded_spec and expanded_spec.get("difficulty")
+        else target.difficulty
+    )
+    # The block's explicit topic (if any) stays pinned for every round of
+    # the block, like the opening round at start.
+    sub = ((expanded_spec or {}).get("topic")
+           or _sub_domain_for_skill(candidate_doc, next_skill))
+    weak_context = list(target.target_concepts or [])
+    if target.source != "rotation" and target.skill:
+        weak_context.insert(0, target.skill)
+    resolved.update({
+        "adaptive_target": target.to_dict(),
+        "next_skill": next_skill,
+        "next_skill_elo": next_skill_elo,
+        "next_round_difficulty": next_round_difficulty,
+        "sub_domain": sub,
+        "weak_skills": weak_context,
+    })
+    return resolved, target
+
+
+def _preserve_next_mandatory_target(
+    db: Any,
+    *,
+    session: dict,
+    parent_round: int,
+    changed_plan: list[dict[str, Any]],
+    current_skill: str,
+    elo_after: float,
+    patch_current_elo: bool,
+) -> None:
+    """Store, on the next mandatory spec, the target the normal path would use.
+
+    Called inside the parent's commit attempt after an accepted insertion and
+    BEFORE the parent's learning updates, with the pre-insertion ``session``
+    and the same inputs progression uses (candidate Elo patched with this
+    round's update). Bank selection is not performed. ``changed_plan`` is
+    the post-insertion plan; the spec is matched by ``mandatory_index``.
+    """
+    upcoming = sorted(
+        (
+            s for s in (session.get("expanded_plan") or [])
+            if isinstance(s, dict) and not s.get("is_follow_up")
+            and int(s.get("round") or 0) > int(parent_round)
+        ),
+        key=lambda s: int(s.get("round") or 0),
+    )
+    if not upcoming:
+        return
+    spec = upcoming[0]
+    next_round = int(spec["round"])
+    candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
+    candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
+    if patch_current_elo:
+        candidate_elos[current_skill] = elo_after
+    resolved, _live = _resolve_mandatory_target(
+        session=session,
+        next_round=next_round,
+        expanded_spec=spec,
+        planned_type=_planned_type_for(session, next_round, spec),
+        candidate_doc=candidate_doc,
+        candidate_elos=candidate_elos,
+        elo_after=elo_after,
+    )
+    resolved["resolved_at_parent_round"] = int(parent_round)
+    resolved["mandatory_index"] = spec.get("mandatory_index")
+    for entry in changed_plan:
+        if (
+            isinstance(entry, dict)
+            and not entry.get("is_follow_up")
+            and entry.get("mandatory_index") == spec.get("mandatory_index")
+        ):
+            entry[RESOLVED_TARGET_KEY] = resolved
+
+
+def preserved_target(spec: dict | None, planned_type: str | None) -> dict[str, Any] | None:
+    """The target preserved on a mandatory spec at system insertion, if usable."""
+    stored = (spec or {}).get(RESOLVED_TARGET_KEY)
+    if not isinstance(stored, dict) or stored.get("version") != RESOLVED_TARGET_VERSION:
+        return None
+    if stored.get("planned_type") != planned_type:
+        return None
+    return stored
 
 
 @router.post("/answer", dependencies=[Depends(require_authenticated)])
@@ -1041,7 +1212,12 @@ def submit_answer(
             session=session,
             round_doc=eligibility_round,
             exposures=exposures,
-            prior_rounds=rounds,
+            # A mandatory round is never judged against follow-ups (an
+            # intervening follow-up cannot make it a "retry"); follow-ups
+            # keep the full history exactly as before.
+            prior_rounds=(
+                rounds if is_follow_up_round(active_round) else non_follow_up_rounds(rounds)
+            ),
             now=now,
             history_complete=True,
         )
@@ -1339,6 +1515,15 @@ def submit_answer(
                         for key in ("expanded_plan", "total_rounds", "round_plan")
                         if key in placed
                     }
+                    _preserve_next_mandatory_target(
+                        db,
+                        session=session,
+                        parent_round=int(request.round),
+                        changed_plan=system_follow_up_changes["expanded_plan"],
+                        current_skill=current_skill,
+                        elo_after=elo_after,
+                        patch_current_elo=not practice_only and not is_spaced_review,
+                    )
                     session = {**session, **system_follow_up_changes}
                 else:
                     from modules.system_follow_ups import (
@@ -1447,38 +1632,40 @@ def submit_answer(
                         next_block_category = next_payload.get("block_category")
                     else:
                         plan = session.get("round_plan") or []
-                        planned_type = None
-                        if plan and next_round - 1 < len(plan):
-                            planned_type = str(plan[next_round - 1])
                         expanded_spec = _expanded_spec_for_round(session, next_round)
-                        if expanded_spec:
-                            planned_type = str(expanded_spec.get("round_type") or planned_type)
+                        planned_type = _planned_type_for(session, next_round, expanded_spec)
 
-                        rotation_skill = _skill_for_round(session, next_round)
                         candidate_doc = db["candidates"].find_one({"candidate_id": session["candidate_id"]})
                         candidate_elos = dict((candidate_doc or {}).get("elo_ratings", {}) or {})
                         if not practice_only and not is_spaced_review:
                             # The Elo commit below hasn't run yet; rotation must
                             # see this round's update exactly as if it had.
                             candidate_elos[current_skill] = elo_after
-                        rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
-                        rotation_difficulty = _difficulty_from_elo(rotation_elo)
                         session_user_id = session.get("user_id")
                         session_target_company = session.get("target_company_id")
                         session_target_role = session.get("target_role_id")
                         resume_skills = list((candidate_doc or {}).get("resume_skills") or session.get("skills") or [])
-                        session_skills = list(session.get("skills") or [session.get("skill") or "DBMS"])
-                        if expanded_spec:
-                            spec_skills = [s for s in (expanded_spec.get("skills") or []) if s]
-                            if spec_skills:
-                                session_skills = spec_skills
-                                rotation_skill = spec_skills[0]
-                                rotation_elo = float(candidate_elos.get(rotation_skill, elo_after))
-                                rotation_difficulty = (
-                                    str(expanded_spec.get("difficulty"))
-                                    if expanded_spec.get("difficulty")
-                                    else _difficulty_from_elo(rotation_elo)
-                                )
+                        # Selector isolation: when a system follow-up was
+                        # inserted ahead of this spec, its target was resolved
+                        # (and preserved) at the parent's commit, before the
+                        # parent's learning updates. Reuse it verbatim; only
+                        # bank selection happens now.
+                        resolved = preserved_target(expanded_spec, planned_type)
+                        live_target = None
+                        if resolved is None:
+                            resolved, live_target = _resolve_mandatory_target(
+                                session=session,
+                                next_round=next_round,
+                                expanded_spec=expanded_spec,
+                                planned_type=planned_type,
+                                candidate_doc=candidate_doc,
+                                candidate_elos=candidate_elos,
+                                elo_after=elo_after,
+                            )
+                        rotation_skill = resolved["rotation_skill"]
+                        rotation_elo = float(resolved["rotation_elo"])
+                        rotation_difficulty = resolved["rotation_difficulty"]
+                        session_skills = list(resolved["session_skills"])
 
                         if planned_type in ("mcq", "sql", "coding", "system_design", "ml_primitives"):
                             if expanded_spec:
@@ -1521,13 +1708,13 @@ def submit_answer(
                                     skills=session_skills,
                                     elo_before=rotation_elo,
                                     difficulty=rotation_difficulty,
-                                    sub_domain=_sub_domain_for_skill(candidate_doc, rotation_skill),
+                                    sub_domain=resolved["sub_domain"],
                                     round_config=spec_config,
                                     user_id=str(session_user_id) if session_user_id else None,
                                     target_company_id=str(session_target_company) if session_target_company else None,
                                     target_role_id=str(session_target_role) if session_target_role else None,
                                     resume_skills=resume_skills,
-                                    asked=[item.get("question", "") for item in rounds],
+                                    asked=[item.get("question", "") for item in non_follow_up_rounds(rounds)],
                                     sql_problem_index=sql_index,
                                     block_id=(expanded_spec or {}).get("block_id"),
                                     block_position=(expanded_spec or {}).get("block_position"),
@@ -1568,46 +1755,18 @@ def submit_answer(
                                 # No write here: the appended round joins the single
                                 # commit below with the scored round and Elo.
                         else:
-                            # Block sessions constrain adaptation to the block's own
-                            # skills; legacy sessions adapt across all session skills.
-                            adaptive_skills = (
-                                session_skills if expanded_spec
-                                else (session.get("skills") or [session.get("skill")])
+                            target = live_target or adaptive_question_selector.AdaptiveTarget(
+                                **resolved["adaptive_target"]
                             )
-                            target = adaptive_question_selector.choose_adaptive_target(
-                                user_id=str(session_user_id) if session_user_id else None,
-                                fallback_skill=rotation_skill,
-                                fallback_difficulty=rotation_difficulty,
-                                session_skills=adaptive_skills,
-                                target_role_id=str(session_target_role) if session_target_role else None,
-                                candidate_elo_by_skill=candidate_elos,
-                            )
-                            next_skill = target.skill
-                            if expanded_spec:
-                                # Stay inside the requested block topics.
-                                spec_skill_set = set(session_skills)
-                                if next_skill not in spec_skill_set:
-                                    next_skill = rotation_skill
-                            next_skill_elo = float(
-                                target.current_elo
-                                if target.current_elo is not None
-                                else candidate_elos.get(next_skill, elo_after)
-                            )
-                            next_round_difficulty = (
-                                str(expanded_spec.get("difficulty"))
-                                if expanded_spec and expanded_spec.get("difficulty")
-                                else target.difficulty
-                            )
+                            next_skill = resolved["next_skill"]
+                            next_skill_elo = float(resolved["next_skill_elo"])
+                            next_round_difficulty = resolved["next_round_difficulty"]
                             response_next_difficulty = next_round_difficulty
-                            # The block's explicit topic (if any) stays pinned
-                            # for every round of the block, like the opening
-                            # round at start.
-                            sub = ((expanded_spec or {}).get("topic")
-                                   or _sub_domain_for_skill(candidate_doc, next_skill))
-                            asked = [item.get("question", "") for item in rounds]
-                            weak_context = list(target.target_concepts or [])
-                            if target.source != "rotation" and target.skill:
-                                weak_context.insert(0, target.skill)
+                            sub = resolved["sub_domain"]
+                            # Follow-up prompts are not bank questions: they never
+                            # enter the asked list (selector isolation).
+                            asked = [item.get("question", "") for item in non_follow_up_rounds(rounds)]
+                            weak_context = list(resolved["weak_skills"])
 
                             try:
                                 question_payload = _get_next_question(

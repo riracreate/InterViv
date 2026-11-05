@@ -440,6 +440,12 @@ def build_system_follow_up_round(
         "follow_up_identity": spec.get("follow_up_identity"),
         "follow_up_scoring": spec.get("follow_up_scoring") or "unreviewed",
     }
+    # Server-only (ROUND_PRIVATE_META_KEYS): persisted in private metadata,
+    # stripped from every client payload; never placed in config_json.
+    private_keys = {
+        "follow_up_initiator": spec.get("follow_up_initiator") or INITIATOR_SYSTEM,
+        "follow_up_kind": spec.get("follow_up_kind") or SYSTEM_FOLLOW_UP_DEFAULT_KIND,
+    }
     return {
         "round": int(spec["round"]),
         "skill": skill,
@@ -475,7 +481,33 @@ def build_system_follow_up_round(
         "block_total": parent.get("block_total"),
         "purpose": "follow_up",
         **follow_up_keys,
+        **private_keys,
     }
+
+
+def follow_up_scoring_of(round_doc: dict[str, Any] | None) -> str | None:
+    """``follow_up_scoring`` from the round, or its legacy config copy."""
+    if not isinstance(round_doc, dict):
+        return None
+    return round_doc.get("follow_up_scoring") or (round_doc.get("config_json") or {}).get(
+        "follow_up_scoring"
+    )
+
+
+def report_exposure_exempt(round_doc: dict[str, Any] | None) -> bool:
+    """Report reveals record no teaching exposure for this round.
+
+    Only system-initiated or unreviewed follow-ups are exempt, even when a
+    numeric score is present. Reviewed, scored candidate follow-ups keep
+    today's reveal exposure.
+    """
+    if not isinstance(round_doc, dict):
+        return False
+    from modules.assistance_policy import is_follow_up_round
+
+    if not is_follow_up_round(round_doc):
+        return False
+    return is_system_follow_up(round_doc) or follow_up_scoring_of(round_doc) == "unreviewed"
 
 
 def _insert_after_parent(
