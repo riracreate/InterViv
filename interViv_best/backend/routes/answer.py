@@ -1341,11 +1341,25 @@ def submit_answer(
                     }
                     session = {**session, **system_follow_up_changes}
                 else:
-                    logger.info(
-                        "System follow-up for session %s round %s not scheduled: %s",
+                    from modules.system_follow_ups import (
+                        PROMPT_REJECTION_CATEGORIES,
+                        rejection_category,
+                    )
+
+                    category = rejection_category(placed.get("reason"))
+                    # Prompt-rule rejections indicate a trigger producing bad
+                    # prompts (warning); scheduling refusals are expected (info).
+                    logger.log(
+                        logging.WARNING
+                        if category in PROMPT_REJECTION_CATEGORIES
+                        else logging.INFO,
+                        "System follow-up not scheduled: category=%s reason=%s "
+                        "session=%s round=%s attempt=%d",
+                        category,
+                        placed.get("reason"),
                         request.session_id,
                         request.round,
-                        placed.get("reason"),
+                        _commit_attempt + 1,
                     )
 
             total_rounds = _total_rounds(session, settings)

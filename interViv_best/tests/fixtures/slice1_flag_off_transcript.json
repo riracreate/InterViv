@@ -3632,6 +3632,819 @@
    },
    "status": 200,
    "step": "get_final"
+  },
+  {
+   "body": {
+    "allow_optional_follow_ups": true,
+    "allow_unknown_topic_fallback": false,
+    "averages": {
+     "final_score": 67.5,
+     "kg_score": 0.5,
+     "nlp_score": 6.75,
+     "population": "assessment_eligible"
+    },
+    "block_plan": [
+     {
+      "allow_optional_follow_ups": true,
+      "category": "interview",
+      "count": 2,
+      "difficulty": null,
+      "duration_minutes": null,
+      "id": "<block1>",
+      "language": null,
+      "max_follow_ups": null,
+      "negative_marking": 0.0,
+      "position": 1,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round_type": "technical_short_answer",
+      "skills": [
+       "DBMS"
+      ],
+      "topic": null
+     },
+     {
+      "allow_optional_follow_ups": true,
+      "category": "interview",
+      "count": 2,
+      "difficulty": null,
+      "duration_minutes": null,
+      "id": "<block2>",
+      "language": null,
+      "max_follow_ups": null,
+      "negative_marking": 0.0,
+      "position": 2,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round_type": "technical_short_answer",
+      "skills": [
+       "OS"
+      ],
+      "topic": null
+     }
+    ],
+    "block_results": [
+     {
+      "assessment_eligible_rounds": 2,
+      "assisted_practice_rounds": 0,
+      "assisted_rounds": 0,
+      "attempted_rounds": 2,
+      "average_score": 70.0,
+      "average_score_population": "assessment_eligible",
+      "block_category": "interview",
+      "block_id": "<block1>",
+      "block_position": 1,
+      "insufficient_assessment_evidence": false,
+      "measured_rounds": 2,
+      "round_types": [
+       "technical_short_answer"
+      ],
+      "rounds": 2,
+      "scored_rounds": 2,
+      "scoring_modes": [
+       "lexical_fallback_degraded"
+      ],
+      "self_reported_average": null,
+      "self_reported_rounds": 0,
+      "skills": [
+       "DBMS"
+      ],
+      "suggestion": {
+       "action": {
+        "skills": [
+         "DBMS"
+        ],
+        "type": "retry_set"
+       },
+       "text": "Round 2 scored 60.0 on DBMS; retry DBMS misses next."
+      },
+      "unscored_rounds": 0
+     },
+     {
+      "assessment_eligible_rounds": 2,
+      "assisted_practice_rounds": 0,
+      "assisted_rounds": 0,
+      "attempted_rounds": 2,
+      "average_score": 65.0,
+      "average_score_population": "assessment_eligible",
+      "block_category": "interview",
+      "block_id": "<block2>",
+      "block_position": 2,
+      "insufficient_assessment_evidence": false,
+      "measured_rounds": 2,
+      "round_types": [
+       "technical_short_answer"
+      ],
+      "rounds": 2,
+      "scored_rounds": 2,
+      "scoring_modes": [
+       "lexical_fallback_degraded"
+      ],
+      "self_reported_average": null,
+      "self_reported_rounds": 0,
+      "skills": [
+       "OS"
+      ],
+      "suggestion": {
+       "action": {
+        "skills": [
+         "OS"
+        ],
+        "type": "retry_set"
+       },
+       "text": "Round 3 scored 40.0 on OS; retry OS misses next."
+      },
+      "unscored_rounds": 0
+     }
+    ],
+    "breakdown": {
+     "Average": 1,
+     "Good": 2,
+     "Poor": 1
+    },
+    "candidate_id": "<cid>",
+    "coverage": {
+     "note": "Averages cover scored rounds only. All rounds scored.",
+     "scored_rounds": 4,
+     "unscored_rounds": []
+    },
+    "current_difficulty": "medium",
+    "current_skill": "OS",
+    "difficulty_progression": [
+     "medium",
+     "medium",
+     "medium",
+     "medium"
+    ],
+    "elo_progression": [
+     1220.77,
+     1214.37,
+     1207.97,
+     1223.97
+    ],
+    "expanded_plan": [
+     {
+      "block_id": "<block1>",
+      "block_index": 1,
+      "block_position": 1,
+      "block_total": 2,
+      "category": "interview",
+      "count": 1,
+      "difficulty": null,
+      "duration_minutes": null,
+      "language": null,
+      "negative_marking": 0.0,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round": 1,
+      "round_type": "technical_short_answer",
+      "skills": [
+       "DBMS"
+      ],
+      "topic": null
+     },
+     {
+      "block_id": "<block1>",
+      "block_index": 2,
+      "block_position": 1,
+      "block_total": 2,
+      "category": "interview",
+      "count": 1,
+      "difficulty": null,
+      "duration_minutes": null,
+      "language": null,
+      "negative_marking": 0.0,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round": 2,
+      "round_type": "technical_short_answer",
+      "skills": [
+       "DBMS"
+      ],
+      "topic": null
+     },
+     {
+      "block_id": "<block2>",
+      "block_index": 1,
+      "block_position": 2,
+      "block_total": 2,
+      "category": "interview",
+      "count": 1,
+      "difficulty": null,
+      "duration_minutes": null,
+      "language": null,
+      "negative_marking": 0.0,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round": 3,
+      "round_type": "technical_short_answer",
+      "skills": [
+       "OS"
+      ],
+      "topic": null
+     },
+     {
+      "block_id": "<block2>",
+      "block_index": 2,
+      "block_position": 2,
+      "block_total": 2,
+      "category": "interview",
+      "count": 1,
+      "difficulty": null,
+      "duration_minutes": null,
+      "language": null,
+      "negative_marking": 0.0,
+      "problem_ids": [],
+      "question_ids": [],
+      "review_policy": "none",
+      "round": 4,
+      "round_type": "technical_short_answer",
+      "skills": [
+       "OS"
+      ],
+      "topic": null
+     }
+    ],
+    "last_round": 4,
+    "next_step": "stub next step",
+    "overall_readiness_population": "assessment_eligible",
+    "overall_readiness_score": 67.5,
+    "practice_mode": "coached_practice",
+    "round_config": {},
+    "round_plan": [
+     "technical_short_answer",
+     "technical_short_answer",
+     "technical_short_answer",
+     "technical_short_answer"
+    ],
+    "rounds": [
+     {
+      "answer_text": "alpha answer about normalization and indexing",
+      "artifact_json": {},
+      "assessment_eligibility": "eligible",
+      "assistance_kinds": [],
+      "assisted": false,
+      "block_category": "interview",
+      "block_id": "<block1>",
+      "block_index": 1,
+      "block_position": 1,
+      "block_total": 2,
+      "company": "",
+      "confidence_band": null,
+      "config_json": {},
+      "covered_concepts": [],
+      "difficulty": "medium",
+      "difficulty_change": "same",
+      "eligibility_exclusion_reasons": [],
+      "eligibility_exposure_ids": [],
+      "eligibility_policy_version": "assistance_v1",
+      "elo_after": 1220.77,
+      "elo_before": 1200.0,
+      "engagement_confidence": null,
+      "engagement_delta": null,
+      "engagement_label": null,
+      "evaluation_mode": null,
+      "evidence_kind": "measured",
+      "feedback": {
+       "content": [
+        "Stub feedback for 80."
+       ],
+       "next_step": "stub next step",
+       "strengths": [
+        "stub strength"
+       ],
+       "weakness": [
+        "stub weakness"
+       ]
+      },
+      "final_score": 80.0,
+      "follow_up_identity": null,
+      "follow_up_parent_round": null,
+      "followups": [
+       "Clarify X"
+      ],
+      "guard_applied": null,
+      "ideal_answer": "DBMS reference answer 1.",
+      "ideal_keywords": "normalization, indexing",
+      "is_follow_up": false,
+      "kg_label": "",
+      "kg_score": 0.5,
+      "missing_concepts": [],
+      "ner_entities": [],
+      "nlp_score": 8.0,
+      "pause_count": null,
+      "performance_band": "Good",
+      "question": "[DBMS] Stub question 1: explain the core idea?",
+      "question_type": "conceptual",
+      "role": "",
+      "round": 1,
+      "round_type": "technical_short_answer",
+      "score_explanation": {},
+      "scoring_breakdown": {
+       "assessment_eligibility": {
+        "decision": "eligible",
+        "exclusion_reasons": [],
+        "exposure_ids": [],
+        "legacy": false,
+        "policy_version": "assistance_v1"
+       },
+       "assessment_eligibility_decision": "eligible",
+       "concepts": {
+        "covered": [],
+        "missing": []
+       },
+       "covered_concepts": [],
+       "eligibility_exclusion_reasons": [],
+       "eligibility_exposure_ids": [],
+       "eligibility_policy_version": "assistance_v1",
+       "evidence_kind": "measured",
+       "missing_concepts": [],
+       "scoring_mode": "lexical_fallback_degraded",
+       "semantic_scoring_available": false
+      },
+      "scoring_mode": "lexical_fallback_degraded",
+      "scoring_mode_label": "Lexical fallback (semantic scorer unavailable)",
+      "semantic_fallback_reason": null,
+      "semantic_scoring_available": false,
+      "skill": "DBMS",
+      "status": "submitted",
+      "sub_domain": "general",
+      "svm_label": "Good",
+      "topic": "general",
+      "wpm": null
+     },
+     {
+      "answer_text": "beta answer about keys",
+      "artifact_json": {},
+      "assessment_eligibility": "eligible",
+      "assistance_kinds": [],
+      "assisted": false,
+      "block_category": "interview",
+      "block_id": "<block1>",
+      "block_index": 2,
+      "block_position": 1,
+      "block_total": 2,
+      "company": "",
+      "confidence_band": null,
+      "config_json": {},
+      "covered_concepts": [],
+      "difficulty": "medium",
+      "difficulty_change": "same",
+      "eligibility_exclusion_reasons": [],
+      "eligibility_exposure_ids": [],
+      "eligibility_policy_version": "assistance_v1",
+      "elo_after": 1214.37,
+      "elo_before": 1200.0,
+      "engagement_confidence": null,
+      "engagement_delta": null,
+      "engagement_label": null,
+      "evaluation_mode": null,
+      "evidence_kind": "measured",
+      "feedback": {
+       "content": [
+        "Stub feedback for 60."
+       ],
+       "next_step": "stub next step",
+       "strengths": [
+        "stub strength"
+       ],
+       "weakness": [
+        "stub weakness"
+       ]
+      },
+      "final_score": 60.0,
+      "follow_up_identity": null,
+      "follow_up_parent_round": null,
+      "followups": [
+       "Clarify X"
+      ],
+      "guard_applied": null,
+      "ideal_answer": "DBMS reference answer 2.",
+      "ideal_keywords": "normalization, indexing",
+      "is_follow_up": false,
+      "kg_label": "",
+      "kg_score": 0.5,
+      "missing_concepts": [],
+      "ner_entities": [],
+      "nlp_score": 6.0,
+      "pause_count": null,
+      "performance_band": "Average",
+      "question": "[DBMS] Stub question 2: explain the core idea?",
+      "question_type": "conceptual",
+      "role": "",
+      "round": 2,
+      "round_type": "technical_short_answer",
+      "score_explanation": {},
+      "scoring_breakdown": {
+       "assessment_eligibility": {
+        "decision": "eligible",
+        "exclusion_reasons": [],
+        "exposure_ids": [],
+        "legacy": false,
+        "policy_version": "assistance_v1"
+       },
+       "assessment_eligibility_decision": "eligible",
+       "concepts": {
+        "covered": [],
+        "missing": []
+       },
+       "covered_concepts": [],
+       "eligibility_exclusion_reasons": [],
+       "eligibility_exposure_ids": [],
+       "eligibility_policy_version": "assistance_v1",
+       "evidence_kind": "measured",
+       "missing_concepts": [],
+       "scoring_mode": "lexical_fallback_degraded",
+       "semantic_scoring_available": false
+      },
+      "scoring_mode": "lexical_fallback_degraded",
+      "scoring_mode_label": "Lexical fallback (semantic scorer unavailable)",
+      "semantic_fallback_reason": null,
+      "semantic_scoring_available": false,
+      "skill": "DBMS",
+      "status": "submitted",
+      "sub_domain": "general",
+      "svm_label": "Average",
+      "topic": "general",
+      "wpm": null
+     },
+     {
+      "answer_text": "gamma answer about processes",
+      "artifact_json": {},
+      "assessment_eligibility": "eligible",
+      "assistance_kinds": [],
+      "assisted": false,
+      "block_category": "interview",
+      "block_id": "<block2>",
+      "block_index": 1,
+      "block_position": 2,
+      "block_total": 2,
+      "company": "",
+      "confidence_band": null,
+      "config_json": {},
+      "covered_concepts": [],
+      "difficulty": "medium",
+      "difficulty_change": "same",
+      "eligibility_exclusion_reasons": [],
+      "eligibility_exposure_ids": [],
+      "eligibility_policy_version": "assistance_v1",
+      "elo_after": 1207.97,
+      "elo_before": 1200.0,
+      "engagement_confidence": null,
+      "engagement_delta": null,
+      "engagement_label": null,
+      "evaluation_mode": null,
+      "evidence_kind": "measured",
+      "feedback": {
+       "content": [
+        "Stub feedback for 40."
+       ],
+       "next_step": "stub next step",
+       "strengths": [
+        "stub strength"
+       ],
+       "weakness": [
+        "stub weakness"
+       ]
+      },
+      "final_score": 40.0,
+      "follow_up_identity": null,
+      "follow_up_parent_round": null,
+      "followups": [
+       "Clarify X"
+      ],
+      "guard_applied": null,
+      "ideal_answer": "OS reference answer 1.",
+      "ideal_keywords": "normalization, indexing",
+      "is_follow_up": false,
+      "kg_label": "",
+      "kg_score": 0.5,
+      "missing_concepts": [],
+      "ner_entities": [],
+      "nlp_score": 4.0,
+      "pause_count": null,
+      "performance_band": "Poor",
+      "question": "[OS] Stub question 1: explain the core idea?",
+      "question_type": "conceptual",
+      "role": "",
+      "round": 3,
+      "round_type": "technical_short_answer",
+      "score_explanation": {},
+      "scoring_breakdown": {
+       "assessment_eligibility": {
+        "decision": "eligible",
+        "exclusion_reasons": [],
+        "exposure_ids": [],
+        "legacy": false,
+        "policy_version": "assistance_v1"
+       },
+       "assessment_eligibility_decision": "eligible",
+       "concepts": {
+        "covered": [],
+        "missing": []
+       },
+       "covered_concepts": [],
+       "eligibility_exclusion_reasons": [],
+       "eligibility_exposure_ids": [],
+       "eligibility_policy_version": "assistance_v1",
+       "evidence_kind": "measured",
+       "missing_concepts": [],
+       "scoring_mode": "lexical_fallback_degraded",
+       "semantic_scoring_available": false
+      },
+      "scoring_mode": "lexical_fallback_degraded",
+      "scoring_mode_label": "Lexical fallback (semantic scorer unavailable)",
+      "semantic_fallback_reason": null,
+      "semantic_scoring_available": false,
+      "skill": "OS",
+      "status": "submitted",
+      "sub_domain": "general",
+      "svm_label": "Average",
+      "topic": "general",
+      "wpm": null
+     },
+     {
+      "answer_text": "delta answer about scheduling",
+      "artifact_json": {},
+      "assessment_eligibility": "eligible",
+      "assistance_kinds": [],
+      "assisted": false,
+      "block_category": "interview",
+      "block_id": "<block2>",
+      "block_index": 2,
+      "block_position": 2,
+      "block_total": 2,
+      "company": "",
+      "confidence_band": null,
+      "config_json": {},
+      "covered_concepts": [],
+      "difficulty": "medium",
+      "difficulty_change": "same",
+      "eligibility_exclusion_reasons": [],
+      "eligibility_exposure_ids": [],
+      "eligibility_policy_version": "assistance_v1",
+      "elo_after": 1223.97,
+      "elo_before": 1200.0,
+      "engagement_confidence": null,
+      "engagement_delta": null,
+      "engagement_label": null,
+      "evaluation_mode": null,
+      "evidence_kind": "measured",
+      "feedback": {
+       "content": [
+        "Stub feedback for 90."
+       ],
+       "next_step": "stub next step",
+       "strengths": [
+        "stub strength"
+       ],
+       "weakness": [
+        "stub weakness"
+       ]
+      },
+      "final_score": 90.0,
+      "follow_up_identity": null,
+      "follow_up_parent_round": null,
+      "followups": [
+       "Clarify X"
+      ],
+      "guard_applied": null,
+      "ideal_answer": "OS reference answer 2.",
+      "ideal_keywords": "normalization, indexing",
+      "is_follow_up": false,
+      "kg_label": "",
+      "kg_score": 0.5,
+      "missing_concepts": [],
+      "ner_entities": [],
+      "nlp_score": 9.0,
+      "pause_count": null,
+      "performance_band": "Good",
+      "question": "[OS] Stub question 2: explain the core idea?",
+      "question_type": "conceptual",
+      "role": "",
+      "round": 4,
+      "round_type": "technical_short_answer",
+      "score_explanation": {},
+      "scoring_breakdown": {
+       "assessment_eligibility": {
+        "decision": "eligible",
+        "exclusion_reasons": [],
+        "exposure_ids": [],
+        "legacy": false,
+        "policy_version": "assistance_v1"
+       },
+       "assessment_eligibility_decision": "eligible",
+       "concepts": {
+        "covered": [],
+        "missing": []
+       },
+       "covered_concepts": [],
+       "eligibility_exclusion_reasons": [],
+       "eligibility_exposure_ids": [],
+       "eligibility_policy_version": "assistance_v1",
+       "evidence_kind": "measured",
+       "missing_concepts": [],
+       "scoring_mode": "lexical_fallback_degraded",
+       "semantic_scoring_available": false
+      },
+      "scoring_mode": "lexical_fallback_degraded",
+      "scoring_mode_label": "Lexical fallback (semantic scorer unavailable)",
+      "semantic_fallback_reason": null,
+      "semantic_scoring_available": false,
+      "skill": "OS",
+      "status": "submitted",
+      "sub_domain": "general",
+      "svm_label": "Good",
+      "topic": "general",
+      "wpm": null
+     }
+    ],
+    "rounds_per_skill": 3,
+    "self_reported_average": null,
+    "session_id": "<sid>",
+    "skill": "DBMS",
+    "skills": [
+     "DBMS",
+     "OS"
+    ],
+    "status": "completed",
+    "sub_domain": "general",
+    "target_company_id": null,
+    "target_role_id": null,
+    "topic_scores": {
+     "general": 67.5
+    },
+    "total_rounds": 4,
+    "user_id": "<uid>"
+   },
+   "status": 200,
+   "step": "dashboard_report"
+  },
+  {
+   "body": {
+    "coding_coverage": {
+     "note": "Coding attempts produce no scored evidence while execution is unavailable. They are not treated as zeros and are not omitted from coverage.",
+     "reason": "execution_unavailable",
+     "scored_coding_rounds": 0,
+     "unscored_coding_rounds": 0
+    },
+    "history": [
+     {
+      "average_score": 67.5,
+      "average_score_population": "assessment_eligible",
+      "completed_rounds": 4,
+      "round_types": [
+       "technical_short_answer"
+      ],
+      "scoring_modes": [
+       "lexical_fallback_degraded"
+      ],
+      "self_reported_rounds": 0,
+      "session_id": "<sid>",
+      "skills": [
+       "DBMS",
+       "OS"
+      ],
+      "status": "completed",
+      "total_rounds": 4,
+      "unscored_rounds": []
+     }
+    ],
+    "learning_signals": {
+     "elo_deltas": [
+      {
+       "cumulative_delta": 35.14,
+       "delta": 35.14,
+       "session_id": "<sid>",
+       "skill": "DBMS"
+      },
+      {
+       "cumulative_delta": 31.94,
+       "delta": 31.94,
+       "session_id": "<sid>",
+       "skill": "OS"
+      }
+     ],
+     "revisit_rates": [
+      {
+       "rate": 0.0,
+       "retries": 0,
+       "sessions": 1,
+       "skill": "DBMS"
+      },
+      {
+       "rate": 0.0,
+       "retries": 0,
+       "sessions": 1,
+       "skill": "OS"
+      }
+     ],
+     "roadmap_completion": {
+      "14": null,
+      "30": null,
+      "7": null
+     },
+     "user_id": "<uid>"
+    },
+    "readiness": null,
+    "readiness_assistance": {
+     "assisted_rounds": 0,
+     "per_skill": {
+      "DBMS": {
+       "assisted_rounds": 0,
+       "unassisted_rounds": 2
+      },
+      "OS": {
+       "assisted_rounds": 0,
+       "unassisted_rounds": 2
+      }
+     },
+     "unassisted_rounds": 4
+    },
+    "readiness_observed": null,
+    "readiness_provisional_skill_count": 0,
+    "resumable_session": null,
+    "scored_session_count": 1,
+    "skills": [
+     {
+      "attempts": 2,
+      "current_elo": 1234.63,
+      "current_score": 70.0,
+      "name": "DBMS",
+      "sub_concepts": [
+       "1NF",
+       "2NF",
+       "3NF",
+       "ACID",
+       "B tree",
+       "INNER",
+       "JOIN",
+       "LEFT",
+       "RIGHT",
+       "atomicity",
+       "circular wait",
+       "consistency",
+       "deadlock",
+       "durability",
+       "faster lookup",
+       "foreign key",
+       "index",
+       "isolation",
+       "normalization",
+       "not null",
+       "primary key",
+       "redundancy reduction",
+       "referential integrity",
+       "timeout",
+       "transaction",
+       "unique"
+      ]
+     },
+     {
+      "attempts": 2,
+      "current_elo": 1231.75,
+      "current_score": 65.0,
+      "name": "OS",
+      "sub_concepts": [
+       "FCFS",
+       "PCB",
+       "circular wait",
+       "deadlock",
+       "hold and wait",
+       "lightweight",
+       "memory space",
+       "mutex",
+       "mutual exclusion",
+       "no preemption",
+       "page fault",
+       "paging",
+       "priority",
+       "process",
+       "round robin",
+       "scheduling",
+       "semaphore",
+       "shared memory",
+       "signaling",
+       "thread",
+       "virtual memory"
+      ]
+     }
+    ],
+    "target": null,
+    "user": {
+     "id": "<uid>",
+     "name": "Test slice1",
+     "target_company_id": null,
+     "target_role_id": null
+    }
+   },
+   "status": 200,
+   "step": "account_progress"
   }
  ]
 }

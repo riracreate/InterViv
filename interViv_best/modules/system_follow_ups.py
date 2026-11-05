@@ -9,13 +9,27 @@ A proposal is only a request. Scheduling happens inside the parent's own
 attempt commit through the shared ``modules.follow_ups`` rules, which call
 :func:`validate_system_prompt` for the system initiator only.
 
-The trigger receives deep copies and its exceptions are contained: a
-failing trigger yields no follow-up, never a failed submission.
+Trigger contract (enforced where cheap, otherwise by review):
+
+- **Synchronous.** Called inline in ``POST /session/answer`` after scoring,
+  while the per-session submit lock is held and before the attempt commit.
+  Coroutine functions are refused at registration; an awaitable result is
+  discarded (logged) and proposes nothing.
+- **Pure.** Reads only the deep-copied context it is given. No database,
+  network, file or model I/O, no LLM calls, no global RNG, no mutation.
+- **Fast.** It delays the candidate's submission; budget it like a
+  dictionary lookup, not a model call. Anything slower belongs in an
+  offline/queued component that later slices may add.
+
+Failures are contained and logged: an exception (or a malformed result)
+yields no follow-up, never a failed submission. Prompt rejections and
+scheduling refusals are logged by category (:func:`rejection_category`).
 """
 
 from __future__ import annotations
 
 import copy
+import inspect
 import logging
 import re
 from dataclasses import dataclass
@@ -69,7 +83,13 @@ _TRIGGER: TriggerFn | None = default_trigger
 
 
 def register_trigger(trigger: TriggerFn | None) -> None:
+    """Install the trigger (``None`` disables). Must be sync, pure and fast."""
     global _TRIGGER
+    if trigger is not None and (
+        inspect.iscoroutinefunction(trigger)
+        or inspect.iscoroutinefunction(getattr(trigger, "__call__", None))
+    ):
+        raise TypeError("System follow-up triggers must be synchronous callables.")
     _TRIGGER = trigger
 
 
@@ -85,6 +105,22 @@ def system_follow_ups_enabled() -> bool:
     from backend.config import get_settings
 
     return bool(getattr(get_settings(), "system_follow_ups_enabled", False))
+
+
+# Rejection categories for logs and metrics. Prompt rules map one-to-one;
+# every other refusal (caps, capacity, placement, legacy plan) is scheduling.
+REJECTION_CATEGORIES: dict[str, str] = {
+    "prompt_reveals_unstated_concept": "keyword",
+    "prompt_question_mark_count": "question_mark",
+    "prompt_too_long": "length",
+    "prompt_feedback_language": "score_language",
+    "prompt_empty": "empty",
+}
+PROMPT_REJECTION_CATEGORIES = frozenset(REJECTION_CATEGORIES.values())
+
+
+def rejection_category(reason: str | None) -> str:
+    return REJECTION_CATEGORIES.get(str(reason or ""), "scheduling")
 
 
 def _ideal_surfaces(question_context: dict[str, Any]) -> list[list[str]]:
@@ -194,8 +230,31 @@ def propose_system_follow_up(
         "parent_answer": str(parent_answer or ""),
         "scoring_result": copy.deepcopy(scoring_result or {}),
     }
+    parent_round = parent_round_doc.get("round")
     try:
-        return _normalize_proposal(trigger(context))
+        raw = trigger(context)
     except Exception:
-        logger.warning("System follow-up trigger failed; no follow-up proposed.", exc_info=True)
+        logger.warning(
+            "System follow-up trigger raised; no follow-up proposed "
+            "(category=trigger_error session=%s round=%s).",
+            session.get("session_id"), parent_round, exc_info=True,
+        )
         return None
+    if inspect.isawaitable(raw):
+        close = getattr(raw, "close", None)
+        if callable(close):
+            close()
+        logger.error(
+            "System follow-up trigger returned an awaitable; triggers must be "
+            "synchronous (category=trigger_error session=%s round=%s).",
+            session.get("session_id"), parent_round,
+        )
+        return None
+    proposal = _normalize_proposal(raw)
+    if raw is not None and proposal is None:
+        logger.warning(
+            "System follow-up trigger returned an unsupported %s; ignored "
+            "(category=trigger_error session=%s round=%s).",
+            type(raw).__name__, session.get("session_id"), parent_round,
+        )
+    return proposal

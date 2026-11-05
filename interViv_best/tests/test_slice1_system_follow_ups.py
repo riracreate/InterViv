@@ -588,6 +588,14 @@ def test_mandatory_remaining_excludes_pending_and_materialized_once():
 
 
 # ── test 4: races (memory and SQLite) ─────────────────────────────────
+#
+# Every race has one deterministic variant per outcome (hooks order the
+# contenders) and a free-running variant. All assertions are invariants of
+# the outcome actually observed; nothing depends on how often a branch wins.
+# Memory serializes on the process-local submit lock, so its variants order
+# lock acquisition. SQLite variants use independent connections with no
+# shared lock: both sides validate the SAME snapshot, then the hooks order
+# the conflicting conditional writes and the loser must reload and retry.
 
 
 def _count_scores(monkeypatch):
@@ -602,29 +610,128 @@ def _count_scores(monkeypatch):
     return calls
 
 
-def test_memory_duplicate_submit_single_follow_up(mem, system_on, monkeypatch):
+class _TracingLock:
+    """Submit lock that records when a second request queues behind it."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.contended = threading.Event()
+
+    def acquire(self, *args, **kwargs):
+        if not self._lock.acquire(blocking=False):
+            self.contended.set()
+            self._lock.acquire()
+        return True
+
+    def release(self):
+        self._lock.release()
+
+
+def _tracing_submit_lock(monkeypatch):
+    lock = _TracingLock()
+    monkeypatch.setattr("backend.routes.answer._get_submit_lock", lambda session_id: lock)
+    return lock
+
+
+def _hold_first_call(monkeypatch, module, name, until):
+    """First call of ``module.name`` sets the returned event, then waits for ``until``."""
+    import importlib
+
+    target = importlib.import_module(module)
+    real = getattr(target, name)
+    entered = threading.Event()
+    state = {"first": True}
+    guard = threading.Lock()
+
+    def wrapper(*args, **kwargs):
+        with guard:
+            first, state["first"] = state["first"], False
+        if first:
+            entered.set()
+            assert until.wait(timeout=30), f"{module}.{name} hold timed out"
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(target, name, wrapper)
+    return entered
+
+
+def _run_ordered(first_fn, second_fn, first_entered):
+    """Start ``first_fn``; once it is inside its hold, start ``second_fn``."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_fn)
+        assert first_entered.wait(timeout=30)
+        second = pool.submit(second_fn)
+        return first.result(timeout=60), second.result(timeout=60)
+
+
+def _assert_duplicate_invariants(db, sid, results, score_calls, *, max_scores):
+    assert sorted(r.status_code for r in results) == [200, 409], [r.text for r in results]
+    doc = db["sessions"].find_one({"session_id": sid})
+    assert len(_follow_up_entries(doc)) == 1 and doc["total_rounds"] == 4
+    assert [(r["round"], bool(r.get("is_follow_up"))) for r in doc["rounds"]] == [(1, False), (2, True)]
+    assert _exposures(db, sid) == []
+    assert 1 <= len(score_calls) <= max_scores
+    return doc
+
+
+@pytest.mark.parametrize("variant", ["first_wins", "free"])
+def test_memory_duplicate_submit_single_follow_up(mem, system_on, monkeypatch, variant):
     calls = _count_scores(monkeypatch)
     client = _client()
     user_id, headers = harness.make_user(mem)
     sid = _start(client, headers, _blocks(3))["session_id"]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: _submit(TestClient(app), headers, sid, 1), range(2)))
-    assert sorted(r.status_code for r in results) == [200, 409]
-    doc = mem["sessions"].find_one({"session_id": sid})
-    assert len(_follow_up_entries(doc)) == 1 and doc["total_rounds"] == 4
-    assert [r["round"] for r in doc["rounds"]] == [1, 2]
-    assert _exposures(mem, sid) == [] and len(calls) == 1
+    lock = _tracing_submit_lock(monkeypatch)
+
+    def submit():
+        return _submit(TestClient(app), headers, sid, 1)
+
+    if variant == "first_wins":
+        # The first request holds the lock inside scoring until the duplicate
+        # is queued on it; the duplicate then finds the round submitted.
+        entered = _hold_first_call(monkeypatch, "backend.routes.answer", "score_round",
+                                   lock.contended)
+        first, second = _run_ordered(submit, submit, entered)
+        assert (first.status_code, second.status_code) == (200, 409)
+        results = [first, second]
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: submit(), range(2)))
+    # The process lock serializes memory submits: the loser never scores.
+    _assert_duplicate_invariants(mem, sid, results, calls, max_scores=1)
 
 
-@pytest.mark.parametrize("order", ["concurrent", "candidate_first", "system_first"])
-def test_memory_candidate_vs_system_one_winner(mem, system_on, order):
-    system_on.parents = {2}
-    client = _client()
-    user_id, headers = harness.make_user(mem)
+def _assert_one_winner(db, sid, cand, sub, *, expected=None):
+    """Invariants for whichever side won; ``expected`` pins a deterministic variant."""
+    doc = db["sessions"].find_one({"session_id": sid})
+    entries = _follow_up_entries(doc)
+    winner = "candidate" if cand["scheduled"] else "system"
+    if expected is not None:
+        assert winner == expected
+    assert len(entries) == 1 and doc["total_rounds"] == 5
+    exposures = _exposures(db, sid)
+    if winner == "candidate":
+        # Candidate allocation won: exposure recorded, appended at the end;
+        # the submit's system insertion was refused on revalidation.
+        assert len(exposures) == 1 and entries[0]["follow_up_parent_round"] == 1
+        assert entries[0].get("follow_up_initiator") is None and entries[0]["round"] == 5
+        assert sub["next_round"] == 3 and doc["rounds"][2].get("is_follow_up") is not True
+    else:
+        # System insertion won: no exposure; the candidate is refused by the cap.
+        assert cand["reason"] == "block_follow_up_cap" and exposures == []
+        assert entries[0]["follow_up_initiator"] == "system"
+        assert entries[0]["follow_up_parent_round"] == 2 and entries[0]["round"] == 3
+        assert doc["rounds"][2]["is_follow_up"] is True
+    return winner
+
+
+def _race_session(client, headers):
     sid = _start(client, headers, _blocks(4, max_follow_ups=1))["session_id"]
     assert _submit(client, headers, sid, 1).status_code == 200
     _activate(client, headers, sid, 2)
+    return sid
 
+
+def _contenders(sid, headers):
     def candidate():
         return TestClient(app).post(f"/session/{sid}/follow-ups", headers=headers, json={
             "parent_round": 1, "accept_eligibility_consequence": True})
@@ -632,35 +739,31 @@ def test_memory_candidate_vs_system_one_winner(mem, system_on, order):
     def system():
         return _submit(TestClient(app), headers, sid, 2)
 
-    if order == "concurrent":
+    return candidate, system
+
+
+@pytest.mark.parametrize("variant", ["candidate_wins", "system_wins", "free"])
+def test_memory_candidate_vs_system_one_winner(mem, system_on, monkeypatch, variant):
+    system_on.parents = {2}
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+    sid = _race_session(client, headers)
+    candidate, system = _contenders(sid, headers)
+    lock = _tracing_submit_lock(monkeypatch)
+    if variant == "candidate_wins":
+        entered = _hold_first_call(monkeypatch, "backend.routes.follow_ups",
+                                   "allocate_follow_up", lock.contended)
+        cand, sub = _run_ordered(candidate, system, entered)
+    elif variant == "system_wins":
+        entered = _hold_first_call(monkeypatch, "backend.routes.answer",
+                                   "propose_system_follow_up", lock.contended)
+        sub, cand = _run_ordered(system, candidate, entered)
+    else:
         with ThreadPoolExecutor(max_workers=2) as pool:
             cand, sub = list(pool.map(lambda fn: fn(), [candidate, system]))
-    elif order == "candidate_first":
-        cand, sub = candidate(), system()
-    else:
-        sub, cand = system(), candidate()
     assert cand.status_code == 200 and sub.status_code == 200, (cand.text, sub.text)
-    _assert_one_winner(mem, sid, cand.json(), sub.json(), order)
-
-
-def _assert_one_winner(db, sid, cand, sub, order=None):
-    doc = db["sessions"].find_one({"session_id": sid})
-    entries = _follow_up_entries(doc)
-    assert len(entries) == 1
-    exposures = _exposures(db, sid)
-    if cand["scheduled"]:
-        assert order in (None, "concurrent", "candidate_first")
-        assert len(exposures) == 1 and entries[0]["follow_up_parent_round"] == 1
-        assert entries[0].get("follow_up_initiator") is None
-        assert sub["next_round"] == 3 and doc["rounds"][2].get("is_follow_up") is not True
-        assert doc["total_rounds"] == 5 and entries[0]["round"] == 5
-    else:
-        assert order in (None, "concurrent", "system_first")
-        assert cand["reason"] == "block_follow_up_cap"
-        assert exposures == []
-        assert entries[0]["follow_up_initiator"] == "system"
-        assert entries[0]["follow_up_parent_round"] == 2 and entries[0]["round"] == 3
-        assert doc["rounds"][2]["is_follow_up"] is True and doc["total_rounds"] == 5
+    expected = {"candidate_wins": "candidate", "system_wins": "system"}.get(variant)
+    _assert_one_winner(mem, sid, cand.json(), sub.json(), expected=expected)
 
 
 # SQLite: independent connections on one file, no shared process lock.
@@ -741,6 +844,30 @@ def _hold_first_write(monkeypatch, keys):
     return state
 
 
+def _order_claims(monkeypatch):
+    """First claim proceeds (sets ``claimed``); later claims wait for ``release``."""
+    import backend.db.round_claim as round_claim
+
+    original = round_claim.claim_round_finalizing
+    state = SimpleNamespace(claimed=threading.Event(), release=threading.Event(),
+                            n=0, guard=threading.Lock())
+
+    def ordered(*args, **kwargs):
+        with state.guard:
+            state.n += 1
+            index = state.n
+        if index == 1:
+            try:
+                return original(*args, **kwargs)
+            finally:
+                state.claimed.set()
+        assert state.release.wait(timeout=60)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(round_claim, "claim_round_finalizing", ordered)
+    return state
+
+
 def _narrations(db, sid, number):
     return [d for d in (db["narration_jobs"].find({"session_id": sid}) or [])
             if d.get("round_number") == number or d.get("round") == number]
@@ -757,38 +884,70 @@ def _elo_deltas(sid):
             LearningEventRow.event_type == EVENT_ELO_DELTA).count()
 
 
-def test_sql_duplicate_submit_single_follow_up(sql_db, independent_workers, system_on, monkeypatch):
+@pytest.mark.parametrize("variant", ["later_wins", "earlier_wins", "free"])
+def test_sql_duplicate_submit_single_follow_up(sql_db, independent_workers, system_on,
+                                               monkeypatch, variant):
     db, engine = sql_db
+    calls = _count_scores(monkeypatch)
     user_id, headers = _sql_user(db)
     sid = _start(_client(), headers, _blocks(3))["session_id"]
-    gate = _hold_first_write(monkeypatch, {"last_round"})
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(_submit, TestClient(app), headers, sid, 1)
-        assert gate.arrived.wait(timeout=30)
-        # The second worker sees the stale ``finalizing`` claim, takes it over,
-        # and commits while the first is held before its write.
-        second = pool.submit(_submit, TestClient(app), headers, sid, 1).result(timeout=60)
-        gate.release.set()
-        first = first.result(timeout=60)
-    assert second.status_code == 200, second.text
-    assert first.status_code == 409, first.text  # lost the revision race, then saw submitted
+
+    def submit():
+        return _submit(TestClient(app), headers, sid, 1)
+
+    if variant == "later_wins":
+        # First request is held before its commit write; the duplicate takes
+        # over the stale ``finalizing`` claim and commits; the first then
+        # loses its conditional write, reloads, sees ``submitted`` -> 409.
+        gate = _hold_first_write(monkeypatch, {"last_round"})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(submit)
+            assert gate.arrived.wait(timeout=30)
+            second = pool.submit(submit).result(timeout=60)
+            gate.release.set()
+            first = first.result(timeout=60)
+        assert (first.status_code, second.status_code) == (409, 200)
+        results, max_scores = [first, second], 2
+    elif variant == "earlier_wins":
+        # The duplicate is held before its claim until the first returned:
+        # it then finds the round already submitted and never scores.
+        order = _order_claims(monkeypatch)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(submit)
+            assert order.claimed.wait(timeout=30)
+            second = pool.submit(submit)
+            first = first.result(timeout=60)
+            order.release.set()
+            second = second.result(timeout=60)
+        assert (first.status_code, second.status_code) == (200, 409)
+        results, max_scores = [first, second], 1
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: submit(), range(2)))
+        max_scores = 2  # a stale-claim takeover may score twice; one commit wins
     engine.dispose()
-    doc = db["sessions"].find_one({"session_id": sid})
-    assert len(_follow_up_entries(doc)) == 1 and doc["total_rounds"] == 4
-    assert [(r["round"], bool(r.get("is_follow_up"))) for r in doc["rounds"]] == [(1, False), (2, True)]
-    assert _exposures(db, sid) == []
+    doc = _assert_duplicate_invariants(db, sid, results, calls, max_scores=max_scores)
     assert len(_narrations(db, sid, 1)) == 1 and _elo_deltas(sid) == 1
     # One session write carried the scored parent, the changed plan and the
     # prepared follow-up (claims update round rows, not the session revision).
     assert doc["revision"] == 1
 
 
-def _gate_both_sides(monkeypatch, barrier):
+def _ordered_commits(monkeypatch, winner):
+    """Both sides validate one snapshot (barrier), then ``winner`` writes first.
+
+    The loser's revision-gated write then conflicts and it must reload and
+    revalidate. ``winner=None`` keeps only the barrier (free-running).
+    Returns the list of sides whose write raised ``SessionWriteConflict``.
+    """
     from backend.db import sqlalchemy_store
+    from backend.db.sqlalchemy_store import SessionWriteConflict
 
     original = sqlalchemy_store._SessionCollection.update_one
-    seen, guard = set(), threading.Lock()
-    sides = [("submit", {"last_round"}), ("schedule", {"expanded_plan"})]
+    barrier = threading.Barrier(2)
+    winner_wrote = threading.Event()
+    seen, conflicts, guard = set(), [], threading.Lock()
+    sides = [("system", {"last_round"}), ("candidate", {"expanded_plan"})]
 
     def gated(self, query, update, upsert=False, *, expected_revision=None):
         keys = set(((update or {}).get("$set") or {}))
@@ -799,36 +958,85 @@ def _gate_both_sides(monkeypatch, barrier):
                     seen.add(name)
                     hit = name
                     break
-        if hit:
-            barrier.wait(timeout=30)
-        return original(self, query, update, upsert, expected_revision=expected_revision)
+        if hit is None:
+            return original(self, query, update, upsert, expected_revision=expected_revision)
+        barrier.wait(timeout=30)
+        if winner is not None and hit != winner:
+            assert winner_wrote.wait(timeout=30)
+        try:
+            return original(self, query, update, upsert, expected_revision=expected_revision)
+        except SessionWriteConflict:
+            with guard:
+                conflicts.append(hit)
+            raise
+        finally:
+            if hit == winner:
+                winner_wrote.set()
 
     monkeypatch.setattr(sqlalchemy_store._SessionCollection, "update_one", gated)
+    return conflicts
 
 
-def test_sql_candidate_vs_system_one_winner(sql_db, independent_workers, system_on, monkeypatch):
+@pytest.mark.parametrize("variant", ["candidate_wins", "system_wins", "free"])
+def test_sql_candidate_vs_system_one_winner(sql_db, independent_workers, system_on,
+                                            monkeypatch, variant):
     db, engine = sql_db
     system_on.parents = {2}
     user_id, headers = _sql_user(db)
-    client = _client()
-    sid = _start(client, headers, _blocks(4, max_follow_ups=1))["session_id"]
-    assert _submit(client, headers, sid, 1).status_code == 200
-    _activate(client, headers, sid, 2)
-    _gate_both_sides(monkeypatch, threading.Barrier(2))
-
-    def candidate():
-        return TestClient(app).post(f"/session/{sid}/follow-ups", headers=headers, json={
-            "parent_round": 1, "accept_eligibility_consequence": True})
-
-    def system():
-        return _submit(TestClient(app), headers, sid, 2)
-
+    sid = _race_session(_client(), headers)
+    expected = {"candidate_wins": "candidate", "system_wins": "system"}.get(variant)
+    conflicts = _ordered_commits(monkeypatch, expected)
+    candidate, system = _contenders(sid, headers)
     with ThreadPoolExecutor(max_workers=2) as pool:
         cand, sub = list(pool.map(lambda fn: fn(), [candidate, system]))
     assert cand.status_code == 200 and sub.status_code == 200, (cand.text, sub.text)
     engine.dispose()
-    _assert_one_winner(db, sid, cand.json(), sub.json())
+    winner = _assert_one_winner(db, sid, cand.json(), sub.json(), expected=expected)
+    # Both validated the same snapshot; exactly the loser lost its write.
+    assert conflicts == ["system" if winner == "candidate" else "candidate"]
     assert len(_narrations(db, sid, 2)) == 1 and _elo_deltas(sid) == 2
+
+
+# ── stale tab: candidate request after a system insertion ────────────
+
+
+@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+def test_stale_tab_candidate_request_after_system_insertion(backend, request, system_on):
+    """The candidate's tab still offers "request follow-up" for a parent that
+    already received a system follow-up: refused, no exposure, no cap used."""
+    db = request.getfixturevalue("mem") if backend == "memory" else request.getfixturevalue("sql_db")[0]
+    system_on.parents = {1}
+    client = _client()
+    user_id, headers = harness.make_user(db)
+    sid = _start(client, headers, _blocks(3))["session_id"]  # block cap 2
+    assert _submit(client, headers, sid, 1).json()["next_round"] == 2
+    before = db["sessions"].find_one({"session_id": sid})
+    assert len(_follow_up_entries(before)) == 1
+
+    stale = client.post(f"/session/{sid}/follow-ups", headers=headers, json={
+        "parent_round": 1, "accept_eligibility_consequence": True})
+    assert stale.status_code == 200
+    assert stale.json() == {"scheduled": False, "reason": "parent_follow_up_exists",
+                            "session_id": sid, "parent_round": 1}
+    after = db["sessions"].find_one({"session_id": sid})
+    for key in ("expanded_plan", "total_rounds", "round_plan", "rounds"):
+        assert after[key] == before[key], key
+    if backend == "sqlite":
+        assert after["revision"] == before["revision"]  # nothing written
+    assert list(db["teaching_exposures"].find({"session_id": sid}) or []) == []
+
+    # The refused request consumed no budget: the block's second slot is
+    # still available to another parent.
+    _activate(client, headers, sid, 2)
+    assert _submit(client, headers, sid, 2, "a clarification answer").status_code == 200
+    _activate(client, headers, sid, 3)
+    assert _submit(client, headers, sid, 3).json()["next_round"] == 4
+    other = client.post(f"/session/{sid}/follow-ups", headers=headers, json={
+        "parent_round": 3, "accept_eligibility_consequence": True})
+    assert other.json()["scheduled"] is True
+    final = db["sessions"].find_one({"session_id": sid})
+    assert len(_follow_up_entries(final)) == 2
+    assert len(_exposures(db, sid)) == 1
 
 
 # ── test 5: rollback and retry preservation ──────────────────────────
@@ -941,3 +1149,180 @@ def test_transcript_matches_pre_slice1_capture(mem, monkeypatch, which, fixture,
     assert [s["mandatory_index"] for s in mandatory] == [s["round"] for s in mandatory]
     assert all("mandatory_index" not in s for s in transcript["session_doc"]["expanded_plan"]
                if s.get("is_follow_up"))
+
+
+# ── server-only plan keys never reach an API body ────────────────────
+
+
+def _server_only_paths(value, path="$"):
+    from backend.serializers.plan_serializer import SERVER_ONLY_PLAN_KEYS
+
+    found = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in SERVER_ONLY_PLAN_KEYS:
+                found.append(f"{path}.{key}")
+            found += _server_only_paths(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found += _server_only_paths(item, f"{path}[{index}]")
+    return found
+
+
+@pytest.mark.parametrize("which", ["no_follow_up", "candidate_follow_up"])
+def test_flag_off_api_bodies_carry_no_server_only_plan_keys(mem, which):
+    user_id, headers = harness.make_user(mem)
+    transcript = harness.RUNNERS[which](_client(), mem, headers, user_id)
+    assert {s["step"] for s in transcript["steps"]} >= {"dashboard_report", "account_progress"}
+    for step in transcript["steps"]:
+        assert _server_only_paths(step["body"]) == [], step["step"]
+    # ...while the stored document does carry them (server state).
+    assert _server_only_paths(transcript["session_doc"])
+
+
+def test_system_flow_api_bodies_carry_no_server_only_plan_keys(mem, system_on):
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+    bodies = []
+
+    def keep(response):
+        assert response.status_code == 200, response.text
+        bodies.append(response.json())
+        return response.json()
+
+    sid = keep(client.post("/session/start", headers=headers, json={
+        "blocks": _blocks(3), "practice_mode": "coached_practice"}))["session_id"]
+    number = 1
+    while True:
+        body = keep(_submit(client, headers, sid, number))
+        keep(client.get(f"/session/{sid}", headers=headers))
+        if body["session_complete"]:
+            break
+        number = body["next_round"]
+        keep(client.post(f"/session/{sid}/rounds/{number}/activate", headers=headers))
+        keep(client.post(f"/session/{sid}/continue", headers=headers))  # leave + return
+    keep(client.get(f"/dashboard/{sid}", headers=headers))
+    keep(client.get("/dashboard/progress", headers=headers))
+    stored = mem["sessions"].find_one({"session_id": sid})
+    assert any(e.get("follow_up_initiator") == "system" for e in stored["expanded_plan"])
+    for body in bodies:
+        assert _server_only_paths(body) == []
+
+
+# ── rejection and trigger-failure logging ────────────────────────────
+
+
+@pytest.fixture
+def live_loggers(monkeypatch):
+    """Undo ``logging.fileConfig`` side effects from earlier migration tests
+    (alembic.ini disables existing loggers), for the loggers under test."""
+    import logging
+
+    for name in ("backend.routes.answer", "modules.system_follow_ups"):
+        logger = logging.getLogger(name)
+        monkeypatch.setattr(logger, "disabled", False)
+        monkeypatch.setattr(logger, "propagate", True)
+
+
+@pytest.mark.parametrize("prompt,category,level", [
+    ("How would indexing change this?", "keyword", "WARNING"),
+    ("Tell me more.", "question_mark", "WARNING"),
+    ("Why " + "x" * 300 + "?", "length", "WARNING"),
+    ("What score would you give this?", "score_language", "WARNING"),
+])
+def test_prompt_rejections_logged_by_category(mem, system_on, caplog, live_loggers, prompt, category, level):
+    import logging
+
+    system_on.prompt = prompt
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+    sid = _start(client, headers, _blocks(3))["session_id"]
+    with caplog.at_level(logging.INFO, logger="backend.routes.answer"):
+        body = _submit(client, headers, sid, 1, "beta answer about keys").json()
+    assert body["total_rounds"] == 3
+    hits = [r for r in caplog.records if "System follow-up not scheduled" in r.getMessage()]
+    assert len(hits) == 1
+    assert f"category={category}" in hits[0].getMessage() and hits[0].levelname == level
+    assert prompt not in hits[0].getMessage()  # categories, not prompt text
+
+
+def test_scheduling_refusal_logged_as_info(mem, system_on, caplog, live_loggers):
+    import logging
+
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+    sid = _start(client, headers, _blocks(3, max_follow_ups=0))["session_id"]
+    with caplog.at_level(logging.INFO, logger="backend.routes.answer"):
+        _submit(client, headers, sid, 1)
+    hits = [r for r in caplog.records if "System follow-up not scheduled" in r.getMessage()]
+    assert len(hits) == 1 and hits[0].levelname == "INFO"
+    assert "category=scheduling reason=block_follow_up_cap" in hits[0].getMessage()
+
+
+def test_trigger_failures_are_logged_and_contained(mem, system_on, caplog, live_loggers):
+    import asyncio
+    import logging
+
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+
+    def explode(context):
+        raise RuntimeError("trigger bug")
+
+    async def coroutine_body():
+        return STUB_PROMPT
+
+    for trigger, needle, level in (
+        (explode, "trigger raised", "WARNING"),
+        (lambda context: coroutine_body(), "returned an awaitable", "ERROR"),
+        (lambda context: 42, "unsupported int", "WARNING"),
+    ):
+        system_follow_ups.register_trigger(trigger)
+        caplog.clear()
+        sid = _start(client, headers, _blocks(3))["session_id"]
+        with caplog.at_level(logging.INFO, logger="modules.system_follow_ups"):
+            resp = _submit(client, headers, sid, 1)
+        assert resp.status_code == 200 and resp.json()["total_rounds"] == 3
+        hits = [r for r in caplog.records if needle in r.getMessage()]
+        assert len(hits) == 1 and hits[0].levelname == level
+        assert "category=trigger_error" in hits[0].getMessage()
+        if trigger is explode:
+            assert hits[0].exc_info is not None
+    with pytest.raises(TypeError, match="synchronous"):
+        system_follow_ups.register_trigger(coroutine_body)
+    assert asyncio.iscoroutinefunction(coroutine_body)
+
+
+# ── known issue (pre-existing, independent of system insertion) ──────
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "KNOWN ISSUE (pre-Slice-1): /continue builds a pending candidate "
+    "follow-up as an ordinary question (no follow-up flags, bank prompt). "
+    "Fix tracked separately; not part of B2."))
+def test_continue_materializes_pending_candidate_follow_up(mem, monkeypatch):
+    from backend.integrations import IntegrationError
+
+    client = _client()
+    user_id, headers = harness.make_user(mem)
+    sid = _start(client, headers, _blocks(2))["session_id"]  # flag off
+    assert _submit(client, headers, sid, 1).status_code == 200
+    entry_resp = client.post(f"/session/{sid}/follow-ups", headers=headers, json={
+        "parent_round": 1, "accept_eligibility_consequence": True}).json()
+    assert entry_resp["scheduled"] is True and entry_resp["total_rounds"] == 3
+    _activate(client, headers, sid, 2)
+
+    def bank_miss(**kwargs):
+        raise IntegrationError("stub bank exhausted")
+
+    monkeypatch.setattr("backend.routes.answer._get_next_question", bank_miss)
+    body = _submit(client, headers, sid, 2, "beta answer about keys").json()
+    assert body["session_status"] == "content_blocked"  # follow-up round 3 not built
+    monkeypatch.setattr("backend.routes.answer._get_next_question", harness.stub_next_question)
+    cont = client.post(f"/session/{sid}/continue", headers=headers)
+    assert cont.status_code == 200 and cont.json()["round"] == 3
+    built = mem["sessions"].find_one({"session_id": sid})["rounds"][2]
+    # Correct behaviour (what the submit path builds for the same spec):
+    assert built.get("is_follow_up") is True
+    assert built.get("follow_up_identity") == entry_resp["follow_up_identity"]
+    assert built["question"] == "Clarify X"

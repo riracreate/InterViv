@@ -26,6 +26,8 @@ TIME_KEYS = frozenset({
     "digest",
     # Process-wide counter (modules/teaching_exposures.py): run-specific.
     "delivery_order",
+    # Wall-clock fields in the report / Progress payloads.
+    "server_time", "last_practiced_at",
 })
 _FOLLOW_UP_ID = re.compile(r"followup:(\d+):[0-9a-f]{8}")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -165,6 +167,12 @@ def normalize(value: Any, replacements: dict[str, str]) -> Any:
     return value
 
 
+def record_reports(record, client, headers, sid) -> None:
+    """Session report (whole-document payload) and account Progress."""
+    record("dashboard_report", client.get(f"/dashboard/{sid}", headers=headers))
+    record("account_progress", client.get("/dashboard/progress", headers=headers))
+
+
 def run_transcript(client, db, headers, user_id) -> dict[str, Any]:
     """Start → (GET, submit, GET, activate) × N → final GET, plus stored docs."""
     steps: list[dict[str, Any]] = []
@@ -187,6 +195,7 @@ def run_transcript(client, db, headers, user_id) -> dict[str, Any]:
             record(f"activate_{body['next_round']}", client.post(
                 f"/session/{sid}/rounds/{body['next_round']}/activate", headers=headers))
     record("get_final", client.get(f"/session/{sid}", headers=headers))
+    record_reports(record, client, headers, sid)
     stored = db["sessions"].find_one({"session_id": sid}) or {}
     session_doc = {k: v for k, v in stored.items() if k not in ("rounds", "revision")}
     replacements = {
@@ -239,6 +248,7 @@ def run_candidate_transcript(client, db, headers, user_id) -> dict[str, Any]:
             "session_id": sid, "round": number, "answer_text": answer,
         }))
         record(f"get_after_submit_{number}", client.get(f"/session/{sid}", headers=headers))
+    record_reports(record, client, headers, sid)
     stored = db["sessions"].find_one({"session_id": sid}) or {}
     exposures = sorted(
         (doc for doc in (db["teaching_exposures"].find({"session_id": sid}) or [])),

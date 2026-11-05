@@ -634,4 +634,9 @@ def get_dashboard(
     }
     session["block_results"] = _block_results(
         rounds, session.get("block_plan"))
+    if "expanded_plan" in session:
+        from backend.serializers.plan_serializer import sanitize_plan_for_client
+
+        # Whole-document payload: strip server-only plan keys (Slice 1).
+        session["expanded_plan"] = sanitize_plan_for_client(session["expanded_plan"])
     return session

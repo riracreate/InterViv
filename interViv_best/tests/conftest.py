@@ -25,8 +25,18 @@ _CLEAR_CACHES = (_get_settings.cache_clear, _get_memory_db.cache_clear)
 
 @pytest.fixture(autouse=True)
 def _clear_settings_and_memory_db_caches():
-    # Retained references: monkeypatching get_settings/_get_memory_db in a
-    # test must not break cache teardown for the next test.
+    """Reset the two process-wide ``lru_cache`` singletons around every test.
+
+    Intended (Step 0). ``get_settings()`` caches environment-derived flags
+    (``DATABASE_URL``, ``SYSTEM_FOLLOW_UPS_ENABLED``, ...) and
+    ``_get_memory_db()`` caches the in-memory store; a test that sets an env
+    var or patches the store must not leak that choice into later tests,
+    and must start from the environment it configures itself.
+
+    The ``cache_clear`` callables are captured at import time so a test that
+    monkeypatches ``get_settings``/``_get_memory_db`` with a plain function
+    cannot break teardown for the next test.
+    """
     for clear in _CLEAR_CACHES:
         clear()
     yield
