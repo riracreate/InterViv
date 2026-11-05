@@ -390,7 +390,65 @@ def run_account_transcript(client, db, headers, user_id) -> dict[str, Any]:
     return out
 
 
+def run_two_candidate_transcript(client, db, headers, user_id) -> dict[str, Any]:
+    """Two REVIEWED candidate follow-ups in one session.
+
+    A reviewed follow-up serves a real bank question. This pins that the
+    second follow-up's selection still sees the first in the asked list (so
+    it is not re-served). Reviewed is seeded in storage, as in the account
+    run, because the route never builds reviewed entries.
+    """
+    steps: list[dict[str, Any]] = []
+
+    def record(name, response):
+        steps.append({"step": name, "status": response.status_code, "body": response.json()})
+        return response.json()
+
+    started = record("start", client.post("/session/start", headers=headers, json={
+        "blocks": [{"round_type": "technical_short_answer", "category": "interview",
+                    "skills": ["DBMS"], "count": 3, "allow_optional_follow_ups": True}],
+        "practice_mode": "coached_practice",
+    }))
+    sid = started["session_id"]
+    body = record("submit_1", client.post("/session/answer", headers=headers, json={
+        "session_id": sid, "round": 1, "answer_text": TRANSCRIPT_ANSWERS[0]}))
+    def mark_reviewed():
+        doc = db["sessions"].find_one({"session_id": sid})
+        plan = [dict(e, follow_up_scoring="reviewed") if e.get("is_follow_up") else e
+                for e in doc["expanded_plan"]]
+        db["sessions"].update_one({"session_id": sid}, {"$set": {"expanded_plan": plan}})
+
+    record("follow_up_parent_1", client.post(f"/session/{sid}/follow-ups", headers=headers,
+                                             json={"parent_round": 1, "accept_eligibility_consequence": True}))
+    mark_reviewed()
+    answers = [TRANSCRIPT_ANSWERS[1], TRANSCRIPT_ANSWERS[2], "zeta reviewed follow-up answer",
+               "zeta reviewed follow-up answer"]
+    for answer in answers:
+        if body.get("next_round_status") != "ready":
+            break
+        number = body["next_round"]
+        record(f"activate_{number}", client.post(f"/session/{sid}/rounds/{number}/activate", headers=headers))
+        body = record(f"submit_{number}", client.post("/session/answer", headers=headers, json={
+            "session_id": sid, "round": number, "answer_text": answer}))
+        if number == 2:
+            record("follow_up_parent_2", client.post(
+                f"/session/{sid}/follow-ups", headers=headers,
+                json={"parent_round": 2, "accept_eligibility_consequence": True}))
+            mark_reviewed()
+    record_reports(record, client, headers, sid)
+    stored = db["sessions"].find_one({"session_id": sid}) or {}
+    replacements = {sid: "<sid>", str(started.get("candidate_id") or ""): "<cid>", str(user_id): "<uid>"}
+    for position, block in enumerate(started.get("block_plan") or [], start=1):
+        replacements[str(block.get("id") or "")] = f"<block{position}>"
+    return normalize({
+        "steps": steps,
+        "served_questions": [(r.get("round"), bool(r.get("is_follow_up")), r.get("question"))
+                             for r in stored.get("rounds") or []],
+    }, replacements)
+
+
 RUNNERS = {
+    "two_candidate_follow_ups": run_two_candidate_transcript,
     "no_follow_up": run_transcript,
     "candidate_follow_up": run_candidate_transcript,
     "account_candidate_follow_ups": run_account_transcript,

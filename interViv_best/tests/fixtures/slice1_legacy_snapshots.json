@@ -121,6 +121,71 @@
    "skill": "DBMS",
    "snapshot_version": 2,
    "submitted_at": "2026-11-05T00:00:00+00:00"
+  },
+  "reviewed_follow_up": {
+   "answer": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "excluded",
+   "config": {
+    "attempt_policy": null,
+    "review_policy": null
+   },
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "digest": "eea6f1af13f45cf1ec030d1322e3a67a87b8bd45d2570c73374a6fd547348097",
+   "eligibility_exclusion_reasons": [
+    "follow_up"
+   ],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Clear."
+    ],
+    "next_step": "Add an example.",
+    "strengths": [
+     "structure"
+    ],
+    "weakness": []
+   },
+   "guard_applied": null,
+   "guard_softened": null,
+   "question": "What does normalization achieve in a relational schema?",
+   "reference": {
+    "ideal_keywords": "normalization",
+    "source": "v6"
+   },
+   "round": 3,
+   "round_type": "technical_short_answer",
+   "rules_replayable": true,
+   "scorer_provenance": {
+    "evaluation_mode": null,
+    "evidence_kind": "measured",
+    "scoring_mode": "measured",
+    "scoring_schema_version": "v3"
+   },
+   "scores": {
+    "final_score": 100.0,
+    "kg_score": 0.6,
+    "ner_entities": [],
+    "nlp_score": 7.1,
+    "svm_label": "Good"
+   },
+   "scoring_breakdown": {
+    "covered_concepts": [
+     "normalization"
+    ],
+    "missing_concepts": [],
+    "scoring_mode": "measured",
+    "semantic_scoring_available": true
+   },
+   "scoring_mode": "measured",
+   "scoring_schema_version": "v3",
+   "skill": "DBMS",
+   "snapshot_version": 2,
+   "submitted_at": "2026-11-05T00:00:00+00:00"
   }
  },
  "inputs": {
@@ -209,6 +274,64 @@
     "source": "v6"
    },
    "round": 1,
+   "round_type": "technical_short_answer",
+   "scoring_breakdown": {
+    "covered_concepts": [
+     "normalization"
+    ],
+    "missing_concepts": [],
+    "scoring_mode": "measured",
+    "semantic_scoring_available": true
+   },
+   "scoring_mode": "measured",
+   "skill": "DBMS",
+   "submitted_at": "2026-11-05T00:00:00+00:00",
+   "svm_label": "Good"
+  },
+  "reviewed_follow_up": {
+   "answer_text": "Normalization removes redundancy by splitting tables so each fact lives once.",
+   "assessment_eligibility": "excluded",
+   "config_json": {
+    "follow_up_parent_round": 1,
+    "follow_up_scoring": "reviewed",
+    "is_follow_up": true
+   },
+   "difficulty": "medium",
+   "difficulty_change": "same",
+   "eligibility_exclusion_reasons": [
+    "follow_up"
+   ],
+   "eligibility_policy_version": "assistance_v1",
+   "elo_after": 1215.0,
+   "elo_before": 1200.0,
+   "evaluation_mode": null,
+   "evidence_kind": "measured",
+   "feedback": {
+    "content": [
+     "Clear."
+    ],
+    "next_step": "Add an example.",
+    "strengths": [
+     "structure"
+    ],
+    "weakness": []
+   },
+   "final_score": 100.0,
+   "follow_up_parent_round": 1,
+   "follow_up_scoring": "reviewed",
+   "is_follow_up": true,
+   "kg_score": 0.6,
+   "ner_entities": [],
+   "nlp_score": 7.1,
+   "purpose": "follow_up",
+   "question": "What does normalization achieve in a relational schema?",
+   "question_context": {
+    "ideal_keywords": "normalization",
+    "question": "What does normalization achieve in a relational schema?",
+    "skill": "DBMS",
+    "source": "v6"
+   },
+   "round": 3,
    "round_type": "technical_short_answer",
    "scoring_breakdown": {
     "covered_concepts": [

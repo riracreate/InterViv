@@ -130,28 +130,24 @@ def _scorer_provenance(
     }
 
 
-def _is_follow_up_round(round_doc: dict[str, Any]) -> bool:
-    config = round_doc.get("config_json") or {}
-    return bool(
-        round_doc.get("is_follow_up") is True
-        or round_doc.get("purpose") == "follow_up"
-        or (isinstance(config, dict) and config.get("is_follow_up"))
-    )
+def _system_or_unreviewed(round_doc: dict[str, Any]) -> bool:
+    from modules.follow_ups import is_system_or_unreviewed_follow_up
 
-
-_FOLLOW_UP_REASONS = frozenset({"follow_up", "unreviewed_follow_up"})
+    return is_system_or_unreviewed_follow_up(round_doc)
 
 
 def snapshot_has_follow_up_markers(snapshot: dict[str, Any] | None) -> bool:
-    """Follow-up / unreviewed markers, including legacy nested ones.
+    """System / unreviewed follow-up markers, including legacy nested ones.
 
-    Snapshots frozen before Slice 1 have no top-level follow-up flag; their
-    markers live in eligibility reasons and the scoring breakdown. This is
-    a read-time check: stored snapshots and digests are never rewritten.
+    Mirrors ``is_system_or_unreviewed_follow_up`` on frozen data. Snapshots
+    frozen before Slice 1 carry no top-level flag; an unreviewed follow-up
+    is recognisable by its eligibility reason and scoring breakdown. A
+    reviewed, scored candidate follow-up carries none of these markers and
+    stays replayable. Read-time only: snapshots/digests are never rewritten.
     """
     if not isinstance(snapshot, dict):
         return False
-    if snapshot.get("is_follow_up") is True:
+    if snapshot.get("follow_up_initiator") == "system":
         return True
     reasons = set(snapshot.get("eligibility_exclusion_reasons") or [])
     breakdown = snapshot.get("scoring_breakdown") or {}
@@ -161,12 +157,12 @@ def snapshot_has_follow_up_markers(snapshot: dict[str, Any] | None) -> bool:
     if isinstance(eligibility, dict):
         reasons |= set(eligibility.get("exclusion_reasons") or [])
     reasons |= set(breakdown.get("eligibility_exclusion_reasons") or [])
-    if reasons & _FOLLOW_UP_REASONS:
+    if "unreviewed_follow_up" in reasons:
         return True
-    if breakdown.get("follow_up_scoring") or breakdown.get("unscored_reason") == "unreviewed_follow_up":
-        return True
-    config = snapshot.get("config") or {}
-    return isinstance(config, dict) and bool(config.get("is_follow_up") or config.get("follow_up_scoring"))
+    return (
+        breakdown.get("follow_up_scoring") == "unreviewed"
+        or breakdown.get("unscored_reason") == "unreviewed_follow_up"
+    )
 
 
 _REPLAY_REQUIRED_KEYS = ("round", "question", "answer", "scores", "guard_applied", "rules_replayable")
@@ -175,15 +171,16 @@ _REPLAY_REQUIRED_KEYS = ("round", "question", "answer", "scores", "guard_applied
 def replayable_snapshots(rounds: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Snapshots whose rules feedback may be replayed, in round order.
 
-    Uses the shared follow-up filter (``non_follow_up_rounds``), then keeps
+    Uses the shared predicate (``is_system_or_unreviewed_follow_up``): those
+    follow-ups are skipped; reviewed scored candidate follow-ups stay. Keeps
     only intact (digest-verified), rules-replayable snapshots with every
-    replay input present, no follow-up markers, and the same round number
-    and question as the round they are stored on.
+    replay input present, no system/unreviewed markers, and the same round
+    number and question as the round they are stored on.
     """
-    from modules.follow_ups import non_follow_up_rounds
-
     out = []
-    for round_doc in non_follow_up_rounds(list(rounds or [])):
+    for round_doc in list(rounds or []):
+        if not isinstance(round_doc, dict) or _system_or_unreviewed(round_doc):
+            continue
         snapshot = round_doc.get("attempt_snapshot")
         if not isinstance(snapshot, dict) or not snapshot.get("rules_replayable"):
             continue
@@ -254,10 +251,11 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
             "review_policy": (config or {}).get("review_policy"),
         },
         "submitted_at": submitted_at,
-        # Follow-ups never replay rules feedback (Slice 1); every other
-        # round freezes exactly as before.
+        # System-initiated and unreviewed follow-ups never replay rules
+        # feedback (Slice 1); every other round, including reviewed scored
+        # candidate follow-ups, freezes exactly as before.
         "rules_replayable": (
-            round_type in RULES_REPLAYABLE_ROUND_TYPES and not _is_follow_up_round(scored_round)
+            round_type in RULES_REPLAYABLE_ROUND_TYPES and not _system_or_unreviewed(scored_round)
         ),
         "reference": _reference_from_context(question_context),
         "scorer_provenance": _scorer_provenance(scored_round, scoring_result, breakdown),
@@ -337,8 +335,8 @@ def regenerate_rules_feedback(snapshot: dict[str, Any] | None) -> dict[str, Any]
     if not isinstance(snapshot, dict) or not snapshot.get("rules_replayable"):
         return None
     if snapshot_has_follow_up_markers(snapshot):
-        # Read-time guard for legacy follow-up snapshots frozen with
-        # rules_replayable=True; their digests are left untouched.
+        # Read-time guard for legacy unreviewed follow-up snapshots frozen
+        # with rules_replayable=True; their digests are left untouched.
         return None
     from backend.integrations import normalize_feedback
     from modules.c4_feedback import generate_feedback

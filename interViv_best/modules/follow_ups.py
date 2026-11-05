@@ -494,12 +494,14 @@ def follow_up_scoring_of(round_doc: dict[str, Any] | None) -> str | None:
     )
 
 
-def report_exposure_exempt(round_doc: dict[str, Any] | None) -> bool:
-    """Report reveals record no teaching exposure for this round.
+def is_system_or_unreviewed_follow_up(round_doc: dict[str, Any] | None) -> bool:
+    """THE Slice 1 predicate for follow-ups that leave assessed presentation.
 
-    Only system-initiated or unreviewed follow-ups are exempt, even when a
-    numeric score is present. Reviewed, scored candidate follow-ups keep
-    today's reveal exposure.
+    True for a system-initiated follow-up, or any unreviewed (unscored)
+    follow-up -- regardless of a stored numeric score. False for reviewed,
+    scored candidate follow-ups, which keep today's behaviour everywhere.
+    Used for report reveal exposures, rules-replay eligibility, and the
+    server-derived report-section field.
     """
     if not isinstance(round_doc, dict):
         return False
@@ -508,6 +510,27 @@ def report_exposure_exempt(round_doc: dict[str, Any] | None) -> bool:
     if not is_follow_up_round(round_doc):
         return False
     return is_system_follow_up(round_doc) or follow_up_scoring_of(round_doc) == "unreviewed"
+
+
+def report_exposure_exempt(round_doc: dict[str, Any] | None) -> bool:
+    """Report reveals record no teaching exposure for this round.
+
+    Only system-initiated or unreviewed follow-ups are exempt, even when a
+    numeric score is present. Reviewed, scored candidate follow-ups keep
+    today's reveal exposure.
+    """
+    return is_system_or_unreviewed_follow_up(round_doc)
+
+
+def non_system_follow_up_rounds(rounds: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Rounds excluding SYSTEM follow-ups (order preserved).
+
+    Selector isolation filter for asked-question lists and mandatory
+    rounds' eligibility history. Candidate follow-ups stay in: a reviewed
+    candidate follow-up serves a real bank question, which must stay in the
+    asked list so it is never re-served.
+    """
+    return [r for r in (rounds or []) if not is_system_follow_up(r)]
 
 
 def _insert_after_parent(

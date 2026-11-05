@@ -83,7 +83,7 @@ from modules.follow_ups import (
     build_system_follow_up_plan_entry,
     build_system_follow_up_round,
     is_system_follow_up,
-    non_follow_up_rounds,
+    non_system_follow_up_rounds,
     schedule_follow_up_in_session,
 )
 from modules.system_follow_ups import propose_system_follow_up
@@ -1212,11 +1212,11 @@ def submit_answer(
             session=session,
             round_doc=eligibility_round,
             exposures=exposures,
-            # A mandatory round is never judged against follow-ups (an
-            # intervening follow-up cannot make it a "retry"); follow-ups
-            # keep the full history exactly as before.
+            # A mandatory round is never judged against SYSTEM follow-ups (an
+            # inserted follow-up cannot make it a "retry"); candidate
+            # follow-ups and follow-up rounds keep the full history as before.
             prior_rounds=(
-                rounds if is_follow_up_round(active_round) else non_follow_up_rounds(rounds)
+                rounds if is_follow_up_round(active_round) else non_system_follow_up_rounds(rounds)
             ),
             now=now,
             history_complete=True,
@@ -1714,7 +1714,7 @@ def submit_answer(
                                     target_company_id=str(session_target_company) if session_target_company else None,
                                     target_role_id=str(session_target_role) if session_target_role else None,
                                     resume_skills=resume_skills,
-                                    asked=[item.get("question", "") for item in non_follow_up_rounds(rounds)],
+                                    asked=[item.get("question", "") for item in non_system_follow_up_rounds(rounds)],
                                     sql_problem_index=sql_index,
                                     block_id=(expanded_spec or {}).get("block_id"),
                                     block_position=(expanded_spec or {}).get("block_position"),
@@ -1763,9 +1763,11 @@ def submit_answer(
                             next_round_difficulty = resolved["next_round_difficulty"]
                             response_next_difficulty = next_round_difficulty
                             sub = resolved["sub_domain"]
-                            # Follow-up prompts are not bank questions: they never
-                            # enter the asked list (selector isolation).
-                            asked = [item.get("question", "") for item in non_follow_up_rounds(rounds)]
+                            # System follow-up prompts are not bank questions: they
+                            # never enter the asked list (selector isolation).
+                            # Candidate follow-ups stay (reviewed ones are real
+                            # bank questions that must not be re-served).
+                            asked = [item.get("question", "") for item in non_system_follow_up_rounds(rounds)]
                             weak_context = list(resolved["weak_skills"])
 
                             try:

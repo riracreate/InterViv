@@ -44,7 +44,7 @@ from modules import adaptive_question_selector
 from modules.follow_ups import (
     build_system_follow_up_round,
     is_system_follow_up,
-    non_follow_up_rounds,
+    non_system_follow_up_rounds,
 )
 
 router = APIRouter(prefix="/session", tags=["session-continue"])
@@ -57,10 +57,11 @@ MAX_CONTINUE_ATTEMPTS = 3
 
 
 def _asked_questions(rounds: list[dict]) -> list[str]:
-    # Follow-up prompts are not bank questions (selector isolation).
+    # System follow-up prompts are not bank questions (selector isolation);
+    # candidate follow-ups stay, as before.
     return [
         str(item.get("question") or "")
-        for item in non_follow_up_rounds(rounds)
+        for item in non_system_follow_up_rounds(rounds)
         if item.get("question")
     ]
 

@@ -338,10 +338,13 @@ def test_new_follow_up_snapshots_freeze_not_replayable(mem, system_on):
 
 def test_non_follow_up_freeze_is_byte_identical_to_pre_slice1():
     inputs = LEGACY["inputs"]
-    frozen = freeze_attempt_snapshot(inputs["mandatory"], inputs["scoring_result"])
-    assert frozen == LEGACY["frozen"]["mandatory"]  # same content, same digest
+    for name in ("mandatory", "reviewed_follow_up"):
+        # Mandatory rounds AND reviewed scored candidate follow-ups freeze
+        # byte-identically to the pre-change code (same digest).
+        assert freeze_attempt_snapshot(inputs[name], inputs["scoring_result"]) == LEGACY["frozen"][name]
+    assert LEGACY["frozen"]["reviewed_follow_up"]["rules_replayable"] is True
     new_follow_up = freeze_attempt_snapshot(inputs["follow_up"], inputs["scoring_result"])
-    assert new_follow_up["rules_replayable"] is False
+    assert new_follow_up["rules_replayable"] is False  # unreviewed only
     assert new_follow_up["digest"] != LEGACY["frozen"]["follow_up"]["digest"]
 
 
@@ -357,6 +360,12 @@ def test_legacy_follow_up_snapshot_read_guard_keeps_digest():
     # A legacy row whose round document lost its follow-up flag is still excluded.
     row = {"round": 2, "question": legacy["question"], "attempt_snapshot": legacy}
     assert replayable_snapshots([row]) == []
+    # A legacy REVIEWED candidate follow-up carries no unreviewed marker and
+    # stays replayable.
+    reviewed = copy.deepcopy(LEGACY["frozen"]["reviewed_follow_up"])
+    assert not snapshot_has_follow_up_markers(reviewed)
+    assert isinstance(regenerate_rules_feedback(reviewed), dict)
+    assert verify_attempt_snapshot(reviewed)
 
 
 def _rescore_without(snapshot, key):
@@ -398,9 +407,39 @@ def test_replay_equality_and_replayable_snapshot_rejections(mem_real_scorer):
     tampered = copy.deepcopy(rounds)
     tampered[0]["attempt_snapshot"]["scores"]["final_score"] = 100.0
     assert replayable_snapshots(tampered) == []
-    as_follow_up = copy.deepcopy(rounds)
-    as_follow_up[0]["is_follow_up"] = True
-    assert replayable_snapshots(as_follow_up) == []
+    for marking, kept in (({"follow_up_scoring": "unreviewed"}, False),
+                          ({"follow_up_initiator": "system", "follow_up_scoring": "unreviewed"}, False),
+                          ({"follow_up_scoring": "reviewed"}, True)):
+        variant = copy.deepcopy(rounds)
+        variant[0].update({"is_follow_up": True, **marking})
+        assert (replayable_snapshots(variant) == [snapshot]) is kept, marking
+
+
+def test_reviewed_candidate_follow_up_stays_replayable(mem_real_scorer):
+    """Reviewed, scored candidate follow-ups keep rules replay (real pipeline)."""
+    db = mem_real_scorer
+    client = _client()
+    uid, headers = harness.make_user(db)
+    sid = _start(client, headers, _blocks_one(2))["session_id"]
+    text = "Normalization splits tables so each fact is stored once, removing update anomalies."
+    _submit(client, headers, sid, 1, text)
+    assert client.post(f"/session/{sid}/follow-ups", headers=headers, json={
+        "parent_round": 1, "accept_eligibility_consequence": True}).json()["scheduled"]
+    doc = db["sessions"].find_one({"session_id": sid})
+    plan = [dict(e, follow_up_scoring="reviewed") if e.get("is_follow_up") else e for e in doc["expanded_plan"]]
+    db["sessions"].update_one({"session_id": sid}, {"$set": {"expanded_plan": plan}})
+    _activate(client, headers, sid, 2)
+    _submit(client, headers, sid, 2, "An index is a sorted structure that speeds up lookups on a column.")
+    _activate(client, headers, sid, 3)
+    resp = _submit(client, headers, sid, 3, "A B-tree index keeps keys ordered so range scans stay fast.")
+    assert resp.json()["final_score"] is not None
+    rounds = db["sessions"].find_one({"session_id": sid})["rounds"]
+    follow_up = rounds[2]
+    assert follow_up["is_follow_up"] is True
+    snap = follow_up["attempt_snapshot"]
+    assert snap["rules_replayable"] is True and not snapshot_has_follow_up_markers(snap)
+    assert regenerate_rules_feedback(snap) == follow_up["feedback"]
+    assert [s["round"] for s in replayable_snapshots(rounds)] == [1, 2, 3]
 
 
 # ── test 5: candidate-follow-up compatibility (account level) ────────
@@ -413,6 +452,17 @@ def test_account_level_candidate_follow_ups_unchanged(mem):
     transcript = harness.RUNNERS["account_candidate_follow_ups"](_client(), mem, headers, user_id)
     expected = json.loads((FIXTURES / "slice1_account_transcript.json").read_text())
     assert json.dumps(transcript, sort_keys=True) == json.dumps(expected, sort_keys=True)
+
+
+def test_two_reviewed_candidate_follow_ups_unchanged(mem):
+    """Asked list keeps candidate follow-ups: a reviewed follow-up's bank
+    question is never re-served to the next follow-up (pre-change capture)."""
+    user_id, headers = harness.make_user(mem)
+    transcript = harness.RUNNERS["two_candidate_follow_ups"](_client(), mem, headers, user_id)
+    expected = json.loads((FIXTURES / "slice1_two_candidate_transcript.json").read_text())
+    assert json.dumps(transcript, sort_keys=True) == json.dumps(expected, sort_keys=True)
+    questions = [q for _, _, q in transcript["served_questions"]]
+    assert len(questions) == len(set(questions)) == 5
 
 
 def test_known_issue_reviewed_candidate_follow_up_in_report_series():

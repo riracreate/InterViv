@@ -6,27 +6,50 @@ proposes nothing. Evidence: `tests/test_slice1_system_follow_ups.py`,
 `tests/test_slice1_b2_isolation.py`; before/after transcripts were captured on
 the pre-change tree `9c9b5f2` with `tests/slice1_harness.py`.
 
+## Shared predicate
+
+`modules.follow_ups.is_system_or_unreviewed_follow_up(round)`: a follow-up that
+is system-initiated or unreviewed (unscored), regardless of any stored numeric
+score. Every candidate-visible Slice 1 behaviour keys on it (report reveal
+exposures, rules-replay eligibility, the report-section field). Reviewed,
+scored candidate follow-ups are never matched and keep today's behaviour.
+Selector isolation (asked list, eligibility history) keys on system follow-ups
+only (`non_system_follow_up_rounds`).
+
 ## Candidate-requested follow-ups: before / after
 
-| Aspect | Before Slice 1 | After B2 | Kind |
+| Aspect | Before Slice 1 | After | Kind |
 |---|---|---|---|
 | Consent (`accept_eligibility_consequence`) | required, 422 without | unchanged | unchanged |
 | Placement | appended after every assigned round | unchanged | unchanged |
 | Prompt text and plan entry | `followups[0]` or default text | byte-identical (transcript test) | unchanged |
 | `follow_up_prompt` teaching exposure | recorded on allocation | unchanged | unchanged |
-| Eligibility of the follow-up round | excluded (`follow_up` [+ `unreviewed_follow_up`]) | unchanged; evaluated against full history as before | unchanged |
+| Eligibility of the follow-up round | excluded (`follow_up` [+ `unreviewed_follow_up`]) | unchanged; full history as before | unchanged |
 | Elo / mastery / readiness / gap | none (ineligible) | unchanged | unchanged |
 | Capacity near the 50-round cap | pending follow-ups were counted as mandatory | pending and materialized follow-ups excluded once (`mandatory_remaining`) | **intended** |
-| New attempt snapshot | `rules_replayable=true` | `rules_replayable=false`; `regenerate_rules_feedback` returns `None` (no production caller) | **intended (B2 spec)** |
-| Stored snapshots / digests | — | never rewritten; read-time guard only | unchanged |
+| Attempt snapshot, reviewed + scored | `rules_replayable=true` | unchanged, byte-identical digest; replay still works | unchanged |
+| Attempt snapshot, unreviewed (new rows) | `rules_replayable=true` | `rules_replayable=false`; `regenerate_rules_feedback` returns `None` (no production caller) | **intended** |
+| Stored snapshots / digests | — | never rewritten; read-time guard on unreviewed markers only | unchanged |
 | Report reveal exposure, reviewed + scored | recorded | recorded | unchanged |
-| Report reveal exposure, unreviewed | skipped (score is `None`) | skipped, now even with a numeric score | **intended** |
+| Report reveal exposure, unreviewed | skipped (score is `None`) | skipped, now even with a numeric score | **intended (confirmed)** |
+| Asked-question list | all prior rounds | unchanged for candidate follow-ups; only system follow-ups are excluded | unchanged |
+| Eligibility history of mandatory rounds | all prior rounds | only system follow-ups excluded; candidate follow-ups are never before a mandatory round | unchanged |
 | Session report and account Progress bodies | — | identical (account transcript test) | unchanged |
-| Progress uses mandatory totals; system follow-ups in a separate report section | — | lands in Checkpoint C | pending (C) |
+| Progress uses mandatory totals; system/unreviewed follow-ups in a separate report section | — | Checkpoint C | pending (C) |
 | Legacy (plan-less / index-less) progress and rotation | — | unchanged; never receive system insertion | unchanged |
-| Asked-question list for later selection | included follow-up prompts | excludes follow-ups. Only differs with ≥ 2 candidate follow-ups in one session; reviewed (bank-question) follow-ups are never built by the route | intended (B2 spec) |
 | Stored session document | specs had no index | every new mandatory spec stores `mandatory_index` (server-only; stripped from `GET /dashboard/{id}`) | **stored-document change** |
 | `/continue` building a pending candidate follow-up | built as an ordinary question | unchanged — **known issue, independent of system insertion** (reproduces with the flag off; strict xfail) | known issue |
+
+Why the asked list keeps candidate follow-ups: a reviewed candidate follow-up is
+materialized through the bank selector (`_get_next_question`) and served
+unmodified, so its question is a real bank item; only unreviewed entries are
+overridden with the clarification prompt. B2's first version excluded every
+follow-up and, with two reviewed follow-ups, re-served the first one's bank
+question to the second (`[DBMS] Stub question 4` twice). The narrowed filter
+reproduces the pre-change transcript exactly
+(`test_two_reviewed_candidate_follow_ups_unchanged`). The route itself never
+builds reviewed entries today (`reviewed = None`), so the case needs storage
+seeding to reach.
 
 ## System-initiated follow-ups (new)
 
@@ -41,7 +64,7 @@ context, Elo input) is resolved at the parent's commit, before the parent's
 learning updates, and preserved on that spec (`resolved_next_target`,
 server-only). It is reused when the follow-up is submitted or `/continue`
 resumes; bank selection happens then. Mandatory rounds are evaluated for
-eligibility without follow-ups in their history.
+eligibility without system follow-ups in their history.
 
 ## Known issues (documented, not fixed)
 
