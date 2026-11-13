@@ -95,6 +95,38 @@ Opt-in today: a system follow-up needs the session's existing
 Assessment, but an Assessment session that sets it through the API passes the
 same gate (`test_system_path_never_requires_consent_and_honors_api_opt_in`).
 
+## Development-only preview launcher
+
+The shipped trigger proposes nothing, so a system follow-up can be seen in the
+running app only through this launcher:
+
+```bash
+cd interViv_best
+.venv/bin/python scripts/dev_system_follow_ups.py
+```
+
+| Question | Answer |
+|---|---|
+| What it changes | It runs `scripts/run_local.py` with `SYSTEM_FOLLOW_UPS_ENABLED=true` and the backend target `--factory scripts.dev_system_follow_ups:create_app`. The factory returns `backend.main.app` after `register_trigger(preview_trigger)` in that one process (`scripts/dev_system_follow_ups.py:68-75`) |
+| What the trigger does | Proposes one fixed neutral question after every question. The shipped rules still decide: Coached practice with "Allow optional follow-ups" ticked, one per parent, two per Interview block, never after the final question, prompt validated |
+| Where it refuses | `create_app` raises unless `ENVIRONMENT=development` and `INTERVIV_BIND_HOST` is loopback, the trusted local runner's rule (`test_dev_launcher_refuses_outside_loopback_development`) |
+| Production | Cannot register: the image copies only `alembic`, `backend`, `modules`, `data`, `ml_primitives` (`backend/Dockerfile:12-17`); `backend/Dockerfile:21`, `docker-compose.yml:63`, `scripts/run_current.sh:162` and `scripts/run_local.py` by default all serve `backend.main:app`; no setting or environment variable names a trigger. `test_no_start_or_deploy_configuration_refers_to_the_dev_launcher`, `test_production_image_and_settings_offer_no_registration_path` |
+
+Manual check (Coached practice, "Allow optional follow-ups" ticked, one
+Interview block of at least three questions):
+
+1. Submit question 1: the header stays at 1/N and the "Request optional
+   follow-up" button is absent.
+2. Open the next question: the "Follow-up (not scored)" banner shows and the
+   header still reads 1/N. Refresh in both states.
+3. Submit it and open the next question: the header reads 2/N. A second
+   follow-up appears after question 2 (the block's cap is two), then none. A parent is skipped when the fixed prompt fails validation for its question.
+4. Open the report: the "Follow-up questions" section is on the Round review
+   tab and the header counts N of N rounds scored.
+5. Separately, with the ordinary launcher: finish the mandatory questions of
+   a session in which you requested an optional follow-up. Its header reads
+   "Optional follow-up" with a full progress bar.
+
 ## Eligibility and counting
 
 | Quantity | What it counts | Follow-ups |

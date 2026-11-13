@@ -183,7 +183,12 @@ def _runtime_environment(
     return env
 
 
-def main() -> int:
+def main(
+    *,
+    backend_app: tuple[str, ...] = ("backend.main:app",),
+    extra_env: dict[str, str] | None = None,
+) -> int:
+    """``backend_app`` / ``extra_env`` are for scripts/dev_system_follow_ups.py only."""
     parser = argparse.ArgumentParser(description="Run interViv locally (offline, persistent SQLite).")
     parser.add_argument("--fetch-models", action="store_true",
                         help="download the MiniLM and faster-whisper models once before starting")
@@ -222,6 +227,7 @@ def main() -> int:
     run.mkdir(exist_ok=True)
     env = _runtime_environment(state, executor_on=executor_on, live_jobs=args.live_jobs,
                                trusted_local=args.trusted_local_execution)
+    env.update(extra_env or {})
     children = []
     handles = []
 
@@ -232,7 +238,7 @@ def main() -> int:
     try:
         subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=ROOT, env=env, check=True)
         commands = [
-            ("backend", [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000"], ROOT),
+            ("backend", [sys.executable, "-m", "uvicorn", *backend_app, "--host", "127.0.0.1", "--port", "8000"], ROOT),
             ("frontend", [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"], ROOT / "frontend"),
         ]
         for name, command, cwd in commands:
