@@ -449,7 +449,8 @@ def test_account_level_candidate_follow_ups_unchanged(mem):
     """Readiness (conservative + observed), skill-graph attempts, scored-session
     count, Progress history and reports equal the pre-Slice-1 capture."""
     user_id, headers = harness.make_user(mem)
-    transcript = harness.RUNNERS["account_candidate_follow_ups"](_client(), mem, headers, user_id)
+    transcript = harness.drop_additive_body_keys(
+        harness.RUNNERS["account_candidate_follow_ups"](_client(), mem, headers, user_id))
     expected = json.loads((FIXTURES / "slice1_account_transcript.json").read_text())
     assert json.dumps(transcript, sort_keys=True) == json.dumps(expected, sort_keys=True)
 
@@ -458,7 +459,8 @@ def test_two_reviewed_candidate_follow_ups_unchanged(mem):
     """Asked list keeps candidate follow-ups: a reviewed follow-up's bank
     question is never re-served to the next follow-up (pre-change capture)."""
     user_id, headers = harness.make_user(mem)
-    transcript = harness.RUNNERS["two_candidate_follow_ups"](_client(), mem, headers, user_id)
+    transcript = harness.drop_additive_body_keys(
+        harness.RUNNERS["two_candidate_follow_ups"](_client(), mem, headers, user_id))
     expected = json.loads((FIXTURES / "slice1_two_candidate_transcript.json").read_text())
     assert json.dumps(transcript, sort_keys=True) == json.dumps(expected, sort_keys=True)
     questions = [q for _, _, q in transcript["served_questions"]]

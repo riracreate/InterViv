@@ -67,10 +67,18 @@ def _asked_questions(rounds: list[dict]) -> list[str]:
 
 
 def _continued_response(
-    session_id: str, round_doc: dict[str, Any], *, current_skill: Any, total: int
+    session_id: str,
+    round_doc: dict[str, Any],
+    *,
+    current_skill: Any,
+    total: int,
+    session: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Opened round payload. ``active_round`` matches GET /session/{id}."""
-    sanitized = sanitize_round_for_client(dict(round_doc))
+    from modules.follow_ups import delivered_round_fields, mandatory_progress
+
+    derived = delivered_round_fields(session or {}, round_doc)
+    sanitized = {**sanitize_round_for_client(dict(round_doc)), **derived}
     expires = round_doc.get("expires_at")
     return {
         "session_id": session_id,
@@ -91,6 +99,9 @@ def _continued_response(
         "current_skill": current_skill,
         "total_rounds": total,
         "active_round": sanitized,
+        # Slice 1 additive fields; omitted for plans without complete indices.
+        **(mandatory_progress(session or {}) or {}),
+        **({"mandatory_index": derived["mandatory_index"]} if "mandatory_index" in derived else {}),
     }
 
 
@@ -154,6 +165,7 @@ def continue_session(
                         open_round,
                         current_skill=open_round.get("skill") or session.get("current_skill"),
                         total=total,
+                        session={**session, "rounds": rounds},
                     )
 
                 if session.get("status") != "content_blocked":
@@ -437,6 +449,7 @@ def continue_session(
                     next_payload,
                     current_skill=next_payload.get("skill"),
                     total=total,
+                    session={**session, "rounds": rounds},
                 )
             except SessionWriteConflict:
                 # Lost a cross-worker write race: the conditional write

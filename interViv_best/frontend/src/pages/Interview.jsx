@@ -5,14 +5,16 @@ import {
   MAX_NARRATION_POLLS,
   PHASES,
   TECHNICAL_ADVISORY_SECONDS,
+  canRequestFollowUp,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
   pendingRoundFromSession,
+  mandatoryProgress,
   phaseAfterSubmit,
-  progressPercent,
   roundFieldsFromPayload,
   shouldPollNarration,
+  systemFollowUpBanner,
   technicalSecondsRemaining,
 } from '../lib/interviewLifecycle';
 import {
@@ -113,6 +115,20 @@ export default function Interview({ sessionState = null }) {
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
   const [round, setRound] = useState(initState.round || 1);
   const [totalRounds, setTotalRounds] = useState(initState.totalRounds || 5);
+  // Slice 1 server-derived progress (null on legacy plans / older servers).
+  const [mandatoryIndex, setMandatoryIndex] = useState(initState.mandatoryIndex ?? initState.mandatory_index ?? null);
+  const [mandatoryTotal, setMandatoryTotal] = useState(initState.mandatoryTotal ?? initState.mandatory_total ?? null);
+  const [mandatoryCompleted, setMandatoryCompleted] = useState(
+    initState.mandatoryCompleted ?? initState.mandatory_completed ?? null
+  );
+  const [followUpLabel, setFollowUpLabel] = useState(initState.followUpLabel || null);
+  // Server label for a candidate-requested follow-up ("Optional follow-up").
+  const [progressLabel, setProgressLabel] = useState(initState.progressLabel || null);
+  const [systemFollowUpScheduled, setSystemFollowUpScheduled] = useState(Boolean(initState.systemFollowUpScheduled));
+  const applyMandatoryTotals = (payload) => {
+    if (payload?.mandatory_total != null) setMandatoryTotal(payload.mandatory_total);
+    if (payload?.mandatory_completed != null) setMandatoryCompleted(payload.mandatory_completed);
+  };
   const [elo, setElo] = useState(initState.elo || 1200);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -538,6 +554,12 @@ export default function Interview({ sessionState = null }) {
       expires_at: expiresAt,
       elo,
       totalRounds,
+      mandatoryIndex,
+      mandatoryTotal,
+      mandatoryCompleted,
+      followUpLabel,
+      progressLabel,
+      systemFollowUpScheduled,
       progressionBlocked,
       progressionBlockedReason,
       status: progressionBlocked ? 'content_blocked' : undefined,
@@ -564,6 +586,12 @@ export default function Interview({ sessionState = null }) {
     sessionComplete,
     sessionId,
     totalRounds,
+    mandatoryIndex,
+    mandatoryTotal,
+    mandatoryCompleted,
+    followUpLabel,
+    progressLabel,
+    systemFollowUpScheduled,
   ]);
 
   useEffect(() => {
@@ -574,6 +602,13 @@ export default function Interview({ sessionState = null }) {
         if (cancelled || !data) return;
         const cr = data.active_round || data.current_round;
         if (cr?.block_category) setBlockCategory(cr.block_category);
+        // Server-derived progress for sessions opened from any start adapter.
+        applyMandatoryTotals(data);
+        if (cr?.status === 'in_progress') {
+          if (cr.mandatory_index != null) setMandatoryIndex(cr.mandatory_index);
+          setFollowUpLabel(cr.follow_up_label || null);
+          setProgressLabel(cr.progress_label || null);
+        }
         const resume = blockedResumeFromSession(data);
         if (resume.progressionBlocked) {
           setProgressionBlocked(true);
@@ -813,8 +848,16 @@ export default function Interview({ sessionState = null }) {
       const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
       const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
       setCurrentScore(score);
+      applyMandatoryTotals(resp);
+      if (resp.current_mandatory_index != null) setMandatoryIndex(resp.current_mandatory_index);
+      setFollowUpLabel(resp.follow_up_label || null);
+      setProgressLabel(resp.progress_label || null);
+      setSystemFollowUpScheduled(resp.system_follow_up_scheduled === true);
       const elig = resp.assessment_eligibility;
-      if (elig === 'excluded' || resp.assisted) {
+      if (resp.follow_up_label) {
+        // System follow-up: server label; candidate follow-ups keep theirs.
+        setEligibilityLabel(resp.follow_up_label);
+      } else if (elig === 'excluded' || resp.assisted) {
         setEligibilityLabel(
           resp.is_follow_up ? 'Follow-up · Practiced with help' : 'Practiced with help'
         );
@@ -982,6 +1025,10 @@ export default function Interview({ sessionState = null }) {
     setExpiresAt(fields.expiresAt);
     setStartedAt(fields.startedAt);
     setRound(fields.round);
+    setMandatoryIndex(fields.mandatoryIndex ?? null);
+    setFollowUpLabel(fields.followUpLabel || null);
+    setProgressLabel(fields.progressLabel || null);
+    setSystemFollowUpScheduled(false);
     setNowMs(Date.now());
   };
 
@@ -1010,6 +1057,7 @@ export default function Interview({ sessionState = null }) {
       const resp = await activateRound(sessionId, target.round);
       const fields = roundFieldsFromPayload(resp.active_round, { skill: target.skill || currentSkill });
       if (typeof resp.total_rounds === 'number' && resp.total_rounds > 0) setTotalRounds(resp.total_rounds);
+      applyMandatoryTotals(resp);
       resetRoundUi();
       applyOpenedRound(fields);
       setPendingRound(null);
@@ -1044,6 +1092,7 @@ export default function Interview({ sessionState = null }) {
         expires_at: resp.expires_at,
       }, { skill: resp.current_skill || currentSkill });
       if (typeof resp.total_rounds === 'number' && resp.total_rounds > 0) setTotalRounds(resp.total_rounds);
+      applyMandatoryTotals(resp);
       resetRoundUi();
       applyOpenedRound(fields);
       setPendingRound(null);
@@ -1069,7 +1118,11 @@ export default function Interview({ sessionState = null }) {
 
   const fmt = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
   const scoreColor = (score) => score >= 75 ? '#16A34A' : score >= 50 ? '#D97706' : '#DC2626';
-  const progress = progressPercent({ round, totalRounds, phase });
+  const progressView = mandatoryProgress({
+    mandatoryIndex, mandatoryTotal, mandatoryCompleted, round, totalRounds, phase, progressLabel,
+  });
+  const progress = progressView.percent;
+  const followUpBanner = systemFollowUpBanner(followUpLabel);
   const delivery = deliverySignals(
     transcript,
     recordedMsRef.current + (recordingSinceRef.current != null ? nowMs - recordingSinceRef.current : 0),
@@ -1152,7 +1205,7 @@ export default function Interview({ sessionState = null }) {
             <div className="w-24 h-1.5 bg-black/5 rounded-full overflow-hidden">
               <div className="h-full bg-black rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>{round}/{totalRounds}</span>
+            <span className="text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>{progressView.label}</span>
           </div>
           {usesInterviewMedia && roundType === 'technical_short_answer' && (
             <span
@@ -1267,7 +1320,9 @@ export default function Interview({ sessionState = null }) {
             <div className="flex items-center gap-3 mb-5 flex-wrap">
               <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
-                Question {String(round).padStart(2, '0')} / {String(totalRounds).padStart(2, '0')}
+                {progressView.optional
+                  ? progressView.label
+                  : `Question ${String(progressView.current).padStart(2, '0')} / ${String(progressView.total).padStart(2, '0')}`}
               </span>
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[var(--color-ink-muted)] capitalize"
                 style={{ fontFamily: "var(--font-body)" }}>
@@ -1278,6 +1333,17 @@ export default function Interview({ sessionState = null }) {
               style={{ fontFamily: "var(--font-display)" }}>
               {question || 'Loading…'}
             </p>
+            {followUpBanner && (
+              <div role="note" data-testid="system-follow-up-banner"
+                className="mt-5 max-w-3xl rounded-xl border border-[var(--color-border)] bg-black/[0.03] px-4 py-3">
+                <p className="text-xs font-semibold text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+                  {followUpBanner.title}
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-ink-muted)]" style={{ fontFamily: "var(--font-body)" }}>
+                  {followUpBanner.body}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Collapsible self-view — never covers question/answer on mobile */}
@@ -1511,7 +1577,7 @@ export default function Interview({ sessionState = null }) {
                   <span className="font-medium text-[var(--color-ink)]">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
-              {roundType === 'technical_short_answer' && phase === PHASES.REVIEWING && !followUpNote && (
+              {canRequestFollowUp({ roundType, phase, followUpNote, systemFollowUpScheduled }) && (
                 <button
                   type="button"
                   className="mt-4 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-ink)] disabled:opacity-50"

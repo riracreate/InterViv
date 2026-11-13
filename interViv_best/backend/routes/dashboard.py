@@ -543,7 +543,27 @@ def get_dashboard(
         raw_rounds,
         assessment_completed=assessment_completed,
     )
-    completed_rounds = [item for item in rounds if item.get("final_score") is not None]
+    # Slice 1: server-derived report section per round (shared predicate,
+    # decided on the stored rounds); follow-up-section rounds never feed the
+    # scored series, even with a numeric score.
+    from modules.follow_ups import (
+        REPORT_SECTION_FOLLOW_UPS,
+        SYSTEM_FOLLOW_UP_LABEL,
+        is_system_follow_up,
+        report_section_for,
+    )
+
+    raw_by_round = {r.get("round"): r for r in raw_rounds}
+    for item in rounds:
+        raw = raw_by_round.get(item.get("round"), {})
+        item["report_section"] = report_section_for(raw)
+        if is_system_follow_up(raw):
+            item["follow_up_label"] = SYSTEM_FOLLOW_UP_LABEL
+    completed_rounds = [
+        item for item in rounds
+        if item.get("final_score") is not None
+        and item.get("report_section") != REPORT_SECTION_FOLLOW_UPS
+    ]
     # Primary report averages use assessment-eligible population only.
     eligible_rounds = assessment_eligible_rounds(raw_rounds)
     # Re-apply performance bands from sanitized rounds for eligible ids.

@@ -46,6 +46,40 @@ export function eligibilityPracticeLabel(round) {
   return null;
 }
 
+/** Server-derived report section for system / unscored follow-ups (Slice 1). */
+export const FOLLOW_UP_SECTION = "follow_ups";
+
+/**
+ * Rounds the server placed in the separate follow-up section. Decided only
+ * by the server's per-round `report_section` field (the backend predicate),
+ * never inferred from scores, follow_up_scoring or private metadata.
+ */
+export function followUpSectionRounds(session) {
+  return (session?.rounds || []).filter((r) => r?.report_section === FOLLOW_UP_SECTION);
+}
+
+/** Every other round: the assessed report (all rounds on older servers). */
+function assessedRounds(session) {
+  return (session?.rounds || []).filter((r) => r?.report_section !== FOLLOW_UP_SECTION);
+}
+
+function assessedTotal(session) {
+  const total = Number(session?.total_rounds) || (session?.rounds || []).length;
+  return Math.max(0, total - followUpSectionRounds(session).length);
+}
+
+/** View model for the separate "Follow-up questions" report section. */
+export function mapFollowUpSection(session) {
+  return followUpSectionRounds(session).map((r) => ({
+    round: r.round,
+    parentRound: r.follow_up_parent_round ?? null,
+    question: r.question || r.question_context?.question || "",
+    answer: r.answer_text || "",
+    label: r.follow_up_label || eligibilityPracticeLabel(r) || "Follow-up",
+    feedback: r.feedback?.next_step || r.feedback?.content?.[0] || "",
+  }));
+}
+
 // The API sends a null average when no measured round was scored (e.g. an
 // expired round that could not be evaluated). Absence is not a zero.
 function measuredAverage(session) {
@@ -61,7 +95,9 @@ function gradeFor(score) {
 // Rounds the API reports as unscored (coverage.unscored_rounds, the same
 // list Progress renders), labeled with Progress's wording.
 function unscoredRounds(session) {
-  return (session?.coverage?.unscored_rounds || []).map((u) => ({
+  // Follow-up-section rounds are listed in their own section instead.
+  const followUps = new Set(followUpSectionRounds(session).map((r) => r.round));
+  return (session?.coverage?.unscored_rounds || []).filter((u) => !followUps.has(u.round)).map((u) => ({
     round: u.round,
     label: unscoredReasonLabel(u),
   }));
@@ -150,7 +186,7 @@ function isBlendedSession(session) {
  * Uses only fields already present on the API / mapped rounds — no invented scores.
  */
 export function buildReviewSummaryProps(session, mapped) {
-  const rounds = session?.rounds || [];
+  const rounds = assessedRounds(session);
   const completed = rounds.filter((r) => r.final_score != null);
   const scores = completed.map((r) => Number(r.final_score));
   const average = measuredAverage(session);
@@ -187,7 +223,7 @@ export function buildReviewSummaryProps(session, mapped) {
     .filter((r) => typeof r.score === "number")
     .sort((a, b) => a.score - b.score)[0] || null;
 
-  const totalRounds = Number(session?.total_rounds) || rounds.length || completed.length;
+  const totalRounds = assessedTotal(session) || rounds.length || completed.length;
 
   return {
     overallScore,
@@ -212,7 +248,7 @@ export function buildReviewSummaryProps(session, mapped) {
 }
 
 export function mapRealDataToDashboard(session) {
-  const rounds = session.rounds || [];
+  const rounds = assessedRounds(session);
   const completed = rounds.filter((r) => r.final_score != null);
   const average = measuredAverage(session);
   const measured = average != null;
@@ -373,7 +409,7 @@ export function mapRealDataToDashboard(session) {
         day: "numeric",
         year: "numeric",
       }),
-      durationLabel: `${completed.length} of ${Number(session.total_rounds) || rounds.length} rounds scored`,
+      durationLabel: `${completed.length} of ${assessedTotal(session) || rounds.length} rounds scored`,
       skillFocus: skills[0] || "General",
     },
     overall: blended
@@ -388,6 +424,7 @@ export function mapRealDataToDashboard(session) {
     radar: radarSkills,
     performance: { finalRating: finalElo, difficulty: diffProgression, score: scoreProgression },
     rounds: roundsForTimeline,
+    followUps: mapFollowUpSection(session),
     mcqReviews,
     highlights: { strengths, weaknesses },
     feedbackCards,

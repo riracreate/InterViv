@@ -24,6 +24,7 @@ captures the pre-change baseline:
     python -m tests.slice1_harness --write tests/fixtures/slice1_flag_off_transcript.json no_follow_up
     python -m tests.slice1_harness --write tests/fixtures/slice1_candidate_transcript.json candidate_follow_up
     python -m tests.slice1_harness --write tests/fixtures/slice1_account_transcript.json account_candidate_follow_ups
+    python -m tests.slice1_harness --write tests/fixtures/slice1_upload_start_transcript.json upload_start
 """
 
 from __future__ import annotations
@@ -195,7 +196,12 @@ def record_reports(record, client, headers, sid) -> None:
     record("account_progress", client.get("/dashboard/progress", headers=headers))
 
 
-def run_transcript(client, db, headers, user_id) -> dict[str, Any]:
+# The Upload page's start body (frontend/src/pages/Upload.jsx): legacy skills
+# and rounds_per_skill -- no blocks, no practice_mode, no follow-up opt-in.
+UPLOAD_START = {"skill": "DBMS", "skills": ["DBMS", "OS"], "sub_domain": "general", "rounds_per_skill": 2}
+
+
+def run_transcript(client, db, headers, user_id, start_payload=None) -> dict[str, Any]:
     """Start → (GET, submit, GET, activate) × N → final GET, plus stored docs."""
     steps: list[dict[str, Any]] = []
 
@@ -203,7 +209,7 @@ def run_transcript(client, db, headers, user_id) -> dict[str, Any]:
         steps.append({"step": name, "status": response.status_code, "body": response.json()})
         return response.json()
 
-    started = record("start", client.post("/session/start", headers=headers, json={
+    started = record("start", client.post("/session/start", headers=headers, json=start_payload or {
         "blocks": TRANSCRIPT_BLOCKS, "practice_mode": "coached_practice",
     }))
     sid = started["session_id"]
@@ -232,6 +238,11 @@ def run_transcript(client, db, headers, user_id) -> dict[str, Any]:
         "round_docs": stored.get("rounds") or [],
         "session_doc": session_doc,
     }, replacements)
+
+
+def run_upload_start_transcript(client, db, headers, user_id) -> dict[str, Any]:
+    """The same flow from a non-Practice start (the Upload page's body)."""
+    return run_transcript(client, db, headers, user_id, start_payload=UPLOAD_START)
 
 
 def run_candidate_transcript(client, db, headers, user_id) -> dict[str, Any]:
@@ -289,6 +300,40 @@ def run_candidate_transcript(client, db, headers, user_id) -> dict[str, Any]:
         "session_doc": {k: v for k, v in stored.items() if k not in ("rounds", "revision")},
         "exposures": exposures,
     }, replacements)
+
+
+# Checkpoint C additive, server-derived API fields (allowed differences in
+# API bodies; their values are asserted separately).
+ADDITIVE_BODY_KEYS = frozenset({
+    "mandatory_index", "mandatory_total", "mandatory_completed",
+    "current_mandatory_index", "next_mandatory_index",
+    "system_follow_up_scheduled", "report_section", "follow_up_label",
+    "progress_label",
+})
+
+
+def drop_additive_body_keys(transcript: dict[str, Any]) -> dict[str, Any]:
+    """Copy of ``transcript`` with ADDITIVE_BODY_KEYS removed from step bodies.
+
+    Plan entries inside bodies are skipped on purpose: a plan-level
+    ``mandatory_index`` in a body is a leak, not an additive field.
+    """
+    out = json.loads(json.dumps(transcript))
+
+    def strip(node, in_plan=False):
+        if isinstance(node, dict):
+            for key in list(node):
+                if key in ADDITIVE_BODY_KEYS and not in_plan:
+                    node.pop(key)
+                else:
+                    strip(node[key], in_plan or key == "expanded_plan")
+        elif isinstance(node, list):
+            for item in node:
+                strip(item, in_plan)
+
+    for step in out.get("steps", []):
+        strip(step.get("body"))
+    return out
 
 
 def drop_paths(value: Any, patterns: list[tuple[str, ...]]) -> Any:
@@ -450,6 +495,7 @@ def run_two_candidate_transcript(client, db, headers, user_id) -> dict[str, Any]
 RUNNERS = {
     "two_candidate_follow_ups": run_two_candidate_transcript,
     "no_follow_up": run_transcript,
+    "upload_start": run_upload_start_transcript,
     "candidate_follow_up": run_candidate_transcript,
     "account_candidate_follow_ups": run_account_transcript,
 }

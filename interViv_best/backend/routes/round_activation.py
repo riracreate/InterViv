@@ -31,14 +31,21 @@ MAX_ACTIVATE_ATTEMPTS = 3
 
 
 def activation_payload(session: dict[str, Any], round_doc: dict[str, Any]) -> dict[str, Any]:
+    from modules.follow_ups import delivered_round_fields, mandatory_progress
+
     return {
         "session_id": session["session_id"],
         "session_status": session.get("status", "active"),
         "total_rounds": _total_rounds(session, get_settings()),
-        "active_round": sanitize_round_for_client(
-            dict(round_doc),
-            is_session_completed=session_assessment_completed(session),
-        ),
+        "active_round": {
+            **sanitize_round_for_client(
+                dict(round_doc),
+                is_session_completed=session_assessment_completed(session),
+            ),
+            **delivered_round_fields(session, round_doc),
+        },
+        # Slice 1 additive fields; omitted for plans without complete indices.
+        **(mandatory_progress(session) or {}),
     }
 
 

@@ -14,6 +14,7 @@ import AccountMenu from "../components/AccountMenu";
 
 import { ScoreHero } from "../components/dashboard/ScoreHero";
 import { ReviewSummary } from "../components/dashboard/ReviewSummary";
+import { FollowUpSection } from "../components/dashboard/FollowUpSection";
 import { BlockResults } from "../components/dashboard/BlockResults";
 import { LayerBreakdown } from "../components/dashboard/LayerBreakdown";
 import { SkillRadar } from "../components/dashboard/SkillRadar";
@@ -270,6 +271,7 @@ export default function Dashboard() {
             {tab === "rounds" && (
               <div className="space-y-8">
                 <RoundTimeline rounds={data.rounds} />
+                <FollowUpSection items={data.followUps || []} />
                 {(data.mcqReviews || []).map((review, index) => (
                   <McqRoundReview key={`mcq-review-${index}`} review={review} />
                 ))}

@@ -86,7 +86,17 @@ export function roundFieldsFromPayload(round, fallback = {}) {
     configJson: round.config_json || {},
     expiresAt: round.expires_at ?? null,
     startedAt: round.started_at ?? null,
+    // Slice 1 server-derived fields (absent on legacy plans / older servers).
+    mandatoryIndex: positiveIntOrNull(round.mandatory_index),
+    isFollowUp: Boolean(round.is_follow_up),
+    followUpLabel: round.follow_up_label || null,
+    progressLabel: round.progress_label || null,
   };
+}
+
+function positiveIntOrNull(value) {
+  const n = Number(value);
+  return value != null && Number.isInteger(n) && n > 0 ? n : null;
 }
 
 /** Display text for rules feedback in any of the server's shapes. */
@@ -118,6 +128,10 @@ export function resultFromHistory(entry) {
     evaluationMode: entry.evaluation_mode || null,
     eligibility: entry.assessment_eligibility || null,
     isFollowUp: Boolean(entry.is_follow_up),
+    mandatoryIndex: positiveIntOrNull(entry.mandatory_index),
+    followUpLabel: entry.follow_up_label || null,
+    progressLabel: entry.progress_label || null,
+    systemFollowUpScheduled: entry.system_follow_up_scheduled === true,
   };
 }
 
@@ -184,4 +198,77 @@ export function progressPercent({ round, totalRounds, phase }) {
   if (!totalRounds) return 0;
   const answered = Math.max(0, Number(round) - 1) + (isShowingResult(phase) ? 1 : 0);
   return Math.min(100, (answered / totalRounds) * 100);
+}
+
+/**
+ * Header progress for indexed plans (Slice 1). The label shows the round's
+ * mandatory position (a system follow-up shows its parent's); the bar uses
+ * the server's count of completed mandatory rounds, so follow-ups never
+ * advance it and it never moves backwards. Without server fields (legacy
+ * plans or an older server) this is exactly the historical round/total
+ * display.
+ *
+ * A candidate-requested follow-up carries the server's `progressLabel`
+ * ("Optional follow-up") instead of a position. It is only ever delivered
+ * after every mandatory round, so mandatory progress stays complete: the
+ * server's completed/total count when present, otherwise 100%.
+ */
+export function mandatoryProgress({
+  mandatoryIndex, mandatoryTotal, mandatoryCompleted, round, totalRounds, phase, progressLabel,
+}) {
+  const index = positiveIntOrNull(mandatoryIndex);
+  const total = positiveIntOrNull(mandatoryTotal);
+  if (progressLabel) {
+    const counted = total && mandatoryCompleted != null && Number.isFinite(Number(mandatoryCompleted));
+    return {
+      current: null,
+      total: total || Number(totalRounds) || 0,
+      label: progressLabel,
+      percent: counted ? Math.min(100, Math.max(0, (Number(mandatoryCompleted) / total) * 100)) : 100,
+      mandatory: Boolean(total),
+      optional: true,
+    };
+  }
+  if (index && total) {
+    const done = Number.isFinite(Number(mandatoryCompleted)) && mandatoryCompleted != null
+      ? Number(mandatoryCompleted)
+      : index - 1 + (isShowingResult(phase) ? 1 : 0);
+    return {
+      current: index,
+      total,
+      label: `${index}/${total}`,
+      percent: Math.min(100, Math.max(0, (done / total) * 100)),
+      mandatory: true,
+      optional: false,
+    };
+  }
+  return {
+    current: Number(round) || 1,
+    total: Number(totalRounds) || 0,
+    label: `${round}/${totalRounds}`,
+    percent: progressPercent({ round, totalRounds, phase }),
+    mandatory: false,
+    optional: false,
+  };
+}
+
+/**
+ * The optional-follow-up request button: technical rounds under review,
+ * not already answered by a note, and hidden once the server reports a
+ * system follow-up for this parent (also after a refresh).
+ */
+export function canRequestFollowUp({ roundType, phase, followUpNote, systemFollowUpScheduled }) {
+  return roundType === 'technical_short_answer'
+    && phase === PHASES.REVIEWING
+    && !followUpNote
+    && systemFollowUpScheduled !== true;
+}
+
+/** Banner for a system follow-up, from the server label only (never inferred). */
+export function systemFollowUpBanner(followUpLabel) {
+  if (!followUpLabel) return null;
+  return {
+    title: followUpLabel,
+    body: 'A short clarification of your previous answer. It is not scored and does not count toward your assessment or progress.',
+  };
 }

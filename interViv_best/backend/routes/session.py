@@ -1704,6 +1704,14 @@ def start_session(
         "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
         "config_json": round_document.config_json,
     }
+    from modules.follow_ups import mandatory_index_for_round, mandatory_progress
+
+    progress = mandatory_progress(session_dict)
+    if progress is not None:
+        response.update(progress)
+        response["mandatory_index"] = mandatory_index_for_round(
+            session_dict, round_document.model_dump()
+        )
     if round_document.round_type == "mcq":
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
@@ -1871,14 +1879,22 @@ def get_session(
     # never served as the active round; legacy fallback is the last round.
     active_round = in_progress or (None if pending else latest)
 
+    from modules.follow_ups import delivered_round_fields, mandatory_progress
+
     sanitized_active_round = (
-        sanitize_round_for_client(active_round, is_session_completed=is_completed)
+        {
+            **sanitize_round_for_client(active_round, is_session_completed=is_completed),
+            **delivered_round_fields(session, active_round),
+        }
         if active_round
         else None
     )
     closed = [r for r in rounds if r.get("status") not in OPEN_STATUSES]
     round_history = [
-        sanitize_round_for_client(dict(r), is_session_completed=is_completed)
+        {
+            **sanitize_round_for_client(dict(r), is_session_completed=is_completed),
+            **delivered_round_fields(session, r),
+        }
         for r in closed
     ]
     # The round under review: the latest answered round while no question
@@ -1918,6 +1934,8 @@ def get_session(
         "round_history": round_history,
         "review_round": review_round,
         "pending_round": pending_round,
+        # Slice 1 additive fields; omitted for plans without complete indices.
+        **(mandatory_progress(session) or {}),
     }
 
 

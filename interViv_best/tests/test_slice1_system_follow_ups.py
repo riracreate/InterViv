@@ -1125,6 +1125,38 @@ def test_sql_write_conflict_retry_preserves_single_insert(sql_db, independent_wo
 # ── test 6: flag-off transcripts vs the pre-Slice-1 capture ──────────
 
 
+def _assert_additive_values(transcript):
+    """Checkpoint C additive fields carry the right values (flag off)."""
+    steps = {s["step"]: s["body"] for s in transcript["steps"]}
+    start = steps["start"]
+    assert (start["mandatory_index"], start["mandatory_completed"]) == (1, 0)
+    total = start["mandatory_total"]
+    # Candidate-requested follow-ups, and only they, carry the progress label.
+    def labelled(item):
+        return item.get("progress_label") == ("Optional follow-up" if item.get("is_follow_up") else None)
+
+    for name, body in steps.items():
+        if name.startswith("get_"):
+            assert body["mandatory_total"] == total
+            for entry in body["round_history"]:
+                assert labelled(entry), (name, entry.get("round"))
+                if not entry.get("is_follow_up"):
+                    assert entry["mandatory_index"] == entry["round"]
+                    assert entry["system_follow_up_scheduled"] is False
+        if name.startswith("submit_"):
+            assert labelled(body), name
+        if name.startswith("submit_") and not body.get("is_follow_up"):
+            assert body["system_follow_up_scheduled"] is False
+            assert body["mandatory_total"] == total
+        if name.startswith("activate_"):
+            assert "follow_up_label" not in body["active_round"]  # flag off: no system rounds
+            assert labelled(body["active_round"]), name
+    report = steps["dashboard_report"]
+    for item in report["rounds"]:
+        expected = "follow_ups" if item.get("is_follow_up") and item.get("final_score") is None else "rounds"
+        assert item["report_section"] == expected, item.get("round")
+
+
 def _allow_follow_up_snapshot_flip(current, expected):
     """B2 intended difference: NEW follow-up snapshots freeze
     ``rules_replayable=false``. Only follow-up rounds, only True -> False."""
@@ -1139,6 +1171,8 @@ def _allow_follow_up_snapshot_flip(current, expected):
 @pytest.mark.parametrize("which,fixture", [
     ("no_follow_up", "slice1_flag_off_transcript.json"),
     ("candidate_follow_up", "slice1_candidate_transcript.json"),
+    # Non-Practice start: the Upload page's legacy body (no blocks, no opt-in).
+    ("upload_start", "slice1_upload_start_transcript.json"),
 ])
 @pytest.mark.parametrize("flag", [None, "true"])
 def test_transcript_matches_pre_slice1_capture(mem, monkeypatch, which, fixture, flag):
@@ -1153,9 +1187,10 @@ def test_transcript_matches_pre_slice1_capture(mem, monkeypatch, which, fixture,
     user_id, headers = harness.make_user(mem)
     transcript = harness.RUNNERS[which](_client(), mem, headers, user_id)
     expected = json.loads((FIXTURES / fixture).read_text())
-    current = harness.drop_paths(transcript, ADDITIVE_FIELDS)
+    current = harness.drop_paths(harness.drop_additive_body_keys(transcript), ADDITIVE_FIELDS)
     _allow_follow_up_snapshot_flip(current, expected)
     assert json.dumps(current, sort_keys=True) == json.dumps(expected, sort_keys=True)
+    _assert_additive_values(transcript)
     # The only additive field is the server-only mandatory index on mandatory specs.
     mandatory = [s for s in transcript["session_doc"]["expanded_plan"] if not s.get("is_follow_up")]
     assert [s["mandatory_index"] for s in mandatory] == [s["round"] for s in mandatory]
@@ -1166,22 +1201,25 @@ def test_transcript_matches_pre_slice1_capture(mem, monkeypatch, which, fixture,
 # ── server-only plan keys never reach an API body ────────────────────
 
 
-def _server_only_paths(value, path="$"):
+def _server_only_paths(value, path="$", in_plan=False):
+    """Server-only keys anywhere in a body. ``mandatory_index`` counts only
+    inside an ``expanded_plan`` (the stored plan key); on delivered rounds it
+    is a Checkpoint C derived field."""
     from backend.serializers.plan_serializer import SERVER_ONLY_PLAN_KEYS
 
     found = []
     if isinstance(value, dict):
         for key, item in value.items():
-            if key in SERVER_ONLY_PLAN_KEYS:
+            if key in SERVER_ONLY_PLAN_KEYS and (in_plan or key != "mandatory_index"):
                 found.append(f"{path}.{key}")
-            found += _server_only_paths(item, f"{path}.{key}")
+            found += _server_only_paths(item, f"{path}.{key}", in_plan or key == "expanded_plan")
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            found += _server_only_paths(item, f"{path}[{index}]")
+            found += _server_only_paths(item, f"{path}[{index}]", in_plan)
     return found
 
 
-@pytest.mark.parametrize("which", ["no_follow_up", "candidate_follow_up"])
+@pytest.mark.parametrize("which", ["no_follow_up", "candidate_follow_up", "upload_start"])
 def test_flag_off_api_bodies_carry_no_server_only_plan_keys(mem, which):
     user_id, headers = harness.make_user(mem)
     transcript = harness.RUNNERS[which](_client(), mem, headers, user_id)

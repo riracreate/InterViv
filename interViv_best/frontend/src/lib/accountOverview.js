@@ -78,5 +78,13 @@ export function interviewStateFromSession(session) {
     currentConcepts: result ? result.concepts : undefined,
     currentArtifact: result ? result.artifact : undefined,
     evaluationMode: result ? result.evaluationMode : undefined,
+    // Slice 1 server-derived fields (null on legacy plans / older servers).
+    mandatoryIndex: current.mandatoryIndex ?? null,
+    mandatoryTotal: session.mandatory_total ?? null,
+    mandatoryCompleted: session.mandatory_completed ?? null,
+    isFollowUpRound: Boolean(current.isFollowUp),
+    followUpLabel: current.followUpLabel || null,
+    progressLabel: current.progressLabel || null,
+    systemFollowUpScheduled: Boolean(result && result.systemFollowUpScheduled),
   };
 }

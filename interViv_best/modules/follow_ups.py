@@ -646,3 +646,116 @@ def schedule_follow_up_in_session(
         "follow_up_identity": plan_entry.get("follow_up_identity"),
         "insert_at": insert_at,
     }
+
+
+# ── Client-facing derived fields (Checkpoint C) ──────────────────────
+#
+# Backward-compatible additions computed on the server from stored state.
+# Mandatory fields are omitted whenever the plan lacks complete indices
+# (legacy sessions), so legacy clients and payloads are unchanged.
+
+SYSTEM_FOLLOW_UP_LABEL = "Follow-up (not scored)"
+# Progress position of a candidate-requested follow-up. It always comes after
+# every mandatory round, so it has no "n/N" position of its own; the existing
+# eligibility and report labels of candidate follow-ups are unchanged.
+CANDIDATE_FOLLOW_UP_PROGRESS_LABEL = "Optional follow-up"
+REPORT_SECTION_FOLLOW_UPS = "follow_ups"
+REPORT_SECTION_ROUNDS = "rounds"
+_CLOSED_STATUSES = frozenset({"submitted", "expired"})
+
+
+def _mandatory_spec_at(session: dict[str, Any], round_number: int) -> dict[str, Any] | None:
+    return next(
+        (s for s in mandatory_plan_specs(session) if int(s.get("round") or 0) == int(round_number)),
+        None,
+    )
+
+
+def mandatory_index_for_round(session: dict[str, Any], round_doc: dict[str, Any] | None) -> int | None:
+    """Mandatory position of a delivered round; a follow-up takes its parent's.
+
+    Materialized rounds never shift, so the spec at a mandatory round's
+    number is the one it was built from.
+    """
+    if not isinstance(round_doc, dict) or not mandatory_indices_complete(session):
+        return None
+    from modules.assistance_policy import is_follow_up_round
+
+    number = round_doc.get("round")
+    if is_follow_up_round(round_doc):
+        number = round_doc.get("follow_up_parent_round") or (round_doc.get("config_json") or {}).get(
+            "follow_up_parent_round"
+        )
+    if number is None:
+        return None
+    spec = _mandatory_spec_at(session, int(number))
+    index = (spec or {}).get("mandatory_index")
+    return index if _positive_int(index) else None
+
+
+def mandatory_progress(session: dict[str, Any]) -> dict[str, int] | None:
+    """``mandatory_total`` / ``mandatory_completed``, or None for legacy plans."""
+    if not mandatory_indices_complete(session):
+        return None
+    from modules.assistance_policy import is_follow_up_round
+
+    completed = sum(
+        1
+        for r in (session.get("rounds") or [])
+        if isinstance(r, dict) and not is_follow_up_round(r)
+        and str(r.get("status") or "") in _CLOSED_STATUSES
+    )
+    return {"mandatory_total": len(mandatory_plan_specs(session)), "mandatory_completed": completed}
+
+
+def system_follow_up_scheduled_for(session: dict[str, Any], parent_round: int | None) -> bool:
+    """A system follow-up (pending or materialized) exists for this parent."""
+    if parent_round is None:
+        return False
+    for item in list(session.get("expanded_plan") or []) + list(session.get("rounds") or []):
+        if is_system_follow_up(item) and int(item.get("follow_up_parent_round") or -1) == int(parent_round):
+            return True
+    return False
+
+
+def progress_label_for(round_doc: dict[str, Any] | None) -> str | None:
+    """``"Optional follow-up"`` for a candidate-requested follow-up, else None.
+
+    Independent of mandatory indices, so index-less (legacy) plans get it too.
+    """
+    from modules.assistance_policy import is_follow_up_round
+
+    if isinstance(round_doc, dict) and is_follow_up_round(round_doc) and not is_system_follow_up(round_doc):
+        return CANDIDATE_FOLLOW_UP_PROGRESS_LABEL
+    return None
+
+
+def delivered_round_fields(session: dict[str, Any], round_doc: dict[str, Any] | None) -> dict[str, Any]:
+    """Derived, client-safe fields for one delivered round.
+
+    ``mandatory_index`` (omitted for legacy plans), ``follow_up_label`` for
+    system follow-ups only (candidate follow-ups keep their existing
+    labels), ``progress_label`` for candidate-requested follow-ups only, and
+    ``system_follow_up_scheduled`` for non-follow-up rounds.
+    """
+    if not isinstance(round_doc, dict):
+        return {}
+    from modules.assistance_policy import is_follow_up_round
+
+    out: dict[str, Any] = {}
+    index = mandatory_index_for_round(session, round_doc)
+    if index is not None:
+        out["mandatory_index"] = index
+    if is_system_follow_up(round_doc):
+        out["follow_up_label"] = SYSTEM_FOLLOW_UP_LABEL
+    progress_label = progress_label_for(round_doc)
+    if progress_label:
+        out["progress_label"] = progress_label
+    if not is_follow_up_round(round_doc):
+        out["system_follow_up_scheduled"] = system_follow_up_scheduled_for(session, round_doc.get("round"))
+    return out
+
+
+def report_section_for(round_doc: dict[str, Any] | None) -> str:
+    """Server-derived report section (same predicate as every backend rule)."""
+    return REPORT_SECTION_FOLLOW_UPS if is_system_or_unreviewed_follow_up(round_doc) else REPORT_SECTION_ROUNDS

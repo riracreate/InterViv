@@ -2036,6 +2036,40 @@ def submit_answer(
         if round_type == "sql" and resp_artifact:
             resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)
 
+        # Slice 1 additive fields, from the committed state of this attempt.
+        from modules.follow_ups import (
+            SYSTEM_FOLLOW_UP_LABEL,
+            mandatory_index_for_round,
+            mandatory_progress,
+            progress_label_for,
+            system_follow_up_scheduled_for,
+        )
+
+        committed_view = {**session, "rounds": rounds}
+        derived_response: dict[str, Any] = {}
+        progress = mandatory_progress(committed_view)
+        if progress is not None:
+            next_doc = next(
+                (r for r in rounds if next_round_number is not None and r.get("round") == next_round_number),
+                None,
+            )
+            derived_response.update(progress)
+            derived_response["current_mandatory_index"] = mandatory_index_for_round(
+                committed_view, active_round
+            )
+            derived_response["next_mandatory_index"] = (
+                mandatory_index_for_round(committed_view, next_doc) if next_doc else None
+            )
+        if is_follow_up_round(active_round):
+            if is_system_follow_up(active_round):
+                derived_response["follow_up_label"] = SYSTEM_FOLLOW_UP_LABEL
+            else:
+                derived_response["progress_label"] = progress_label_for(active_round)
+        else:
+            derived_response["system_follow_up_scheduled"] = system_follow_up_scheduled_for(
+                committed_view, request.round
+            )
+
         return {
             "svm_label": scoring_result.get("svm_label"),
             "nlp_score": scoring_result.get("nlp_score"),
@@ -2094,4 +2128,5 @@ def submit_answer(
             "eligibility_policy_version": eligibility["policy_version"],
             "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
             "is_follow_up": bool(is_follow_up_round(active_round)),
+            **derived_response,
         }
