@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
+from backend.runtime_env import load_project_dotenv
 
 # Frozen scoring runtime: changing either value requires a new golden capture.
 SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -94,7 +94,7 @@ def _resolve_paths(raw_value: str | None, defaults: list[Path]) -> list[Path]:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[1]
     modules_dir = project_root / "modules"
-    load_dotenv(project_root / ".env", override=False)
+    load_project_dotenv(project_root)
 
     default_module_paths = [
         modules_dir,

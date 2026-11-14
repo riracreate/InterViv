@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from backend.db import get_database
 from backend.db.user_target import get_user_target
 from backend.routes.auth import require_authenticated, require_user
-from backend.routes.session import StartSessionRequest, start_session
+from backend.routes.session import StartSessionRequest, launch_planned_scope, start_session
 from modules.coach_conversation import (
     MAX_MESSAGE_CHARS,
     clear_conversation,
@@ -87,13 +87,23 @@ def coach_plan(
             role_id = candidate.get("target_role_id") or candidate.get("role_id")
         role_id = role_id or get_user_target(user)["role_id"]
 
-    return build_coach_plan(
+    plan = build_coach_plan(
         jd_text=body.jd_text,
         goal_text=body.goal_text,
         user_id=str(user["id"]),
         role_id=str(role_id) if role_id else None,
         include_dashboard=bool(body.include_dashboard),
     )
+    # What "Start practice" will actually ask: at most three free-text
+    # questions, one per skill, so later skills are named as not covered.
+    preview = plan.get("practice_preview") or {}
+    if preview.get("skills"):
+        preview["planned_scope"] = launch_planned_scope(
+            {"skills": preview["skills"], "round_plan": preview.get("round_plan") or [],
+             "rounds_per_skill": 1},
+            list(preview["skills"]),
+        )
+    return plan
 
 
 @router.post("/start-practice")
@@ -135,6 +145,7 @@ def coach_start_practice(
     return {
         **session,
         "round_plan": start_body.get("round_plan"),
+        "planned_scope": launch_planned_scope(start_body, skills),
         "navigate": f"/interview/{session.get('session_id')}",
         "skills": skills,
     }

@@ -5,17 +5,19 @@ ten questions that were all recorded against the first skill. Eight of them
 were generic templates about one other skill, with no reference answer to
 score against or to show in the report.
 
-Covered here: the per-question skill plan, the reference check on every
-served question (bounded retries, same-skill bank fallback, otherwise
-"content unavailable"), the planned scope shown before the start, and the
-launcher switch that lets the provider configured in .env be used at all.
+Covered here: the per-question skill plan; the content rules on every served
+question (bounded retries, a fallback that is about the requested skill,
+otherwise "content unavailable"); one eligibility rule for the pre-start
+check and for serving; the planned scope shown before a start, including
+Jobs and Coach launches; and the launcher switch that lets the provider
+configured in .env generate questions and nothing else.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -36,6 +38,7 @@ from backend.models.blocks import (  # noqa: E402
     normalize_blocks,
 )
 from modules import adaptive_question_selector as aqs  # noqa: E402
+from modules import question_content  # noqa: E402
 from modules import question_runtime as qr  # noqa: E402
 from modules.concept_mastery import ConceptMastery  # noqa: E402
 from modules.skill_graph import StudentSkillGraph  # noqa: E402
@@ -54,8 +57,8 @@ def offline_question_source(monkeypatch: pytest.MonkeyPatch):
     """The backend as scripts/run_local.py starts it by default.
 
     Other test modules leave live-generation settings in ``os.environ``, so
-    every test here states its own. Any provider request that is not
-    stubbed by the test is recorded and fails it.
+    every test here states its own. A provider request that a test does not
+    stub is blocked by the suite's network guard and fails that test.
     """
     monkeypatch.setenv("LLM_LIVE_FETCH", "0")
     monkeypatch.setenv("QUESTION_GENERATION_MODE", "csv")
@@ -65,26 +68,20 @@ def offline_question_source(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("QUESTION_LLM_RETRY_BASE_SECONDS", "0")
     monkeypatch.setenv("QUESTION_LLM_RATE_LIMIT_PER_MINUTE", "0")
+    monkeypatch.delenv("LLM_LIVE_CONSUMERS", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
     qr._IN_MEMORY_CACHE.clear()
-    dialed: list[object] = []
-
-    def refuse(request, *args, **kwargs):
-        dialed.append(request)
-        raise urllib.error.URLError("no provider requests in tests")
-
-    monkeypatch.setattr(qr.urllib.request, "urlopen", refuse)
     yield
     qr._IN_MEMORY_CACHE.clear()
-    assert not dialed, "a test reached the provider without stubbing it"
 
 
 def _generation(index: int, *, complete: bool = True) -> str:
     body: dict[str, object] = {"question": f"Generated question {index}: how would you apply it?"}
     if complete:
         body["ideal_answer"] = (
-            "A strong answer states the goal, the steps taken, one trade-off "
-            "and how the result is checked."
+            "A strong answer states the goal first, then walks through the "
+            "steps that were taken in order. It names one trade-off that was "
+            "accepted and explains how the result was checked afterwards."
         )
         body["ideal_keywords"] = ["goal", "steps", "trade-off", "feedback", "review"]
     return json.dumps(body)
@@ -213,34 +210,182 @@ def test_legacy_round_plan_gives_each_free_text_round_its_own_skill() -> None:
     assert fewer[0]["skills"] == ["SQL"]
 
 
-# ── The content contract: a scored question carries its reference ────────────
+# ── The content rules: a scored question carries what it is scored against ───
 
-def test_reference_contract() -> None:
-    bank_row = {"question": "Q?", "ideal_answer": "A.", "source": "csv"}
-    generated = {"question": "Q?", "ideal_answer": "A.", "ideal_keywords": ["k"], "source": "llm"}
-    assert qr.reference_gap(bank_row) is None
-    assert qr.reference_gap(generated) is None
-    assert qr.reference_gap({**generated, "ideal_keywords": ""}) == "no keywords"
-    assert qr.reference_gap({**generated, "source": "llm-adaptive", "ideal_keywords": []}) == "no keywords"
-    assert qr.reference_gap({"question": "Q?", "ideal_answer": " ", "source": "template"}) == "no reference answer"
-    assert qr.reference_gap({"question": " ", "ideal_answer": "A."}) == "no question text"
+REFERENCE = (
+    "An index keeps the indexed keys sorted in a separate structure, so a "
+    "lookup walks a few pages instead of scanning every row of the table."
+)
+KEYWORDS = ["index", "sorted keys", "lookup", "full table scan"]
+
+
+def test_content_rules_need_a_substantial_reference_and_keywords() -> None:
+    valid = {"question": "How does an index speed up a query?", "ideal_answer": REFERENCE,
+             "ideal_keywords": KEYWORDS}
+    assert question_content.reference_issues(valid) == []
+    # The same rule whatever the source, and whichever key names are used.
+    for source in ("llm", "llm-adaptive", "csv", "structured_fallback"):
+        assert qr.reference_gap({**valid, "source": source}) is None
+    assert qr.reference_gap({"question": "Q?", "reference_answer": REFERENCE,
+                             "keywords": "index | sorted keys | lookup | scan"}) is None
+
+    assert qr.reference_gap({**valid, "ideal_answer": " "}) == "no reference answer"
+    # Present is not enough: a one-line reference is too weak to score against.
+    assert qr.reference_gap({**valid, "ideal_answer": "An index makes lookups faster."}) == (
+        f"reference answer under {question_content.MIN_REFERENCE_WORDS} words")
+    assert qr.reference_gap({**valid, "ideal_keywords": ""}) == "no keywords"
+    assert qr.reference_gap({**valid, "ideal_keywords": []}) == "no keywords"
+    assert qr.reference_gap({**valid, "ideal_keywords": ["index", "lookup"]}) == (
+        f"fewer than {question_content.MIN_KEYWORDS} keywords")
+    # Repeats and punctuation are not keywords the scorer can match.
+    assert qr.reference_gap({**valid, "ideal_keywords": "index, Index, INDEX, lookup, --, ??"}) == (
+        f"fewer than {question_content.MIN_KEYWORDS} keywords")
+    assert question_content.reference_issues({**valid, "ideal_answer": "", "ideal_keywords": ""}) == [
+        "no reference answer", "no keywords"]
+    assert qr.reference_gap({**valid, "question": " "}) == "no question text"
     assert qr.reference_gap(None) == "no question text"
 
 
-def test_offline_fallback_serves_references_until_the_pool_is_spent() -> None:
-    """Never a template: the pool the start check counts is the pool served."""
+def test_the_bank_audit_and_serving_share_one_set_of_content_rules() -> None:
+    from scripts import question_audit
+
+    assert question_audit.MIN_KEYWORDS is question_content.MIN_KEYWORDS
+    assert question_audit.MIN_REFERENCE_WORDS is question_content.MIN_REFERENCE_WORDS
+    assert question_audit.VALID_DIFFICULTIES is question_content.VALID_DIFFICULTIES
+    assert question_audit._split_multi is question_content.split_keywords
+    report = question_audit.audit_question_bank(
+        question_audit.PROJECT_ROOT / "data" / "fallback_question_bank.csv")
+    assert report.schema_ok and not report.errors
+    assert not [issue for issue in report.warnings
+                if "keywords" in issue.message or "Ideal answer" in issue.message]
+
+
+def test_every_offline_question_passes_the_content_rules() -> None:
+    pool = qr.offline_pool()
+    assert pool
+    for entry in pool:
+        assert question_content.reference_issues(entry) == [], entry["question"]
+        assert entry["source"] in OFFLINE_SOURCES
+        assert entry["skill"] and entry["sub_domain"]
+    questions = [entry["question"].lower() for entry in pool]
+    assert len(questions) == len(set(questions))
+    # Legacy bank rows that have a reference but no keywords are not served.
+    assert "what is kubernetes?" not in questions
+    assert "what is ci/cd?" not in questions
+
+
+# ── relevance: a skill is covered only by questions about it ────────────────
+
+def _entry(skill: str, sub_domain: str, question: str, **extra) -> dict:
+    return {"question": question, "ideal_answer": REFERENCE, "ideal_keywords": list(KEYWORDS),
+            "source": "csv", "company": "", "role": "", "skill": skill, "sub_domain": sub_domain,
+            "topic": sub_domain, "difficulty": "medium", "question_type": "conceptual",
+            "followups": [], **extra}
+
+
+def _questions(skill: str) -> list[str]:
+    return [entry["question"] for entry in qr.eligible_offline_questions(skill)]
+
+
+def test_a_tool_is_covered_only_by_questions_tagged_with_it() -> None:
+    """CI/CD used to be 'covered' by any System Design question, Kubernetes included."""
+    for skill, tag in (("CI/CD", "ci/cd"), ("cicd", "ci/cd"), ("Docker", "docker"),
+                       ("Kubernetes", "kubernetes"), ("AWS", "aws"), ("Azure", "azure")):
+        eligible = qr.eligible_offline_questions(skill)
+        assert eligible, skill
+        assert {entry["sub_domain"] for entry in eligible} == {tag}, skill
+    assert not set(_questions("CI/CD")) & set(_questions("Kubernetes"))
+    assert not set(_questions("CI/CD")) & set(_questions("Docker"))
+    # The alias table files these under System Design / devops or cloud, but
+    # no question is tagged with them: nothing offline is about them.
+    for skill in ("Git", "GitHub Actions", "Terraform", "k8s", "GCP", "DynamoDB", "NLP", "Agile"):
+        assert qr.eligible_offline_questions(skill) == [], skill
+
+
+def test_a_skill_named_in_the_question_text_is_not_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    kubernetes = _entry("System Design", "kubernetes",
+                        "How would a Kubernetes rollout fit into a CI/CD pipeline?")
+    devops = _entry("System Design", "devops", "What is Kubernetes and why do CI/CD teams use it?")
+    tagged = _entry("System Design", "ci/cd", "When does a pipeline stage block a release?")
+    monkeypatch.setattr(qr, "_OFFLINE_POOL", [kubernetes, devops, tagged])
+
+    # Both other questions say "CI/CD"; only the one tagged ci/cd is about it.
+    assert _questions("CI/CD") == [tagged["question"]]
+    assert _questions("Kubernetes") == [kubernetes["question"]]
+    served = qr.fallback_question("CI/CD", "devops", "medium", [])
+    assert served["question"] == tagged["question"]
+    with pytest.raises(qr.QuestionContentUnavailable, match="'CI/CD' that has not been asked already"):
+        qr.fallback_question("CI/CD", "devops", "medium", [tagged["question"]])
+
+
+def test_whole_skill_aliases_follow_the_alias_table_and_names_match_exactly() -> None:
+    assert _questions("Operating Systems") == _questions("OS") != []
+    assert _questions("Computer Networks") == _questions("CN") != []
+    # SQL is served from DBMS, except the questions tagged as another named
+    # part of it (MongoDB, Cassandra).
+    sql, dbms = _questions("SQL"), _questions("DBMS")
+    assert set(sql) < set(dbms)
+    assert {entry["sub_domain"] for entry in qr.eligible_offline_questions("DBMS")
+            if entry["question"] not in sql} == {"mongodb", "cassandra"}
+    assert _questions("MongoDB") and set(_questions("MongoDB")) <= set(dbms) - set(sql)
+    # Java gets its own questions first, then OOP's. JavaScript's are not
+    # Java's because the name starts the same way.
+    java = qr.eligible_offline_questions("Java")
+    own = [entry for entry in java if entry["skill"] == "Java"]
+    assert own and java[:len(own)] == own
+    assert {entry["skill"] for entry in java} == {"Java", "OOP"}
+    assert not set(_questions("Java")) & set(_questions("JavaScript"))
+    assert qr.eligible_offline_questions("R") == []
+    # A broad skill keeps its general questions ahead of the named parts.
+    design = qr.eligible_offline_questions("System Design")
+    named = [qr._named_part(entry) for entry in design]
+    assert True in named and named == sorted(named)
+
+
+@pytest.mark.parametrize("skill", ["HR", "SQL", "Java", "CI/CD", "System Design", "Python", "Agile"])
+def test_serving_draws_on_exactly_the_questions_the_pre_start_check_counts(skill: str) -> None:
+    """One eligibility rule: never a template, never another skill's question."""
+    eligible = _questions(skill)
+    assert qr.offline_reference_count(skill) == len(eligible)
     asked: list[str] = []
     while True:
         try:
-            row = qr.fallback_question("HR", None, "medium", asked)
-        except qr.QuestionContentUnavailable:
+            row = qr.fallback_question(skill, None, "medium", asked)
+        except qr.QuestionContentUnavailable as exc:
+            assert f"'{skill}'" in str(exc)
             break
         assert row["source"] in OFFLINE_SOURCES
         assert qr.reference_gap(row) is None
-        assert row["question"] not in asked
+        assert row["question"] in eligible and row["question"] not in asked
         asked.append(row["question"])
-        assert len(asked) <= 500
-    assert len(asked) == qr.offline_reference_count("HR") > 0
+        assert len(asked) <= len(eligible)
+    assert sorted(asked) == sorted(eligible)
+
+
+def test_planned_counts_cannot_run_short_whichever_questions_other_skills_take() -> None:
+    def scope(*planned: tuple[str, int]) -> dict[str, dict]:
+        items = qr.scope_sources([{"skill": skill, "questions": n} for skill, n in planned])
+        return {item["skill"]: item for item in items}
+
+    oop, java = len(_questions("OOP")), len(_questions("Java"))
+    assert oop == 7 and java == 12
+    fits = scope(("OOP", 3), ("Java", 3))
+    assert fits["OOP"]["available"] and fits["Java"]["available"]
+    assert fits["OOP"]["shared_with"] == ["Java"] and fits["OOP"]["offline_needed"] == 6
+
+    # Each fits alone, but Java may be given four of OOP's seven questions.
+    short = scope(("OOP", 4), ("Java", 4))
+    assert short["OOP"]["available"] is False
+    assert (short["OOP"]["offline_questions"], short["OOP"]["offline_needed"]) == (7, 8)
+    assert short["Java"]["available"] is True
+    assert scope(("OOP", 4))["OOP"]["available"] is True
+
+    # A skill planned in two blocks is counted once, for both.
+    twice = qr.scope_sources([{"skill": "DBMS", "questions": 5}, {"skill": "DBMS", "questions": 5}])
+    assert [item["planned_total"] for item in twice] == [10, 10]
+    assert [item["available"] for item in twice] == [False, False]
+    assert scope(("SQL", 3))["SQL"]["served_as"] == "DBMS"
+    assert scope(("Java", 3))["Java"]["served_as"] is None
 
 
 def test_a_skill_without_bank_content_is_unavailable_offline() -> None:
@@ -295,6 +440,40 @@ def test_incomplete_generation_with_no_bank_content_is_unavailable(
     assert len(prompts) == qr.MAX_GENERATION_ATTEMPTS
     assert "'Agile'" in str(raised.value)
     assert "no reference answer" in str(raised.value)
+
+
+def test_a_generation_with_thin_reference_material_is_not_served(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fields that are merely filled in do not make a scorable question."""
+    thin = json.dumps({
+        "question": "What is a sprint?",
+        "ideal_answer": "A sprint is a short, fixed period of work.",
+        "ideal_keywords": ["sprint", "iteration"],
+    })
+    prompts = _live(monkeypatch, lambda n: thin)
+    with pytest.raises(qr.QuestionContentUnavailable) as raised:
+        qr.generate_question("Agile", None, "medium", [])
+    assert len(prompts) == qr.MAX_GENERATION_ATTEMPTS
+    assert f"reference answer under {question_content.MIN_REFERENCE_WORDS} words" in str(raised.value)
+
+    # With bank content for the skill, the valid bank question is served.
+    row = qr.generate_question("DBMS", None, "medium", [])
+    assert row["source"] in OFFLINE_SOURCES and qr.reference_gap(row) is None
+
+
+def test_fallback_after_a_failed_generation_is_about_the_confirmed_skill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _live(monkeypatch, lambda n: None)
+    row = qr.generate_question("CI/CD", None, "medium", [])
+    assert row["source"] in OFFLINE_SOURCES
+    assert row["sub_domain"] == "ci/cd"
+    assert row["question"] in _questions("CI/CD")
+    # Nothing offline is about Terraform, although the alias table files it
+    # under the same bank skill and sub-domain as CI/CD.
+    with pytest.raises(qr.QuestionContentUnavailable, match="'Terraform'"):
+        qr.generate_question("Terraform", None, "medium", [])
 
 
 def test_rejected_generation_is_dropped_from_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -496,8 +675,8 @@ def test_offline_skill_without_scored_content_is_refused_before_any_session() ->
     assert availability.json()["available"] is False
     block = availability.json()["blocks"][0]
     assert block["planned_scope"]["skills"] == [{
-        "skill": "Agile", "questions": 3, "served_as": None,
-        "offline_questions": 0, "offline_needed": 3,
+        "skill": "Agile", "questions": 3, "planned_total": 3, "served_as": None,
+        "offline_questions": 0, "offline_needed": 3, "shared_with": [],
         "source": "bank", "available": False,
     }]
     assert "'Agile' (3 planned, none in the offline bank)" in block["reason"]
@@ -508,39 +687,94 @@ def test_offline_skill_without_scored_content_is_refused_before_any_session() ->
     assert "turn on live question generation" in start.json()["detail"]
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
-    # The same skill beside covered ones is named, not silently replaced.
-    mixed = client.post("/session/start", headers=headers, json={
-        "blocks": [_interview(["AWS", "Agile", "Azure", "CI/CD", "Docker"], 10)],
-    })
-    assert mixed.status_code == 422, mixed.text
-    assert "'Agile' (2 planned, none in the offline bank)" in mixed.json()["detail"]
-    assert "'AWS'" not in mixed.json()["detail"]
+
+def test_the_observed_five_skill_plan_is_reported_short_not_filled_from_other_skills() -> None:
+    """Offline there is one question each about AWS, Azure, CI/CD and Docker
+    and none about Agile. Two each used to be 'covered' by whatever System
+    Design questions came next."""
+    client = TestClient(app)
+    user = _make_user("cov-observed")
+    headers = _headers(user)
+    body = {"blocks": [_interview(["AWS", "Agile", "Azure", "CI/CD", "Docker"], 10)]}
+
+    availability = client.post("/session/availability", headers=headers, json=body)
+    assert availability.json()["available"] is False
+    scope = availability.json()["blocks"][0]["planned_scope"]
+    assert [(item["skill"], item["questions"], item["offline_questions"], item["available"])
+            for item in scope["skills"]] == [
+        ("AWS", 2, 1, False), ("Agile", 2, 0, False), ("Azure", 2, 1, False),
+        ("CI/CD", 2, 1, False), ("Docker", 2, 1, False),
+    ]
+    start = client.post("/session/start", headers=headers, json=body)
+    assert start.status_code == 422, start.text
+    detail = start.json()["detail"]
+    for expected in ("'AWS' (2 planned, 1 in the offline bank)", "'Agile' (2 planned, none in the offline bank)",
+                     "'Azure' (2 planned, 1 in the offline bank)", "'CI/CD' (2 planned, 1 in the offline bank)",
+                     "'Docker' (2 planned, 1 in the offline bank)"):
+        assert expected in detail
+    assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
 
-def test_offline_pool_is_counted_across_the_whole_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(qr, "offline_reference_count", lambda skill: 3)
+def test_each_round_asks_a_question_about_its_own_skill() -> None:
+    client = TestClient(app)
+    headers = _headers(_make_user("cov-relevance"))
+    skills = ["AWS", "Azure", "CI/CD", "Docker"]
+    body = {"blocks": [_interview(skills, 4)]}
+    assert client.post("/session/availability", headers=headers, json=body).json()["available"] is True
+
+    start = client.post("/session/start", headers=headers, json=body)
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+    number = 1
+    while True:
+        answered = _answer(client, headers, session_id, number)
+        if answered["session_complete"]:
+            break
+        assert answered["progression_blocked"] is False
+        number = answered["next_round"]
+        activate(client, headers, session_id, number)
+
+    stored = _stored(session_id)
+    assert [r["skill"] for r in stored["rounds"]] == skills
+    for round_doc, skill in zip(stored["rounds"], skills):
+        context = _context(round_doc)
+        # The served question's own tag names the round's skill.
+        assert qr._name_key(context["sub_domain"]) == qr._name_key(skill)
+        assert round_doc["question"] in _questions(skill)
+        assert qr.reference_gap(context) is None
+    assert "kubernetes" not in " ".join(r["question"] for r in stored["rounds"]).lower()
+
+
+def test_offline_questions_are_counted_across_the_whole_plan() -> None:
     client = TestClient(app)
     user = _make_user("cov-pool")
     headers = _headers(user)
-    # AWS and Docker are both served from the System Design bank.
-    body = {"blocks": [_interview(["AWS"], 2), _interview(["Docker"], 2)]}
+    # Java is served from its own questions and from OOP's seven.
+    body = {"blocks": [_interview(["OOP"], 4), _interview(["Java"], 4)]}
 
     availability = client.post("/session/availability", headers=headers, json=body)
     assert availability.status_code == 200, availability.text
     assert availability.json()["available"] is False
-    for block in availability.json()["blocks"]:
-        assert block["available"] is False
-        assert "this plan needs 4 from the System Design bank, which has 3" in block["reason"]
-        assert block["planned_scope"]["skills"][0]["served_as"] == "System Design"
+    oop, java = availability.json()["blocks"]
+    assert oop["available"] is False and java["available"] is True
+    assert "'OOP' (4 planned, 7 in the offline bank, shared with Java)" in oop["reason"]
 
     start = client.post("/session/start", headers=headers, json=body)
     assert start.status_code == 422, start.text
+    assert "'OOP' (4 planned, 7 in the offline bank, shared with Java)" in start.json()["detail"]
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
     fits = client.post("/session/availability", headers=headers, json={
-        "blocks": [_interview(["AWS"], 2), _interview(["Docker"], 1)],
+        "blocks": [_interview(["OOP"], 3), _interview(["Java"], 3)],
     })
     assert fits.json()["available"] is True
+
+    # One skill planned in two blocks is one demand on its questions.
+    twice = client.post("/session/start", headers=headers, json={
+        "blocks": [_interview(["DBMS"], 5), _interview(["DBMS"], 5)],
+    })
+    assert twice.status_code == 422, twice.text
+    assert "'DBMS' (10 planned, 9 in the offline bank)" in twice.json()["detail"]
 
 
 def test_single_skill_session_with_live_generation_stays_on_that_skill(
@@ -554,8 +788,8 @@ def test_single_skill_session_with_live_generation_stays_on_that_skill(
     availability = client.post("/session/availability", headers=headers, json=body)
     assert availability.json()["available"] is True
     assert availability.json()["blocks"][0]["planned_scope"]["skills"] == [{
-        "skill": "Agile", "questions": 3, "served_as": None,
-        "offline_questions": 0, "offline_needed": 3,
+        "skill": "Agile", "questions": 3, "planned_total": 3, "served_as": None,
+        "offline_questions": 0, "offline_needed": 3, "shared_with": [],
         "source": "generated", "available": True,
     }]
     assert prompts == [], "the scope preview must not generate anything"
@@ -667,8 +901,148 @@ def test_start_reports_unavailable_content_when_the_provider_is_down(
         "blocks": [_interview(["Agile"], 2)],
     })
     assert start.status_code == 503, start.text
-    assert "No scored question with a reference answer is available for skill 'Agile'" in start.json()["detail"]
+    assert ("No scored question with a reference answer and keywords is available "
+            "for skill 'Agile'") in start.json()["detail"]
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
+
+
+# ── Jobs and Coach launches: the plan is built on the server ────────────────
+
+def test_job_practice_draft_shows_its_planned_scope_before_confirming() -> None:
+    from modules.jobs_explorer import load_fixture_jobs, reset_memory_store, set_fetch_override
+
+    reset_memory_store()
+    set_fetch_override(lambda **kwargs: load_fixture_jobs()[:3])
+    try:
+        client = TestClient(app)
+        user = _make_user("cov-jobs-scope")
+        headers = _headers(user)
+        jobs = {job["title"]: job["id"]
+                for job in client.get("/jobs?q=intern&where=Pune&page=1", headers=headers).json()["jobs"]}
+
+        # Five skills, three free-text questions: the limit is kept and the
+        # two skills that get none are named.
+        full_stack = client.post(f"/jobs/{jobs['SDE Intern — Full Stack']}/prepare", headers=headers)
+        assert full_stack.status_code == 200, full_stack.text
+        draft = full_stack.json()
+        assert draft["proposed_skills"] == ["JavaScript", "Node.js", "OOP", "React", "System Design"]
+        scope = draft["planned_scope"]
+        assert scope["questions"] == 3
+        assert [(item["skill"], item["questions"], item["available"]) for item in scope["skills"]] == [
+            ("JavaScript", 1, True), ("Node.js", 1, True), ("OOP", 1, True)]
+        assert scope["not_covered"] == ["React", "System Design"]
+
+        # A proposed skill with nothing scored offline is flagged in the
+        # draft, and confirming it is refused with the reason.
+        backend = client.post(f"/jobs/{jobs['Software Development Intern — Backend']}/prepare", headers=headers)
+        scope = backend.json()["planned_scope"]
+        assert [(item["skill"], item["available"]) for item in scope["skills"]] == [
+            ("DBMS", True), ("DSA", True), ("Django", False)]
+        job_id = jobs["Software Development Intern — Backend"]
+        refused = client.post(f"/jobs/{job_id}/practice", headers=headers, json={
+            "confirm": True, "blocks": backend.json()["proposed_blocks"]})
+        assert refused.status_code == 422, refused.text
+        assert "'Django' (1 planned, none in the offline bank)" in refused.json()["detail"]
+        assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
+
+        # With the skills edited, the server plans from the confirmed list:
+        # still at most three free-text questions, one per skill.
+        started = client.post(f"/jobs/{job_id}/practice", headers=headers, json={
+            "confirm": True, "skills": ["DBMS", "DSA", "Python", "OOP"]})
+        assert started.status_code == 200, started.text
+        body = started.json()
+        assert body["round_plan"] == ["technical_short_answer"] * 3 + ["mcq"]
+        assert [(item["skill"], item["questions"]) for item in body["planned_scope"]["skills"]] == [
+            ("DBMS", 1), ("DSA", 1), ("Python", 1)]
+        assert body["planned_scope"]["not_covered"] == ["OOP"]
+        stored = _stored(body["session_id"])
+        assert [spec["skills"] for spec in stored["expanded_plan"][:3]] == [["DBMS"], ["DSA"], ["Python"]]
+    finally:
+        set_fetch_override(None)
+        reset_memory_store()
+
+
+def test_coach_plan_shows_the_planned_scope_of_its_practice_launch() -> None:
+    client = TestClient(app)
+    headers = _headers(_make_user("cov-coach-scope"))
+    plan = client.post("/coach/plan", headers=headers, json={
+        "goal_text": "Backend intern role: I need DBMS, OOP, DSA, operating systems and Python.",
+        "include_dashboard": False,
+    })
+    assert plan.status_code == 200, plan.text
+    preview = plan.json()["practice_preview"]
+    assert len(preview["skills"]) > 3
+    assert preview["round_plan"][:3] == ["technical_short_answer"] * 3
+    scope = preview["planned_scope"]
+    assert scope["questions"] == 3
+    assert [item["skill"] for item in scope["skills"]] == preview["skills"][:3]
+    assert all(item["questions"] == 1 and item["available"] for item in scope["skills"])
+    assert scope["not_covered"] == preview["skills"][3:]
+
+    started = client.post("/coach/start-practice", headers=headers, json={
+        "skills": preview["skills"], "round_plan": preview["round_plan"]})
+    assert started.status_code == 200, started.text
+    assert started.json()["planned_scope"]["not_covered"] == scope["not_covered"]
+    stored = _stored(started.json()["session_id"])
+    assert [spec["skills"] for spec in stored["expanded_plan"][:3]] == [[s] for s in preview["skills"][:3]]
+
+
+# ── The live gate: question generation is one consumer of it ────────────────
+
+def test_the_live_gate_can_be_limited_to_question_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from modules import guidance_coach
+    from modules.llm_outbound_gate import (
+        llm_consumer_enabled,
+        question_llm_outbound_allowed,
+        question_source_health,
+    )
+
+    monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    assert [llm_consumer_enabled(c) for c in ("questions", "coach", "narration")] == [False] * 3
+
+    # Open and unrestricted, as before the consumer list existed.
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    assert [llm_consumer_enabled(c) for c in ("questions", "coach", "narration")] == [True] * 3
+    assert question_source_health()["llm_live_consumers"] == "all"
+
+    # What ``run_local.py --live-questions`` sets.
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "questions")
+    assert [llm_consumer_enabled(c) for c in ("questions", "coach", "narration")] == [True, False, False]
+    assert question_llm_outbound_allowed() is True
+    assert qr.live_generation_available() is True
+    assert question_source_health()["llm_live_consumers"] == ["questions"]
+    # The coach has a key and an open gate, and still sends nothing: the
+    # autouse network guard would fail this test on any request.
+    assert guidance_coach._llm_extract_phrases("I know Python, SQL and some React.") is None
+
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "coach")
+    assert question_llm_outbound_allowed() is False
+    assert qr.live_generation_available() is False
+
+
+def test_live_questions_leave_narration_rendered_at_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from modules import narration_provider
+    from modules.narration_jobs import narration_job_id
+
+    _live(monkeypatch, _generation)
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "questions")
+    # Even with a provider installed, narration is not a consumer of this gate.
+    fake = narration_provider.FakeNarrationProvider()
+    monkeypatch.setattr(narration_provider, "_PROVIDER", fake)
+    client = TestClient(app)
+    headers = _headers(_make_user("cov-narration"))
+    start = client.post("/session/start", headers=headers, json={"blocks": [_interview(["Agile"], 1)]})
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+    assert _context(_stored(session_id)["rounds"][0])["source"] in qr.GENERATED_SOURCES
+
+    answered = _answer(client, headers, session_id, 1)
+    assert answered["narration_status"] == "skipped"
+    assert fake.calls == 0
+    job = get_database()["narration_jobs"].find_one({"id": narration_job_id(session_id, 1)})
+    assert job["artifact"]["source"] == "rules_feedback"
+    assert job["artifact"]["metadata"]["validation"] == "generation_disabled"
 
 
 # ── The launcher ─────────────────────────────────────────────────────────────
@@ -679,10 +1053,56 @@ def test_local_launcher_generates_questions_only_when_asked(tmp_path, monkeypatc
     # A key in .env (or the shell) is not consent to dial the provider.
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "coach,narration")  # stale shell value
     off = _runtime_environment(tmp_path, executor_on=False, live_jobs=False)
     assert (off["LLM_LIVE_FETCH"], off["QUESTION_GENERATION_MODE"]) == ("0", "csv")
+    assert off["LLM_LIVE_CONSUMERS"] == ""
 
-    on = _runtime_environment(tmp_path, executor_on=False, live_jobs=False, live_llm=True)
+    on = _runtime_environment(tmp_path, executor_on=False, live_jobs=False, live_questions=True)
     assert (on["LLM_LIVE_FETCH"], on["QUESTION_GENERATION_MODE"]) == ("1", "llm_csv_fallback")
+    # Questions only: the guidance coach and narration do not get the gate.
+    assert on["LLM_LIVE_CONSUMERS"] == "questions"
     assert on["QUESTION_REQUIRE_LLM"] == "false"
     assert on["JOBS_LIVE_FETCH"] == "0"
+
+
+# ── The suite itself: offline, whatever .env holds ───────────────────────────
+
+def test_the_project_dotenv_is_not_loaded_under_tests(tmp_path, monkeypatch) -> None:
+    from backend.runtime_env import dotenv_enabled, load_project_dotenv
+
+    (tmp_path / ".env").write_text("INTERVIV_DOTENV_PROBE=from-dotenv\nLLM_LIVE_FETCH=1\n")
+    monkeypatch.delenv("INTERVIV_DOTENV_PROBE", raising=False)
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+
+    # conftest sets the switch before the backend is imported.
+    assert os.environ["INTERVIV_SKIP_DOTENV"] == "1" and dotenv_enabled() is False
+    load_project_dotenv(tmp_path)
+    assert "INTERVIV_DOTENV_PROBE" not in os.environ
+    assert os.environ["LLM_LIVE_FETCH"] == "0"
+    for credential in ("OPENAI_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY"):
+        assert os.environ[credential] == ""
+
+    # Outside the suite the file is read, without overriding the environment.
+    monkeypatch.setenv("INTERVIV_SKIP_DOTENV", "0")
+    assert dotenv_enabled() is True
+    try:
+        load_project_dotenv(tmp_path)
+        assert os.environ["INTERVIV_DOTENV_PROBE"] == "from-dotenv"
+        assert os.environ["LLM_LIVE_FETCH"] == "0"
+    finally:
+        os.environ.pop("INTERVIV_DOTENV_PROBE", None)
+
+
+def test_a_test_cannot_reach_the_network(no_external_network) -> None:
+    import socket
+
+    with pytest.raises(ConnectionRefusedError, match="tests are offline"):
+        socket.create_connection(("192.0.2.10", 443), timeout=1)
+    with pytest.raises(OSError, match="tests are offline"):
+        urllib.request.urlopen("https://openrouter.ai/api/v1/chat/completions", timeout=1)
+    assert set(no_external_network) == {"192.0.2.10", "openrouter.ai"}
+    # Loopback stays reachable (local executor, opt-in Postgres).
+    assert socket.getaddrinfo("127.0.0.1", 80)
+    # This test tried on purpose; clear the record so its teardown passes.
+    no_external_network.clear()

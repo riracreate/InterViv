@@ -1219,9 +1219,11 @@ def _interview_planned_scopes(
     """Each Interview block's actual scope, keyed by block id.
 
     Questions per confirmed skill and where they come from, plus the skills
-    the question budget cannot reach. Offline pools are counted across the
-    whole plan, because blocks whose skills resolve to one bank skill draw
-    on the same questions. No writes, no generation.
+    the question budget cannot reach. Offline questions are counted across
+    the whole plan with the rule serving uses
+    (``question_runtime.eligible_offline_questions``), because skills in
+    different blocks can draw on the same questions. No writes, no
+    generation.
     """
     from modules import question_runtime
     from modules.bundle_selector import reviewed_bundles_only
@@ -1246,31 +1248,70 @@ def _interview_planned_scopes(
     return out
 
 
+def launch_planned_scope(
+    start_body: dict[str, Any],
+    confirmed_skills: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Planned scope of a practice launch whose plan the server builds.
+
+    Jobs and Coach propose a start payload (blocks, or skills with a round
+    plan) from a list of skills. This is the same summary Practice shows
+    before a start: free-text questions per skill and where they come from,
+    and the confirmed skills that get no free-text question. Read-only;
+    ``None`` when the payload has no interview questions or is not valid.
+    """
+    try:
+        if start_body.get("blocks"):
+            block_plan = normalize_blocks(list(start_body["blocks"]))
+        else:
+            block_plan = legacy_to_blocks(
+                skills=list(start_body.get("skills") or []),
+                rounds_per_skill=int(start_body.get("rounds_per_skill") or 3),
+                round_type=str(start_body.get("round_type") or "technical_short_answer"),
+                round_config=start_body.get("round_config"),
+                round_plan=list(start_body.get("round_plan") or []) or None,
+            )
+    except (TypeError, ValueError):
+        return None
+    scopes = list(_interview_planned_scopes(block_plan).values())
+    if not scopes:
+        return None
+    skills = [item for scope in scopes for item in scope["skills"]]
+    planned = {str(item["skill"]).strip().lower() for item in skills}
+    not_covered: list[str] = []
+    for skill in [s for scope in scopes for s in scope["not_covered"]] + list(confirmed_skills or []):
+        if str(skill).strip().lower() not in planned and skill not in not_covered:
+            not_covered.append(skill)
+    return {
+        "questions": sum(int(scope["questions"]) for scope in scopes),
+        "skills": skills,
+        "not_covered": not_covered,
+    }
+
+
 def _reference_shortfall(scope: dict[str, Any]) -> str | None:
     """Why an Interview block cannot be asked as scored questions, if it can't.
 
-    Every planned question needs a reference answer to be scored. With
-    generation off, the offline bank must hold enough of them for each
-    planned skill; otherwise the round would have been a template with
-    nothing to score against.
+    Every planned question needs a reference answer and keywords to be
+    scored, and has to be about its skill. With generation off, the offline
+    bank must hold enough such questions for each planned skill; the scope
+    is never quietly filled from another skill's questions.
     """
     short = [item for item in scope["skills"] if item.get("available") is False]
     if not short:
         return None
 
     def describe(item: dict[str, Any]) -> str:
-        bank = f"the {item['served_as']} bank" if item.get("served_as") else "the offline bank"
-        if not item["offline_questions"]:
-            return f"'{item['skill']}' ({item['questions']} planned, none in {bank})"
-        return (
-            f"'{item['skill']}' ({item['questions']} planned; this plan needs "
-            f"{item['offline_needed']} from {bank}, which has "
-            f"{item['offline_questions']})"
-        )
+        have = item["offline_questions"]
+        planned = item.get("planned_total") or item["questions"]
+        text = f"'{item['skill']}' ({planned} planned, {have or 'none'} in the offline bank"
+        if have and item.get("shared_with"):
+            text += f", shared with {' and '.join(item['shared_with'])}"
+        return text + ")"
 
     return (
-        "No scored interview questions with a reference answer are available "
-        f"for {', '.join(describe(item) for item in short)}. Remove "
+        "Not enough scored interview questions are available for "
+        f"{', '.join(describe(item) for item in short)}. Remove "
         + ("that skill" if len(short) == 1 else "those skills")
         + ", lower the question count, or turn on live question generation."
     )

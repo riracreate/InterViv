@@ -4,7 +4,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { summarizePlannedScope } from '../src/lib/practiceBuilder.js';
+import { mapCoachPlan } from '../src/lib/coachMapping.js';
+import { jobLaunchScope, jobPracticeBody, jobSkillsEdited } from '../src/lib/jobsMapping.js';
+import { summarizeLaunchScope, summarizePlannedScope } from '../src/lib/practiceBuilder.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
@@ -12,9 +14,11 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const skill = (name, questions, extra = {}) => ({
   skill: name,
   questions,
+  planned_total: questions,
   served_as: null,
-  offline_questions: 100,
+  offline_questions: 9,
   offline_needed: questions,
+  shared_with: [],
   source: 'bank',
   available: true,
   ...extra,
@@ -36,7 +40,7 @@ test('summarizePlannedScope lists questions per confirmed skill and their source
         questions: 5,
         skills: [
           skill('DBMS', 2),
-          skill('AWS', 2, { served_as: 'System Design' }),
+          skill('SQL', 2, { served_as: 'DBMS', shared_with: ['DBMS'] }),
           skill('Agile', 1, { source: 'generated', offline_questions: 0 }),
         ],
         not_covered: [],
@@ -46,7 +50,7 @@ test('summarizePlannedScope lists questions per confirmed skill and their source
   assert.equal(scope.questions, 5);
   assert.deepEqual(scope.skills, [
     { skill: 'DBMS', questions: 2, available: true, note: 'question bank' },
-    { skill: 'AWS', questions: 2, available: true, note: 'from the System Design question bank' },
+    { skill: 'SQL', questions: 2, available: true, note: 'from the DBMS question bank' },
     { skill: 'Agile', questions: 1, available: true, note: 'generated for this skill' },
   ]);
   assert.deepEqual(scope.notCovered, []);
@@ -61,7 +65,8 @@ test('summarizePlannedScope discloses skills the budget or the content cannot co
       planned_scope: {
         questions: 3,
         skills: [
-          skill('AWS', 1, { served_as: 'System Design', offline_questions: 3, offline_needed: 4, available: false }),
+          skill('AWS', 2, { offline_questions: 1, available: false }),
+          skill('OOP', 5, { offline_questions: 7, offline_needed: 10, shared_with: ['Java'], available: false }),
           skill('Agile', 2, { offline_questions: 0, available: false }),
         ],
         not_covered: ['Docker', 'Git'],
@@ -69,12 +74,10 @@ test('summarizePlannedScope discloses skills the budget or the content cannot co
     }],
   });
   assert.deepEqual(scope.notCovered, ['Docker', 'Git']);
-  assert.deepEqual(scope.unavailable, ['AWS', 'Agile']);
-  assert.equal(
-    scope.skills[0].note,
-    'not enough scored questions: this plan needs 4 from the System Design bank, which has 3',
-  );
-  assert.equal(scope.skills[1].note, 'no scored questions in the offline bank');
+  assert.deepEqual(scope.unavailable, ['AWS', 'OOP', 'Agile']);
+  assert.equal(scope.skills[0].note, 'only 1 scored question in the offline bank');
+  assert.equal(scope.skills[1].note, 'only 7 scored questions in the offline bank, shared with Java');
+  assert.equal(scope.skills[2].note, 'no scored questions in the offline bank');
 });
 
 test('summarizePlannedScope adds up the blocks of a Full Interview', () => {
@@ -131,9 +134,73 @@ test('every setup that can ask interview questions shows the planned scope befor
   // Full Interview, Interview practice and the block builder.
   assert.equal((practice.match(/<PlannedScope scope=\{plannedScope\} \/>/g) || []).length, 3);
   assert.match(practice, /payloadHasInterview\(mapped\.payload\) \? mapped\.payload : null/);
-  assert.match(practice, /data-testid="planned-scope"/);
-  assert.match(practice, /data-testid="planned-scope-not-covered"/);
-  assert.match(practice, /data-testid="planned-scope-unavailable"/);
+  const panel = read('src/components/PlannedScope.jsx');
+  assert.match(panel, /data-testid="planned-scope"/);
+  assert.match(panel, /data-testid="planned-scope-not-covered"/);
+  assert.match(panel, /data-testid="planned-scope-unavailable"/);
+  // Jobs and Coach build their plan on the server and show the same panel.
+  assert.match(read('src/pages/Jobs.jsx'), /<PlannedScope\s+scope=\{jobLaunchScope\(prepare, draftSkills\)\}/);
+  assert.match(read('src/pages/Coach.jsx'), /<PlannedScope\s+scope=\{plan\.practicePreview\.plannedScope\}/);
   // The preview comes from the endpoint the start itself is checked against.
   assert.match(practice, /fetchAvailability\(stripClientOnly\(scopePayload\)\)/);
+});
+
+const launchScope = {
+  questions: 3,
+  skills: [skill('DBMS', 1), skill('OOP', 1), skill('Django', 1, { offline_questions: 0, available: false })],
+  not_covered: ['React', 'AWS'],
+};
+
+test('summarizeLaunchScope reads the planned scope of a server-built launch', () => {
+  assert.equal(summarizeLaunchScope(null), null);
+  assert.equal(summarizeLaunchScope(undefined), null);
+  const scope = summarizeLaunchScope(launchScope);
+  assert.equal(scope.questions, 3);
+  assert.deepEqual(scope.skills.map((item) => item.skill), ['DBMS', 'OOP', 'Django']);
+  assert.deepEqual(scope.notCovered, ['React', 'AWS']);
+  assert.deepEqual(scope.unavailable, ['Django']);
+});
+
+test('Coach plan carries the planned scope of its three-question launch', () => {
+  const plan = mapCoachPlan({
+    steps: [],
+    practice_preview: {
+      skills: ['DBMS', 'OOP', 'Django', 'React', 'AWS'],
+      round_plan: ['technical_short_answer', 'technical_short_answer', 'technical_short_answer', 'mcq'],
+      planned_scope: launchScope,
+    },
+  });
+  assert.equal(plan.practicePreview.plannedScope.questions, 3);
+  assert.deepEqual(plan.practicePreview.plannedScope.notCovered, ['React', 'AWS']);
+  assert.equal(mapCoachPlan({ steps: [], practice_preview: { skills: [] } }).practicePreview.plannedScope, null);
+});
+
+test('Jobs confirm shows the scope of the proposed blocks and sends them only while the skills match', () => {
+  const draft = {
+    job_id: 'job-1',
+    proposed_skills: ['DBMS', 'OOP', 'Django', 'React', 'AWS'],
+    proposed_blocks: [{ category: 'interview', skills: ['DBMS'], count: 1 }],
+    planned_scope: launchScope,
+  };
+  const same = 'dbms,  OOP, Django, React, AWS';
+  assert.equal(jobSkillsEdited(draft, same), false);
+  assert.deepEqual(jobLaunchScope(draft, same).unavailable, ['Django']);
+  assert.deepEqual(jobPracticeBody(draft, { skillsText: same, company: 'Acme', role: 'SDE' }), {
+    confirm: true,
+    skills: ['dbms', 'OOP', 'Django', 'React', 'AWS'],
+    company: 'Acme',
+    role: 'SDE',
+    full_jd: undefined,
+    blocks: draft.proposed_blocks,
+  });
+
+  // The candidate removed Django: the proposed blocks no longer describe the
+  // plan, so they are neither summarised nor sent.
+  const edited = 'DBMS, OOP, React';
+  assert.equal(jobSkillsEdited(draft, edited), true);
+  assert.equal(jobLaunchScope(draft, edited), null);
+  const body = jobPracticeBody(draft, { skillsText: edited, fullJd: 'full text' });
+  assert.deepEqual(body.skills, ['DBMS', 'OOP', 'React']);
+  assert.equal('blocks' in body, false);
+  assert.equal(body.full_jd, 'full text');
 });

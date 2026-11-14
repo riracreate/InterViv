@@ -124,7 +124,11 @@ def _fake_targeted_llm(captured: list[str]):
         concept_phrase = m.group(1).strip() if m else "the topic"
         return json.dumps({
             "question": f"Discuss {concept_phrase} in depth and explain trade-offs.",
-            "ideal_answer": "A sample reference answer covering the targeted concepts.",
+            "ideal_answer": (
+                "A sample reference answer covering the targeted concepts. It "
+                "explains the recursive structure, how overlapping subproblems "
+                "are memoized, and what that does to the time complexity."
+            ),
             "ideal_keywords": "tree, dynamic programming, recursion, memoization, complexity",
         })
     return call

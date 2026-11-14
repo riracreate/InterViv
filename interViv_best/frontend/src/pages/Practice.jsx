@@ -19,6 +19,7 @@ import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import SkillChipInput from '../components/SkillChipInput';
+import PlannedScope from '../components/PlannedScope';
 import InterviewResumePanel from '../components/InterviewResumePanel';
 import { readScoped, writeScoped } from '../lib/accountStorage';
 import {
@@ -65,45 +66,6 @@ import {
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
 const DEFAULT_STANDALONE_TOPICS = 'DBMS';
-
-/**
- * What the interview will actually ask, from the server's own plan: questions
- * per confirmed skill, skills the budget cannot reach, and skills without
- * scored content. Shown before the start button.
- */
-function PlannedScope({ scope }) {
-  if (!scope) return null;
-  const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
-  return (
-    <div
-      data-testid="planned-scope"
-      role="status"
-      className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-    >
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-        Planned scope · {plural(scope.questions)}
-      </p>
-      <ul className="mt-2 space-y-1 text-sm text-[var(--color-ink)]">
-        {scope.skills.map((item, index) => (
-          <li key={`${item.skill}-${index}`} className={item.available ? '' : 'text-[var(--color-danger)]'}>
-            <span className="font-medium">{item.skill}</span> — {plural(item.questions)}{' '}
-            <span className={item.available ? 'text-[var(--color-ink-muted)]' : ''}>({item.note})</span>
-          </li>
-        ))}
-      </ul>
-      {scope.notCovered.length > 0 && (
-        <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="planned-scope-not-covered">
-          Not covered within {plural(scope.questions)}: {scope.notCovered.join(', ')}. Add questions or remove skills.
-        </p>
-      )}
-      {scope.unavailable.length > 0 && (
-        <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="planned-scope-unavailable">
-          No scored questions for {scope.unavailable.join(', ')}. Remove {scope.unavailable.length === 1 ? 'it' : 'them'} to start.
-        </p>
-      )}
-    </div>
-  );
-}
 
 function stripClientOnly(payload) {
   const next = { ...payload };

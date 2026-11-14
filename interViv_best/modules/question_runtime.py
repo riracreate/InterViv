@@ -9,11 +9,14 @@ LLM question generation:
 - per-minute LLM rate limiting, using Redis when configured and an in-memory
   fallback otherwise
 - exponential-backoff retry with a maximum of 3 attempts
-- a reference check on every scored short-answer question: a generation
-  without a reference answer or keywords is retried once, then replaced by
-  an offline bank question for the same skill that has a reference answer;
-  when none exists the caller is told the content is unavailable. Domain
-  prompts and templates carry no reference answer and are never served.
+- the content rules of ``modules/question_content.py`` on every scored
+  short-answer question: a generation whose reference answer or keywords
+  fail them is retried once, then replaced by an offline question that
+  passes them and is tied to the requested skill by its own metadata; when
+  none exists the caller is told the content is unavailable. Domain prompts
+  and templates carry no reference material and are never served.
+- one definition of that offline pool (:func:`eligible_offline_questions`),
+  used by the pre-start availability check and by serving.
 
 The LLM is still used only for question generation. All scoring, decisions,
 feedback, and recommendations remain deterministic Python.
@@ -34,6 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from modules import question_bank
+from modules.question_content import reference_issues, split_keywords
 
 try:
     import certifi
@@ -49,11 +53,7 @@ DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 0.25
 DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 60
-# The CSV bank picks at random; skip a row without a reference answer and
-# pick again, at most this many times.
-_BANK_PICK_ATTEMPTS = 5
-
-# One retry after a generation that fails the reference check. Transport
+# One retry after a generation that fails the content rules. Transport
 # failures are retried separately inside ``call_llm_with_cache_retry``.
 MAX_GENERATION_ATTEMPTS = 2
 GENERATED_SOURCES = frozenset({"llm", "llm-adaptive"})
@@ -64,6 +64,7 @@ _IN_MEMORY_CACHE: dict[str, tuple[float, str]] = {}
 _IN_MEMORY_LIMITS: dict[str, tuple[int, int]] = {}
 _LAST_RUNTIME_ERROR: str | None = None
 _STRUCTURED_BANK: list[dict[str, str]] | None = None
+_OFFLINE_POOL: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -92,29 +93,15 @@ class QuestionContentUnavailable(RuntimeError):
     """No question with a reference answer can be served for this scope."""
 
 
-def _keyword_list(value: object) -> list[str]:
-    if isinstance(value, (list, tuple)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [part.strip() for part in re.split(r"[,|]", str(value or "")) if part.strip()]
-
-
 def reference_gap(payload: object) -> str | None:
     """Why ``payload`` cannot be served as a scored short-answer question.
 
-    Content contract: question text and a reference (ideal) answer. A newly
-    generated question must also carry keywords. Bank rows are scored from
-    their reference answer and may leave keywords to the offline concept
-    index, as the validated bank always has. ``None`` means servable.
+    The first failure of the content rules in ``modules/question_content.py``
+    (a reference answer and keywords, both substantial), whatever the
+    question's source. ``None`` means servable.
     """
-    if not isinstance(payload, dict) or not str(payload.get("question") or "").strip():
-        return "no question text"
-    if not str(payload.get("ideal_answer") or payload.get("reference_answer") or "").strip():
-        return "no reference answer"
-    if str(payload.get("source") or "") in GENERATED_SOURCES and not _keyword_list(
-        payload.get("ideal_keywords") or payload.get("keywords")
-    ):
-        return "no keywords"
-    return None
+    issues = reference_issues(payload)
+    return issues[0] if issues else None
 
 
 def last_runtime_error() -> str | None:
@@ -543,22 +530,6 @@ def _extract_question_from_raw(raw: str) -> str | None:
     return str(question) if question else None
 
 
-def _with_question_shape(
-    row: dict,
-    *,
-    skill: str,
-    sub_domain: str | None,
-    difficulty: str,
-    source: str | None = None,
-) -> dict:
-    row["skill"] = skill
-    row["sub_domain"] = sub_domain or "general"
-    row["difficulty"] = difficulty
-    if source:
-        row["source"] = source
-    return row
-
-
 def _structured_bank_path() -> Path:
     return Path(__file__).resolve().parents[1] / "data" / "fallback_question_bank.csv"
 
@@ -591,54 +562,129 @@ def _normalised_match(row_value: str | None, target: str | None) -> bool:
     return row_norm == target_norm or target_norm in row_norm or row_norm in target_norm
 
 
-def _structured_fallback_question(
-    skill: str,
-    sub_domain: Optional[str],
-    difficulty: str,
-    asked: list[str],
-    *,
-    company: str | None = None,
-    role: str | None = None,
-) -> dict | None:
-    rows = _load_structured_bank()
-    if not rows:
+def _name_key(value: object) -> str:
+    """Skill and tag names compared without case, spacing or punctuation.
+
+    'CI/CD' and 'cicd' are one name, as are 'Node.js' and 'nodejs'. '+' and
+    '#' are kept so that C, C++ and C# stay apart.
+    """
+    return re.sub(r"[^a-z0-9+#]", "", str(value or "").casefold())
+
+
+def _question_key(question: object) -> str:
+    return str(question or "").strip().lower()
+
+
+def offline_pool() -> list[dict]:
+    """Every offline question that passes the content rules, in serving order.
+
+    The curated fallback bank first, then the legacy bank rows that carry
+    keywords as well as a reference answer. Each entry is the served payload
+    with the row's own skill, sub-domain, topic and difficulty.
+    """
+    global _OFFLINE_POOL
+    if _OFFLINE_POOL is not None:
+        return _OFFLINE_POOL
+    pool: list[dict] = []
+    seen: set[str] = set()
+
+    def admit(row: dict, *, source: str) -> None:
+        skill = (row.get("skill") or "").strip()
+        sub_domain = (row.get("sub_domain") or "").strip()
+        entry = {
+            "question": (row.get("question") or "").strip(),
+            "ideal_answer": (row.get("ideal_answer") or "").strip(),
+            "ideal_keywords": split_keywords(row.get("ideal_keywords")),
+            "source": source,
+            "company": (row.get("company") or "").strip(),
+            "role": (row.get("role") or "").strip(),
+            "skill": skill,
+            "sub_domain": sub_domain or "general",
+            "topic": (row.get("topic") or "").strip() or sub_domain or skill,
+            "difficulty": (row.get("difficulty") or "").strip().lower(),
+            "question_type": (row.get("question_type") or "").strip() or "conceptual",
+            "followups": [item.strip() for item in (row.get("followups") or "").split("|") if item.strip()],
+        }
+        key = _question_key(entry["question"])
+        if not skill or key in seen or reference_issues(entry):
+            return
+        seen.add(key)
+        pool.append(entry)
+
+    for row in _load_structured_bank():
+        admit(row, source="structured_fallback")
+    for row in getattr(question_bank._get_bank(), "rows", []) or []:
+        admit(row, source="csv")
+    _OFFLINE_POOL = pool
+    return pool
+
+
+def _whole_skill_alias(name: object) -> str | None:
+    """Bank skill that the alias table serves ``name`` from as a whole.
+
+    'SQL' -> DBMS and 'Operating Systems' -> OS map to that bank skill's own
+    sub-domain. 'CI/CD' -> System Design / devops only names one part of a
+    bank skill, which is no evidence that a question there is about CI/CD.
+    """
+    target = question_bank.SKILL_ALIASES.get(str(name or "").strip().lower())
+    if not target:
         return None
-    asked_norm = {q.lower().strip() for q in asked}
-    filters = [
-        lambda r: _normalised_match(r.get("company"), company)
-        and _normalised_match(r.get("role"), role)
-        and _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("sub_domain"), sub_domain)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("role"), role)
-        and _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("skill"), skill),
-    ]
-    for predicate in filters:
-        candidates = [
-            row for row in rows
-            if predicate(row) and (row.get("question") or "").lower().strip() not in asked_norm
-        ]
-        if candidates:
-            row = candidates[0]
-            return {
-                "question": row["question"],
-                "ideal_answer": row.get("ideal_answer", ""),
-                "ideal_keywords": [item.strip() for item in (row.get("ideal_keywords") or "").split("|") if item.strip()],
-                "source": "structured_fallback",
-                "company": row.get("company") or company,
-                "role": row.get("role") or role,
-                "skill": row.get("skill") or skill,
-                "sub_domain": row.get("sub_domain") or sub_domain or "general",
-                "topic": row.get("topic") or sub_domain or skill,
-                "difficulty": row.get("difficulty") or difficulty,
-                "question_type": row.get("question_type") or "conceptual",
-                "followups": [item.strip() for item in (row.get("followups") or "").split("|") if item.strip()],
-            }
+    return target[0] if question_bank.SKILL_ALIASES.get(target[0].strip().lower()) == target else None
+
+
+def _named_part(entry: dict) -> bool:
+    """True when a question's own tag is a named part of its bank skill
+    (docker, mongodb): an alias-table name that is not the whole skill."""
+    for tag in (entry["sub_domain"], entry["topic"]):
+        key = str(tag or "").strip().lower()
+        if key in question_bank.SKILL_ALIASES and _whole_skill_alias(key) is None:
+            return True
+    return False
+
+
+def _relevance(entry: dict, skill: object) -> int | None:
+    """How a question is tied to the requested skill, or ``None`` if it is not.
+
+    0  its sub-domain or topic names the skill, or it is filed under the
+       skill and not under a named part of it
+    1  the alias table serves the skill from the question's whole bank skill
+    2  it is filed under the skill but tagged as a named part of it (a
+       Docker question when System Design was asked for)
+
+    Only the question's explicit skill, sub-domain and topic and the alias
+    table decide this. The skill's name appearing in the question text is
+    not evidence of relevance and is not consulted.
+    """
+    key = _name_key(skill)
+    if not key:
+        return None
+    if key in (_name_key(entry["sub_domain"]), _name_key(entry["topic"])):
+        return 0
+    named = _named_part(entry)
+    if _name_key(entry["skill"]) == key:
+        return 2 if named else 0
+    whole = _whole_skill_alias(skill)
+    if whole and not named and _name_key(entry["skill"]) == _name_key(whole):
+        return 1
     return None
+
+
+def _eligible(skill: object) -> list[tuple[int, int, dict]]:
+    ranked = [
+        (rank, index, entry)
+        for index, entry in enumerate(offline_pool())
+        if (rank := _relevance(entry, skill)) is not None
+    ]
+    return sorted(ranked, key=lambda item: item[:2])
+
+
+def eligible_offline_questions(skill: str) -> list[dict]:
+    """Offline questions that may be asked for ``skill``, most direct first.
+
+    The single eligibility rule: the pre-start availability check counts
+    this list and :func:`fallback_question` serves from it.
+    """
+    return [entry for _, _, entry in _eligible(skill)]
 
 
 def fallback_question(
@@ -651,68 +697,45 @@ def fallback_question(
     company: str | None = None,
     role: str | None = None,
 ) -> dict:
-    """Deterministic offline fallback that bypasses strict LLM settings.
+    """An offline question for ``skill`` that has not been asked yet.
 
-    Returns a bank question for the same skill that has a reference answer,
-    or raises :class:`QuestionContentUnavailable`. The domain prompts and
-    generic templates in ``question_bank`` have no reference answer, so they
-    cannot be scored against one and are not served.
+    Chosen from :func:`eligible_offline_questions` only, so a skill is never
+    covered by a question about something else. Among those, a question
+    tied to the skill more directly comes first, then one matching the
+    preferred sub-domain and difficulty, then the target role and company.
+    Raises :class:`QuestionContentUnavailable` when none is left. ``mode``
+    is accepted for callers that pass it and has no effect.
     """
-    resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
-    if sub_domain is None or sub_domain == "general":
-        sub_domain = resolved_sub
+    asked_keys = {_question_key(question) for question in asked or []}
+    want_sub = "" if str(sub_domain or "").strip().lower() in ("", "general") else _name_key(sub_domain)
+    want_difficulty = str(difficulty or "").strip().lower()
 
-    selected_mode = mode or question_bank._question_generation_mode()
-    if selected_mode != "template":
-        structured = _structured_fallback_question(
-            resolved_skill,
-            sub_domain,
-            difficulty,
-            asked,
-            company=company,
-            role=role,
+    def order(item: tuple[int, int, dict]) -> tuple[int, int, int, int, int]:
+        rank, index, entry = item
+        same_difficulty = entry["difficulty"] == want_difficulty
+        same_sub = bool(want_sub) and _name_key(entry["sub_domain"]) == want_sub
+        return (
+            rank,
+            0 if same_sub and same_difficulty else 1 if same_difficulty else 2,
+            0 if role and _normalised_match(entry["role"], role) else 1,
+            0 if company and _normalised_match(entry["company"], company) else 1,
+            index,
         )
-        if structured and reference_gap(structured) is None:
-            return structured
-        skipped = list(asked)
-        for _ in range(_BANK_PICK_ATTEMPTS):
-            row = question_bank._get_bank().pick(resolved_skill, sub_domain, difficulty, skipped)
-            if not row:
-                break
-            if reference_gap(row) is None:
-                return _with_question_shape(
-                    row,
-                    skill=resolved_skill,
-                    sub_domain=sub_domain,
-                    difficulty=difficulty,
-                    source=row.get("source") or "csv",
-                )
-            skipped.append(row.get("question") or "")
 
-    raise QuestionContentUnavailable(
-        f"No scored question with a reference answer is available for skill "
-        f"'{skill}'" + (f" (served as {resolved_skill})" if resolved_skill != skill else "")
-        + "."
-    )
+    eligible = _eligible(skill)
+    remaining = [item for item in eligible if _question_key(item[2]["question"]) not in asked_keys]
+    if not remaining:
+        raise QuestionContentUnavailable(
+            "No scored question with a reference answer and keywords is "
+            f"available for skill '{skill}'"
+            + (" that has not been asked already." if eligible else ".")
+        )
+    return dict(min(remaining, key=order)[2])
 
 
 def offline_reference_count(skill: str) -> int:
-    """Distinct offline questions with a reference answer for ``skill``.
-
-    Same alias resolution and skill matching as :func:`fallback_question`
-    (structured bank, then the CSV bank).
-    """
-    resolved, _ = question_bank.resolve_skill(skill)
-    questions: set[str] = set()
-    for row in _load_structured_bank():
-        if _normalised_match(row.get("skill"), resolved) and (row.get("ideal_answer") or "").strip():
-            questions.add((row.get("question") or "").strip().lower())
-    wanted = resolved.strip().lower()
-    for row in getattr(question_bank._get_bank(), "rows", []) or []:
-        if (row.get("skill") or "").strip().lower() == wanted and (row.get("ideal_answer") or "").strip():
-            questions.add((row.get("question") or "").strip().lower())
-    questions.discard("")
-    return len(questions)
+    """Distinct offline questions that may be asked for ``skill``."""
+    return len(_eligible(skill))
 
 
 def live_generation_available() -> bool:
@@ -726,29 +749,47 @@ def live_generation_available() -> bool:
 def scope_sources(planned: list[dict]) -> list[dict]:
     """Where each planned skill's questions come from, for the pre-start scope.
 
-    ``planned`` is ``[{"skill", "questions"}]`` for a whole plan. Skills that
-    resolve to the same bank skill share one offline pool
-    (``offline_questions`` available, ``offline_needed`` planned against
-    it), so ``available`` is false for every skill of a pool that is too
-    small when generation is off.
+    ``planned`` is ``[{"skill", "questions"}]`` for a whole plan. With
+    generation off, a skill is ``available`` only when its offline questions
+    (``offline_questions``, the list :func:`fallback_question` serves from)
+    cover its own planned count plus everything the other planned skills
+    could take from the same questions (``offline_needed``). Serving picks
+    one round at a time, so that is the count that cannot run short
+    whichever questions the other skills are given.
     """
     live = live_generation_available()
-    resolved = {item["skill"]: question_bank.resolve_skill(item["skill"])[0] for item in planned}
-    needed: dict[str, int] = {}
+    names: dict[str, str] = {}
+    need: dict[str, int] = {}
     for item in planned:
-        needed[resolved[item["skill"]]] = needed.get(resolved[item["skill"]], 0) + int(item["questions"])
-    offline = {name: offline_reference_count(name) for name in needed}
+        key = _name_key(item["skill"])
+        names.setdefault(key, str(item["skill"]))
+        need[key] = need.get(key, 0) + int(item["questions"])
+    eligible = {key: _eligible(names[key]) for key in need}
+    pools = {key: {_question_key(entry["question"]) for _, _, entry in rows} for key, rows in eligible.items()}
     out = []
     for item in planned:
-        pool = resolved[item["skill"]]
+        key = _name_key(item["skill"])
+        own = pools[key]
+        shared = {
+            other: min(need[other], len(own & pools[other]))
+            for other in need if other != key and own & pools[other]
+        }
+        needed = need[key] + sum(shared.values())
+        ranks = {rank for rank, _, _ in eligible[key]}
         out.append({
             "skill": item["skill"],
             "questions": int(item["questions"]),
-            "served_as": pool if pool.strip().lower() != str(item["skill"]).strip().lower() else None,
-            "offline_questions": offline[pool],
-            "offline_needed": needed[pool],
+            # The skill's questions across the whole plan (it can be planned
+            # in several blocks).
+            "planned_total": need[key],
+            # Set when every question comes from another bank skill that the
+            # alias table serves this one from (SQL from DBMS).
+            "served_as": _whole_skill_alias(item["skill"]) if ranks == {1} else None,
+            "offline_questions": len(own),
+            "offline_needed": needed,
+            "shared_with": [names[other] for other in shared],
             "source": "generated" if live else "bank",
-            "available": live or offline[pool] >= needed[pool],
+            "available": live or len(own) >= needed,
         })
     return out
 
@@ -834,8 +875,10 @@ def generate_question(
 
     reason = rejected or last_runtime_error()
     try:
+        # The skill as confirmed, not the bank skill it resolves to: offline
+        # relevance is decided against the requested skill.
         row = fallback_question(
-            resolved_skill,
+            requested or resolved_skill,
             sub_domain,
             difficulty,
             asked,
@@ -845,10 +888,7 @@ def generate_question(
         )
     except QuestionContentUnavailable as exc:
         raise QuestionContentUnavailable(
-            f"No scored question with a reference answer is available for skill "
-            f"'{requested or resolved_skill}'"
-            + (f" (bank skill {resolved_skill})" if resolved_skill.lower() != (requested or resolved_skill).lower() else "")
-            + (f". Live generation: {reason}" if reason else ".")
+            str(exc) + (f" Live generation: {reason}" if reason else "")
         ) from exc
     row["llm_fallback_reason"] = reason
     row["fallback_generated_at"] = datetime.now(timezone.utc).isoformat()
@@ -875,10 +915,12 @@ __all__ = [
     "MarketQuestionContext",
     "build_question_prompt",
     "call_llm_with_cache_retry",
+    "eligible_offline_questions",
     "fallback_question",
     "generate_question",
     "last_runtime_error",
     "live_generation_available",
+    "offline_pool",
     "offline_reference_count",
     "parse_llm_json",
     "question_cache_key",

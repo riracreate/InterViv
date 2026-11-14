@@ -114,7 +114,10 @@ def test_generate_question_returns_market_metadata_from_llm_json(monkeypatch: py
     monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
     raw = json.dumps({
         "question": "How would you use a hash map to optimize pair-sum lookup?",
-        "ideal_answer": "Use a hash map to store complements while scanning once. This reduces lookup to average O(1).",
+        "ideal_answer": (
+            "Use a hash map to store complements while scanning the array once. "
+            "Each lookup is O(1) on average, so the whole pass is O(n) time and O(n) space."
+        ),
         "ideal_keywords": ["hash map", "complement", "O(n)", "lookup", "pair sum"],
         "sub_domain": "hashing",
         "topic": "Pair sum",

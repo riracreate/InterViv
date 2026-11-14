@@ -659,9 +659,9 @@ export function multiSkillTopicNote(skills, metadata, metadataReady) {
 function plannedSkillNote(item) {
   if (item.available === false) {
     const have = Number(item.offline_questions) || 0;
-    const bank = item.served_as ? `the ${item.served_as} bank` : 'the offline bank';
-    if (!have) return `no scored questions in ${bank}`;
-    return `not enough scored questions: this plan needs ${Number(item.offline_needed) || 0} from ${bank}, which has ${have}`;
+    if (!have) return 'no scored questions in the offline bank';
+    const shared = (item.shared_with || []).length ? `, shared with ${item.shared_with.join(' and ')}` : '';
+    return `only ${have} scored question${have === 1 ? '' : 's'} in the offline bank${shared}`;
   }
   if (item.source === 'generated') return 'generated for this skill';
   if (item.source === 'reviewed') return 'reviewed questions';
@@ -699,6 +699,16 @@ export function summarizePlannedScope(resp) {
     notCovered: [...new Set(notCovered)].filter((skill) => !bySkill.has(skill)),
     unavailable: skills.filter((item) => !item.available).map((item) => item.skill),
   };
+}
+
+/**
+ * Planned scope of a launch whose plan the server builds (Jobs, Coach): the
+ * `planned_scope` object on the draft or preview, in the same display shape
+ * as `summarizePlannedScope`. Null when there is none.
+ */
+export function summarizeLaunchScope(plannedScope) {
+  if (!plannedScope || typeof plannedScope !== 'object') return null;
+  return summarizePlannedScope({ blocks: [{ planned_scope: plannedScope }] });
 }
 
 /**

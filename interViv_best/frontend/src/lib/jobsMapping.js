@@ -1,6 +1,47 @@
 /**
  * Pure helpers for job explorer cards (Adzuna).
  */
+import { summarizeLaunchScope } from './practiceBuilder.js';
+
+function skillList(text) {
+  return String(text || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * True when the skills typed in the confirm dialog are no longer the ones
+ * the draft's proposed blocks were built from.
+ */
+export function jobSkillsEdited(draft, skillsText) {
+  const proposed = (draft?.proposed_skills || []).map((s) => String(s).trim().toLowerCase());
+  const typed = skillList(skillsText).map((s) => s.toLowerCase());
+  return proposed.length !== typed.length || proposed.some((s, i) => s !== typed[i]);
+}
+
+/**
+ * Planned scope for the confirm dialog. The server's summary describes the
+ * proposed blocks, so it is shown only while the skills are unchanged.
+ */
+export function jobLaunchScope(draft, skillsText) {
+  return jobSkillsEdited(draft, skillsText) ? null : summarizeLaunchScope(draft?.planned_scope);
+}
+
+/**
+ * Body for POST /jobs/{id}/practice. The proposed blocks are sent only while
+ * they still match the skills: after an edit the server plans from the
+ * confirmed skills (one free-text question for each of the first three)
+ * instead of starting the blocks of skills the candidate removed.
+ */
+export function jobPracticeBody(draft, { skillsText, company, role, fullJd } = {}) {
+  const body = {
+    confirm: true,
+    skills: skillList(skillsText),
+    company,
+    role,
+    full_jd: fullJd || undefined,
+  };
+  if (!jobSkillsEdited(draft, skillsText)) body.blocks = draft?.proposed_blocks;
+  return body;
+}
 
 export function mapJobCard(job) {
   if (!job || typeof job !== 'object') return null;

@@ -7,13 +7,13 @@ Usage:
   .venv/bin/python scripts/run_local.py --trusted-local-execution  # Python coding + ML, no Docker
   .venv/bin/python scripts/run_local.py --with-executor  # also start the Docker coding executor
   .venv/bin/python scripts/run_local.py --with-executor --live-jobs  # live jobs and coding
-  .venv/bin/python scripts/run_local.py --live-llm       # generate interview questions with the .env provider
+  .venv/bin/python scripts/run_local.py --live-questions # generate interview questions with the .env provider
 
 Ctrl+C stops only the processes started by this launcher. Interview questions
-stay offline unless --live-llm is given: a provider key in .env is not enough,
-because this launcher pins the offline bank. --live-llm opens the one gate all
-LLM requests share (LLM_LIVE_FETCH), so the guidance coach may also send typed
-text to the provider to extract skills. --live-jobs explicitly enables
+stay offline unless --live-questions is given: a provider key in .env is not
+enough, because this launcher pins the offline bank. --live-questions opens
+the LLM gate for question generation only (LLM_LIVE_CONSUMERS=questions); the
+guidance coach and narration stay offline. --live-jobs explicitly enables
 job-provider requests. Model downloads happen only with --fetch-models.
 
 Coding and ML execution, in order of preference:
@@ -156,7 +156,7 @@ def _runtime_environment(
     executor_on: bool,
     live_jobs: bool,
     trusted_local: bool = False,
-    live_llm: bool = False,
+    live_questions: bool = False,
 ) -> dict[str, str]:
     """Build a local, persistent runtime with network access explicitly selected."""
     env = dict(os.environ)
@@ -164,12 +164,15 @@ def _runtime_environment(
         "DATABASE_URL": f"sqlite:///{state / 'interviv-local.sqlite3'}",
         "ENVIRONMENT": "development",
         "REDIS_URL": "",
-        # The LLM provider is dialed only when asked. The key, provider and
-        # model stay in .env (read by the backend, never here); a failed or
-        # incomplete question generation falls back to the offline bank.
-        "LLM_LIVE_FETCH": "1" if live_llm else "0",
+        # The LLM provider is dialed only when asked, and then only to
+        # generate interview questions: the gate is limited to that consumer,
+        # so the guidance coach and narration do not start using it too. The
+        # key, provider and model stay in .env (read by the backend, never
+        # here); a failed or invalid generation falls back to the offline bank.
+        "LLM_LIVE_FETCH": "1" if live_questions else "0",
+        "LLM_LIVE_CONSUMERS": "questions" if live_questions else "",
         "JOBS_LIVE_FETCH": "1" if live_jobs else "0",
-        "QUESTION_GENERATION_MODE": "llm_csv_fallback" if live_llm else "csv",
+        "QUESTION_GENERATION_MODE": "llm_csv_fallback" if live_questions else "csv",
         "QUESTION_REQUIRE_LLM": "false",
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
@@ -199,10 +202,10 @@ def main() -> int:
                         help="start the Docker coding executor so Run/Submit work")
     parser.add_argument("--live-jobs", action="store_true",
                         help="enable live Adzuna and Greenhouse searches (Adzuna needs credentials in .env)")
-    parser.add_argument("--live-llm", action="store_true",
-                        help="allow requests to the LLM provider configured in .env (OPENROUTER_API_KEY or "
-                             "OPENAI_API_KEY): interview questions are generated for the chosen skills, and "
-                             "the guidance coach may send typed text to extract skills")
+    parser.add_argument("--live-questions", action="store_true",
+                        help="generate interview questions with the LLM provider configured in .env "
+                             "(OPENROUTER_API_KEY or OPENAI_API_KEY); nothing else uses the provider, "
+                             "and the offline bank is the fallback")
     parser.add_argument("--trusted-local-execution", action="store_true",
                         help="run Python coding and NumPy ML submissions in a local worker process "
                              "when no executor is running (trusted local demo only, not a sandbox)")
@@ -234,7 +237,7 @@ def main() -> int:
     run.mkdir(exist_ok=True)
     env = _runtime_environment(state, executor_on=executor_on, live_jobs=args.live_jobs,
                                trusted_local=args.trusted_local_execution,
-                               live_llm=args.live_llm)
+                               live_questions=args.live_questions)
     children = []
     handles = []
 
@@ -269,10 +272,10 @@ def main() -> int:
             time.sleep(0.3)
         print("App ready: http://127.0.0.1:5173", flush=True)
         print(f"Accounts and progress are saved in {state / 'interviv-local.sqlite3'}", flush=True)
-        print("LLM requests are on: interview questions are generated with the provider in .env "
-              "(offline bank as the fallback), and the guidance coach may use it too."
-              if args.live_llm else
-              "Question generation uses the offline bank; pass --live-llm to use the provider in .env.",
+        print("Interview questions are generated with the provider in .env (offline bank as the "
+              "fallback). The guidance coach and narration stay offline."
+              if args.live_questions else
+              "Question generation uses the offline bank; pass --live-questions to use the provider in .env.",
               flush=True)
         print("Live job search is enabled." if args.live_jobs else "Jobs use sample listings; pass --live-jobs for live results.", flush=True)
         if executor_on:

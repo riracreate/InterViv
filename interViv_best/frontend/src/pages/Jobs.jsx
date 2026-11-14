@@ -10,7 +10,8 @@ import {
   patchCoachGoals,
   saveTargetContext,
 } from '../lib/api';
-import { mapJobCard, jobApplyHref, formatSalary } from '../lib/jobsMapping';
+import { mapJobCard, jobApplyHref, formatSalary, jobLaunchScope, jobPracticeBody, jobSkillsEdited } from '../lib/jobsMapping';
+import PlannedScope from '../components/PlannedScope';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import { useAccountRetry } from '../lib/useAccountRetry';
@@ -172,14 +173,12 @@ export default function Jobs() {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      const data = await fetchJobPractice(prepare.job_id, {
-        confirm: true,
-        skills,
-        blocks: prepare.proposed_blocks,
+      const data = await fetchJobPractice(prepare.job_id, jobPracticeBody(prepare, {
+        skillsText: draftSkills,
         company: draftCompany,
         role: draftRole,
-        full_jd: fullJd || undefined,
-      });
+        fullJd,
+      }));
       if (!data.started || !data.session_id) {
         throw new Error('Confirm practice before starting.');
       }
@@ -457,6 +456,15 @@ export default function Jobs() {
                 value={draftSkills}
                 onChange={(e) => setDraftSkills(e.target.value)}
               />
+              <PlannedScope
+                scope={jobLaunchScope(prepare, draftSkills)}
+                notCoveredHint="Job practice asks at most three free-text questions."
+              />
+              {jobSkillsEdited(prepare, draftSkills) && (
+                <p className="hub-caption" style={{ marginTop: 8 }} data-testid="job-scope-edited">
+                  Skills changed: the first three get one free-text question each. Availability is checked when you start.
+                </p>
+              )}
               <label className="hub-eyebrow" style={{ display: 'block', marginTop: 12 }} htmlFor="job-full-jd">
                 Optional full job description
               </label>

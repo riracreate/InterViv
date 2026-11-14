@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from backend.db import get_database
 from backend.routes.auth import require_authenticated, require_user
-from backend.routes.session import StartSessionRequest, start_session
+from backend.routes.session import StartSessionRequest, launch_planned_scope, start_session
 from modules.adzuna_client import AdzunaClientError, normalize_country, safe_redirect_url
 from modules.greenhouse_client import safe_greenhouse_url
 from modules.jobs_explorer import (
@@ -24,6 +24,20 @@ from modules.jobs_explorer import (
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_authenticated)])
+
+
+def _with_planned_scope(draft: dict[str, Any]) -> dict[str, Any]:
+    """Add what the proposed blocks will actually ask to a practice draft.
+
+    The draft plans one free-text question for each of the first three
+    proposed skills; the summary names the rest and any skill without scored
+    content, before the candidate confirms.
+    """
+    draft["planned_scope"] = launch_planned_scope(
+        {"blocks": draft.get("proposed_blocks") or []},
+        list(draft.get("proposed_skills") or []),
+    )
+    return draft
 
 
 class PracticeConfirmRequest(BaseModel):
@@ -146,7 +160,7 @@ def prepare_practice_for_job(
     draft = build_practice_prepare_payload(
         job=job, user_skills=user_skills, full_jd=full_jd
     )
-    return draft
+    return _with_planned_scope(draft)
 
 
 @router.post("/{job_id}/practice")
@@ -168,7 +182,7 @@ def practice_for_job(
         draft = build_practice_prepare_payload(
             job=job, user_skills=user_skills, full_jd=req.full_jd
         )
-        return {**draft, "started": False}
+        return {**_with_planned_scope(draft), "started": False}
 
     user_skills = user_skills_for_overlay(str(user["id"]))
     skills = [s for s in (req.skills or missing_skills_for_job(job, user_skills)) if s][:5]
@@ -199,6 +213,7 @@ def practice_for_job(
         "started": True,
         "round_plan": start_body.get("round_plan"),
         "blocks": start_body.get("blocks"),
+        "planned_scope": launch_planned_scope(start_body, skills),
         "navigate": f"/interview/{session.get('session_id')}",
         "practice_href": "/practice",
         "job_id": job_id,

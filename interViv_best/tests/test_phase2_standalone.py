@@ -207,11 +207,15 @@ def test_server_enforces_max_total_rounds() -> None:
 def test_fifty_rounds_is_accepted_at_start() -> None:
     client = TestClient(app)
     headers = _headers(_make_user("solo-caps-ok"))
+    # The cap is on rounds, not on one skill: offline no single skill has
+    # fifty scored questions, so the plan spreads over skills that have five.
+    skills = ["DBMS", "DSA", "OS", "CN", "OOP", "Python", "JavaScript", "HR",
+              "System Design", "System Design"]
     resp = client.post("/session/start", headers=headers, json={
         "blocks": [
             {"round_type": "technical_short_answer", "category": "interview",
-             "skills": ["DBMS"], "count": 5}
-            for _ in range(10)
+             "skills": [skill], "count": 5}
+            for skill in skills
         ],
     })
     assert resp.status_code == 200, resp.text

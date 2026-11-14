@@ -23,9 +23,21 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+def dotenv_enabled() -> bool:
+    """False when ``INTERVIV_SKIP_DOTENV`` is set: the process environment is
+    then the only configuration. The test suite sets it, so a developer's
+    ``.env`` (provider keys, live-fetch switches) cannot change a test run."""
+    return os.getenv("INTERVIV_SKIP_DOTENV", "").strip().lower() not in {"1", "true", "yes", "on"}
+
+
+def load_project_dotenv(root: Path) -> None:
+    if dotenv_enabled():
+        load_dotenv(root / ".env", override=False)
+
+
 def apply_runtime_env() -> None:
     root = Path(__file__).resolve().parents[1]
-    load_dotenv(root / ".env", override=False)
+    load_project_dotenv(root)
     # Recommended operating configuration when all-MiniLM-L6-v2 is cached.
     # A cold cache still fails load and sticky-degrades (fail-fast remains open).
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
