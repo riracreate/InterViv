@@ -37,6 +37,7 @@ from backend.models.blocks import (
     VERBAL_SKILL,
     canonicalize_verbal_skills,
     expand_blocks,
+    interview_scope,
     legacy_to_blocks,
     normalize_blocks,
 )
@@ -1212,6 +1213,69 @@ def _verify_served_topic(
     )
 
 
+def _interview_planned_scopes(
+    block_plan: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Each Interview block's actual scope, keyed by block id.
+
+    Questions per confirmed skill and where they come from, plus the skills
+    the question budget cannot reach. Offline pools are counted across the
+    whole plan, because blocks whose skills resolve to one bank skill draw
+    on the same questions. No writes, no generation.
+    """
+    from modules import question_runtime
+    from modules.bundle_selector import reviewed_bundles_only
+
+    blocks = [b for b in block_plan if b.get("category") == "interview"]
+    scopes = [interview_scope(b) for b in blocks]
+    planned = [item for scope in scopes for item in scope["planned"]]
+    if reviewed_bundles_only():
+        sourced = [dict(item, source="reviewed") for item in planned]
+    else:
+        sourced = question_runtime.scope_sources(planned)
+    out: dict[str, dict[str, Any]] = {}
+    cursor = 0
+    for block, scope in zip(blocks, scopes):
+        size = len(scope["planned"])
+        out[str(block.get("id"))] = {
+            "questions": scope["questions"],
+            "skills": sourced[cursor:cursor + size],
+            "not_covered": scope["not_covered"],
+        }
+        cursor += size
+    return out
+
+
+def _reference_shortfall(scope: dict[str, Any]) -> str | None:
+    """Why an Interview block cannot be asked as scored questions, if it can't.
+
+    Every planned question needs a reference answer to be scored. With
+    generation off, the offline bank must hold enough of them for each
+    planned skill; otherwise the round would have been a template with
+    nothing to score against.
+    """
+    short = [item for item in scope["skills"] if item.get("available") is False]
+    if not short:
+        return None
+
+    def describe(item: dict[str, Any]) -> str:
+        bank = f"the {item['served_as']} bank" if item.get("served_as") else "the offline bank"
+        if not item["offline_questions"]:
+            return f"'{item['skill']}' ({item['questions']} planned, none in {bank})"
+        return (
+            f"'{item['skill']}' ({item['questions']} planned; this plan needs "
+            f"{item['offline_needed']} from {bank}, which has "
+            f"{item['offline_questions']})"
+        )
+
+    return (
+        "No scored interview questions with a reference answer are available "
+        f"for {', '.join(describe(item) for item in short)}. Remove "
+        + ("that skill" if len(short) == 1 else "those skills")
+        + ", lower the question count, or turn on live question generation."
+    )
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
@@ -1355,6 +1419,12 @@ def _validate_block_content(
                                 + ". Split the block, adjust skills, or clear "
                                 "the topic."
                             )
+    # Scored interview questions need a reference answer; checked across the
+    # plan passed in, since blocks can share one offline pool.
+    for scope in _interview_planned_scopes(block_plan).values():
+        shortfall = _reference_shortfall(scope)
+        if shortfall:
+            raise ValueError(shortfall)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1769,15 +1839,25 @@ def check_availability(
         by_block.setdefault(str(spec.get("block_id")), []).append(spec)
 
     gate_on = reviewed_bundles_only()
+    # Additive: the scope each Interview block will actually ask, with
+    # offline pools counted across the whole plan as the start does.
+    scopes = _interview_planned_scopes(block_plan)
     results: list[dict[str, object]] = []
     for block in block_plan:
         specs = by_block.get(str(block.get("id")), [])
+        scope = scopes.get(str(block.get("id")))
+        planned_scope = {"planned_scope": scope} if scope else {}
         try:
             _validate_block_content(
                 [block], specs,
                 allow_unknown_fallback=allow_unknown_fallback,
                 sub_domain=request.sub_domain,
             )
+            # A pool shared with other blocks can be short even when this
+            # block alone fits.
+            shortfall = _reference_shortfall(scope) if scope else None
+            if shortfall:
+                raise ValueError(shortfall)
         except ValueError as exc:
             results.append({
                 "position": block.get("position"),
@@ -1786,6 +1866,7 @@ def check_availability(
                 "topic": block.get("topic"),
                 "available": False,
                 "reason": str(exc),
+                **planned_scope,
             })
             continue
         detail: dict[str, object] = {}
@@ -1801,6 +1882,7 @@ def check_availability(
             "available": True,
             "reason": None,
             "detail": detail,
+            **planned_scope,
         })
     return {
         "reviewed_only": gate_on,

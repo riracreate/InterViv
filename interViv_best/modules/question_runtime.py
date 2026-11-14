@@ -9,7 +9,11 @@ LLM question generation:
 - per-minute LLM rate limiting, using Redis when configured and an in-memory
   fallback otherwise
 - exponential-backoff retry with a maximum of 3 attempts
-- deterministic CSV/domain/template fallback after final LLM failure
+- a reference check on every scored short-answer question: a generation
+  without a reference answer or keywords is retried once, then replaced by
+  an offline bank question for the same skill that has a reference answer;
+  when none exists the caller is told the content is unavailable. Domain
+  prompts and templates carry no reference answer and are never served.
 
 The LLM is still used only for question generation. All scoring, decisions,
 feedback, and recommendations remain deterministic Python.
@@ -45,6 +49,14 @@ DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 0.25
 DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 60
+# The CSV bank picks at random; skip a row without a reference answer and
+# pick again, at most this many times.
+_BANK_PICK_ATTEMPTS = 5
+
+# One retry after a generation that fails the reference check. Transport
+# failures are retried separately inside ``call_llm_with_cache_retry``.
+MAX_GENERATION_ATTEMPTS = 2
+GENERATED_SOURCES = frozenset({"llm", "llm-adaptive"})
 
 _REDIS_CLIENT = None
 _REDIS_UNAVAILABLE = False
@@ -74,6 +86,35 @@ class MarketQuestionContext:
     role_id: str | None = None
     resume_skills: tuple[str, ...] = ()
     weak_skills: tuple[str, ...] = ()
+
+
+class QuestionContentUnavailable(RuntimeError):
+    """No question with a reference answer can be served for this scope."""
+
+
+def _keyword_list(value: object) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [part.strip() for part in re.split(r"[,|]", str(value or "")) if part.strip()]
+
+
+def reference_gap(payload: object) -> str | None:
+    """Why ``payload`` cannot be served as a scored short-answer question.
+
+    Content contract: question text and a reference (ideal) answer. A newly
+    generated question must also carry keywords. Bank rows are scored from
+    their reference answer and may leave keywords to the offline concept
+    index, as the validated bank always has. ``None`` means servable.
+    """
+    if not isinstance(payload, dict) or not str(payload.get("question") or "").strip():
+        return "no question text"
+    if not str(payload.get("ideal_answer") or payload.get("reference_answer") or "").strip():
+        return "no reference answer"
+    if str(payload.get("source") or "") in GENERATED_SOURCES and not _keyword_list(
+        payload.get("ideal_keywords") or payload.get("keywords")
+    ):
+        return "no keywords"
+    return None
 
 
 def last_runtime_error() -> str | None:
@@ -313,6 +354,18 @@ def _cache_set(context: QuestionCacheContext, raw: str) -> None:
         except Exception as exc:  # pragma: no cover - depends on local Redis
             LOGGER.warning("Redis question cache write failed: %s", exc)
     _IN_MEMORY_CACHE[key] = (time.time() + ttl, raw)
+
+
+def _cache_delete(context: QuestionCacheContext) -> None:
+    """Forget a cached generation (one that failed the reference check)."""
+    key = question_cache_key(context)
+    _IN_MEMORY_CACHE.pop(key, None)
+    client = _redis()
+    if client is not None:
+        try:
+            client.delete(key)
+        except Exception as exc:  # pragma: no cover - depends on local Redis
+            LOGGER.warning("Redis question cache delete failed: %s", exc)
 
 
 def _rate_limit_per_minute() -> int:
@@ -598,7 +651,13 @@ def fallback_question(
     company: str | None = None,
     role: str | None = None,
 ) -> dict:
-    """Deterministic fallback that bypasses strict LLM settings."""
+    """Deterministic offline fallback that bypasses strict LLM settings.
+
+    Returns a bank question for the same skill that has a reference answer,
+    or raises :class:`QuestionContentUnavailable`. The domain prompts and
+    generic templates in ``question_bank`` have no reference answer, so they
+    cannot be scored against one and are not served.
+    """
     resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
     if sub_domain is None or sub_domain == "general":
         sub_domain = resolved_sub
@@ -613,35 +672,85 @@ def fallback_question(
             company=company,
             role=role,
         )
-        if structured:
+        if structured and reference_gap(structured) is None:
             return structured
-        row = question_bank._get_bank().pick(resolved_skill, sub_domain, difficulty, asked)
-        if row:
-            return _with_question_shape(
-                row,
-                skill=resolved_skill,
-                sub_domain=sub_domain,
-                difficulty=difficulty,
-                source=row.get("source") or "csv",
-            )
-        row = question_bank._domain_fallback_question(resolved_skill, sub_domain, asked)
-        if row:
-            return _with_question_shape(
-                row,
-                skill=resolved_skill,
-                sub_domain=sub_domain,
-                difficulty=difficulty,
-                source=row.get("source") or "domain_fallback",
-            )
+        skipped = list(asked)
+        for _ in range(_BANK_PICK_ATTEMPTS):
+            row = question_bank._get_bank().pick(resolved_skill, sub_domain, difficulty, skipped)
+            if not row:
+                break
+            if reference_gap(row) is None:
+                return _with_question_shape(
+                    row,
+                    skill=resolved_skill,
+                    sub_domain=sub_domain,
+                    difficulty=difficulty,
+                    source=row.get("source") or "csv",
+                )
+            skipped.append(row.get("question") or "")
 
-    row = question_bank._template_question(resolved_skill, sub_domain, difficulty)
-    return _with_question_shape(
-        row,
-        skill=resolved_skill,
-        sub_domain=sub_domain,
-        difficulty=difficulty,
-        source=row.get("source") or "template",
+    raise QuestionContentUnavailable(
+        f"No scored question with a reference answer is available for skill "
+        f"'{skill}'" + (f" (served as {resolved_skill})" if resolved_skill != skill else "")
+        + "."
     )
+
+
+def offline_reference_count(skill: str) -> int:
+    """Distinct offline questions with a reference answer for ``skill``.
+
+    Same alias resolution and skill matching as :func:`fallback_question`
+    (structured bank, then the CSV bank).
+    """
+    resolved, _ = question_bank.resolve_skill(skill)
+    questions: set[str] = set()
+    for row in _load_structured_bank():
+        if _normalised_match(row.get("skill"), resolved) and (row.get("ideal_answer") or "").strip():
+            questions.add((row.get("question") or "").strip().lower())
+    wanted = resolved.strip().lower()
+    for row in getattr(question_bank._get_bank(), "rows", []) or []:
+        if (row.get("skill") or "").strip().lower() == wanted and (row.get("ideal_answer") or "").strip():
+            questions.add((row.get("question") or "").strip().lower())
+    questions.discard("")
+    return len(questions)
+
+
+def live_generation_available() -> bool:
+    """True when a question can be generated by the configured provider now."""
+    from modules.llm_outbound_gate import question_llm_outbound_allowed
+
+    provider, api_key, model = question_bank._llm_provider()
+    return bool(question_llm_outbound_allowed() and provider and api_key and model)
+
+
+def scope_sources(planned: list[dict]) -> list[dict]:
+    """Where each planned skill's questions come from, for the pre-start scope.
+
+    ``planned`` is ``[{"skill", "questions"}]`` for a whole plan. Skills that
+    resolve to the same bank skill share one offline pool
+    (``offline_questions`` available, ``offline_needed`` planned against
+    it), so ``available`` is false for every skill of a pool that is too
+    small when generation is off.
+    """
+    live = live_generation_available()
+    resolved = {item["skill"]: question_bank.resolve_skill(item["skill"])[0] for item in planned}
+    needed: dict[str, int] = {}
+    for item in planned:
+        needed[resolved[item["skill"]]] = needed.get(resolved[item["skill"]], 0) + int(item["questions"])
+    offline = {name: offline_reference_count(name) for name in needed}
+    out = []
+    for item in planned:
+        pool = resolved[item["skill"]]
+        out.append({
+            "skill": item["skill"],
+            "questions": int(item["questions"]),
+            "served_as": pool if pool.strip().lower() != str(item["skill"]).strip().lower() else None,
+            "offline_questions": offline[pool],
+            "offline_needed": needed[pool],
+            "source": "generated" if live else "bank",
+            "available": live or offline[pool] >= needed[pool],
+        })
+    return out
 
 
 def generate_question(
@@ -653,16 +762,26 @@ def generate_question(
     target_concepts: list[str] | tuple[str, ...] | None = None,
     market_context: MarketQuestionContext | None = None,
 ) -> dict:
-    """Hardened non-scoring question-generation entry point."""
+    """Hardened non-scoring question-generation entry point.
+
+    Returns a question that passes :func:`reference_gap`, or raises
+    :class:`QuestionContentUnavailable`.
+    """
     resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
     if sub_domain is None or sub_domain == "general":
         sub_domain = resolved_sub
     mode = question_bank._question_generation_mode()
     market = _resolve_market_context(market_context)
+    # The generated question is about the skill the candidate confirmed
+    # (AWS), not the bank skill it is filed under (System Design); the bank
+    # sub-domain still supplies the focus hint.
+    requested = str(skill or "").strip()
+    prompt_skill = requested or resolved_skill
+    rejected: str | None = None
 
     if mode in {"llm", "llm_csv_fallback"}:
         prompt = build_question_prompt(
-            skill=resolved_skill,
+            skill=prompt_skill,
             sub_domain=sub_domain,
             difficulty=difficulty,
             asked=asked,
@@ -670,7 +789,7 @@ def generate_question(
             market_context=market,
         )
         context = QuestionCacheContext(
-            skill=resolved_skill,
+            skill=prompt_skill,
             sub_domain=sub_domain or "general",
             difficulty=difficulty,
             target_concepts=tuple(target_concepts or ()),
@@ -679,37 +798,59 @@ def generate_question(
             resume_skills=tuple(market.resume_skills or ()),
             weak_skills=tuple(market.weak_skills or ()),
         )
-        raw = call_llm_with_cache_retry(prompt, context, asked=asked)
-        payload = parse_llm_json(raw or "")
-        if payload and payload.get("question"):
-            return {
-                "question": str(payload["question"]).strip(),
-                "ideal_answer": str(payload.get("ideal_answer", "")).strip(),
-                "ideal_keywords": payload.get("ideal_keywords", ""),
-                "source": "llm",
-                "llm_provider": question_bank._llm_provider()[0],
-                "llm_model": question_bank._llm_provider()[2],
-                "skill": resolved_skill,
-                "sub_domain": sub_domain or "general",
-                "difficulty": difficulty,
-                "topic": str(payload.get("topic") or sub_domain or resolved_skill),
-                "question_type": str(payload.get("question_type") or "conceptual"),
-                "company": str(payload.get("company") or market.company or ""),
-                "role": str(payload.get("role") or market.role or ""),
-                "followups": list(payload.get("followups") or []),
-                "cache_key": question_cache_key(context),
-            }
+        for _attempt in range(MAX_GENERATION_ATTEMPTS):
+            raw = call_llm_with_cache_retry(prompt, context, asked=asked)
+            if not raw:
+                # Gated off, unconfigured, or transport retries exhausted.
+                break
+            payload = parse_llm_json(raw)
+            row = None
+            if payload and payload.get("question"):
+                row = {
+                    "question": str(payload["question"]).strip(),
+                    "ideal_answer": str(payload.get("ideal_answer") or "").strip(),
+                    "ideal_keywords": payload.get("ideal_keywords") or "",
+                    "source": "llm",
+                    "llm_provider": question_bank._llm_provider()[0],
+                    "llm_model": question_bank._llm_provider()[2],
+                    "skill": resolved_skill,
+                    "sub_domain": sub_domain or "general",
+                    "difficulty": difficulty,
+                    "topic": str(payload.get("topic") or sub_domain or resolved_skill),
+                    "question_type": str(payload.get("question_type") or "conceptual"),
+                    "company": str(payload.get("company") or market.company or ""),
+                    "role": str(payload.get("role") or market.role or ""),
+                    "followups": list(payload.get("followups") or []),
+                    "cache_key": question_cache_key(context),
+                }
+            gap = reference_gap(row) if row else "response was not a question object"
+            if gap is None:
+                return row
+            # Never re-serve an invalid generation from the cache.
+            _cache_delete(context)
+            rejected = f"Generated question rejected: {gap}."
+            LOGGER.warning("LLM question for %s rejected (%s); attempt %d of %d.",
+                           prompt_skill, gap, _attempt + 1, MAX_GENERATION_ATTEMPTS)
 
-    row = fallback_question(
-        resolved_skill,
-        sub_domain,
-        difficulty,
-        asked,
-        mode=mode,
-        company=market.company,
-        role=market.role,
-    )
-    row["llm_fallback_reason"] = last_runtime_error()
+    reason = rejected or last_runtime_error()
+    try:
+        row = fallback_question(
+            resolved_skill,
+            sub_domain,
+            difficulty,
+            asked,
+            mode=mode,
+            company=market.company,
+            role=market.role,
+        )
+    except QuestionContentUnavailable as exc:
+        raise QuestionContentUnavailable(
+            f"No scored question with a reference answer is available for skill "
+            f"'{requested or resolved_skill}'"
+            + (f" (bank skill {resolved_skill})" if resolved_skill.lower() != (requested or resolved_skill).lower() else "")
+            + (f". Live generation: {reason}" if reason else ".")
+        ) from exc
+    row["llm_fallback_reason"] = reason
     row["fallback_generated_at"] = datetime.now(timezone.utc).isoformat()
     return row
 
@@ -730,13 +871,18 @@ def warm_question_runtime() -> dict[str, object]:
 
 __all__ = [
     "QuestionCacheContext",
+    "QuestionContentUnavailable",
     "MarketQuestionContext",
     "build_question_prompt",
     "call_llm_with_cache_retry",
     "fallback_question",
     "generate_question",
     "last_runtime_error",
+    "live_generation_available",
+    "offline_reference_count",
     "parse_llm_json",
     "question_cache_key",
+    "reference_gap",
+    "scope_sources",
     "warm_question_runtime",
 ]

@@ -656,6 +656,51 @@ export function multiSkillTopicNote(skills, metadata, metadataReady) {
   return `No topic is shared by ${list.join(' and ')}. Split into separate blocks, adjust skills, or leave the topic unrestricted.`;
 }
 
+function plannedSkillNote(item) {
+  if (item.available === false) {
+    const have = Number(item.offline_questions) || 0;
+    const bank = item.served_as ? `the ${item.served_as} bank` : 'the offline bank';
+    if (!have) return `no scored questions in ${bank}`;
+    return `not enough scored questions: this plan needs ${Number(item.offline_needed) || 0} from ${bank}, which has ${have}`;
+  }
+  if (item.source === 'generated') return 'generated for this skill';
+  if (item.source === 'reviewed') return 'reviewed questions';
+  if (item.served_as) return `from the ${item.served_as} question bank`;
+  return 'question bank';
+}
+
+/**
+ * The scope an interview will actually ask, from the `planned_scope` of a
+ * POST /session/availability response: questions per confirmed skill and
+ * where they come from, skills the question budget cannot reach, and
+ * skills with no scored content. Pure for tests. Returns null when the
+ * response carries no planned scope (no interview block, older server).
+ */
+export function summarizePlannedScope(resp) {
+  const scopes = (resp?.blocks || []).map((b) => b?.planned_scope).filter(Boolean);
+  if (!scopes.length) return null;
+  // One row per skill: several blocks can plan the same one.
+  const bySkill = new Map();
+  scopes.flatMap((scope) => scope.skills || []).forEach((item) => {
+    const skill = String(item.skill);
+    const row = bySkill.get(skill) || { skill, questions: 0, available: true, note: plannedSkillNote(item) };
+    row.questions += Number(item.questions) || 0;
+    if (item.available === false) {
+      row.available = false;
+      row.note = plannedSkillNote(item);
+    }
+    bySkill.set(skill, row);
+  });
+  const skills = [...bySkill.values()];
+  const notCovered = scopes.flatMap((scope) => scope.not_covered || []).map(String);
+  return {
+    questions: scopes.reduce((sum, scope) => sum + (Number(scope.questions) || 0), 0),
+    skills,
+    notCovered: [...new Set(notCovered)].filter((skill) => !bySkill.has(skill)),
+    unavailable: skills.filter((item) => !item.available).map((item) => item.skill),
+  };
+}
+
 /**
  * Summarize a POST /session/availability response for the pre-start
  * notice. Pure for tests. Returns null when everything is available.

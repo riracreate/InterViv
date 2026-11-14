@@ -58,13 +58,13 @@ def question_source_health() -> dict[str, object]:
     outbound = question_llm_outbound_allowed()
     if configured == "csv":
         effective = "csv"
-        note = "Question generation uses the CSV/template bank; LLM is not dialed."
+        note = "Question generation uses the offline question bank; LLM is not dialed."
     elif outbound:
         effective = configured
         note = None
     elif configured == "llm_csv_fallback":
         effective = "csv_fallback"
-        note = "LLM live fetch is off; generation uses CSV/template fallback."
+        note = "LLM live fetch is off; generation uses the offline question bank."
     else:
         effective = "llm_gated_off"
         note = (

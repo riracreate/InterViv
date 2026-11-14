@@ -75,7 +75,9 @@ def test_generate_question_falls_back_after_llm_failure(monkeypatch: pytest.Monk
     )
 
     assert payload["question"]
-    assert payload["source"] in {"structured_fallback", "csv", "domain_fallback", "template"}
+    # Only bank questions with a reference answer are served as a fallback.
+    assert payload["source"] in {"structured_fallback", "csv"}
+    assert payload["ideal_answer"].strip()
     assert payload["skill"] == "DSA"
 
 

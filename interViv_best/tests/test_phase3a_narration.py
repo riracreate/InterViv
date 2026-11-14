@@ -38,6 +38,7 @@ from backend.db.sqlalchemy_store import (
     get_sqlalchemy_database,
 )
 from backend.main import app
+from modules import narration_provider
 from modules.llm_outbound_gate import llm_live_fetch_enabled
 from modules.narration_jobs import (
     MAX_ATTEMPTS,
@@ -82,8 +83,11 @@ def _start_interview(client, headers, count=1):
 
 
 def test_submit_enqueues_exactly_one_job(monkeypatch) -> None:
-    # Live narration on: the job waits in the queue for the worker.
+    # Live narration on (the gate plus a provider): the job waits in the
+    # queue for the worker.
     monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    monkeypatch.setattr(narration_provider, "_PROVIDER",
+                        narration_provider.FakeNarrationProvider())
     client = TestClient(app)
     headers = _headers(_make_user("t3a-enqueue"))
     db = get_database()
@@ -108,6 +112,35 @@ def test_submit_enqueues_exactly_one_job(monkeypatch) -> None:
     assert job["skill"] == "DBMS"
     stored = db["sessions"].find_one({"session_id": session_id})
     assert job["snapshot_digest"] == stored["rounds"][0]["attempt_snapshot"]["digest"]
+
+
+def test_submit_renders_rules_narration_when_only_the_shared_gate_is_on(monkeypatch) -> None:
+    """Live question generation turns the shared LLM gate on. With no
+    narration provider installed nothing can narrate, so the rules script is
+    rendered at submit instead of waiting on a worker the local app never
+    runs (the page would poll for a minute after every answer)."""
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    assert not narration_provider.narration_provider_installed()
+    client = TestClient(app)
+    headers = _headers(_make_user("t3a-gate-only"))
+    db = get_database()
+    start = _start_interview(client, headers)
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+    answer = client.post("/session/answer", headers=headers, json={
+        "session_id": session_id, "round": 1,
+        "answer_text": "A composite index serves queries on its leading columns.",
+    })
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["narration_status"] == "skipped"
+    job = db["narration_jobs"].find_one({"id": narration_job_id(session_id, 1)})
+    assert job["status"] == "skipped"
+    assert job["artifact"]["source"] == "rules_feedback"
+    assert job["artifact"]["metadata"]["validation"] == "provider_unavailable"
+    feedback = client.get(f"/session/{session_id}/rounds/1/feedback", headers=headers)
+    assert feedback.status_code == 200, feedback.text
+    assert feedback.json()["narration"]["status"] == "skipped"
+    assert feedback.json()["narration"]["label"] == "Rules feedback"
 
 
 def test_submit_renders_rules_narration_when_live_narration_is_off(monkeypatch) -> None:
@@ -279,6 +312,8 @@ def test_worker_sweep_processes_due_jobs_oldest_first(monkeypatch) -> None:
 def test_worker_refuses_tampered_snapshot(monkeypatch) -> None:
     # Keep the job queued at submit so the worker sees the tampered digest.
     monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    monkeypatch.setattr(narration_provider, "_PROVIDER",
+                        narration_provider.FakeNarrationProvider())
     client = TestClient(app)
     headers = _headers(_make_user("t3a-tamper"))
     db = get_database()

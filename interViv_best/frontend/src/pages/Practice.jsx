@@ -60,9 +60,50 @@ import {
   reconcileTopic,
   sharedTopicsForSkills,
   summarizeAvailability,
+  summarizePlannedScope,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
+const DEFAULT_STANDALONE_TOPICS = 'DBMS';
+
+/**
+ * What the interview will actually ask, from the server's own plan: questions
+ * per confirmed skill, skills the budget cannot reach, and skills without
+ * scored content. Shown before the start button.
+ */
+function PlannedScope({ scope }) {
+  if (!scope) return null;
+  const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
+  return (
+    <div
+      data-testid="planned-scope"
+      role="status"
+      className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+    >
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+        Planned scope · {plural(scope.questions)}
+      </p>
+      <ul className="mt-2 space-y-1 text-sm text-[var(--color-ink)]">
+        {scope.skills.map((item, index) => (
+          <li key={`${item.skill}-${index}`} className={item.available ? '' : 'text-[var(--color-danger)]'}>
+            <span className="font-medium">{item.skill}</span> — {plural(item.questions)}{' '}
+            <span className={item.available ? 'text-[var(--color-ink-muted)]' : ''}>({item.note})</span>
+          </li>
+        ))}
+      </ul>
+      {scope.notCovered.length > 0 && (
+        <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="planned-scope-not-covered">
+          Not covered within {plural(scope.questions)}: {scope.notCovered.join(', ')}. Add questions or remove skills.
+        </p>
+      )}
+      {scope.unavailable.length > 0 && (
+        <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="planned-scope-unavailable">
+          No scored questions for {scope.unavailable.join(', ')}. Remove {scope.unavailable.length === 1 ? 'it' : 'them'} to start.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function stripClientOnly(payload) {
   const next = { ...payload };
@@ -131,7 +172,7 @@ export default function Practice() {
   const [standaloneCount, setStandaloneCount] = useState(10);
   const [standaloneDuration, setStandaloneDuration] = useState(20);
   const [standaloneDifficulty, setStandaloneDifficulty] = useState('');
-  const [standaloneTopics, setStandaloneTopics] = useState('DBMS');
+  const [standaloneTopics, setStandaloneTopics] = useState(DEFAULT_STANDALONE_TOPICS);
   const [standaloneTopic, setStandaloneTopic] = useState('');
   const [topicNote, setTopicNote] = useState('');
   const [topicMetadata, setTopicMetadata] = useState(null);
@@ -362,6 +403,57 @@ export default function Practice() {
     () => standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
     [standaloneTopics]
   );
+
+  // Planned scope preview: the server's plan for the current interview
+  // selection, from the same endpoint the start button probes.
+  const [plannedScope, setPlannedScope] = useState(null);
+  const scopePayload = useMemo(() => {
+    let mapped = null;
+    if (mode === 'interview') {
+      mapped = mapStandaloneToStartPayload('interview', {
+        skills: standaloneSkillList,
+        count: standaloneCount,
+        difficulty: standaloneDifficulty || undefined,
+        topic: standaloneTopic || undefined,
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    } else if (mode === 'full') {
+      mapped = mapFullInterviewToStartPayload({
+        skills,
+        roundsPerSkill,
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    } else if (mode === 'custom') {
+      mapped = mapBlocksToStartPayload(blocks, {
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    }
+    return mapped?.payload && payloadHasInterview(mapped.payload) ? mapped.payload : null;
+  }, [mode, standaloneSkillList, standaloneCount, standaloneDifficulty, standaloneTopic,
+    skills, roundsPerSkill, blocks, target.companyId, target.roleId]);
+  useEffect(() => {
+    if (!scopePayload || !userId) {
+      setPlannedScope(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchAvailability(stripClientOnly(scopePayload))
+        .then((resp) => {
+          if (!cancelled) setPlannedScope(summarizePlannedScope(resp));
+        })
+        .catch(() => {
+          if (!cancelled) setPlannedScope(null);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scopePayload, userId]);
   const metadataReady = topicMetadata != null && Object.keys(topicMetadata).length > 0;
   const standaloneTopicOptions = useMemo(
     () => sharedTopicsForSkills(standaloneSkillList, topicMetadata),
@@ -549,14 +641,22 @@ export default function Practice() {
       domainProfile: domainProfile || {},
     };
     setResumeState(nextState);
-    const topSkills = (extractedSkills || []).slice(0, 5);
-    if (topSkills.length > 0) {
-      setSkillsExplicit(true);
-      skillsExplicitRef.current = true;
-      skillsRef.current = topSkills;
-      setSkills(topSkills);
-      setStandaloneTopics(topSkills.slice(0, 3).join(', '));
-      setPrefillNote(`Extracted ${extractedSkills.length} skill${extractedSkills.length === 1 ? '' : 's'} from ${fileName || 'your resume'}.`);
+    // The extracted list is alphabetical, not ranked, so nothing is chosen on
+    // the candidate's behalf. This mode's placeholder default is cleared and
+    // the interview covers only the skills they confirm; a selection they
+    // already made is kept.
+    const found = extractedSkills || [];
+    let selected = skillsRef.current;
+    if (found.length > 0) {
+      if (mode === 'full' && !skillsExplicitRef.current) {
+        selected = [];
+        skillsRef.current = selected;
+        setSkills(selected);
+      }
+      if (mode === 'interview') {
+        setStandaloneTopics((prev) => (prev === DEFAULT_STANDALONE_TOPICS ? '' : prev));
+      }
+      setPrefillNote(`Found ${found.length} skill${found.length === 1 ? '' : 's'} in ${fileName || 'your resume'}. Choose the ones to practise.`);
     }
     if (userId) {
       writeScoped(
@@ -565,7 +665,7 @@ export default function Practice() {
         WIZARD_STORAGE_NAME,
         serializeWizard({
           ...nextState,
-          selectedSkills: topSkills.length > 0 ? topSkills : skills,
+          selectedSkills: selected,
           targetSelection: target,
         }),
         WIZARD_STORAGE_VERSION
@@ -794,6 +894,7 @@ export default function Practice() {
                 onChange={(e) => setRoundsPerSkill(Number(e.target.value))}
               />
             </label>
+            <PlannedScope scope={plannedScope} />
             <button
               type="button"
               disabled={busy}
@@ -1236,6 +1337,7 @@ export default function Practice() {
                 </select>
               </label>
             </div>
+            <PlannedScope scope={plannedScope} />
             <button
               type="button" disabled={busy || interviewTopicHeldOnMetadataError}
               className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
@@ -1586,6 +1688,7 @@ export default function Practice() {
                     </button>
                   </p>
                 )}
+                <PlannedScope scope={plannedScope} />
                 <button
                   type="button"
                   disabled={busy || blocks.length === 0 || customTopicsHeldOnMetadataError}
