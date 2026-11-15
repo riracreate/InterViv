@@ -24,6 +24,7 @@ from modules import concept_evaluator_v2 as v2
 from modules.semantic_scorer import _get_model
 
 EVALUATOR_VERSION = "concept_evaluator_v3.0"
+EVALUATOR_VERSION_V3_1 = "concept_evaluator_v3.1"
 DEFAULT_CONFIG_VERSION = "concept_evaluator_v3"
 DEFAULT_SEMANTIC_THRESHOLD = 0.62
 
@@ -242,6 +243,7 @@ def evaluate_answer(
     exclude_examples: Iterable[str] | Mapping[str, Iterable[str] | str] | None = None,
     semantic_threshold: float | None = None,
     enabled_tiers: tuple[str, ...] = ALL_TIERS,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Evaluate answer_text against bundle concepts using 3-tier proposition/alias/semantic matching.
 
@@ -279,7 +281,7 @@ def evaluate_answer(
     ]
     if not raw_required:
         return {
-            "evaluator_version": EVALUATOR_VERSION,
+            "evaluator_version": EVALUATOR_VERSION_V3_1 if strict else EVALUATOR_VERSION,
             "config_version": config_version,
             "bundle_content_hash": bundle_content_hash,
             "assessable": False,
@@ -352,7 +354,8 @@ def evaluate_answer(
             for prop in contradicted_props:
                 evidence.append({"type": "proposition_contradicted", "text": prop})
         elif "alias" in active_tiers and unnegated_spans:
-            state = "supported"
+            # v3.1 strict mode: naming a term is a mention, never support.
+            state = "mentioned" if strict else "supported"
             match_type = "alias"
             for sp in unnegated_spans:
                 evidence.append({"type": "alias", "text": sp["text"]})
@@ -372,7 +375,7 @@ def evaluate_answer(
         }
         preliminary.append(entry)
 
-        if state is None and "semantic" in active_tiers and sentences:
+        if (state is None or (strict and state == "mentioned")) and "semantic" in active_tiers and sentences:
             eligible_indices = [
                 si
                 for si, sent in enumerate(sentences)
@@ -483,7 +486,7 @@ def evaluate_answer(
     )
 
     return {
-        "evaluator_version": EVALUATOR_VERSION,
+        "evaluator_version": EVALUATOR_VERSION_V3_1 if strict else EVALUATOR_VERSION,
         "config_version": config_version,
         "bundle_content_hash": bundle_content_hash,
         "assessable": True,

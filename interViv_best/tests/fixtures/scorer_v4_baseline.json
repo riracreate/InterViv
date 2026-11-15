@@ -1,0 +1,230 @@
+{
+ "scorer_version": "v4",
+ "extends": "scorer_v3_baseline.json (11 cases, rescored under v4)",
+ "append_protected": false,
+ "items": [
+  {
+   "id": "excellent",
+   "answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind public methods so callers depend only on the interface. Inheritance lets a subclass reuse behaviour from a base class. Polymorphism allows method overriding so subtypes can be substituted at runtime. Abstraction exposes only the essential operations and is reinforced by SOLID design principles.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 100.0,
+    "guard_applied": null,
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "paraphrase",
+   "answer": "Object oriented design rests on four ideas. First, hiding the internal data of an object behind its public methods. Second, letting a child class reuse the behaviour of its parent. Third, allowing one interface to take many forms by overriding methods on derived types. Fourth, surfacing only the essential operations to clients while keeping implementation details private.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 88.92,
+    "guard_applied": null,
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "partial",
+   "answer": "OOP is built on encapsulation and inheritance. Encapsulation is about wrapping data and methods together so the internal state stays hidden. Inheritance lets one class reuse another.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 88.92,
+    "guard_applied": null,
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "empty",
+   "answer": "",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 0.0,
+    "guard_applied": "empty",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "gibberish",
+   "answer": "qzqzqz xkxkxk vwvwvw zzzz xxxx vvvv qqqq jjjj kkkk",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 15.0,
+    "guard_applied": "repetition",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "excessive_repetition",
+   "answer": "really really really really really really really really really really really really really really good answer.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 15.0,
+    "guard_applied": "repetition",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "keyword_stuffing",
+   "answer": "encapsulation inheritance polymorphism abstraction encapsulation inheritance polymorphism abstraction encapsulation inheritance polymorphism abstraction",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 35.0,
+    "guard_applied": "keyword_stuffing",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "off_topic",
+   "answer": "I spent the weekend cooking risotto. The trick is to add warm stock one ladle at a time and stir constantly over a low flame for about thirty minutes until the rice releases its starch.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "result": {
+    "final_score": 0.0,
+    "guard_applied": "off_topic",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "entity_swap",
+   "answer": "UDP is connection-oriented: it does a three-way handshake, then guarantees reliable ordered delivery with acknowledgements and retransmission, plus flow control and congestion control. TCP is connectionless and best-effort, with no handshake and no ordering guarantee, so it has lower overhead and latency, which suits streaming, gaming and DNS.",
+   "question": "What is the difference between TCP and UDP?",
+   "ideal_answer": "TCP is a connection-oriented protocol that establishes a connection with a three-way handshake and guarantees reliable, ordered delivery using acknowledgements, retransmission, flow control and congestion control. UDP is connectionless and best-effort: it has no handshake, no ordering or delivery guarantee, and lower overhead, so it suits latency-sensitive uses like video streaming, gaming and DNS.",
+   "ideal_keywords": "connection-oriented, connectionless, handshake, reliable, ordered, best-effort, latency, overhead",
+   "result": {
+    "final_score": 35.0,
+    "guard_applied": "entity_swap",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "real_terms_not_gibberish",
+   "answer": "DP solves subproblems and stores results for optimal global solution; Greedy makes locally optimal choices hoping for a global optimum.",
+   "question": "How does Dynamic Programming differ from Greedy algorithms?",
+   "ideal_answer": "DP solves subproblems and stores results for optimal global solution; Greedy makes locally optimal choices hoping for a global optimum.",
+   "ideal_keywords": "",
+   "result": {
+    "final_score": 100.0,
+    "guard_applied": null,
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "short_fragment",
+   "answer": "Deadlock occurs when processes are permanently.",
+   "question": "What is a deadlock and what are the four necessary conditions?",
+   "ideal_answer": "A deadlock is a state where a group of processes are each waiting for a resource held by another, creating a circular wait. Coffman's four necessary conditions are: Mutual Exclusion (resources held exclusively), Hold and Wait (process holding resources while waiting for more), No Preemption (resources cannot be forcibly taken), Circular Wait (a circular chain of processes waiting for resources). All four must hold simultaneously for deadlock to occur. Prevention involves negating at least one condition.",
+   "ideal_keywords": "",
+   "result": {
+    "final_score": 20.0,
+    "guard_applied": "too_short",
+    "scorer_version": "v4"
+   }
+  },
+  {
+   "id": "short_full_marks",
+   "answer": "It follows the C3 linearization of the class hierarchy.",
+   "question": "What is method resolution order (MRO) in Python?",
+   "ideal_answer": "MRO determines the order Python searches for methods and attributes in class hierarchies with multiple inheritance. Python uses the C3 linearization algorithm. View with ClassName.__mro__.",
+   "ideal_keywords": "C3 linearization, multiple inheritance, __mro__",
+   "required_concepts": null,
+   "result": {
+    "final_score": 82.4,
+    "guard_applied": null,
+    "scorer_version": "v4",
+    "concept_coverage": 0.0382
+   }
+  },
+  {
+   "id": "noun_phrase_answer",
+   "answer": "Member functions and data members belonging to the class.",
+   "question": "What are the elements typically included in a class definition?",
+   "ideal_answer": "A class typically includes data members (attributes) and member functions (methods) that operate on them.",
+   "ideal_keywords": "data members, member functions",
+   "required_concepts": null,
+   "result": {
+    "final_score": 94.04,
+    "guard_applied": null,
+    "scorer_version": "v4",
+    "concept_coverage": 0.1444
+   }
+  },
+  {
+   "id": "code_syntax_answer",
+   "answer": "Execution starts at int main() { return 0; } \u2014 the entry point the runtime calls first.",
+   "question": "Where does execution of a C program start?",
+   "ideal_answer": "Execution starts at the main function, the program entry point called by the runtime.",
+   "ideal_keywords": "main function, entry point",
+   "required_concepts": null,
+   "result": {
+    "final_score": 98.48,
+    "guard_applied": null,
+    "scorer_version": "v4",
+    "concept_coverage": 0.1625
+   }
+  },
+  {
+   "id": "paraphrase_exceeds_90",
+   "answer": "OOP rests on four pillars. Encapsulation bundles state behind a public interface so internals stay hidden. Inheritance reuses base-class behaviour in subclasses. Polymorphism lets subtypes substitute through overridden methods at runtime. Abstraction surfaces only essential operations, guided by SOLID principles.",
+   "question": "Explain the four pillars of OOP.",
+   "ideal_answer": "The four pillars are encapsulation, inheritance, polymorphism, and abstraction. Encapsulation hides internal state behind methods; inheritance lets subclasses reuse behaviour; polymorphism allows subtypes to be used interchangeably via method overriding; abstraction exposes only essential operations and follows SOLID design principles.",
+   "ideal_keywords": "encapsulation, inheritance, polymorphism, abstraction",
+   "required_concepts": null,
+   "result": {
+    "final_score": 94.04,
+    "guard_applied": null,
+    "scorer_version": "v4",
+    "concept_coverage": 0.0925
+   }
+  },
+  {
+   "id": "alias_only_mention",
+   "answer": "Token bucket and retry-after.",
+   "question": "How should an API enforce rate limits fairly?",
+   "ideal_answer": "Use a token bucket per client with a steady refill rate; reject excess requests with HTTP 429 and a Retry-After header.",
+   "ideal_keywords": "token bucket, 429, retry-after",
+   "required_concepts": [
+    {
+     "id": "token_bucket",
+     "descriptor": "Token bucket controls burst and average rate",
+     "aliases": [
+      "token bucket"
+     ],
+     "expected_propositions": [
+      "steady refill rate replenishes the bucket"
+     ]
+    },
+    {
+     "id": "http_429_headers",
+     "descriptor": "Return HTTP 429 with Retry-After header",
+     "aliases": [
+      "retry after"
+     ],
+     "expected_propositions": [
+      "excess requests are rejected with status 429"
+     ]
+    }
+   ],
+   "result": {
+    "final_score": 35.0,
+    "guard_applied": "keyword_stuffing",
+    "scorer_version": "v4",
+    "concept_coverage": 0.0
+   }
+  }
+ ]
+}

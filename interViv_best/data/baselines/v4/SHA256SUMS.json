@@ -1,0 +1,39 @@
+{
+ "algorithm": "sha256",
+ "scorer_version": "v4",
+ "note": "New v4 assets only. v1-v3 baselines and hash lists untouched.",
+ "files": {
+  "modules/scoring_features.py": {
+   "sha256": "88b9f015290de0b48761f6976bdcb235f18667a1a1b3aaadffec3f196de8e7bc",
+   "bytes": 4648
+  },
+  "modules/answer_guard_v4.py": {
+   "sha256": "90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae",
+   "bytes": 6706
+  },
+  "modules/scorer_v4_regression.joblib": {
+   "sha256": "eb1168b248a6e36db546152d3aa2de6d733e32ea9160fd3edf39595197d91fcf",
+   "bytes": 841
+  },
+  "modules/scorer_v4_calibration.json": {
+   "sha256": "a6163ba81f9c8804381b47336d6c281f811a7d6b3847f29f30cf340bb4a3fbdc",
+   "bytes": 1234
+  },
+  "tests/fixtures/scorer_v4_baseline.json": {
+   "sha256": "5b2ce66e94a539c15df1a85beda1c844c146a5947e873098cf0f5557a5d4eaca",
+   "bytes": 12990
+  },
+  "data/mohler_question_split_v1.json": {
+   "sha256": "be301c640f17183275bcd1a50da7e9c25be57a2e0eab2d5a8900c7e9763b8f99",
+   "bytes": 1520
+  },
+  "scripts/train_scorer_v4.py": {
+   "sha256": "bfae6dc3df9b134ff258b990aa465a78529d0f03482ba1e949351294c8c3f5fa",
+   "bytes": 5276
+  },
+  "scripts/validate_scorer_v4.py": {
+   "sha256": "2d7caf953af27eec47cd65a5d587d92f9cbcddaae03a88ddbbe4c11b9f434ebd",
+   "bytes": 10263
+  }
+ }
+}
