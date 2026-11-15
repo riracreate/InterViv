@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback, requestFollowUp, activateRound } from '../lib/api';
 import {
@@ -31,9 +31,12 @@ import MLPrimitivesRound from '../components/MLPrimitivesRound';
 import SystemDesignRound from '../components/SystemDesignRound';
 import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
+import StarComposer from '../components/StarComposer';
+import { readDevicePreference, writeDevicePreference } from '../lib/accountStorage';
 import { createSpeaker } from '../lib/speech/tts';
 import { createRecognitionController, deliverySignals, recognitionClass } from '../lib/speech/stt';
 
+const VivStage = lazy(() => import('../components/VivStage'));
 const DEADLINE_TRANSCRIPTION_NOTICE =
   'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
 
@@ -92,12 +95,18 @@ export default function Interview({ sessionState = null }) {
   const [actionError, setActionError] = useState('');
   // Opt-in read-aloud of questions and feedback; recognition pauses meanwhile.
   const [readAloud, setReadAloud] = useState(false);
+  const [showViv, setShowViv] = useState(false);
+  const [vivAppearance, setVivAppearance] = useState(() => {
+    const saved = readDevicePreference('viv-appearance');
+    return ['fern', 'ocean', 'plum'].includes(saved) ? saved : 'fern';
+  });
+  const [vivSpeaking, setVivSpeaking] = useState(false);
   const speakerRef = useRef(null);
   if (speakerRef.current === null && typeof window !== 'undefined') {
     speakerRef.current = createSpeaker({
       win: window,
-      onStart: () => recognitionRef.current?.pause?.(),
-      onEnd: () => recognitionRef.current?.resume?.(),
+      onStart: () => { setVivSpeaking(true); recognitionRef.current?.pause?.(); },
+      onEnd: () => { setVivSpeaking(false); recognitionRef.current?.resume?.(); },
     });
   }
   const spokenKeyRef = useRef('');
@@ -161,7 +170,6 @@ export default function Interview({ sessionState = null }) {
   const [serverTranscribing, setServerTranscribing] = useState(false);
   const [engagementReady, setEngagementReady] = useState(false);
   const [engagementLoadFailed, setEngagementLoadFailed] = useState(false);
-  const [liveEngagement, setLiveEngagement] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraCollapsed, setCameraCollapsed] = useState(false);
   const [deadlineNotice, setDeadlineNotice] = useState('');
@@ -204,7 +212,6 @@ export default function Interview({ sessionState = null }) {
   const clearEngagementSamples = useCallback(() => {
     engagementSamplesRef.current = [];
     lastEngagementSampleAtRef.current = 0;
-    setLiveEngagement(null);
   }, []);
 
   const ensureMicrophone = useCallback(async () => {
@@ -475,7 +482,6 @@ export default function Interview({ sessionState = null }) {
         const sample = await classifyFrame(videoRef.current);
         if (cancelled) return;
         if (sample) {
-          setLiveEngagement(sample);
           const now = Date.now();
           if (now - lastEngagementSampleAtRef.current >= 2000) {
             engagementSamplesRef.current.push(sample);
@@ -1095,25 +1101,6 @@ export default function Interview({ sessionState = null }) {
         : micError
           ? 'Mic Check'
           : 'Standby';
-  const engagementStatus = !isVideoOn
-    ? 'Off'
-    : engagementLoadFailed
-      ? 'Unavailable'
-      : !engagementReady
-        ? 'Loading'
-        : liveEngagement?.label || 'Waiting';
-  const engagementConfidence = liveEngagement?.confidence != null
-    ? `${Math.round(liveEngagement.confidence * 100)}%`
-    : null;
-  const engagementTone = engagementStatus === 'High'
-    ? 'bg-emerald-500'
-    : engagementStatus === 'Low'
-      ? 'bg-red-500'
-      : engagementStatus === 'Neutral'
-        ? 'bg-blue-500'
-        : engagementStatus === 'Uncertain'
-          ? 'bg-amber-500'
-          : 'bg-slate-300';
   // Typed round components share one contract: their result stays visible
   // after submission (scored or not) until Next opens the next round.
   const roundProps = {
@@ -1136,7 +1123,7 @@ export default function Interview({ sessionState = null }) {
   const roundKey = `${sessionId}:${round}`;
 
   return (
-    <div className="h-screen bg-[var(--color-surface)] flex flex-col overflow-y-auto lg:overflow-hidden">
+    <div className="iv-interview-shell h-screen bg-[var(--color-surface)] flex flex-col overflow-y-auto lg:overflow-hidden">
       <header className="h-14 px-6 flex items-center justify-between border-b border-[var(--color-border)] shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
           <button type="button" onClick={saveAndExit} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}
@@ -1218,8 +1205,8 @@ export default function Interview({ sessionState = null }) {
             evaluationBoundary={evaluationBoundary} />
         </div>
       ) : (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
-        <div className="relative flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white flex flex-col min-h-0">
+        <div className="iv-interview-grid flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
+        <div className="iv-interview-question relative flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
             {/* Only after a requested mic/camera actually failed. */}
@@ -1251,12 +1238,18 @@ export default function Interview({ sessionState = null }) {
                 {voiceStatus}
               </span>
             </div>
+            <button type="button" className="iv-viv-toggle" aria-pressed={showViv} onClick={() => setShowViv(value => !value)}>
+              {showViv ? 'Hide Viv' : 'Show Viv'}
+            </button>
+            {showViv && <label className="iv-viv-style">Viv style <select value={vivAppearance} onChange={event => { setVivAppearance(event.target.value); writeDevicePreference('viv-appearance', event.target.value); }}>
+              <option value="fern">Fern</option><option value="ocean">Ocean</option><option value="plum">Plum</option>
+            </select></label>}
             {isVideoOn && (
               <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-[var(--color-border)]">
-                <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
+                <div className={`w-2 h-2 rounded-full ${engagementLoadFailed ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                 <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
-                  style={{ fontFamily: "var(--font-body)" }}>
-                  Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
+                  style={{ fontFamily: "var(--font-body)" }} title="Camera cues do not measure readiness or competence.">
+                  Camera on{engagementLoadFailed ? ' · cues unavailable' : ''}
                 </span>
               </div>
             )}
@@ -1264,6 +1257,7 @@ export default function Interview({ sessionState = null }) {
 
           {/* Question — the primary focus of the screen */}
           <div className="flex-1 flex flex-col justify-center px-8 md:px-12 py-6 overflow-y-auto min-h-0">
+            {showViv && <Suspense fallback={<p className="iv-viv-loading" role="status">Loading Viv…</p>}><VivStage speaking={vivSpeaking} listening={isRecording || serverRecording} appearance={vivAppearance} /></Suspense>}
             <div className="flex items-center gap-3 mb-5 flex-wrap">
               <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
@@ -1328,7 +1322,7 @@ export default function Interview({ sessionState = null }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 overflow-y-auto min-h-0 lg:overflow-hidden">
+        <div className="iv-interview-answer flex flex-col gap-3 overflow-y-auto min-h-0 lg:overflow-hidden">
           {deadlineNotice && (
             <div
               role="status"
@@ -1413,6 +1407,7 @@ export default function Interview({ sessionState = null }) {
               className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[var(--color-ink)] outline-none transition-colors placeholder:text-[var(--color-ink-muted)] focus:border-[var(--color-border)] focus:bg-black/[0.015] disabled:cursor-default"
               style={{ fontFamily: "var(--font-body)" }}
             />
+            {!locked && <StarComposer onInsert={(text) => setTranscript(previous => previous.trim() ? `${previous.trim()}\n\n${text}` : text)} />}
             {!locked && answerWordCount > 0 && (
               <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)]" data-testid="delivery-checklist"
                 style={{ fontFamily: "var(--font-body)" }}>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CheckCircle2, FileText, ScanSearch, Sparkles, UploadCloud } from 'lucide-react';
 import {
   fetchMe,
   fetchCompanies,
@@ -22,6 +23,7 @@ export default function AtsChecker() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [candidateId, setCandidateId] = useState('');
+  const [fileName, setFileName] = useState('');
   const [skills, setSkills] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [roleId, setRoleId] = useState('');
@@ -116,6 +118,7 @@ export default function AtsChecker() {
       const data = await uploadResume(file);
       setCandidateId(data.candidate_id);
       setSkills(data.skills || []);
+      setFileName(file.name);
     } catch (err) {
       setError(err.message || 'Upload failed.');
     } finally {
@@ -159,15 +162,15 @@ export default function AtsChecker() {
   return (
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
       <div className="app-container">
-        <AppNav userId={navUser.userId} roleId={navUser.roleId || roleId || null} />
+        <AppNav userId={navUser.userId} roleId={navUser.roleId} />
 
         <header className="app-page-hero">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ATS checker</p>
+          <p className="iv-page-kicker">Career / Resume check</p>
           <h1 className="mt-2 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-            Explainable resume ↔ role score
+            Make your resume work harder.
           </h1>
           <p className="mt-3 text-sm leading-6 text-[var(--color-ink-muted)]">
-            Deterministic parse + section + keyword + heuristics. No LLM resume judge. Two-column PDFs are read column by column; tables are not classified.
+            See how clearly your resume presents your experience and how its skills match a role or job description.
           </p>
           {lastTotal != null && (
             <p className="mt-2 text-sm text-[var(--color-ink)]">
@@ -182,33 +185,37 @@ export default function AtsChecker() {
           </div>
         )}
 
-        <section className="mt-6 space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
-          <label className="block text-sm">
-            Resume PDF
-            <span className="mt-1 block text-xs text-[var(--color-ink-muted)]">PDF only, up to {MAX_RESUME_LABEL}.</span>
+        <div className="iv-ats-layout">
+        <section className="iv-ats-form mt-6 space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5" aria-labelledby="resume-upload-heading">
+          <div><p className="iv-page-kicker">Step 01</p><h2 id="resume-upload-heading">Add your resume</h2><p>Choose a text-based PDF to get started.</p></div>
+          <label className="iv-file-upload">
             <input
               type="file"
               accept="application/pdf,.pdf"
-              className="mt-2 block w-full text-sm"
+              className="sr-only"
               onChange={onUpload}
               disabled={busy}
             />
+            <span className="iv-quick-icon"><UploadCloud size={21} aria-hidden="true" /></span>
+            <strong>{fileName || (candidateId ? 'Use saved resume or choose another' : 'Choose a PDF resume')}</strong>
+            <span>PDF only, up to {MAX_RESUME_LABEL}.</span>
           </label>
           {candidateId && (
             <p className="text-xs text-[var(--color-ink-muted)]">
-              Resume id: {candidateId}
+              <CheckCircle2 size={14} className="inline" aria-hidden="true" /> Resume ready
               {skills.length > 0 ? ` · skills: ${skills.slice(0, 8).join(', ')}` : ''}
             </p>
           )}
 
+          <div className="iv-ats-step"><p className="iv-page-kicker">Step 02</p><h2>Choose what to compare</h2></div>
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-2">
               <input type="radio" checked={mode === 'role'} onChange={() => setMode('role')} />
-              Saved role profile
+              Choose a role
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" checked={mode === 'jd'} onChange={() => setMode('jd')} />
-              Paste JD
+              Paste a job description
             </label>
           </div>
 
@@ -232,7 +239,7 @@ export default function AtsChecker() {
             </label>
           ) : (
             <label className="block text-sm">
-              Job description (skills matched via lexicon only; not stored raw)
+              Job description
               <textarea
                 className="mt-1 min-h-[120px] w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                 value={jdText}
@@ -240,7 +247,7 @@ export default function AtsChecker() {
                   setFieldsTouched(true);
                   setJdText(e.target.value);
                 }}
-                placeholder="Paste JD text…"
+                placeholder="Paste the job description here…"
               />
             </label>
           )}
@@ -251,9 +258,16 @@ export default function AtsChecker() {
             onClick={onScore}
             className="rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {busy ? 'Working…' : 'Score resume'}
+            {busy ? 'Working…' : 'Check my resume'}
           </button>
         </section>
+        <aside className="iv-ats-aside"><p className="iv-page-kicker">A clearer picture</p><h2>What you'll see</h2>
+          <div><span className="iv-quick-icon"><ScanSearch size={19} /></span><p><strong>Readability &amp; structure</strong><br />See whether key resume sections can be read.</p></div>
+          <div><span className="iv-quick-icon"><FileText size={19} /></span><p><strong>Role alignment</strong><br />Find skills mentioned and skills to review.</p></div>
+          <div><span className="iv-quick-icon"><Sparkles size={19} /></span><p><strong>Practical next steps</strong><br />Use the feedback to make honest improvements.</p></div>
+          <p className="iv-ats-footnote">This is a preparation guide, not an employer's ATS score or a hiring prediction. Some PDF layouts may not be read completely.</p>
+        </aside>
+        </div>
 
         {result && (
           <section className="mt-6 space-y-4" data-testid="ats-result">

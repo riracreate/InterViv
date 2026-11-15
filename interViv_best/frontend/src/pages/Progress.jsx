@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import AccountPage, { useAccountOverview } from '../components/AccountPage';
 import { displayScore, observedReadinessNote, sessionLabel, unscoredReasonLabel } from '../lib/accountOverview';
+import { buildProgressInsights } from '../lib/progressInsights';
 
 function fraction(value) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Not available';
@@ -14,6 +15,7 @@ export function ProgressContent({ data }) {
     if (!skills.some(skill => skill.name === requirement.skill)) skills.push({ name: requirement.skill, attempts: 0 });
   }
   const signals = data.learning_signals;
+  const insights = buildProgressInsights(data.history);
   return <>
     <header className="hub-progress-hero">
       <div><p className="hub-eyebrow">Progress{data.target ? ` · ${data.target.company_name} · ${data.target.role_title}` : ''}</p><h1>Readiness<br /><em>{displayScore(data.readiness)}</em></h1>
@@ -22,6 +24,24 @@ export function ProgressContent({ data }) {
       </div>
       <dl className="hub-stats"><div><dt>Scored sessions</dt><dd>{data.scored_session_count}</dd></div><div><dt>Skills measured</dt><dd>{measured.length}</dd></div></dl>
     </header>
+
+    <section className="iv-insights" aria-label="Recent practice insights">
+      <div className="iv-insight-card"><div className="iv-insight-heading"><div><p className="iv-page-kicker">Your activity</p><h2>Recent session scores</h2></div></div>
+        {insights.trend.length ? <div className="iv-score-bars" aria-label="Recent scores from completed single-type sessions">
+          {insights.trend.map(session => <div className="iv-score-column" key={session.session_id}>
+            <span>{displayScore(session.average_score)}</span><div className="iv-score-track"><div style={{ height: `${Math.max(0, Math.min(100, session.average_score))}%` }} /></div>
+            <small>{session.date.toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</small><small>{sessionLabel(session.round_types)}</small>
+          </div>)}
+        </div> : <p className="iv-insight-empty">Complete a scored session to see it here.</p>}
+        <p className="iv-insight-note">Individual session scores, not a readiness trend. Mixed sessions are excluded.</p>
+      </div>
+      <div className="iv-insight-card"><div className="iv-insight-heading"><div><p className="iv-page-kicker">A little at a time</p><h2>Practice calendar</h2></div></div>
+        <div className="iv-calendar" role="img" aria-label="Recorded sessions over the past 12 weeks, based on recent history">
+          {insights.calendar.map(day => <span key={day.date} className={`iv-calendar-cell level-${Math.min(day.count, 3)}`} title={`${day.date}: ${day.count} recorded session${day.count === 1 ? '' : 's'}`} />)}
+        </div>
+        <p className="iv-insight-note">Sessions shown in your recent history, by start date (UTC). History is limited to the latest 100.</p>
+      </div>
+    </section>
 
     <section className="hub-section" aria-labelledby="mastery-heading">
       <div className="hub-section-heading"><span>01</span><h2 id="mastery-heading">Skill mastery</h2><p>Recent scored rounds, by skill.</p></div>

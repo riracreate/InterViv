@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Bookmark, Code2, Search } from 'lucide-react';
 import { fetchMe, fetchProblems, startSession, saveInterviewState, fetchItemStatus, fetchBookmarks, saveBookmark, removeBookmark, fetchCodingExecutionStatus } from '../lib/api';
 import { mapStandaloneToStartPayload } from '../lib/practiceBuilder';
 import AppNav from '../components/AppNav';
@@ -16,6 +17,7 @@ export default function Problems() {
   const [count, setCount] = useState(0);
   const [difficulty, setDifficulty] = useState('');
   const [topic, setTopic] = useState('');
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -112,6 +114,8 @@ export default function Problems() {
   };
 
   const visibleProblems = problems.filter((p) => {
+    const query = search.trim().toLowerCase();
+    if (query && !`${p.title || ''} ${(p.topics || []).join(' ')}`.toLowerCase().includes(query)) return false;
     if (statusFilter === 'bookmarked') return bookmarked.has(p.id);
     if (!statusFilter) return true;
     return (states[p.id]?.state || 'untried') === statusFilter;
@@ -176,13 +180,11 @@ export default function Problems() {
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
       <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
-        <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-          Problems
-        </h1>
-        <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-          Python coding problems with visible examples. Final scoring adds hidden tests
-          (60% visible, 40% hidden); a compile or runtime failure caps the score at 25.
-        </p>
+        <header className="app-page-hero iv-coding-header">
+          <p className="iv-page-kicker">Practice / Coding Arena</p>
+          <h1>Make every problem<br className="iv-desktop-break" /> a little easier.</h1>
+          <p>Find a problem, write your solution, and learn from each attempt. Choose from the languages available in your coding workspace.</p>
+        </header>
         {execution && <ExecutorStatus execution={execution} />}
 
         {error && (
@@ -191,7 +193,10 @@ export default function Problems() {
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+        <div className="iv-problem-toolbar mt-4 flex flex-wrap gap-3 text-sm">
+          <label className="iv-problem-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search problems</span>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search problems or topics" />
+          </label>
           <label>
             Difficulty{' '}
             <select
@@ -234,12 +239,12 @@ export default function Problems() {
           </span>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[5fr_7fr]">
-          <ul className="max-h-[32rem] space-y-2 overflow-auto">
+        <div className="iv-problem-grid mt-4 grid gap-4 lg:grid-cols-[5fr_7fr]">
+          <ul className="iv-problem-list max-h-[32rem] space-y-2 overflow-auto" aria-label="Coding problems">
             {visibleProblems.map((p) => (
               <li
                 key={p.id}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border px-3 py-2 ${
+                className={`iv-problem-row flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border px-3 py-2 ${
                   selected?.id === p.id ? 'border-[var(--color-accent)]' : 'border-[var(--color-border)]'
                 }`}
               >
@@ -260,8 +265,9 @@ export default function Problems() {
                   className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
                   onClick={() => toggleBookmark(p.id)}
                   aria-label={bookmarked.has(p.id) ? 'Remove bookmark' : 'Bookmark'}
+                  aria-pressed={bookmarked.has(p.id)}
                 >
-                  {bookmarked.has(p.id) ? '★' : '☆'}
+                  <Bookmark size={16} fill={bookmarked.has(p.id) ? 'currentColor' : 'none'} aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -278,7 +284,7 @@ export default function Problems() {
             )}
           </ul>
 
-          <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+          <div className="iv-problem-preview rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             {selected ? (
               <>
                 <h2 className="text-xl font-semibold">{selected.title}</h2>
@@ -325,9 +331,9 @@ export default function Problems() {
                 </button>
               </>
             ) : (
-              <p className="text-sm text-[var(--color-ink-muted)]">
-                Select a problem to preview its statement, examples, and starter code.
-              </p>
+              <div className="iv-problem-empty"><span className="iv-quick-icon"><Code2 size={22} /></span>
+                <h2>Choose a problem</h2><p>Select a problem to preview its statement, examples, and starter code.</p>
+              </div>
             )}
           </div>
         </div>

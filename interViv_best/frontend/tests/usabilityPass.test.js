@@ -69,13 +69,14 @@ test('shared styles cover global focus, print and mobile history without sideway
   assert.match(progress, /data-label="Date"/);
 });
 
-test('navigation keeps a small-screen menu, a desktop More menu and the Career group', () => {
+test('navigation offers grouped destinations, small-screen controls and keyboard search', () => {
   const nav = read('src/components/AppNav.jsx');
-  assert.match(nav, /app-nav-desktop/);
-  assert.match(nav, /<NavDropdown id="more" label="More"[^>]*testIdPrefix="app-nav-more"/);
-  assert.match(nav, /data-testid=\{`\$\{testIdPrefix\}-button`\}/);
+  assert.match(nav, /aria-label="Workspace navigation"/);
+  assert.match(nav, /title: 'Career'/);
   assert.match(nav, /app-nav-menu-button/);
-  assert.match(nav, /PRIMARY_NAV\.map/);
+  assert.match(nav, /aria-expanded=\{menuOpen\}/);
+  assert.match(nav, /event\.metaKey \|\| event\.ctrlKey/);
+  assert.match(nav, /<CommandSearch/);
 });
 
 test('landing shows one way back in when signed in, login and sign up otherwise', () => {

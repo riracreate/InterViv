@@ -55,6 +55,25 @@ export function removeScoped(kind, userId, name, version = 1) {
   try { area.removeItem(key); } catch { /* storage unavailable */ }
 }
 
+/** Non-sensitive appearance preferences are shared across accounts on a device. */
+export function readDevicePreference(name) {
+  if (!name) return null;
+  try {
+    const raw = storageArea('local')?.getItem(`${PREFIX}preference:${name}`);
+    return raw == null ? null : JSON.parse(raw);
+  } catch { return null; }
+}
+
+export function writeDevicePreference(name, value) {
+  if (!name) return false;
+  try {
+    const area = storageArea('local');
+    if (!area) return false;
+    area.setItem(`${PREFIX}preference:${name}`, JSON.stringify(value));
+    return true;
+  } catch { return false; }
+}
+
 /** Remove every scoped session value (sign-in, sign-up, sign-out). */
 export function clearSessionScopedState() {
   const area = storageArea('session');

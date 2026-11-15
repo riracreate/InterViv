@@ -50,7 +50,7 @@ export const STANDALONE_MODES = [
   { id: 'verbal', title: 'Verbal Ability', blurb: 'English MCQs: grammar, vocabulary, comprehension, ordering, idioms.' },
   { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
-  { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
+  { id: 'coding', title: 'Coding practice', blurb: 'Solve coding problems with examples and test-based feedback.' },
   { id: 'system_design', title: 'System design', blurb: 'Written design notes get a practice estimate per criterion; self-assessment ratings are optional (no auto diagram scoring).' },
   { id: 'ml_primitives', title: 'ML primitives', blurb: 'Implement numerical algorithms with NumPy. Graded when the local runner is on; otherwise submissions are stored ungraded.' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },

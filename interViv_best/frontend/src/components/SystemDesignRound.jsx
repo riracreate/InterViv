@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Send, Clock, RefreshCw, LayoutTemplate } from 'lucide-react';
 import { saveAnswerDraft, fetchAnswerDraft } from '../lib/api';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
+import ArchitectureSketch from './ArchitectureSketch';
 
 /**
  * System-design practice: free-text design notes + structured self-assessment.
@@ -194,6 +195,8 @@ export default function SystemDesignRound({
               disabled={isScoring}
             />
           </label>
+
+          <ArchitectureSketch sessionId={sessionId} round={round} onAddToNotes={(text) => setAnswer(previous => previous.trim() ? `${previous.trim()}\n\n${text}` : text)} />
 
           <div className="space-y-3">
             <div className="text-sm font-medium text-[var(--color-ink)]">

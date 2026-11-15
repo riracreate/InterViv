@@ -14,6 +14,8 @@ import { mapJobCard, jobApplyHref, formatSalary } from '../lib/jobsMapping';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import { useAccountRetry } from '../lib/useAccountRetry';
+import { readScoped, writeScoped } from '../lib/accountStorage';
+import { isSavedJob, toggleSavedJob as toggleSavedJobList } from '../lib/savedJobs';
 import '../styles/hub.css';
 
 const ADZUNA_LOGO = 'https://www.adzuna.co.in/images/logo.png';
@@ -77,6 +79,8 @@ export default function Jobs() {
   );
   const [page, setPage] = useState(Number(searchParams.get('page') || 1));
   const [jobs, setJobs] = useState([]);
+  const [savedJobs, setSavedJobs] = useState([]);
+  const [showSaved, setShowSaved] = useState(false);
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -146,6 +150,21 @@ export default function Jobs() {
     if (authReady) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady]);
+
+  useEffect(() => {
+    const saved = readScoped('local', navUser.userId, 'saved-jobs');
+    setSavedJobs(Array.isArray(saved) ? saved.filter(job => job && job.id) : []);
+  }, [navUser.userId]);
+
+  const toggleSavedJob = (job) => {
+    const next = toggleSavedJobList(savedJobs, job);
+    if (!writeScoped('local', navUser.userId, 'saved-jobs', next)) {
+      setError('Could not save this job on this device.');
+      return;
+    }
+    setSavedJobs(next);
+    setError('');
+  };
 
   const openPrepare = async (jobId) => {
     setBusy(true);
@@ -312,16 +331,19 @@ export default function Jobs() {
           </Link>
         </p>
 
+        <div className="iv-job-view-toggle"><button type="button" aria-pressed={!showSaved} onClick={() => setShowSaved(false)}>Search results</button><button type="button" aria-pressed={showSaved} onClick={() => setShowSaved(true)}>Saved jobs ({savedJobs.length})</button></div>
+        {showSaved && <p className="hub-caption">Saved on this device for your account. Listings and preparation links may expire.</p>}
         <section className="hub-list" data-testid="jobs-list">
-          {!busy && jobs.length === 0 && !error && (
+          {!busy && (showSaved ? savedJobs : jobs).length === 0 && !error && (
             <div className="hub-empty-inline" data-testid="jobs-empty">
-              <h3>No listings for this search</h3>
-              <p>Try different keywords, location, or country — or open Practice without a job.</p>
+              <h3>{showSaved ? 'No saved jobs yet' : 'No listings for this search'}</h3>
+              <p>{showSaved ? 'Save a listing to find it here later on this device.' : 'Try different keywords, location, or country — or open Practice without a job.'}</p>
             </div>
           )}
-          {jobs.map((job) => {
+          {(showSaved ? savedJobs : jobs).map((job) => {
             const viewHref = jobApplyHref(job);
             const salary = formatSalary(job);
+            const saved = isSavedJob(savedJobs, job);
             return (
               <article key={job.id} className="hub-card" data-testid="job-card">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -345,6 +367,8 @@ export default function Jobs() {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button type="button" className="hub-button" aria-pressed={saved} onClick={() => toggleSavedJob(job)}
+                      aria-label={`${saved ? 'Remove saved' : 'Save'} ${job.title}`}>{saved ? 'Saved ✓' : 'Save'}</button>
                     {viewHref && (
                       <a
                         href={viewHref}
@@ -367,7 +391,7 @@ export default function Jobs() {
                     </button>
                   </div>
                 </div>
-                {job.provenance === 'sample' ? (
+                {['sample', 'fixture'].includes(job.provenance) ? (
                   <p className="hub-caption" data-testid="jobs-sample-listing">
                     Sample listing — fictional company, not a real opening
                   </p>
@@ -383,7 +407,7 @@ export default function Jobs() {
           })}
         </section>
 
-        <div className="hub-toolbar" style={{ alignItems: 'center' }}>
+        {!showSaved && <div className="hub-toolbar" style={{ alignItems: 'center' }}>
           <button
             type="button"
             disabled={busy || page <= 1}
@@ -409,7 +433,7 @@ export default function Jobs() {
           >
             Next
           </button>
-        </div>
+        </div>}
 
         {prepare && (
           <div
