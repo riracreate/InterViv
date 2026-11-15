@@ -6,9 +6,20 @@ not call an LLM and does not replace the calibrated final-score formula.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 SCORING_SCHEMA_VERSION = "rubric_v1"
+
+# Scorer version flag. v3 stays the default; v4 is explicit opt-in only.
+SCORER_VERSION_ENV = "SCORER_VERSION"
+SUPPORTED_SCORER_VERSIONS = ("v3", "v4")
+
+
+def current_scorer_version() -> str:
+    """Resolved scorer version for this process (``v3`` unless opted in)."""
+    raw = (os.getenv(SCORER_VERSION_ENV) or "v3").strip().lower()
+    return raw if raw in SUPPORTED_SCORER_VERSIONS else "v3"
 RUBRIC_SCALE = "0-10"
 
 RUBRIC_WEIGHTS: dict[str, float] = {
@@ -21,6 +32,16 @@ RUBRIC_WEIGHTS: dict[str, float] = {
 FINAL_SCORE_WEIGHTS: dict[str, float] = {
     "semantic_or_lexical": 0.45,
     "classifier": 0.25,
+    "keyword": 0.20,
+    "tfidf": 0.10,
+}
+
+# v4 keeps the v3 slot weights; the keyword slot carries strict concept
+# coverage when a bundle supplies required_concepts, otherwise its weight
+# is renormalized across the remaining terms (see pipeline v4).
+FINAL_SCORE_WEIGHTS_V4: dict[str, float] = {
+    "semantic_or_lexical": 0.45,
+    "model": 0.25,
     "keyword": 0.20,
     "tfidf": 0.10,
 }

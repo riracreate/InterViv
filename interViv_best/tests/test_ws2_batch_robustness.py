@@ -45,6 +45,8 @@ def _clear_all_caches() -> None:
 @pytest.fixture
 def batch_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    # Simulated live runs (fake transport, no real credits) may use memory.
+    monkeypatch.setenv("INTERVIV_ALLOW_LIVE_ON_MEMORY_DB", "1")
     monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "true")
     monkeypatch.setenv("JOBS_LIVE_FETCH", "0")
     monkeypatch.setenv("LLM_LIVE_FETCH", "0")

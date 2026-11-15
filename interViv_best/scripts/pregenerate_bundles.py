@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.config import get_settings  # noqa: E402
 from backend.runtime_env import apply_runtime_env  # noqa: E402
 from modules import (  # noqa: E402
     bundle_generator,
@@ -88,6 +89,45 @@ def _temporarily_set_live_fetch(allow_live: bool | None):
             os.environ.pop("LLM_LIVE_FETCH", None)
         else:
             os.environ["LLM_LIVE_FETCH"] = prev
+
+
+def describe_database_target() -> str:
+    """Human-readable write target for the currently resolved database."""
+    url = get_settings().database_url
+    if not url:
+        return "in-memory (DATABASE_URL unset; nothing will persist)"
+    if url.startswith("sqlite:///"):
+        return url.removeprefix("sqlite:///")
+    if url.startswith("sqlite://"):
+        return url
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "configured DATABASE_URL"
+
+
+def live_on_memory_db_error() -> str | None:
+    """Refusal message for a --live run that would write to volatile memory.
+
+    Simulated runs (tests, offline doubles) may opt in explicitly with
+    INTERVIV_ALLOW_LIVE_ON_MEMORY_DB=1; the real pilot command sets no
+    such variable and is refused before any LLM call is made.
+    """
+    if get_settings().database_url:
+        return None
+    allow = (os.getenv("INTERVIV_ALLOW_LIVE_ON_MEMORY_DB") or "").strip().lower()
+    if allow in {"1", "true", "yes", "on"}:
+        return None
+    return (
+        "Refusing --live run: DATABASE_URL is unset, so bundles, role-skill "
+        "cache rows, and LLM usage would be written to the in-memory "
+        "database and lost when the process exits. Set DATABASE_URL to a "
+        "persistent database (for example sqlite:///<path>/interviv.db) "
+        "and rerun. INTERVIV_USE_MEMORY_DB does not select a database; "
+        "only DATABASE_URL does."
+    )
 
 
 def _preview_skill_specs_for_dry_run(role: str) -> list[dict[str, Any]]:
@@ -710,6 +750,16 @@ def run_pregeneration(
             report["usage"] = llm_usage.summarize_usage()
             return report
 
+    if allow_live is True:
+        db_error = live_on_memory_db_error()
+        if db_error is not None:
+            report["aborted"] = True
+            report["abort_reason"] = "in_memory_database"
+            report["abort_error"] = db_error
+            report["errors"].append({"error": db_error})
+            report["usage"] = llm_usage.summarize_usage()
+            return report
+
     preflight_est: dict[str, Any] | None = None
     gen_provider, gen_model = bundle_generator.resolve_generation_provider_and_model()
     check_provider, check_model = bundle_generator.resolve_checker_provider_and_model()
@@ -978,6 +1028,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Regenerate even if a cached bundle already exists.",
     )
     args = parser.parse_args(argv)
+
+    if args.live and not args.dry_run and not args.estimate:
+        print(f"Database: {describe_database_target()}")
 
     report = run_pregeneration(
         roles=args.roles,

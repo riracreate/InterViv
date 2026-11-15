@@ -690,7 +690,13 @@ class _SessionCollection:
         row.rounds.clear()
         session.flush()
         for round_doc in rounds:
-            breakdown = round_doc.get("scoring_breakdown") or {}
+            breakdown = dict(round_doc.get("scoring_breakdown") or {})
+            # Record which scorer produced this round (v3 pipeline output
+            # predates the field; v4 stamps its own breakdown already).
+            if not breakdown.get("scorer_version"):
+                from modules.scoring_schema import current_scorer_version
+
+                breakdown["scorer_version"] = current_scorer_version()
             question_context = round_doc.get("question_context") or {}
             question_id = str(question_context.get("id") or question_context.get("question_id") or "") or None
             row.rounds.append(
