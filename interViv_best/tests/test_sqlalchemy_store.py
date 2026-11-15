@@ -145,6 +145,45 @@ def test_full_flow_persists_through_sqlalchemy(sql_client) -> None:
     assert len(stored["rounds"]) == 2
 
 
+def test_login_survives_engine_restart(sql_client) -> None:
+    """A persistent account must still log in after a backend restart.
+
+    The local launcher (scripts/run_local.py) keeps accounts in a file-backed
+    SQLite database across process restarts. Dropping the engine/session
+    factory and rebuilding them against the same file simulates that restart:
+    the password hash written by the first process must still verify in the
+    second, with no in-memory state carried over.
+    """
+    client, _engine = sql_client
+    email, password = "restart-e2e@test.dev", "passw0rd1"
+
+    signup = client.post(
+        "/auth/signup",
+        json={"email": email, "password": password, "name": "Restart E2E"},
+    )
+    assert signup.status_code == 200, signup.text
+
+    from backend.db import sqlalchemy_store
+
+    sqlalchemy_store.get_engine().dispose()
+    _clear_database_caches()
+    sqlalchemy_store.create_all_for_smoke()
+
+    from backend.main import app
+
+    with TestClient(app) as restarted:
+        login = restarted.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert login.status_code == 200, login.text
+        me = restarted.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+        assert me.status_code == 200, me.text
+        assert me.json()["user"]["email"] == email
+
+
 def test_unknown_collection_error_names_the_contract(sql_client) -> None:
     _, _ = sql_client
     from backend.db import get_database

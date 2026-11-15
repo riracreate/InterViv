@@ -25,7 +25,8 @@ from dotenv import load_dotenv
 
 def apply_runtime_env() -> None:
     root = Path(__file__).resolve().parents[1]
-    load_dotenv(root / ".env", override=False)
+    if os.getenv("INTERVIV_DISABLE_DOTENV") != "1":
+        load_dotenv(root / ".env", override=False)
     # Recommended operating configuration when all-MiniLM-L6-v2 is cached.
     # A cold cache still fails load and sticky-degrades (fail-fast remains open).
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -35,3 +36,5 @@ def apply_runtime_env() -> None:
     os.environ.setdefault("JOBS_LIVE_FETCH", "0")
     # LLM chat completions: off unless the owner opts in (Phase Q).
     os.environ.setdefault("LLM_LIVE_FETCH", "0")
+    os.environ.setdefault("QUESTION_GENERATION_MODE", "csv")
+    os.environ.setdefault("QUESTION_LLM_PROVIDER", "auto")

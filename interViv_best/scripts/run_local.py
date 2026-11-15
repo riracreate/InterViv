@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Run the local app with persistent SQLite and no automatic downloads.
+"""Run the local app with persistent SQLite and no automatic model downloads.
 
 Usage:
-  .venv/bin/python scripts/run_local.py                  # offline app
+  .venv/bin/python scripts/run_local.py                  # offline app (CSV question bank)
+  .venv/bin/python scripts/run_local.py --live-questions # enable LLM questions with CSV fallback
   .venv/bin/python scripts/run_local.py --fetch-models   # one-time model download, then run
   .venv/bin/python scripts/run_local.py --trusted-local-execution  # Python coding + ML, no Docker
   .venv/bin/python scripts/run_local.py --with-executor  # also start the Docker coding executor
   .venv/bin/python scripts/run_local.py --with-executor --live-jobs  # live jobs and coding
 
 Ctrl+C stops only the processes started by this launcher. Interview questions
-stay offline; --live-jobs explicitly enables provider requests. Model downloads
-happen only with --fetch-models.
+stay offline using the CSV question bank by default (pass --live-questions to
+enable LLM generation with CSV fallback); --live-jobs explicitly enables job
+provider requests. Model downloads happen only with --fetch-models.
 
 Coding and ML execution, in order of preference:
 - --with-executor starts the isolated local Piston executor (Docker required)
@@ -34,6 +36,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
+
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 EXECUTOR_URL = "http://127.0.0.1:19000"
@@ -152,6 +156,7 @@ def _runtime_environment(
     executor_on: bool,
     live_jobs: bool,
     trusted_local: bool = False,
+    live_questions: bool = False,
 ) -> dict[str, str]:
     """Build a local, persistent runtime with network access explicitly selected."""
     env = dict(os.environ)
@@ -159,10 +164,11 @@ def _runtime_environment(
         "DATABASE_URL": f"sqlite:///{state / 'interviv-local.sqlite3'}",
         "ENVIRONMENT": "development",
         "REDIS_URL": "",
-        "LLM_LIVE_FETCH": "0",
+        "LLM_LIVE_FETCH": "1" if live_questions else "0",
         "JOBS_LIVE_FETCH": "1" if live_jobs else "0",
-        "QUESTION_GENERATION_MODE": "csv",
+        "QUESTION_GENERATION_MODE": "llm_csv_fallback" if live_questions else "csv",
         "QUESTION_REQUIRE_LLM": "false",
+        "QUESTION_LLM_PROVIDER": "auto",
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "HF_HUB_DISABLE_TELEMETRY": "1",
@@ -184,17 +190,22 @@ def _runtime_environment(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run interViv locally (offline, persistent SQLite).")
+    parser = argparse.ArgumentParser(description="Run interViv locally (offline by default, persistent SQLite).")
     parser.add_argument("--fetch-models", action="store_true",
                         help="download the MiniLM and faster-whisper models once before starting")
     parser.add_argument("--with-executor", action="store_true",
                         help="start the Docker coding executor so Run/Submit work")
     parser.add_argument("--live-jobs", action="store_true",
                         help="enable live Adzuna and Greenhouse searches (Adzuna needs credentials in .env)")
+    parser.add_argument("--live-questions", action="store_true",
+                        help="enable live LLM question generation with offline CSV fallback")
     parser.add_argument("--trusted-local-execution", action="store_true",
                         help="run Python coding and NumPy ML submissions in a local worker process "
                              "when no executor is running (trusted local demo only, not a sandbox)")
     args = parser.parse_args()
+
+    if os.getenv("INTERVIV_DISABLE_DOTENV") != "1":
+        load_dotenv(ROOT / ".env", override=False)
 
     npm = shutil.which("npm")
     if not npm or not (ROOT / "frontend/node_modules/vite/bin/vite.js").is_file():
@@ -220,8 +231,13 @@ def main() -> int:
     state.mkdir(exist_ok=True)
     run = state / "local-run"
     run.mkdir(exist_ok=True)
-    env = _runtime_environment(state, executor_on=executor_on, live_jobs=args.live_jobs,
-                               trusted_local=args.trusted_local_execution)
+    env = _runtime_environment(
+        state,
+        executor_on=executor_on,
+        live_jobs=args.live_jobs,
+        trusted_local=args.trusted_local_execution,
+        live_questions=args.live_questions,
+    )
     children = []
     handles = []
 
@@ -256,7 +272,10 @@ def main() -> int:
             time.sleep(0.3)
         print("App ready: http://127.0.0.1:5173", flush=True)
         print(f"Accounts and progress are saved in {state / 'interviv-local.sqlite3'}", flush=True)
-        print("Question generation uses the offline bank.", flush=True)
+        if args.live_questions:
+            print("Question generation uses LLM with offline CSV fallback (--live-questions).", flush=True)
+        else:
+            print("Question generation uses the offline bank; pass --live-questions for LLM questions.", flush=True)
         print("Live job search is enabled." if args.live_jobs else "Jobs use sample listings; pass --live-jobs for live results.", flush=True)
         if executor_on:
             print("Coding Run/Submit use the local executor.", flush=True)

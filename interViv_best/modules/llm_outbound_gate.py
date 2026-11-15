@@ -40,7 +40,7 @@ def question_generation_mode() -> str:
         "question_bank": "csv",
     }
     mode = aliases.get(mode, mode)
-    allowed = {"llm", "csv", "llm_csv_fallback"}
+    allowed = {"llm", "csv", "llm_csv_fallback", "template"}
     return mode if mode in allowed else "llm"
 
 
@@ -56,8 +56,8 @@ def question_source_health() -> dict[str, object]:
     configured = question_generation_mode()
     live = llm_live_fetch_enabled()
     outbound = question_llm_outbound_allowed()
-    if configured == "csv":
-        effective = "csv"
+    if configured in {"csv", "template"}:
+        effective = configured
         note = "Question generation uses the CSV/template bank; LLM is not dialed."
     elif outbound:
         effective = configured

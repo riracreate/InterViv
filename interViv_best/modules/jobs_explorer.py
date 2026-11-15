@@ -703,7 +703,7 @@ def missing_skills_for_job(job: dict[str, Any], user_skills: list[str] | None) -
         if s not in seen:
             seen.add(s)
             out.append(s)
-    return out[:MAX_PRACTICE_SKILLS] or job_skills[:MAX_PRACTICE_SKILLS] or ["DSA"]
+    return out[:MAX_PRACTICE_SKILLS] or job_skills[:MAX_PRACTICE_SKILLS]
 
 
 def build_practice_prepare_payload(
@@ -735,6 +735,20 @@ def build_practice_prepare_payload(
             "Confirm before starting. This does not change scoring or invent questions."
         )
 
+    offline_uncached = False
+    if not refined and (job.get("title") or full_jd or job.get("snippet")):
+        from modules.role_skills import OFFLINE_UNCACHED_MESSAGE, extract_role_skills
+
+        rs = extract_role_skills(
+            role=job.get("title"),
+            jd_text=full_jd or job.get("snippet"),
+            max_skills=MAX_PRACTICE_SKILLS,
+        )
+        refined = [s for s in (rs.get("skills") or []) if s][:MAX_PRACTICE_SKILLS]
+        if not refined and rs.get("offline_uncached"):
+            offline_uncached = True
+            jd_note = str(rs.get("message") or OFFLINE_UNCACHED_MESSAGE)
+
     blocks = [
         {
             "round_type": "technical_short_answer",
@@ -745,13 +759,15 @@ def build_practice_prepare_payload(
         for skill in refined[:3]
     ]
     if any(s in MCQ_ABLE for s in refined):
-        blocks.append({
-            "round_type": "mcq",
-            "category": "oa",
-            "skills": [s for s in refined if s in MCQ_ABLE][:1] or ["DSA"],
-            "count": 8,
-            "duration_minutes": 30,
-        })
+        mcq_skills = [s for s in refined if s in MCQ_ABLE][:1]
+        if mcq_skills:
+            blocks.append({
+                "round_type": "mcq",
+                "category": "oa",
+                "skills": mcq_skills,
+                "count": 8,
+                "duration_minutes": 30,
+            })
 
     return {
         "job_id": job.get("id"),
@@ -761,6 +777,7 @@ def build_practice_prepare_payload(
         "location": job.get("location") or "",
         "proposed_skills": refined,
         "proposed_blocks": blocks,
+        "offline_uncached": offline_uncached,
         "snippet_is_incomplete": True,
         "confirmation_required": True,
         "note": jd_note,
@@ -771,22 +788,40 @@ def build_practice_prepare_payload(
 
 def build_practice_start_payload(
     *,
-    skills: list[str],
+    skills: list[str] | None = None,
     candidate_id: str | None = None,
     blocks: list[dict[str, Any]] | None = None,
+    role: str | None = None,
+    jd_text: str | None = None,
 ) -> dict[str, Any]:
-    skills = [s for s in skills if s][:MAX_PRACTICE_SKILLS] or ["DSA"]
+    cleaned_skills = [str(s).strip() for s in (skills or []) if str(s).strip()][:MAX_PRACTICE_SKILLS]
     if blocks:
         payload: dict[str, Any] = {"blocks": blocks}
         if candidate_id:
             payload["candidate_id"] = candidate_id
         return payload
-    include_mcq = any(s in MCQ_ABLE for s in skills)
-    round_plan = ["technical_short_answer"] * min(3, max(1, len(skills)))
+
+    if not cleaned_skills and (role or jd_text):
+        from modules.role_skills import extract_role_skills
+
+        rs = extract_role_skills(role=role, jd_text=jd_text, max_skills=MAX_PRACTICE_SKILLS)
+        cleaned_skills = [str(s).strip() for s in (rs.get("skills") or []) if str(s).strip()][:MAX_PRACTICE_SKILLS]
+
+    if not cleaned_skills:
+        return {
+            "skills": [],
+            "round_plan": [],
+            "mode": "offline_uncached",
+            "offline_uncached": True,
+            "error": "Role is not cached for offline practice and no LLM connection is available.",
+        }
+
+    include_mcq = any(s in MCQ_ABLE for s in cleaned_skills)
+    round_plan = ["technical_short_answer"] * min(3, max(1, len(cleaned_skills)))
     if include_mcq:
         round_plan.append("mcq")
     payload = {
-        "skills": skills,
+        "skills": cleaned_skills,
         "rounds_per_skill": 1,
         "round_plan": round_plan,
         "round_type": round_plan[0],

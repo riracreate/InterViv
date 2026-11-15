@@ -274,9 +274,30 @@ def _cache_ttl_seconds() -> int:
         return DEFAULT_CACHE_TTL_SECONDS
 
 
+def _normalise_question_text(text: str | None) -> str:
+    return " ".join(str(text or "").strip().lower().split())
+
+
+def _extract_asked_from_prompt(prompt: str) -> list[str]:
+    if not prompt:
+        return []
+    match = re.search(
+        r"avoid repeating these previous questions:\s*((?:- .+\n?)+)",
+        prompt,
+        flags=re.I,
+    )
+    if not match:
+        return []
+    return [
+        line.lstrip("-").strip()
+        for line in match.group(1).splitlines()
+        if line.strip().startswith("-")
+    ]
+
+
 def _cache_get(context: QuestionCacheContext, asked: list[str]) -> str | None:
     key = question_cache_key(context)
-    asked_norm = {item.strip().lower() for item in (asked or [])}
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
     value = None
     client = _redis()
     if client is not None:
@@ -295,7 +316,7 @@ def _cache_get(context: QuestionCacheContext, asked: list[str]) -> str | None:
     if not value:
         return None
     question = _extract_question_from_raw(value)
-    if question and question.strip().lower() in asked_norm:
+    if not question or _normalise_question_text(question) in asked_norm:
         return None
     return value
 
@@ -376,15 +397,21 @@ def call_llm_with_cache_retry(
     from modules.llm_outbound_gate import question_llm_outbound_allowed
 
     _set_last_error(None)
-    cached = _cache_get(context, asked or [])
-    if cached:
-        return cached
-
     if not question_llm_outbound_allowed():
         _set_last_error(
             "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
         )
         return None
+
+    effective_asked = list(asked) if asked is not None else _extract_asked_from_prompt(prompt)
+    asked_norm = {
+        _normalise_question_text(item)
+        for item in effective_asked
+        if str(item).strip()
+    }
+    cached = _cache_get(context, effective_asked)
+    if cached:
+        return cached
 
     provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:
@@ -407,13 +434,16 @@ def call_llm_with_cache_retry(
     }
     attempts = _max_retries()
     delay = _retry_base_seconds()
+    url = question_bank._chat_completion_url(provider)
+    ssl_ctx = _SSL_CTX if url.startswith("https://") else None
+    timeout = float(os.getenv("QUESTION_LLM_TIMEOUT_SECONDS", "20"))
 
     for attempt in range(1, attempts + 1):
         if not _rate_limiter_allows(provider):
             _set_last_error("LLM rate limit exceeded.")
             return None
         req = urllib.request.Request(
-            question_bank._chat_completion_url(provider),
+            url,
             data=body,
             headers=headers,
             method="POST",
@@ -421,21 +451,60 @@ def call_llm_with_cache_retry(
         try:
             with urllib.request.urlopen(
                 req,
-                timeout=float(os.getenv("QUESTION_LLM_TIMEOUT_SECONDS", "20")),
-                context=_SSL_CTX,
+                timeout=timeout,
+                context=ssl_ctx,
             ) as resp:
                 raw = resp.read().decode("utf-8")
             content = _extract_provider_content(raw)
             if content:
-                _cache_set(context, content)
-                return content
-            _set_last_error("LLM response did not include message content.")
+                question = _extract_question_from_raw(content)
+                if question and _normalise_question_text(question) in asked_norm:
+                    _set_last_error("LLM returned a duplicate question already in asked.")
+                else:
+                    _cache_set(context, content)
+                    return content
+            else:
+                _set_last_error("LLM response did not include message content.")
         except urllib.error.HTTPError as exc:
-            try:
-                detail = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(exc)
-            _set_last_error(f"HTTP {exc.code}: {detail[:500]}")
+            if provider == "ollama" and exc.code == 404:
+                try:
+                    gen_req = urllib.request.Request(
+                        f"{question_bank._ollama_base_url()}/api/generate",
+                        data=json.dumps(
+                            {
+                                "model": model,
+                                "prompt": prompt,
+                                "stream": False,
+                                "format": "json",
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(
+                        gen_req,
+                        timeout=timeout,
+                        context=None,
+                    ) as resp:
+                        raw = resp.read().decode("utf-8")
+                    content = _extract_provider_content(raw)
+                    if content:
+                        question = _extract_question_from_raw(content)
+                        if question and _normalise_question_text(question) in asked_norm:
+                            _set_last_error("LLM returned a duplicate question already in asked.")
+                        else:
+                            _cache_set(context, content)
+                            return content
+                    else:
+                        _set_last_error("LLM response did not include message content.")
+                except Exception as fallback_exc:
+                    _set_last_error(f"HTTP {exc.code}: {str(fallback_exc)[:500]}")
+            else:
+                try:
+                    detail = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    detail = str(exc)
+                _set_last_error(f"HTTP {exc.code}: {detail[:500]}")
         except urllib.error.URLError as exc:
             _set_last_error(f"Network error: {getattr(exc, 'reason', exc)}")
         except TimeoutError:
@@ -453,7 +522,14 @@ def call_llm_with_cache_retry(
 def _extract_provider_content(raw: str) -> str | None:
     try:
         payload = json.loads(raw)
-        return payload["choices"][0]["message"]["content"].strip()
+        if isinstance(payload, dict):
+            if "choices" in payload:
+                return str(payload["choices"][0]["message"]["content"]).strip()
+            if isinstance(payload.get("message"), dict) and "content" in payload["message"]:
+                return str(payload["message"]["content"]).strip()
+            if "response" in payload:
+                return str(payload["response"]).strip()
+        return str(payload["choices"][0]["message"]["content"]).strip()
     except Exception as exc:
         _set_last_error(f"Invalid provider response: {exc}")
         return None
@@ -625,7 +701,8 @@ def fallback_question(
                 source=row.get("source") or "csv",
             )
         row = question_bank._domain_fallback_question(resolved_skill, sub_domain, asked)
-        if row:
+        asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
+        if row and _normalise_question_text(row.get("question")) not in asked_norm:
             return _with_question_shape(
                 row,
                 skill=resolved_skill,
@@ -635,6 +712,22 @@ def fallback_question(
             )
 
     row = question_bank._template_question(resolved_skill, sub_domain, difficulty)
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
+    if _normalise_question_text(row.get("question")) in asked_norm:
+        templates = question_bank._TEMPLATES.get(difficulty.lower(), question_bank._TEMPLATES["medium"])
+        topic = question_bank._template_topic(resolved_skill, sub_domain)
+        available = [
+            template.format(topic=topic, skill=resolved_skill)
+            for template in templates
+            if _normalise_question_text(template.format(topic=topic, skill=resolved_skill)) not in asked_norm
+        ]
+        if available:
+            row["question"] = available[0]
+        else:
+            row["question"] = (
+                f"For {resolved_skill}, explain a concrete lesson learned from working with "
+                f"{topic} (round {len(asked) + 1}). Include trade-offs and one edge case."
+            )
     return _with_question_shape(
         row,
         skill=resolved_skill,
@@ -654,11 +747,47 @@ def generate_question(
     market_context: MarketQuestionContext | None = None,
 ) -> dict:
     """Hardened non-scoring question-generation entry point."""
+    raw_sub = sub_domain
     resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
     if sub_domain is None or sub_domain == "general":
         sub_domain = resolved_sub
     mode = question_bank._question_generation_mode()
     market = _resolve_market_context(market_context)
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
+
+    if not target_concepts:
+        try:
+            from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
+
+            if not reviewed_bundles_only():
+                norm_topic = str(raw_sub or "").strip()
+                explicit_topic = (
+                    None
+                    if not norm_topic or norm_topic.lower() in {"general", "all", "default"}
+                    else norm_topic
+                )
+                bundle_hit = select_bundle_question(
+                    skill=skill,
+                    difficulty=difficulty,
+                    asked=asked,
+                    topic=explicit_topic,
+                )
+                if bundle_hit is not None:
+                    return {
+                        "question": bundle_hit["question"],
+                        "skill": bundle_hit.get("skill") or resolved_skill,
+                        "sub_domain": bundle_hit.get("topic") or sub_domain,
+                        "topic": bundle_hit.get("topic") or sub_domain,
+                        "difficulty": bundle_hit.get("difficulty") or difficulty,
+                        "source": bundle_hit.get("source") or "auto_checked_bundle",
+                        "bundle_id": bundle_hit.get("bundle_id"),
+                        "version": bundle_hit.get("version"),
+                        "content_hash": bundle_hit.get("content_hash"),
+                        "target_concepts": [],
+                        "adaptive_selected": False,
+                    }
+        except Exception:
+            pass
 
     if mode in {"llm", "llm_csv_fallback"}:
         prompt = build_question_prompt(
@@ -682,23 +811,27 @@ def generate_question(
         raw = call_llm_with_cache_retry(prompt, context, asked=asked)
         payload = parse_llm_json(raw or "")
         if payload and payload.get("question"):
-            return {
-                "question": str(payload["question"]).strip(),
-                "ideal_answer": str(payload.get("ideal_answer", "")).strip(),
-                "ideal_keywords": payload.get("ideal_keywords", ""),
-                "source": "llm",
-                "llm_provider": question_bank._llm_provider()[0],
-                "llm_model": question_bank._llm_provider()[2],
-                "skill": resolved_skill,
-                "sub_domain": sub_domain or "general",
-                "difficulty": difficulty,
-                "topic": str(payload.get("topic") or sub_domain or resolved_skill),
-                "question_type": str(payload.get("question_type") or "conceptual"),
-                "company": str(payload.get("company") or market.company or ""),
-                "role": str(payload.get("role") or market.role or ""),
-                "followups": list(payload.get("followups") or []),
-                "cache_key": question_cache_key(context),
-            }
+            question_text = str(payload["question"]).strip()
+            if _normalise_question_text(question_text) not in asked_norm:
+                provider, _, model = question_bank._llm_provider()
+                return {
+                    "question": question_text,
+                    "ideal_answer": str(payload.get("ideal_answer", "")).strip(),
+                    "ideal_keywords": payload.get("ideal_keywords", ""),
+                    "source": "llm",
+                    "llm_provider": provider,
+                    "llm_model": model,
+                    "skill": resolved_skill,
+                    "sub_domain": sub_domain or "general",
+                    "difficulty": difficulty,
+                    "topic": str(payload.get("topic") or sub_domain or resolved_skill),
+                    "question_type": str(payload.get("question_type") or "conceptual"),
+                    "company": str(payload.get("company") or market.company or ""),
+                    "role": str(payload.get("role") or market.role or ""),
+                    "followups": list(payload.get("followups") or []),
+                    "cache_key": question_cache_key(context),
+                }
+            _set_last_error("LLM returned a duplicate question already in asked.")
 
     row = fallback_question(
         resolved_skill,

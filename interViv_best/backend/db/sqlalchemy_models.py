@@ -695,9 +695,17 @@ class MLPrimitivesAttemptRow(Base):
     execution_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
-# Phase 1A: reviewed question bundles. Content is immutable per version; only
+# Phase 1A + WS2: question bundles. Content is immutable per version; only
 # ``status`` moves, and every move is appended to ``bundle_status_audit``.
-BUNDLE_STATUSES = ("draft", "in_review", "reviewed", "rejected", "retired")
+BUNDLE_STATUSES = (
+    "draft",
+    "generated",
+    "auto_checked",
+    "in_review",
+    "reviewed",
+    "rejected",
+    "retired",
+)
 BUNDLE_DECISIONS = ("approve", "reject", "adjudicate_approve", "adjudicate_reject")
 
 
@@ -734,7 +742,7 @@ class QuestionBundleVersionRow(Base):
         UniqueConstraint("bundle_id", "content_hash", name="uq_bundle_versions_bundle_hash"),
         CheckConstraint("version >= 1", name="ck_bundle_versions_version_positive"),
         CheckConstraint(
-            "status IN ('draft','in_review','reviewed','rejected','retired')",
+            "status IN ('draft','generated','auto_checked','in_review','reviewed','rejected','retired')",
             name="ck_bundle_versions_status",
         ),
     )
@@ -848,4 +856,68 @@ class CoachConversationRow(Base):
     conversation_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class LLMUsageEventRow(Base):
+    """Recorded LLM call token usage and latency metadata (WS2)."""
+
+    __tablename__ = "llm_usage_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bundle_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ok", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RoleSkillCacheRow(Base):
+    """Cached role/JD skill extraction payload keyed by role + JD hash (WS2)."""
+
+    __tablename__ = "role_skill_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    role: Mapped[str] = mapped_column(String(256), nullable=False)
+    jd_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    skills_json: Mapped[dict | list] = mapped_column(JSON, default=dict, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class BundleGenerationJobRow(Base):
+    """Durable background job queue for asynchronous question-bundle generation (WS2)."""
+
+    __tablename__ = "bundle_generation_jobs"
+
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    role: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    skill: Mapped[str] = mapped_column(String(128), nullable=False)
+    topic: Mapped[str] = mapped_column(String(128), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bundle_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','processing','done','failed','skipped')",
+            name="ck_bundle_generation_jobs_status",
+        ),
+    )
 

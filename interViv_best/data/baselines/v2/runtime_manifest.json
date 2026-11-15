@@ -1,0 +1,60 @@
+{
+  "source_commit": "uncommitted working tree on upgrade/verified-blueprint (parent af82b24adb2355628eaf42e20fc9a43491e45c81)",
+  "captured_at": "2026-11-02T13:29:08+00:00",
+  "worktree": "/Users/praneetsharma/Downloads/mega 2 copy",
+  "branch": "upgrade/verified-blueprint",
+  "python": {
+    "version": "3.12.4",
+    "implementation": "CPython",
+    "executable": "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/.venv/bin/python"
+  },
+  "platform": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "machine": "arm64",
+    "mac_product": "macOS 27.2",
+    "mac_build": "25G83"
+  },
+  "packages": {
+    "sklearn": "1.8.0",
+    "torch": "2.11.0",
+    "sentence_transformers": "5.4.1",
+    "transformers": "5.6.2"
+  },
+  "flags": {
+    "LENGTH_RATIO_MULTIPLIER_ENABLED": false,
+    "LENGTH_RATIO_MULTIPLIER_ENABLED_env": null,
+    "DISABLE_SEMANTIC_SCORING": null,
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "LLM_LIVE_FETCH": "0",
+    "JOBS_LIVE_FETCH": "0",
+    "QUESTION_GENERATION_MODE_env": null,
+    "QUESTION_GENERATION_MODE_effective_default": "llm",
+    "note": "No worktree .env. Flags were not flipped for this capture."
+  },
+  "semantic": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "hub_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "probe_identical_cosine": 1.0,
+    "fallback_reason": null,
+    "runtime_mode": "full",
+    "health_mode_equivalent": "full"
+  },
+  "classifier": {
+    "artifact_file": "modules/answer_quality_lr.joblib",
+    "artifact_sha256": "2897c8cc6283cbdb4815a78182188ea60c17b39876feefa2d67919f065f16dd7",
+    "metadata_artifact_sha256": "2897c8cc6283cbdb4815a78182188ea60c17b39876feefa2d67919f065f16dd7",
+    "model_type": "LogisticRegression",
+    "version": "1.1.0",
+    "dataset": "data/ml_training_data.csv",
+    "dataset_hash": "sha256:73cd98ef096a3e7a2808da1f66427c79d596531c9084a558e192dc04938fd104"
+  },
+  "established_eval": {
+    "scoring_regression": "scripts/scoring_regression.py \u2014 8 in-code OOP fixtures via backend.scoring.pipeline.run_scoring_pipeline",
+    "pytest": "tests/ \u2014 546 passed, 1 skipped",
+    "frontend_npm_test": "54 passed, 1 failed (interviewMediaGate monaco-editor resolve; pre-existing environment)",
+    "historical_n50_form_workbook": "missing on this branch; Tree 2 has untracked interViv \u2014 Answer Rating (Responses).xlsx; not copied",
+    "verify_baseline_v2_py": "untracked on Tree 2 only; not imported (would need the missing form workbook)"
+  }
+}

@@ -1760,6 +1760,17 @@ def submit_answer(
 
         narration_status = _settle_narration(db, request.session_id, request.round)
 
+        try:
+            from modules import bundle_generator, bundle_jobs, llm_outbound_gate
+
+            if (
+                bundle_generator._LLM_OVERRIDE is not None
+                or llm_outbound_gate.llm_live_fetch_enabled()
+            ):
+                bundle_jobs.trigger_background_bundle_worker()
+        except Exception:
+            logger.debug("Background bundle worker trigger skipped cleanly.", exc_info=True)
+
         resp_artifact = scoring_result.get("artifact_json")
         if round_type == "sql" and resp_artifact:
             resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)

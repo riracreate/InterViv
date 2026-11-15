@@ -131,6 +131,16 @@ static String json(Object value) {
 '''
 
 
+# Java's Piston runtime launches a single source file directly. Keep legal
+# package/import declarations ahead of our harness, then append the user's
+# classes to that same file so the source-file launcher can resolve Solution.
+_JAVA_PREAMBLE = re.compile(
+    r"\A(?:(?:\s+|//[^\n]*(?:\n|$)|/\*.*?\*/)|"
+    r"(?:(?:package|import)\s+(?:static\s+)?[\w.$*]+\s*;))*",
+    re.DOTALL,
+)
+
+
 def build_driver(*, source: str, function: str, tests: list[dict], language: str,
                  marker: str, problem: dict | None = None) -> list[dict[str, str]]:
     """Build code for Piston, never execute candidate code in the host process."""
@@ -176,6 +186,12 @@ def build_driver(*, source: str, function: str, tests: list[dict], language: str
         else:
             calls.append(f'try {{ auto value=Solution().{function}({values}); cout << {prefix}; interviv::emit(value); cout << "}}" << endl; }} catch(...) {{ cout << {error} << endl; }}')
     if language == "java":
-        return [{"name": "Main.java", "content": "public class Main {\n" + JAVA_JSON + "\npublic static void main(String[] args) {\n" + "\n".join(calls) + "\n}}\n"},
-                {"name": "Solution.java", "content": source}]
+        match = _JAVA_PREAMBLE.match(source)
+        prefix = match.group(0) if match else ""
+        solution = source[len(prefix):]
+        driver = (prefix + "\nclass InterVivMain {\n" + JAVA_JSON
+                  + "\npublic static void main(String[] args) {\n"
+                  + "\n".join(calls) + "\n}}\n" + solution)
+        # This runtime adds .java itself; do not include it in the file name.
+        return [{"name": "InterVivMain", "content": driver}]
     return [{"name": "main.cpp", "content": CPP_JSON + "\n" + source + "\nint main(){\n" + "\n".join(calls) + "\n}\n"}]

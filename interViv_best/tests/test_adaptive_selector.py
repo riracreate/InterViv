@@ -20,16 +20,22 @@ import pytest
 # Loosen the LLM-strict guard the project .env sets for production —
 # tests use the CSV/template fallback when the targeted LLM is mocked off.
 os.environ.setdefault("INTERVIV_USE_MEMORY_DB", "true")
-os.environ["QUESTION_GENERATION_MODE"] = "llm_csv_fallback"
-os.environ["QUESTION_REQUIRE_LLM"] = "false"
-# Adaptive tests stub _call_llm; keep generation mode llm* for stubs that
-# exercise the targeted path. Force live-fetch on so an unstubbed call would
-# still reach the client (tests that assert no dial use monkeypatch).
-os.environ["LLM_LIVE_FETCH"] = "1"
 
 from modules import adaptive_question_selector as aqs  # noqa: E402
+from modules import question_runtime as qr  # noqa: E402
 from modules.concept_mastery import ConceptMastery  # noqa: E402
 from modules.skill_graph import StudentSkillGraph  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _adaptive_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
+    monkeypatch.setenv("QUESTION_REQUIRE_LLM", "false")
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    monkeypatch.setenv("QUESTION_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(qr, "_IN_MEMORY_CACHE", {})
+    monkeypatch.setattr(qr, "_IN_MEMORY_LIMITS", {})
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +265,85 @@ def test_six_round_session_increasingly_targets_trees_and_dp(
     for prompt in captured_prompts:
         assert "ADDITIONAL TARGETING" in prompt
         assert "primarily tests the following concepts" in prompt
+
+
+def test_adaptive_selector_bypasses_cached_question_on_subsequent_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When two rounds share (skill, sub_domain, difficulty, target_concepts),
+    round 2 must bypass the cached round-1 question and generate a fresh one."""
+    import io
+
+    monkeypatch.setenv("QUESTION_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "gemma2:2b")
+
+    cm = ConceptMastery()
+    cm.update_from_round(
+        user_id="u-cache-dedup",
+        skill="DSA",
+        covered_concepts=["array"],
+        missing_concepts=["tree"],
+    )
+
+    responses = [
+        json.dumps({
+            "question": "What is the height of a balanced binary tree with N nodes?",
+            "ideal_answer": "A balanced binary tree has height O(log N).",
+            "ideal_keywords": ["binary tree", "height", "O(log N)", "balance", "nodes"],
+        }),
+        json.dumps({
+            "question": "How do you serialize and deserialize a binary tree?",
+            "ideal_answer": "Use preorder traversal with null markers or level-order BFS.",
+            "ideal_keywords": ["serialize", "preorder", "BFS", "binary tree", "null marker"],
+        }),
+    ]
+    call_idx = {"i": 0}
+
+    class _FakeResp:
+        def __init__(self, text: str) -> None:
+            self._buf = io.BytesIO(
+                json.dumps({"choices": [{"message": {"content": text}}]}).encode("utf-8")
+            )
+
+        def read(self) -> bytes:
+            return self._buf.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(req, *args, **kwargs):
+        idx = min(call_idx["i"], len(responses) - 1)
+        call_idx["i"] += 1
+        return _FakeResp(responses[idx])
+
+    monkeypatch.setattr(qr.urllib.request, "urlopen", fake_urlopen)
+
+    q1 = aqs.select_next_question(
+        user_id="u-cache-dedup",
+        skill="DSA",
+        sub_domain="general",
+        difficulty="medium",
+        asked=[],
+        target_concepts=["tree"],
+    )
+    assert q1["adaptive_selected"] is True
+    assert q1["question"] == "What is the height of a balanced binary tree with N nodes?"
+    assert call_idx["i"] == 1
+
+    # Round 2 with the exact same (skill, sub_domain, difficulty, target_concepts)
+    # and q1 in `asked`: must bypass the cache and dial urlopen for the second question.
+    q2 = aqs.select_next_question(
+        user_id="u-cache-dedup",
+        skill="DSA",
+        sub_domain="general",
+        difficulty="medium",
+        asked=[q1["question"]],
+        target_concepts=["tree"],
+    )
+    assert q2["adaptive_selected"] is True
+    assert q2["question"] == "How do you serialize and deserialize a binary tree?"
+    assert q2["question"] != q1["question"]
+    assert call_idx["i"] == 2

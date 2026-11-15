@@ -43,6 +43,23 @@ def reviewed_available_count(
     return total
 
 
+def _pick_unasked_payload(
+    versions: list[dict],
+    asked: list[str] | None,
+) -> dict | None:
+    asked_norm = {" ".join(q.split()).casefold() for q in (asked or [])}
+    asked_ids = {str(q).strip() for q in (asked or []) if str(q).strip()}
+    for v in versions:
+        payload = candidate_payload(v)
+        identity = f"{payload['bundle_id']}@{payload['version']}"
+        if identity in asked_ids:
+            continue
+        if " ".join(payload["question"].split()).casefold() in asked_norm:
+            continue
+        return payload
+    return None
+
+
 def select_reviewed_question(
     *, skill: str, difficulty: str, asked: list[str] | None = None, topic: str | None = None,
 ) -> dict:
@@ -51,18 +68,46 @@ def select_reviewed_question(
     Eligibility is latest ``reviewed`` only. Asked matching uses question text
     and bundle identity strings so a client cannot force a different version.
     """
-    asked_norm = {" ".join(q.split()).casefold() for q in (asked or [])}
-    asked_ids = {str(q).strip() for q in (asked or []) if str(q).strip()}
-    for v in bundle_store.reviewed_versions(skill, difficulty, topic):
-        payload = candidate_payload(v)
-        identity = f"{payload['bundle_id']}@{payload['version']}"
-        if identity in asked_ids:
-            continue
-        if " ".join(payload["question"].split()).casefold() in asked_norm:
-            continue
-        return payload
+    picked = _pick_unasked_payload(
+        bundle_store.reviewed_versions(skill, difficulty, topic),
+        asked,
+    )
+    if picked is not None:
+        return picked
     raise ReviewedInventoryUnavailable(
         f"No reviewed question bundle is available for skill={skill!r} difficulty={difficulty!r}"
         + (f" topic={topic!r}" if topic else "")
         + ". Reviewed-only selection is on; draft or unreviewed content cannot be scored."
     )
+
+
+def select_bundle_question(
+    *,
+    skill: str,
+    difficulty: str,
+    asked: list[str] | None = None,
+    topic: str | None = None,
+) -> dict | None:
+    """Select an eligible bundle question ordered by trust tier.
+
+    When ``REVIEWED_BUNDLES_ONLY`` is enabled, delegates strictly to
+    ``select_reviewed_question`` (raising ``ReviewedInventoryUnavailable`` if
+    no reviewed bundle is available). Otherwise scans ``reviewed``, then
+    ``auto_checked``, then unchecked ``generated`` bundles and returns ``None``
+    when nothing eligible remains.
+    """
+    if reviewed_bundles_only():
+        return select_reviewed_question(
+            skill=skill,
+            difficulty=difficulty,
+            asked=asked,
+            topic=topic,
+        )
+    versions = bundle_store.selectable_versions(
+        skill,
+        difficulty,
+        topic,
+        include_auto_checked=True,
+        include_unchecked_generated=True,
+    )
+    return _pick_unasked_payload(versions, asked)

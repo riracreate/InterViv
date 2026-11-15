@@ -7,6 +7,7 @@ countries fail loudly (no silent substitute).
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -16,6 +17,29 @@ import httpx
 from backend.config import get_settings
 
 LOGGER = logging.getLogger(__name__)
+
+
+class _AdzunaCredentialFilter(logging.Filter):
+    """Keep httpx INFO request logs from exposing credentials in query strings."""
+
+    _secrets = re.compile(r"(?i)([?&](?:app_id|app_key)=)[^&\s\"']*")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+            if "api.adzuna.com" in message.lower():
+                safe = self._secrets.sub(r"\1[redacted]", message)
+                if safe != message:
+                    record.msg, record.args = safe, ()
+        except Exception:
+            # Logging must never reveal the request when it cannot be sanitized.
+            record.msg, record.args = "HTTP request details unavailable", ()
+        return True
+
+
+_HTTPX_LOGGER = logging.getLogger("httpx")
+if not any(isinstance(item, _AdzunaCredentialFilter) for item in _HTTPX_LOGGER.filters):
+    _HTTPX_LOGGER.addFilter(_AdzunaCredentialFilter())
 
 # Adzuna public country path segments (search endpoint). Reject unknowns.
 SUPPORTED_COUNTRIES = frozenset({

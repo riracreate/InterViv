@@ -196,11 +196,100 @@ def can_schedule_follow_up(
     return True, ""
 
 
+def _extract_gap_concepts(parent_round_doc: dict[str, Any]) -> list[str]:
+    """Extract concept IDs needing clarification, prioritized contradicted > missing > uncertain."""
+    buckets: dict[str, list[str]] = {
+        "contradicted": [],
+        "missing": [],
+        "uncertain": [],
+    }
+    seen: set[str] = set()
+
+    def _add(bucket: str, val: Any) -> None:
+        if isinstance(val, str):
+            norm = val.strip().lower()
+            if norm and norm not in seen:
+                seen.add(norm)
+                buckets[bucket].append(norm)
+        elif isinstance(val, (list, tuple)):
+            for item in val:
+                _add(bucket, item)
+
+    containers: list[dict[str, Any]] = []
+    for cand in (
+        parent_round_doc,
+        parent_round_doc.get("round_meta"),
+        parent_round_doc.get("scoring_breakdown"),
+        parent_round_doc.get("evaluation"),
+    ):
+        if isinstance(cand, dict):
+            containers.append(cand)
+            for sub_key in ("concept_evaluation", "concept_eval", "v2"):
+                sub = cand.get(sub_key)
+                if isinstance(sub, dict):
+                    containers.append(sub)
+
+    for container in containers:
+        _add("contradicted", container.get("contradicted"))
+        _add("contradicted", container.get("contradicted_concepts"))
+        _add("missing", container.get("missing"))
+        _add("missing", container.get("missing_concepts"))
+        _add("missing", container.get("concept_gaps"))
+        _add("uncertain", container.get("uncertain"))
+        _add("uncertain", container.get("uncertain_concepts"))
+        concepts = container.get("concepts")
+        if isinstance(concepts, list):
+            for c in concepts:
+                if not isinstance(c, dict):
+                    continue
+                state = str(c.get("state") or "").strip().lower()
+                if state in buckets:
+                    cid = c.get("concept_id") or c.get("id")
+                    _add(state, cid)
+
+    return buckets["contradicted"] + buckets["missing"] + buckets["uncertain"]
+
+
+def select_follow_up_spec(
+    parent_round_doc: dict[str, Any],
+    followups: list[Any] | None,
+) -> tuple[str | None, str | None]:
+    """Select the follow-up (prompt, targets_concept) matching parent concept gaps."""
+    candidates: list[dict[str, str | None]] = []
+    for item in (followups or []):
+        if isinstance(item, dict):
+            prompt = str(item.get("prompt") or "").strip()
+            target = str(item.get("targets_concept") or "").strip() or None
+            if prompt:
+                candidates.append({"prompt": prompt, "targets_concept": target})
+        elif isinstance(item, str):
+            prompt = item.strip()
+            if prompt:
+                candidates.append({"prompt": prompt, "targets_concept": None})
+        elif item is not None:
+            prompt = str(item).strip()
+            if prompt:
+                candidates.append({"prompt": prompt, "targets_concept": None})
+
+    if not candidates:
+        return None, None
+
+    gaps = _extract_gap_concepts(parent_round_doc or {})
+    for gap_id in gaps:
+        for cand in candidates:
+            target = (cand.get("targets_concept") or "").strip().lower()
+            if target and target == gap_id:
+                return cand["prompt"], cand["targets_concept"]
+
+    return candidates[0]["prompt"], candidates[0]["targets_concept"]
+
+
 def build_follow_up_plan_entry(
     *,
     parent_round_doc: dict[str, Any],
     reviewed_bundle: dict[str, Any] | None,
     clarification_prompt: str | None = None,
+    targets_concept: str | None = None,
 ) -> dict[str, Any]:
     """Build an expanded_plan entry for an optional follow-up.
 
@@ -211,7 +300,7 @@ def build_follow_up_plan_entry(
     block_id = parent_round_doc.get("block_id")
     identity = f"followup:{parent_round}:{uuid4().hex[:8]}"
     if reviewed_bundle:
-        return {
+        entry: dict[str, Any] = {
             "round_type": "technical_short_answer",
             "skill": parent_round_doc.get("skill"),
             "block_id": block_id,
@@ -227,10 +316,13 @@ def build_follow_up_plan_entry(
             "version": reviewed_bundle.get("version"),
             "review_policy": (parent_round_doc.get("config_json") or {}).get("review_policy", "none"),
         }
+        if targets_concept:
+            entry["targets_concept"] = targets_concept
+        return entry
     prompt = (clarification_prompt or "").strip() or (
         "Clarify the key idea from the previous question in your own words."
     )
-    return {
+    entry = {
         "round_type": "technical_short_answer",
         "skill": parent_round_doc.get("skill"),
         "block_id": block_id,
@@ -245,6 +337,9 @@ def build_follow_up_plan_entry(
         "clarification_prompt": prompt,
         "review_policy": (parent_round_doc.get("config_json") or {}).get("review_policy", "none"),
     }
+    if targets_concept:
+        entry["targets_concept"] = targets_concept
+    return entry
 
 
 def schedule_follow_up_in_session(

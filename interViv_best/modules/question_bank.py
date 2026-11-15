@@ -206,8 +206,10 @@ def resolve_skill(raw_skill: str) -> tuple[str, Optional[str]]:
 
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+_DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 _DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash"
 _DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_DEFAULT_OLLAMA_MODEL = "gemma2:2b"
 _LAST_LLM_ERROR: str | None = None
 
 _QUESTION_MODES = {
@@ -248,20 +250,53 @@ def _strict_llm_required(mode: str) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _ollama_base_url() -> str:
+    raw = (
+        os.getenv("OLLAMA_BASE_URL")
+        or os.getenv("OLLAMA_URL")
+        or os.getenv("CODING_COACH_URL")
+        or _DEFAULT_OLLAMA_BASE_URL
+    ).strip().rstrip("/")
+    for suffix in ("/v1/chat/completions", "/api/chat", "/api/generate", "/v1"):
+        if raw.endswith(suffix):
+            raw = raw[: -len(suffix)].rstrip("/")
+            break
+    return raw or _DEFAULT_OLLAMA_BASE_URL
+
+
 def _llm_provider() -> tuple[str | None, str | None, str | None]:
     provider = (os.getenv("QUESTION_LLM_PROVIDER") or "auto").strip().lower()
-    if provider == "openai" or (provider == "auto" and os.getenv("OPENAI_API_KEY")):
+    openai_key = (os.getenv("OPENAI_API_KEY") or "").strip() or None
+    openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip() or None
+    if provider == "openai" or (provider == "auto" and openai_key):
         return (
             "openai",
-            os.getenv("OPENAI_API_KEY"),
-            os.getenv("QUESTION_LLM_MODEL") or os.getenv("OPENAI_MODEL") or _DEFAULT_OPENAI_MODEL,
+            openai_key,
+            (
+                os.getenv("QUESTION_LLM_MODEL")
+                or os.getenv("OPENAI_MODEL")
+                or _DEFAULT_OPENAI_MODEL
+            ).strip(),
         )
-    if provider == "openrouter" or (provider == "auto" and os.getenv("OPENROUTER_API_KEY")):
+    if provider == "openrouter" or (provider == "auto" and openrouter_key):
         return (
             "openrouter",
-            os.getenv("OPENROUTER_API_KEY"),
-            os.getenv("QUESTION_LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or _DEFAULT_OPENROUTER_MODEL,
+            openrouter_key,
+            (
+                os.getenv("QUESTION_LLM_MODEL")
+                or os.getenv("OPENROUTER_MODEL")
+                or _DEFAULT_OPENROUTER_MODEL
+            ).strip(),
         )
+    if provider in {"ollama", "local", "auto"}:
+        model = (
+            os.getenv("QUESTION_LLM_MODEL")
+            or os.getenv("OLLAMA_MODEL")
+            or os.getenv("CODING_COACH_MODEL")
+            or _DEFAULT_OLLAMA_MODEL
+        ).strip()
+        api_key = (os.getenv("OLLAMA_API_KEY") or "ollama").strip() or "ollama"
+        return ("ollama", api_key, model)
     return (None, None, None)
 
 
@@ -318,7 +353,11 @@ def _build_llm_prompt(skill: str, sub_domain: Optional[str], difficulty: str, as
 
 
 def _chat_completion_url(provider: str) -> str:
-    return _OPENAI_URL if provider == "openai" else _OPENROUTER_URL
+    if provider == "openai":
+        return _OPENAI_URL
+    if provider == "ollama":
+        return f"{_ollama_base_url()}/v1/chat/completions"
+    return _OPENROUTER_URL
 
 
 def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, asked: list[str]) -> Optional[dict]:
@@ -346,8 +385,9 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
         "temperature": 0.7,
     }).encode("utf-8")
 
+    url = _chat_completion_url(provider)
     req = urllib.request.Request(
-        _chat_completion_url(provider),
+        url,
         data=body,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -359,15 +399,35 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
+        ssl_ctx = _SSL_CTX if url.startswith("https://") else None
+        with urllib.request.urlopen(req, timeout=20, context=ssl_ctx) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        try:
-            detail = exc.read().decode("utf-8", errors="replace")
-        except Exception:
-            detail = str(exc)
-        _LAST_LLM_ERROR = f"HTTP {exc.code}: {detail[:500]}"
-        return None
+        if provider == "ollama" and exc.code == 404:
+            try:
+                gen_req = urllib.request.Request(
+                    f"{_ollama_base_url()}/api/generate",
+                    data=json.dumps({
+                        "model": model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "format": "json",
+                    }).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(gen_req, timeout=20, context=None) as resp:
+                    raw = resp.read().decode("utf-8")
+            except Exception as fallback_exc:
+                _LAST_LLM_ERROR = f"HTTP {exc.code}: {fallback_exc}"
+                return None
+        else:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = str(exc)
+            _LAST_LLM_ERROR = f"HTTP {exc.code}: {detail[:500]}"
+            return None
     except urllib.error.URLError as exc:
         _LAST_LLM_ERROR = f"Network error: {getattr(exc, 'reason', exc)}"
         return None
@@ -380,12 +440,32 @@ def _generate_via_llm(skill: str, sub_domain: Optional[str], difficulty: str, as
 
     try:
         data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"].strip()
+        if "choices" in data:
+            content = data["choices"][0]["message"]["content"].strip()
+        elif isinstance(data.get("message"), dict) and "content" in data["message"]:
+            content = str(data["message"]["content"]).strip()
+        elif "response" in data:
+            content = str(data["response"]).strip()
+        else:
+            content = data["choices"][0]["message"]["content"].strip()
         # strip possible fences
         content = re.sub(r"^```(?:json)?|```$", "", content, flags=re.I | re.M).strip()
-        payload = json.loads(content)
+        try:
+            payload = json.loads(content)
+        except ValueError:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                payload = json.loads(content[start : end + 1])
+            else:
+                raise
+        question_text = payload["question"].strip()
+        asked_norm = {" ".join(str(q).strip().lower().split()) for q in (asked or []) if str(q).strip()}
+        if " ".join(question_text.lower().split()) in asked_norm:
+            _LAST_LLM_ERROR = "LLM returned a duplicate question already in asked."
+            return None
         return {
-            "question": payload["question"].strip(),
+            "question": question_text,
             "ideal_answer": payload.get("ideal_answer", "").strip(),
             "ideal_keywords": payload.get("ideal_keywords", ""),
             "source": "llm",

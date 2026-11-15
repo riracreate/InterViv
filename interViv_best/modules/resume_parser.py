@@ -245,12 +245,20 @@ def _extract_text(pdf_path):
     return _extract_text_and_layout(pdf_path)[0]
 
 
+_HYPHEN_SENSITIVE_ALIASES = frozenset({"go", "c", "r", "os", "ai", "ml", "ui", "cn", "hr"})
+
+
 def _find_skills(text):
     text_lower = text.lower()
     skills = []
 
     for skill, canonical in TECH_SKILLS:
-        pattern = r"(?<![a-z0-9])" + re.escape(skill.lower()) + r"(?![a-z0-9])"
+        alias = skill.lower()
+        if len(alias) <= 2 or alias in _HYPHEN_SENSITIVE_ALIASES:
+            # Avoid false positives on hyphenated/underscored words like "go-to-market" or "go-live".
+            pattern = r"(?<![a-z0-9_-])" + re.escape(alias) + r"(?![a-z0-9_-])"
+        else:
+            pattern = r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])"
         if re.search(pattern, text_lower):
             skills.append(canonical)
 

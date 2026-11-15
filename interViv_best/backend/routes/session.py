@@ -252,9 +252,15 @@ def _normalize_question_payload(payload: object, *, skill: str,
         if not question_text:
             raise IntegrationError("question_bank returned a payload with no question text.")
         source = str(payload.get("source") or "unknown")
-        # Reviewed-bundle candidate payloads carry identity only. Persist the
-        # pin on the round; resolve reference material server-side at score time.
+        # Reviewed/auto-checked bundle candidate payloads carry identity only.
+        # Persist the pin on the round; resolve reference material server-side
+        # at score time.
         if source == "reviewed_bundle" or payload.get("bundle_id"):
+            normalized_source = (
+                source
+                if source in {"reviewed_bundle", "auto_checked_bundle", "generated_bundle"}
+                else "reviewed_bundle"
+            )
             return {
                 "question": str(question_text),
                 "skill": str(payload.get("skill") or skill),
@@ -265,7 +271,7 @@ def _normalize_question_payload(payload: object, *, skill: str,
                 "company": payload.get("company") or "",
                 "role": payload.get("role") or "",
                 "followups": list(payload.get("followups") or []),
-                "source": "reviewed_bundle",
+                "source": normalized_source,
                 "bundle_id": payload.get("bundle_id"),
                 "version": payload.get("version"),
                 "content_hash": payload.get("content_hash"),
@@ -336,6 +342,7 @@ def _get_next_question(
     from modules.bundle_selector import (
         ReviewedInventoryUnavailable,
         reviewed_bundles_only,
+        select_bundle_question,
         select_reviewed_question,
     )
 
@@ -355,6 +362,25 @@ def _get_next_question(
         return _normalize_question_payload(
             payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
         )
+
+    if not target_concepts:
+        try:
+            topic = _explicit_reviewed_topic(sub_domain)
+            bundle_payload = select_bundle_question(
+                skill=skill,
+                difficulty=difficulty,
+                asked=asked,
+                topic=topic,
+            )
+            if bundle_payload is not None:
+                return _normalize_question_payload(
+                    bundle_payload,
+                    skill=skill,
+                    sub_domain=sub_domain,
+                    difficulty=difficulty,
+                )
+        except Exception:
+            pass
 
     if user_id:
         from modules import adaptive_question_selector
@@ -1316,6 +1342,7 @@ def _validate_block_content(
             from modules.bundle_selector import (
                 reviewed_available_count,
                 reviewed_bundles_only,
+                select_bundle_question,
             )
 
             if reviewed_bundles_only():
@@ -1340,10 +1367,25 @@ def _validate_block_content(
                 topic = (block.get("topic") or "").strip() or None
                 if topic and topic.lower() != "general":
                     difficulty = block.get("difficulty")
+                    diffs_to_check = (
+                        [str(difficulty)] if difficulty else ["easy", "medium", "hard"]
+                    )
                     for skill in block.get("skills") or []:
                         eligible, offered = _topic_scope_status(
                             str(skill), topic, difficulty=difficulty,
                         )
+                        if not eligible:
+                            has_bundle = any(
+                                select_bundle_question(
+                                    skill=str(skill),
+                                    difficulty=d,
+                                    asked=[],
+                                    topic=topic,
+                                )
+                                is not None
+                                for d in diffs_to_check
+                            )
+                            eligible = has_bundle
                         if not eligible:
                             raise ValueError(
                                 f"Topic '{topic}' is not available for skill "
@@ -1355,6 +1397,98 @@ def _validate_block_content(
                                 + ". Split the block, adjust skills, or clear "
                                 "the topic."
                             )
+
+
+def _inline_bundle_generation_enabled() -> bool:
+    from modules import bundle_generator, llm_outbound_gate
+
+    if bundle_generator._LLM_OVERRIDE is not None:
+        return True
+    if not llm_outbound_gate.llm_live_fetch_enabled():
+        return False
+    default_flag = "0" if os.getenv("PYTEST_CURRENT_TEST") else "1"
+    raw = os.getenv("BUNDLE_INLINE_ON_START", default_flag)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _background_bundle_prefetch_enabled() -> bool:
+    from modules import bundle_generator, llm_outbound_gate
+
+    if bundle_generator._LLM_OVERRIDE is not None:
+        return True
+    if llm_outbound_gate.llm_live_fetch_enabled():
+        return True
+    raw = os.getenv("BUNDLE_PREFETCH_ON_START", "0")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _maybe_prepare_opening_bundle(
+    *,
+    skill: str,
+    topic: str | None,
+    difficulty: str,
+    role: str | None,
+) -> None:
+    from modules import bundle_generator
+    from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
+
+    if reviewed_bundles_only():
+        return
+    explicit_topic = _explicit_reviewed_topic(topic)
+    if (
+        select_bundle_question(
+            skill=skill, difficulty=difficulty, asked=[], topic=explicit_topic
+        )
+        is not None
+    ):
+        return
+    if not _inline_bundle_generation_enabled():
+        return
+    bundle_generator.generate_and_check_bundle(
+        skill=skill,
+        topic=explicit_topic or skill,
+        difficulty=difficulty,
+        role=role,
+    )
+
+
+def _enqueue_remaining_session_bundles(
+    *,
+    session_id: str,
+    expanded: list[dict[str, Any]],
+    fallback_skills: list[str],
+    default_difficulty: str,
+    role: str | None,
+) -> None:
+    from modules import bundle_jobs
+    from modules.bundle_selector import reviewed_bundles_only
+
+    if reviewed_bundles_only() or not _background_bundle_prefetch_enabled():
+        return
+    seen: set[tuple[str, str, str]] = set()
+    enqueued = 0
+    for spec in expanded[1:]:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("round_type") or "") != "technical_short_answer":
+            continue
+        spec_skill = str((spec.get("skills") or fallback_skills or ["System Design"])[0])
+        spec_topic = _explicit_reviewed_topic(spec.get("topic")) or spec_skill
+        spec_diff = str(spec.get("difficulty") or default_difficulty or "medium")
+        key = (spec_skill.lower(), spec_topic.lower(), spec_diff.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        bundle_jobs.enqueue_bundle_job(
+            skill=spec_skill,
+            topic=spec_topic,
+            difficulty=spec_diff,
+            role=role,
+            session_id=session_id,
+        )
+        enqueued += 1
+    if enqueued > 0:
+        bundle_jobs.trigger_background_bundle_worker()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1535,6 +1669,17 @@ def start_session(
     if opening_config.get("duration_minutes") is None:
         opening_config.pop("duration_minutes", None)
 
+    if opening_type == "technical_short_answer":
+        try:
+            _maybe_prepare_opening_bundle(
+                skill=first_skill,
+                topic=sub_domain,
+                difficulty=difficulty,
+                role=role_slug,
+            )
+        except Exception:
+            logger.debug("Inline bundle preparation skipped cleanly.", exc_info=True)
+
     try:
         round_document = build_round_document(
             round_number=1,
@@ -1671,6 +1816,17 @@ def start_session(
                 detail=f"MongoDB operation failed: {exc}",
             ) from exc
         raise
+
+    try:
+        _enqueue_remaining_session_bundles(
+            session_id=session_id,
+            expanded=expanded,
+            fallback_skills=session_skills,
+            default_difficulty=difficulty,
+            role=role_slug,
+        )
+    except Exception:
+        logger.debug("Background bundle prefetch enqueue skipped cleanly.", exc_info=True)
 
     response = {
         "session_id": session_id,

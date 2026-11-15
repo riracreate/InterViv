@@ -19,12 +19,14 @@ Invariants enforced here (and by DB constraints on the SQL path):
 """
 from __future__ import annotations
 
+import copy
 import threading
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from backend.config import get_settings
+from backend.db.sqlalchemy_models import BUNDLE_STATUSES
 from modules.question_bundles import DIFFICULTIES, validate_bundle_doc
 
 REQUIRED_CHECKLIST = (
@@ -82,7 +84,7 @@ class _MemoryBackend:
         return [dict(b) for b in self.bundles.values() if skill is None or b["skill"] == skill]
 
     def list_versions(self, bundle_id=None, status=None):
-        rows = [dict(v) for v in self.versions.values()
+        rows = [copy.deepcopy(v) for v in self.versions.values()
                 if (bundle_id is None or v["bundle_id"] == bundle_id)
                 and (status is None or v["status"] == status)]
         return sorted(rows, key=lambda v: (v["bundle_id"], v["version"]))
@@ -93,12 +95,16 @@ class _MemoryBackend:
                 continue
             if existing["version"] == doc["version"] or existing["content_hash"] == doc["content_hash"]:
                 raise BundleStoreError("conflict", "version or content hash already exists")
-        self.versions[doc["id"]] = dict(doc)
+        self.versions[doc["id"]] = copy.deepcopy(doc)
 
     def set_status(self, version_id, status, now):
         row = self.versions[version_id]
         row["status"] = status
         row["status_updated_at"] = now
+
+    def set_attribution(self, version_id, attribution_json):
+        row = self.versions[version_id]
+        row["attribution_json"] = copy.deepcopy(attribution_json)
 
     def list_decisions(self, version_id):
         return [dict(d) for d in self.decisions if d["version_id"] == version_id]
@@ -218,6 +224,13 @@ class _SQLBackend:
             row.status = status
             row.status_updated_at = now
 
+    def set_attribution(self, version_id, attribution_json):
+        from backend.db.sqlalchemy_models import QuestionBundleVersionRow
+        from backend.db.sqlalchemy_store import session_scope
+        with session_scope() as s:
+            row = s.get(QuestionBundleVersionRow, version_id)
+            row.attribution_json = copy.deepcopy(attribution_json)
+
     def list_decisions(self, version_id):
         from sqlalchemy import select
         from backend.db.sqlalchemy_models import BundleReviewDecisionRow as D
@@ -291,7 +304,14 @@ def list_versions(bundle_id: str | None = None, status: str | None = None) -> li
     return _backend().list_versions(bundle_id=bundle_id, status=status)
 
 
-def import_bundle(doc: dict[str, Any], *, actor_id: str, now: datetime | None = None) -> dict[str, Any]:
+def import_bundle(
+    doc: dict[str, Any],
+    *,
+    actor_id: str,
+    now: datetime | None = None,
+    initial_status: str = "draft",
+    audit_reason: str | None = None,
+) -> dict[str, Any]:
     """Idempotent import of one canonical document.
 
     Returns ``{"result": "unchanged"|"created", "version": <version doc>}``.
@@ -300,6 +320,11 @@ def import_bundle(doc: dict[str, Any], *, actor_id: str, now: datetime | None = 
     under another version, when the version number skips, or when bundle
     identity (category/skill/topic) disagrees with the stored bundle.
     """
+    if initial_status not in ("draft", "generated"):
+        raise BundleStoreError(
+            "invalid",
+            f"initial_status must be 'draft' or 'generated', got {initial_status!r}",
+        )
     try:
         parsed = validate_bundle_doc(doc)
     except ValueError as exc:
@@ -347,16 +372,79 @@ def import_bundle(doc: dict[str, Any], *, actor_id: str, now: datetime | None = 
             "id": _version_id(bundle_id, version), "bundle_id": bundle_id, "version": version,
             "difficulty": content["difficulty"], "content_json": content, "content_hash": digest,
             "source": parsed["source"], "attribution_json": parsed["attribution"],
-            "author_id": parsed["author_id"], "status": "draft",
+            "author_id": parsed["author_id"], "status": initial_status,
             "created_at": now, "status_updated_at": now,
         }
         be.insert_version(version_doc)
         be.insert_audit({
             "id": str(uuid4()), "version_id": version_doc["id"], "content_hash": digest,
-            "from_status": None, "to_status": "draft", "actor_id": actor_id,
-            "reason": f"imported from {parsed['source']}", "created_at": now,
+            "from_status": None, "to_status": initial_status, "actor_id": actor_id,
+            "reason": audit_reason or f"imported from {parsed['source']}", "created_at": now,
         })
     return {"result": "created", "version": version_doc}
+
+
+def update_attribution(bundle_id: str, version: int, patch: dict[str, Any]) -> dict[str, Any]:
+    """Merge metadata into ``attribution_json`` without changing content or status."""
+    if not isinstance(patch, dict):
+        raise BundleStoreError("invalid", "attribution patch must be a mapping")
+    be = _backend()
+    with be.lock:
+        v = get_version(bundle_id, version)
+        merged = {**dict(v.get("attribution_json") or {}), **copy.deepcopy(patch)}
+        be.set_attribution(v["id"], merged)
+        return {**v, "attribution_json": merged}
+
+
+def list_known_skills() -> list[str]:
+    """Return sorted distinct skill names present across stored bundles."""
+    return sorted({str(b["skill"]) for b in _backend().list_bundles() if b.get("skill")})
+
+
+def transition_automated_check(
+    bundle_id: str,
+    version: int,
+    *,
+    to_status: str,
+    reason: str,
+    check_meta: dict[str, Any] | None = None,
+    actor_id: str = "bundle_checker",
+) -> dict[str, Any]:
+    """Record automated check outcome: ``generated`` -> ``auto_checked`` or ``rejected``."""
+    be = _backend()
+    with be.lock:
+        v = get_version(bundle_id, version)
+        if v["status"] != "generated":
+            raise BundleStoreError(
+                "conflict",
+                f"automated check only applies to generated versions (status {v['status']})",
+            )
+        if to_status not in ("auto_checked", "rejected"):
+            raise BundleStoreError(
+                "conflict",
+                f"automated check can only transition to 'auto_checked' or 'rejected', got {to_status!r}",
+            )
+        auto_check_payload: dict[str, Any] = {
+            "auto_check_ran": True,
+            "to_status": to_status,
+            "reason": reason,
+        }
+        if check_meta:
+            auto_check_payload.update(copy.deepcopy(check_meta))
+        merged_attr = {
+            **dict(v.get("attribution_json") or {}),
+            "auto_check_ran": True,
+            "auto_check": auto_check_payload,
+        }
+        be.set_attribution(v["id"], merged_attr)
+        return _transition(
+            be,
+            {**v, "attribution_json": merged_attr},
+            to_status,
+            actor_id,
+            reason,
+            _now(),
+        )
 
 
 def submit_for_review(bundle_id: str, version: int, *, actor_id: str, reason: str = "") -> dict:
@@ -509,27 +597,122 @@ def inventory() -> dict:
             out[c["skill"]][c["topic"]][c["difficulty"]] += 1
         return out
 
-    unreviewed = [v for v in versions if v["status"] in ("draft", "in_review")]
+    unreviewed = [
+        v for v in versions
+        if v["status"] in ("draft", "generated", "auto_checked", "in_review")
+    ]
     return {
         "reviewed": bucket(latest_reviewed.values()),
         "reviewed_total": len(latest_reviewed),
         "unreviewed": bucket(unreviewed),
         "unreviewed_total": len(unreviewed),
         "status_totals": {s: sum(1 for v in versions if v["status"] == s)
-                          for s in ("draft", "in_review", "reviewed", "rejected", "retired")},
+                          for s in BUNDLE_STATUSES},
     }
+
+
+_SELECTOR_TIER = {"reviewed": 0, "auto_checked": 1, "generated": 2}
+
+
+def _matches_bundle_filters(
+    version_doc: dict,
+    skill: str,
+    difficulty: str,
+    topic: str | None,
+) -> bool:
+    c = version_doc["content_json"]
+    if c["skill"].strip().casefold() != skill.strip().casefold():
+        return False
+    if c["difficulty"].strip().casefold() != difficulty.strip().casefold():
+        return False
+    if topic is not None and c["topic"].strip().casefold() != topic.strip().casefold():
+        return False
+    return True
 
 
 def reviewed_versions(skill: str, difficulty: str, topic: str | None = None) -> list[dict]:
     """Latest reviewed version per bundle for a skill/difficulty (and topic)."""
     latest: dict[str, dict] = {}
     for v in _backend().list_versions(status="reviewed"):
-        c = v["content_json"]
-        if c["skill"].lower() != skill.lower() or c["difficulty"] != difficulty.lower():
-            continue
-        if topic is not None and c["topic"].lower() != topic.lower():
+        if not _matches_bundle_filters(v, skill, difficulty, topic):
             continue
         cur = latest.get(v["bundle_id"])
         if cur is None or v["version"] > cur["version"]:
             latest[v["bundle_id"]] = v
     return sorted(latest.values(), key=lambda v: v["bundle_id"])
+
+
+def selectable_versions(
+    skill: str,
+    difficulty: str,
+    topic: str | None = None,
+    *,
+    include_auto_checked: bool = True,
+    include_unchecked_generated: bool = True,
+) -> list[dict]:
+    """Latest eligible version per bundle ordered by tier: reviewed > auto_checked > generated.
+
+    ``generated`` versions are eligible only when ``attribution_json["auto_check_ran"]``
+    is falsy (Change A).
+    """
+    latest: dict[str, dict] = {}
+    for v in _backend().list_versions():
+        status = v["status"]
+        if status == "reviewed":
+            pass
+        elif status == "auto_checked":
+            if not include_auto_checked:
+                continue
+        elif status == "generated":
+            if not include_unchecked_generated:
+                continue
+            if (v.get("attribution_json") or {}).get("auto_check_ran"):
+                continue
+        else:
+            continue
+        if not _matches_bundle_filters(v, skill, difficulty, topic):
+            continue
+        cur = latest.get(v["bundle_id"])
+        if cur is None or v["version"] > cur["version"]:
+            latest[v["bundle_id"]] = v
+    return sorted(
+        latest.values(),
+        key=lambda v: (_SELECTOR_TIER[v["status"]], v["bundle_id"]),
+    )
+
+
+def find_cached_bundle(
+    *,
+    skill: str,
+    topic: str | None,
+    difficulty: str,
+    role: str | None = None,
+) -> dict[str, Any] | None:
+    """Find a reusable bundle in ``reviewed``/``auto_checked``/``generated`` matching criteria.
+
+    If ``role`` is provided and a bundle is found, appends ``role`` to
+    ``attribution_json["roles"]`` (deduplicated) before returning it.
+    """
+    effective_topic = str(topic).strip() if topic is not None and str(topic).strip() else None
+    be = _backend()
+    with be.lock:
+        candidates = selectable_versions(
+            skill,
+            difficulty,
+            effective_topic,
+            include_auto_checked=True,
+            include_unchecked_generated=True,
+        )
+        if not candidates:
+            return None
+        chosen = candidates[0]
+        role_clean = str(role or "").strip()
+        if role_clean:
+            attr = dict(chosen.get("attribution_json") or {})
+            roles = [str(r) for r in (attr.get("roles") or []) if str(r).strip()]
+            if role_clean not in roles:
+                roles.append(role_clean)
+                attr["roles"] = roles
+                be.set_attribution(chosen["id"], attr)
+                chosen = {**chosen, "attribution_json": attr}
+        return chosen

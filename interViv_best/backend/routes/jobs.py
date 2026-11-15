@@ -182,7 +182,14 @@ def practice_for_job(
         skills=skills,
         candidate_id=candidate_id or None,
         blocks=blocks,
+        role=req.role or job.get("title"),
+        jd_text=req.full_jd or job.get("snippet"),
     )
+    if not start_body.get("blocks") and not start_body.get("skills"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This role is not cached for offline practice and live AI generation is unavailable offline.",
+        )
     # Optional company/role are session metadata only — never scoring inputs.
     if req.company:
         start_body["target_company_name"] = req.company[:200]
@@ -194,6 +201,7 @@ def practice_for_job(
         if k in StartSessionRequest.model_fields
     })
     session = start_session(request, authorization=authorization)
+    resolved_skills = start_body.get("skills") or skills
     return {
         **session,
         "started": True,
@@ -202,7 +210,7 @@ def practice_for_job(
         "navigate": f"/interview/{session.get('session_id')}",
         "practice_href": "/practice",
         "job_id": job_id,
-        "missing_skills": skills,
+        "missing_skills": resolved_skills,
         "company": req.company or job.get("company"),
         "role": req.role or job.get("title"),
     }

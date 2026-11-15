@@ -1,0 +1,778 @@
+{
+  "evaluator_version": "concept_evaluator_v3.0",
+  "frozen_threshold": 0.62,
+  "inventory": {
+    "total_bundles": 13,
+    "yaml_bundles": 12,
+    "sqlite_bundles": {
+      "interviv.db": 1,
+      "local-data/interviv-local.sqlite3": 0
+    },
+    "required_concepts": 38,
+    "optional_concepts": 12,
+    "positive_examples": 4,
+    "negative_cases": 4,
+    "bundles_with_positive_examples": [
+      "python.generators",
+      "python.gil"
+    ]
+  },
+  "splits": {
+    "calibration_bundles": [
+      "dbms.acid-properties",
+      "dbms.isolation-levels",
+      "dbms.normalisation-1nf-3nf",
+      "python.generators",
+      "python.is-vs-equals",
+      "python.memory-management",
+      "system-design.scalability-and-load-balanci-easy@db_v1"
+    ],
+    "heldout_bundles": [
+      "dbms.deadlocks",
+      "dbms.join-types",
+      "dbms.oltp-vs-olap",
+      "python.gil",
+      "python.lists-vs-tuples",
+      "python.shallow-vs-deep-copy"
+    ]
+  },
+  "benchmark_a": {
+    "n_samples": 8,
+    "sample_counts": {
+      "total": 8,
+      "positives": 4,
+      "negatives": 4,
+      "by_kind": {
+        "NEG_EX": 4,
+        "POS_EX": 4
+      }
+    },
+    "v2": {
+      "overall": {
+        "TP": 0,
+        "FP": 0,
+        "FN": 4,
+        "TN": 4,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "waterfall_attribution": {
+        "proposition": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 4,
+          "total_negatives": 4
+        },
+        "alias": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 4,
+          "total_negatives": 4
+        },
+        "semantic": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 4,
+          "total_negatives": 4
+        }
+      },
+      "details": [
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "generator",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "generator",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "yield",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "yield",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "lazy_evaluation",
+          "supported": false,
+          "state": "not_demonstrated",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "lazy_evaluation",
+          "supported": false,
+          "state": "not_demonstrated",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.gil",
+          "concept_id": "GIL",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.gil",
+          "concept_id": "GIL",
+          "supported": false,
+          "state": "uncertain",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        }
+      ]
+    },
+    "v3": {
+      "overall": {
+        "TP": 3,
+        "FP": 3,
+        "FN": 1,
+        "TN": 1,
+        "precision": 0.5,
+        "recall": 0.75,
+        "f1": 0.6
+      },
+      "waterfall_attribution": {
+        "proposition": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 4,
+          "total_negatives": 4
+        },
+        "alias": {
+          "TP": 3,
+          "FP": 3,
+          "precision": 0.5,
+          "recall_contribution": 0.75,
+          "total_positives": 4,
+          "total_negatives": 4
+        },
+        "semantic": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 4,
+          "total_negatives": 4
+        }
+      },
+      "details": [
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "generator",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "generator",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "yield",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "yield",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.generators",
+          "concept_id": "lazy_evaluation",
+          "supported": false,
+          "state": "not_demonstrated",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.generators",
+          "concept_id": "lazy_evaluation",
+          "supported": false,
+          "state": "not_demonstrated",
+          "match_type": null,
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "POS_EX",
+          "polarity": 1,
+          "bundle_id": "python.gil",
+          "concept_id": "GIL",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        },
+        {
+          "kind": "NEG_EX",
+          "polarity": 0,
+          "bundle_id": "python.gil",
+          "concept_id": "GIL",
+          "supported": true,
+          "state": "supported",
+          "match_type": "alias",
+          "semantic_score": null,
+          "matched_text": null
+        }
+      ]
+    },
+    "v3_isolated_tiers": {
+      "proposition": {
+        "TP": 0,
+        "FP": 0,
+        "FN": 4,
+        "TN": 4,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "alias": {
+        "TP": 3,
+        "FP": 3,
+        "FN": 1,
+        "TN": 1,
+        "precision": 0.5,
+        "recall": 0.75,
+        "f1": 0.6
+      },
+      "semantic": {
+        "TP": 1,
+        "FP": 1,
+        "FN": 3,
+        "TN": 3,
+        "precision": 0.5,
+        "recall": 0.25,
+        "f1": 0.3333
+      }
+    }
+  },
+  "benchmark_b": {
+    "calibration_n_samples": 94,
+    "heldout_n_samples": 70,
+    "calibration_sample_counts": {
+      "total": 94,
+      "positives": 47,
+      "negatives": 47,
+      "by_kind": {
+        "CAL_L0": 22,
+        "CAL_L3": 22,
+        "NEG_EX": 3,
+        "POS_EX": 3,
+        "REF": 22,
+        "XDOM_REF": 22
+      }
+    },
+    "heldout_sample_counts": {
+      "total": 70,
+      "positives": 33,
+      "negatives": 37,
+      "by_kind": {
+        "CAL_L0": 20,
+        "CAL_L3": 16,
+        "NEG_EX": 1,
+        "POS_EX": 1,
+        "REF": 16,
+        "XDOM_REF": 16
+      }
+    },
+    "calibration_v2": {
+      "overall": {
+        "TP": 8,
+        "FP": 1,
+        "FN": 39,
+        "TN": 46,
+        "precision": 0.8889,
+        "recall": 0.1702,
+        "f1": 0.2857
+      },
+      "waterfall_attribution": {
+        "proposition": {
+          "TP": 8,
+          "FP": 1,
+          "precision": 0.8889,
+          "recall_contribution": 0.1702,
+          "total_positives": 47,
+          "total_negatives": 47
+        },
+        "alias": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 47,
+          "total_negatives": 47
+        },
+        "semantic": {
+          "TP": 0,
+          "FP": 0,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 47,
+          "total_negatives": 47
+        }
+      }
+    },
+    "calibration_v3": {
+      "overall": {
+        "TP": 44,
+        "FP": 8,
+        "FN": 3,
+        "TN": 39,
+        "precision": 0.8462,
+        "recall": 0.9362,
+        "f1": 0.8889
+      },
+      "waterfall_attribution": {
+        "proposition": {
+          "TP": 9,
+          "FP": 1,
+          "precision": 0.9,
+          "recall_contribution": 0.1915,
+          "total_positives": 47,
+          "total_negatives": 47
+        },
+        "alias": {
+          "TP": 35,
+          "FP": 6,
+          "precision": 0.8537,
+          "recall_contribution": 0.7447,
+          "total_positives": 47,
+          "total_negatives": 47
+        },
+        "semantic": {
+          "TP": 0,
+          "FP": 1,
+          "precision": 0.0,
+          "recall_contribution": 0.0,
+          "total_positives": 47,
+          "total_negatives": 47
+        }
+      }
+    },
+    "calibration_v3_isolated_tiers": {
+      "proposition": {
+        "TP": 9,
+        "FP": 1,
+        "FN": 38,
+        "TN": 46,
+        "precision": 0.9,
+        "recall": 0.1915,
+        "f1": 0.3158
+      },
+      "alias": {
+        "TP": 38,
+        "FP": 6,
+        "FN": 9,
+        "TN": 41,
+        "precision": 0.8636,
+        "recall": 0.8085,
+        "f1": 0.8352
+      },
+      "semantic": {
+        "TP": 16,
+        "FP": 2,
+        "FN": 31,
+        "TN": 45,
+        "precision": 0.8889,
+        "recall": 0.3404,
+        "f1": 0.4923
+      }
+    },
+    "calibration_sweep": {
+      "full_v3": [
+        {
+          "threshold": 0.45,
+          "TP": 45,
+          "FP": 11,
+          "FN": 2,
+          "TN": 36,
+          "precision": 0.8036,
+          "recall": 0.9574,
+          "f1": 0.8738
+        },
+        {
+          "threshold": 0.5,
+          "TP": 45,
+          "FP": 11,
+          "FN": 2,
+          "TN": 36,
+          "precision": 0.8036,
+          "recall": 0.9574,
+          "f1": 0.8738
+        },
+        {
+          "threshold": 0.52,
+          "TP": 45,
+          "FP": 10,
+          "FN": 2,
+          "TN": 37,
+          "precision": 0.8182,
+          "recall": 0.9574,
+          "f1": 0.8824
+        },
+        {
+          "threshold": 0.55,
+          "TP": 45,
+          "FP": 9,
+          "FN": 2,
+          "TN": 38,
+          "precision": 0.8333,
+          "recall": 0.9574,
+          "f1": 0.8911
+        },
+        {
+          "threshold": 0.58,
+          "TP": 45,
+          "FP": 9,
+          "FN": 2,
+          "TN": 38,
+          "precision": 0.8333,
+          "recall": 0.9574,
+          "f1": 0.8911
+        },
+        {
+          "threshold": 0.6,
+          "TP": 44,
+          "FP": 9,
+          "FN": 3,
+          "TN": 38,
+          "precision": 0.8302,
+          "recall": 0.9362,
+          "f1": 0.88
+        },
+        {
+          "threshold": 0.62,
+          "TP": 44,
+          "FP": 8,
+          "FN": 3,
+          "TN": 39,
+          "precision": 0.8462,
+          "recall": 0.9362,
+          "f1": 0.8889
+        },
+        {
+          "threshold": 0.65,
+          "TP": 44,
+          "FP": 8,
+          "FN": 3,
+          "TN": 39,
+          "precision": 0.8462,
+          "recall": 0.9362,
+          "f1": 0.8889
+        },
+        {
+          "threshold": 0.68,
+          "TP": 44,
+          "FP": 7,
+          "FN": 3,
+          "TN": 40,
+          "precision": 0.8627,
+          "recall": 0.9362,
+          "f1": 0.898
+        },
+        {
+          "threshold": 0.7,
+          "TP": 44,
+          "FP": 7,
+          "FN": 3,
+          "TN": 40,
+          "precision": 0.8627,
+          "recall": 0.9362,
+          "f1": 0.898
+        }
+      ],
+      "semantic_only": [
+        {
+          "threshold": 0.45,
+          "TP": 32,
+          "FP": 9,
+          "FN": 15,
+          "TN": 38,
+          "precision": 0.7805,
+          "recall": 0.6809,
+          "f1": 0.7273
+        },
+        {
+          "threshold": 0.5,
+          "TP": 27,
+          "FP": 8,
+          "FN": 20,
+          "TN": 39,
+          "precision": 0.7714,
+          "recall": 0.5745,
+          "f1": 0.6585
+        },
+        {
+          "threshold": 0.52,
+          "TP": 26,
+          "FP": 7,
+          "FN": 21,
+          "TN": 40,
+          "precision": 0.7879,
+          "recall": 0.5532,
+          "f1": 0.65
+        },
+        {
+          "threshold": 0.55,
+          "TP": 25,
+          "FP": 5,
+          "FN": 22,
+          "TN": 42,
+          "precision": 0.8333,
+          "recall": 0.5319,
+          "f1": 0.6494
+        },
+        {
+          "threshold": 0.58,
+          "TP": 22,
+          "FP": 5,
+          "FN": 25,
+          "TN": 42,
+          "precision": 0.8148,
+          "recall": 0.4681,
+          "f1": 0.5946
+        },
+        {
+          "threshold": 0.6,
+          "TP": 16,
+          "FP": 3,
+          "FN": 31,
+          "TN": 44,
+          "precision": 0.8421,
+          "recall": 0.3404,
+          "f1": 0.4848
+        },
+        {
+          "threshold": 0.62,
+          "TP": 16,
+          "FP": 2,
+          "FN": 31,
+          "TN": 45,
+          "precision": 0.8889,
+          "recall": 0.3404,
+          "f1": 0.4923
+        },
+        {
+          "threshold": 0.65,
+          "TP": 12,
+          "FP": 2,
+          "FN": 35,
+          "TN": 45,
+          "precision": 0.8571,
+          "recall": 0.2553,
+          "f1": 0.3934
+        },
+        {
+          "threshold": 0.68,
+          "TP": 12,
+          "FP": 1,
+          "FN": 35,
+          "TN": 46,
+          "precision": 0.9231,
+          "recall": 0.2553,
+          "f1": 0.4
+        },
+        {
+          "threshold": 0.7,
+          "TP": 7,
+          "FP": 1,
+          "FN": 40,
+          "TN": 46,
+          "precision": 0.875,
+          "recall": 0.1489,
+          "f1": 0.2545
+        }
+      ]
+    },
+    "heldout": {
+      "v2": {
+        "overall": {
+          "TP": 7,
+          "FP": 0,
+          "FN": 26,
+          "TN": 37,
+          "precision": 1.0,
+          "recall": 0.2121,
+          "f1": 0.35
+        },
+        "waterfall_attribution": {
+          "proposition": {
+            "TP": 7,
+            "FP": 0,
+            "precision": 1.0,
+            "recall_contribution": 0.2121,
+            "total_positives": 33,
+            "total_negatives": 37
+          },
+          "alias": {
+            "TP": 0,
+            "FP": 0,
+            "precision": 0.0,
+            "recall_contribution": 0.0,
+            "total_positives": 33,
+            "total_negatives": 37
+          },
+          "semantic": {
+            "TP": 0,
+            "FP": 0,
+            "precision": 0.0,
+            "recall_contribution": 0.0,
+            "total_positives": 33,
+            "total_negatives": 37
+          }
+        }
+      },
+      "v3": {
+        "overall": {
+          "TP": 33,
+          "FP": 8,
+          "FN": 0,
+          "TN": 29,
+          "precision": 0.8049,
+          "recall": 1.0,
+          "f1": 0.8919
+        },
+        "waterfall_attribution": {
+          "proposition": {
+            "TP": 7,
+            "FP": 0,
+            "precision": 1.0,
+            "recall_contribution": 0.2121,
+            "total_positives": 33,
+            "total_negatives": 37
+          },
+          "alias": {
+            "TP": 26,
+            "FP": 8,
+            "precision": 0.7647,
+            "recall_contribution": 0.7879,
+            "total_positives": 33,
+            "total_negatives": 37
+          },
+          "semantic": {
+            "TP": 0,
+            "FP": 0,
+            "precision": 0.0,
+            "recall_contribution": 0.0,
+            "total_positives": 33,
+            "total_negatives": 37
+          }
+        }
+      },
+      "v3_isolated_tiers": {
+        "proposition": {
+          "TP": 7,
+          "FP": 0,
+          "FN": 26,
+          "TN": 37,
+          "precision": 1.0,
+          "recall": 0.2121,
+          "f1": 0.35
+        },
+        "alias": {
+          "TP": 33,
+          "FP": 8,
+          "FN": 0,
+          "TN": 29,
+          "precision": 0.8049,
+          "recall": 1.0,
+          "f1": 0.8919
+        },
+        "semantic": {
+          "TP": 23,
+          "FP": 1,
+          "FN": 10,
+          "TN": 36,
+          "precision": 0.9583,
+          "recall": 0.697,
+          "f1": 0.807
+        }
+      }
+    }
+  }
+}

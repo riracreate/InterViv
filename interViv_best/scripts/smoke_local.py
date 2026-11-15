@@ -16,6 +16,18 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / "local-data" / "smoke-check.json"
 
 
+def _new_smoke_password() -> str:
+    """Short, human-typable password for the local smoke account.
+
+    This password is copied by hand from smoke-check.json into the login
+    form, so it avoids look-alike characters and mixed case. A long random
+    token (the previous generator) made any transcription slip surface
+    only as "Invalid email or password." Loopback-only test account; the
+    random suffix keeps each generated account distinct.
+    """
+    return f"practice-{secrets.randbelow(9000) + 1000}"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--after-restart", action="store_true")
@@ -38,7 +50,7 @@ def main():
         if args.after_restart:
             state = json.loads(state_file.read_text())
         else:
-            state = {"email": f"local-check-{uuid4().hex[:10]}@example.test", "password": secrets.token_urlsafe(32) + "1a"}
+            state = {"email": f"local-check-{uuid4().hex[:10]}@example.test", "password": _new_smoke_password()}
             request("POST", "/auth/signup", json={**state, "name": "Local Test"})
         login = request("POST", "/auth/login", json={k: state[k] for k in ("email", "password")})
         client.headers["Authorization"] = "Bearer " + login["access_token"]

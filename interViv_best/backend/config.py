@@ -94,7 +94,8 @@ def _resolve_paths(raw_value: str | None, defaults: list[Path]) -> list[Path]:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[1]
     modules_dir = project_root / "modules"
-    load_dotenv(project_root / ".env", override=False)
+    if os.getenv("INTERVIV_DISABLE_DOTENV") != "1":
+        load_dotenv(project_root / ".env", override=False)
 
     default_module_paths = [
         modules_dir,

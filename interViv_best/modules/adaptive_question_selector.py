@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 
+from modules import question_bank, question_runtime as _qr
 from modules.concept_mastery import ConceptMastery, MasteryLevel
 from modules.question_runtime import (
     MarketQuestionContext,
@@ -49,7 +51,9 @@ from modules.question_runtime import (
     _resolve_market_context,
     build_question_prompt,
     call_llm_with_cache_retry,
+    fallback_question,
     generate_question,
+    last_runtime_error,
     parse_llm_json,
 )
 from modules.skill_graph import StudentSkillGraph
@@ -277,6 +281,9 @@ def build_targeted_prompt(
     return base_prompt + SPEC_PROMPT_EXTENSION_TEMPLATE.format(concept_list=concept_list)
 
 
+_ORIG_CALL_LLM_WITH_CACHE_RETRY = call_llm_with_cache_retry
+
+
 def _call_llm(prompt: str) -> Optional[str]:
     """POST the prompt to the configured LLM and return raw content.
 
@@ -286,7 +293,12 @@ def _call_llm(prompt: str) -> Optional[str]:
     """
     if _CURRENT_CACHE_CONTEXT is None:
         return None
-    return call_llm_with_cache_retry(
+    fn = (
+        call_llm_with_cache_retry
+        if call_llm_with_cache_retry is not _ORIG_CALL_LLM_WITH_CACHE_RETRY
+        else _qr.call_llm_with_cache_retry
+    )
+    return fn(
         prompt,
         _CURRENT_CACHE_CONTEXT,
         asked=_CURRENT_ASKED,
@@ -352,6 +364,9 @@ def _generate_targeted_question(
         payload["sub_domain"] = sub_domain or "general"
         payload["difficulty"] = difficulty
         payload["source"] = "llm-adaptive"
+        provider, _, model = question_bank._llm_provider()
+        payload.setdefault("llm_provider", provider)
+        payload.setdefault("llm_model", model)
         return payload
     finally:
         _CURRENT_CACHE_CONTEXT = None
@@ -388,6 +403,12 @@ def select_next_question(
     if target_concepts is None and user_id:
         target_concepts = pick_target_concepts(user_id, skill, concept_limit)
     target_concepts = list(target_concepts or [])
+    market = MarketQuestionContext(
+        company_id=target_company_id,
+        role_id=target_role_id,
+        resume_skills=tuple(resume_skills or ()),
+        weak_skills=tuple(weak_skills or target_concepts or ()),
+    )
 
     if target_concepts:
         targeted = _generate_targeted_question(
@@ -406,18 +427,28 @@ def select_next_question(
             targeted["adaptive_selected"] = True
             return targeted
 
-    payload = generate_question(
+        resolved_market = _resolve_market_context(market)
+        payload = fallback_question(
+            skill,
+            sub_domain,
+            difficulty,
+            asked,
+            company=resolved_market.company,
+            role=resolved_market.role,
+        )
+        payload["llm_fallback_reason"] = last_runtime_error()
+        payload["fallback_generated_at"] = datetime.now(timezone.utc).isoformat()
+        payload["target_concepts"] = target_concepts
+        payload["adaptive_selected"] = False
+        return payload
+
+    payload = _qr.generate_question(
         skill,
         sub_domain,
         difficulty,
         asked,
         target_concepts=target_concepts,
-        market_context=MarketQuestionContext(
-            company_id=target_company_id,
-            role_id=target_role_id,
-            resume_skills=tuple(resume_skills or ()),
-            weak_skills=tuple(weak_skills or target_concepts or ()),
-        ),
+        market_context=market,
     )
     if isinstance(payload, dict):
         payload.setdefault("target_concepts", target_concepts)

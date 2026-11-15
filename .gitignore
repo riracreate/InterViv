@@ -49,6 +49,7 @@ frontend/dist/
 .chart-data-*/
 .ppt-*-review/
 .worktrees/
+artifacts/
 output/
 tmp/
 

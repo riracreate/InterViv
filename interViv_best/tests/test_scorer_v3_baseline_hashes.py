@@ -21,7 +21,8 @@ STEP1_FIXTURE_PATH = ROOT / "tests" / "fixtures" / "step1_golden_prechange.json"
 # enforced by test_step1_golden_regression across every legacy output field.
 STEP1_CHANGED_SOURCES = {
     "backend/scoring/pipeline.py", "modules/nlp_scorer.py",
-    "modules/scoring_schema.py", "modules/semantic_scorer.py",
+    "modules/question_bank.py", "modules/scoring_schema.py",
+    "modules/semantic_scorer.py",
 }
 
 
