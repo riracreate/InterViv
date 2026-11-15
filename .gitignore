@@ -14,6 +14,9 @@ service-account*.json
 secrets*.json
 *.mobileprovision
 
+# Human-rating source sheet (contains rater responses; keep out of git)
+interViv_best/data/interViv*Answer Rating*.xlsx
+
 # Private uploads and local state
 uploads/
 private/
