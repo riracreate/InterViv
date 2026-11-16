@@ -134,7 +134,16 @@ def protected_local_db_error() -> str | None:
     url = get_settings().database_url
     resolved = _resolve_sqlite_db_path(url)
     protected = _protected_local_db_path()
-    if resolved is not None and resolved == protected:
+    matched = False
+    if resolved is not None:
+        if resolved == protected:
+            matched = True
+        elif resolved.exists() and protected.exists():
+            try:
+                matched = os.path.samefile(resolved, protected)
+            except OSError:
+                matched = False
+    if matched:
         return (
             f"Refusing to run: DATABASE_URL resolves to the protected local "
             f"database ({protected}). Point DATABASE_URL to a separate SQLite "

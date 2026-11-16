@@ -246,3 +246,54 @@ def test_refuses_protected_db_in_every_mode_absolute_relative_and_symlink(
     assert calls == {}
     assert protected_db.read_bytes() == b"original-protected-bytes"
 
+
+def test_protected_local_db_path_matches_run_local_target() -> None:
+    from scripts import run_local
+
+    # Path comparison only: never open or modify local-data/interviv-local.sqlite3.
+    env = run_local._runtime_environment(
+        run_local.ROOT / "local-data",
+        executor_on=False,
+        live_jobs=False,
+    )
+    resolved_launcher_db = pregenerate_bundles._resolve_sqlite_db_path(env["DATABASE_URL"])
+    assert resolved_launcher_db is not None
+    assert pregenerate_bundles._protected_local_db_path() == resolved_launcher_db
+
+
+def test_refuses_protected_db_via_samefile_when_both_exist(
+    guard_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    protected_db = guard_env / "protected_local.sqlite3"
+    protected_db.write_bytes(b"protected")
+    alias_db = guard_env / "hardlink_or_case_alias.sqlite3"
+    os.link(protected_db, alias_db)
+
+    monkeypatch.setattr(pregenerate_bundles, "_PROTECTED_LOCAL_DB_PATH", protected_db)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{alias_db}")
+    _clear_all_caches()
+
+    assert pregenerate_bundles._resolve_sqlite_db_path(f"sqlite:///{alias_db}") != protected_db.resolve()
+    err = pregenerate_bundles.protected_local_db_error()
+    assert err is not None and "Refusing to run" in err
+
+    # Also simulate case-insensitive samefile match where string paths differ in case.
+    case_variant = guard_env / "PROTECTED_LOCAL.SQLITE3"
+    case_variant.write_bytes(b"copy-for-path-only")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{case_variant}")
+    _clear_all_caches()
+    real_samefile = os.path.samefile
+    monkeypatch.setattr(
+        os.path,
+        "samefile",
+        lambda a, b: True
+        if {str(a).lower(), str(b).lower()} == {str(case_variant.resolve()).lower(), str(protected_db.resolve()).lower()}
+        else real_samefile(a, b),
+    )
+    report = pregenerate_bundles.run_pregeneration(
+        roles=["Backend Engineer"], max_bundles=1, dry_run=True, export_yaml=False
+    )
+    assert report["aborted"] is True
+    assert report["abort_reason"] == "protected_local_database"
+
+
