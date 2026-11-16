@@ -164,7 +164,21 @@ def get_round_feedback(
                 detail="Round has not been submitted yet; feedback is unavailable.",
             )
 
+        from modules.staged_flow import (
+            deferred_feedback_response,
+            is_staged_v1_session,
+        )
+
         assessment_done = session_assessment_completed(session)
+        if is_staged_v1_session(session) and not assessment_done:
+            # A7: staged_v1 defers all scores, feedback, and narration until
+            # completion so pre-completion checks cannot record feedback_reveal.
+            return deferred_feedback_response(
+                session_id=session_id,
+                round_number=int(round_number),
+                session_status=session.get("status"),
+            )
+
         job = db["narration_jobs"].find_one({
             "id": narration_job_id(session_id, int(round_number)),
         })

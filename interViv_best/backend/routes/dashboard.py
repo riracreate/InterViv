@@ -60,7 +60,10 @@ def _sanitize_rounds(
     rounds: list[dict[str, Any]],
     *,
     assessment_completed: bool = False,
+    defer_feedback: bool = False,
 ) -> list[dict[str, Any]]:
+    from modules.staged_flow import round_stage
+
     sanitized = []
     for round_document in rounds:
         round_type = round_document.get("round_type")
@@ -72,9 +75,13 @@ def _sanitize_rounds(
                 round_document,
                 is_session_completed=assessment_completed,
                 review_policy=policy,
+                defer_feedback=defer_feedback,
             )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
+        stage_val = round_stage(cleaned)
+        if stage_val:
+            cleaned["stage"] = stage_val
         is_inline_fu = is_inline_bundle_follow_up_round(cleaned)
         if is_inline_fu:
             cfg = cleaned.get("config_json") or {}
@@ -105,7 +112,10 @@ def _sanitize_rounds(
             mode = scoring_mode_for_round(cleaned)
             cleaned["scoring_mode"] = mode
             cleaned["scoring_mode_label"] = scoring_mode_label_for_display(mode)
-            if isinstance(outcome, dict):
+            if defer_feedback:
+                cleaned["feedback"] = {"content": [], "strengths": [], "weakness": [], "next_step": ""}
+                cleaned["feedback_deferred"] = True
+            elif isinstance(outcome, dict):
                 cleaned["follow_up_outcome"] = dict(outcome)
             sanitized.append(cleaned)
             continue
@@ -156,6 +166,24 @@ def _sanitize_rounds(
             breakdown.get("layer3_score"),
         ]
         cleaned["confidence_band"] = compute_confidence_band(layer_scores)
+        if defer_feedback:
+            cleaned.pop("scoring_breakdown", None)
+            cleaned["final_score"] = None
+            cleaned["nlp_score"] = None
+            cleaned["kg_score"] = None
+            cleaned["svm_label"] = None
+            cleaned["ner_entities"] = []
+            cleaned["covered_concepts"] = []
+            cleaned["missing_concepts"] = []
+            cleaned["feedback"] = {"content": [], "strengths": [], "weakness": [], "next_step": ""}
+            cleaned["score_explanation"] = {}
+            cleaned["rubric"] = {}
+            cleaned["guard_applied"] = None
+            cleaned["elo_after"] = None
+            cleaned["difficulty_change"] = None
+            cleaned["performance_band"] = None
+            cleaned["confidence_band"] = None
+            cleaned["feedback_deferred"] = True
         sanitized.append(cleaned)
     return sanitized
 
@@ -166,12 +194,19 @@ def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Coding rounds without scores are execution-unavailable, never
     candidate zeros; other unscored rounds are simply not submitted.
     """
+    from modules.staged_flow import UNSCORED_STAGES, round_stage
+
     unscored = []
     for item in rounds:
         if item.get("final_score") is not None:
             continue
         kind = item.get("round_type", "technical_short_answer")
-        if kind in ("coding", "ml_primitives"):
+        stage_val = round_stage(item)
+        if is_inline_bundle_follow_up_round(item) or stage_val == "follow_up":
+            reason = "follow_up_unscored"
+        elif stage_val in UNSCORED_STAGES and item.get("status") not in (None, "in_progress", "ready"):
+            reason = f"{stage_val}_unscored"
+        elif kind in ("coding", "ml_primitives"):
             reason = "execution_unavailable"
         elif item.get("status") not in (None, "in_progress", "ready"):
             reason = str(item.get("status"))
@@ -392,10 +427,16 @@ def get_account_progress(authorization: str | None = Header(default=None)) -> di
     owned.sort(key=lambda row: (_utc_date(row.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc), str(row.get("session_id", ""))), reverse=True)
     history = []
     resumable = None
+    from modules.staged_flow import is_staged_v1_session
+
     for session in owned:
         rounds = session.get("rounds") or []
         scored = [r for r in rounds if r.get("final_score") is not None]
-        eligible = assessment_eligible_scores(rounds)
+        staged_deferred = (
+            is_staged_v1_session(session)
+            and session.get("status") != "completed"
+        )
+        eligible = [] if staged_deferred else assessment_eligible_scores(rounds)
         summary = {
             "session_id": session["session_id"],
             "created_at": _utc_date(session.get("created_at")),
@@ -557,15 +598,20 @@ def get_dashboard(
 
     assert_session_access(session, authorization)
 
+    from modules.staged_flow import is_staged_v1_session, staged_flow_meta
+
+    staged_session = is_staged_v1_session(session)
     assessment_completed = session_assessment_completed(session)
+    defer_feedback = staged_session and not assessment_completed
     raw_rounds = list(session.get("rounds", []) or [])
     rounds = _sanitize_rounds(
         raw_rounds,
         assessment_completed=assessment_completed,
+        defer_feedback=defer_feedback,
     )
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
     # Primary report averages use assessment-eligible population only.
-    eligible_rounds = assessment_eligible_rounds(raw_rounds)
+    eligible_rounds = [] if defer_feedback else assessment_eligible_rounds(raw_rounds)
     # Re-apply performance bands from sanitized rounds for eligible ids.
     eligible_by_round = {
         int(r.get("round") or 0): r for r in rounds if r.get("final_score") is not None
@@ -638,35 +684,62 @@ def get_dashboard(
     session["rounds"] = rounds
     session["averages"] = averages
     session["self_reported_average"] = (
-        round(
-            sum(float(item.get("final_score") or 0) for item in self_reported_rounds)
-            / len(self_reported_rounds),
-            2,
+        None
+        if defer_feedback
+        else (
+            round(
+                sum(float(item.get("final_score") or 0) for item in self_reported_rounds)
+                / len(self_reported_rounds),
+                2,
+            )
+            if self_reported_rounds
+            else None
         )
-        if self_reported_rounds
-        else None
     )
     session["breakdown"] = breakdown
-    session["elo_progression"] = [
-        item.get("elo_after") for item in completed_rounds if item.get("elo_after") is not None
-    ]
-    session["difficulty_progression"] = [item.get("difficulty") for item in completed_rounds]
-    session["topic_scores"] = _compute_topic_scores({"rounds": raw_rounds, "skill": session.get("skill")})
-    session["next_step"] = next_step
+    session["elo_progression"] = (
+        []
+        if defer_feedback
+        else [item.get("elo_after") for item in completed_rounds if item.get("elo_after") is not None]
+    )
+    session["difficulty_progression"] = (
+        []
+        if defer_feedback
+        else [item.get("difficulty") for item in completed_rounds]
+    )
+    session["topic_scores"] = (
+        {}
+        if defer_feedback
+        else _compute_topic_scores({"rounds": raw_rounds, "skill": session.get("skill")})
+    )
+    session["next_step"] = "" if defer_feedback else next_step
+    if staged_session:
+        meta = staged_flow_meta(session)
+        session["flow_version"] = meta.get("version") or "staged_v1"
+        session["preset"] = meta.get("preset")
+        session["staged_flow"] = meta
+        session["deferred"] = defer_feedback
     unscored = _unscored_rounds(rounds)
     session["coverage"] = {
         "scored_rounds": len(completed_rounds),
         "unscored_rounds": unscored,
         "note": (
-            "Averages cover scored rounds only. "
-            + (
-                f"{len(unscored)} unscored round(s) excluded "
-                f"({', '.join(sorted({u['reason'] for u in unscored}))})."
-                if unscored
-                else "All rounds scored."
+            "Scores and feedback are deferred until the session is completed."
+            if defer_feedback
+            else (
+                "Averages cover scored rounds only. "
+                + (
+                    f"{len(unscored)} unscored round(s) excluded "
+                    f"({', '.join(sorted({u['reason'] for u in unscored}))})."
+                    if unscored
+                    else "All rounds scored."
+                )
             )
         ),
     }
-    session["block_results"] = _block_results(
-        rounds, session.get("block_plan"))
+    session["block_results"] = (
+        []
+        if defer_feedback
+        else _block_results(rounds, session.get("block_plan"))
+    )
     return session

@@ -762,13 +762,43 @@ def submit_answer(
                 float(item["final_score"]) for item in rounds_so_far
             ) / len(rounds_so_far)
 
+        from modules.staged_flow import (
+            UNSCORED_STAGES,
+            apply_deferred_answer_mask,
+            is_staged_v1_session,
+            round_stage,
+            select_non_core_stage_question,
+        )
+
+        active_stage = round_stage(active_round)
         scoring_question_context: dict[str, Any] = dict(active_round.get("question_context", {}) or {})
         try:
             follow_up_scoring_pre = (
                 (active_round.get("config_json") or {}).get("follow_up_scoring")
                 or active_round.get("follow_up_scoring")
             )
-            if is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
+            if active_stage in UNSCORED_STAGES:
+                # Warm-up and Behavioural turns are unscored by design (Q1/Q4).
+                scoring_result = {
+                    "final_score": None,
+                    "nlp_score": None,
+                    "svm_label": None,
+                    "kg_score": None,
+                    "ner_entities": [],
+                    "feedback": {
+                        "content": [],
+                        "strengths": [],
+                        "weakness": [],
+                        "next_step": "",
+                    },
+                    "scoring_breakdown": {
+                        "stage": active_stage,
+                        "unscored_reason": f"{active_stage}_unscored",
+                    },
+                    "score_explanation": {},
+                    "guard_applied": None,
+                }
+            elif is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
                 # Unreviewed follow-ups are explicitly unscored practice even
                 # when REVIEWED_BUNDLES_ONLY is false. No numeric score.
                 scoring_result = {
@@ -1069,7 +1099,12 @@ def submit_answer(
                 )
 
         assessment_eligible = eligibility["decision"] == ELIGIBLE
-        if practice_only or is_spaced_review or not assessment_eligible:
+        if (
+            practice_only
+            or is_spaced_review
+            or not assessment_eligible
+            or scoring_result.get("final_score") is None
+        ):
             elo_after = elo_before
             next_difficulty = active_round.get("difficulty", "medium")
             difficulty_change = "same"
@@ -1115,6 +1150,8 @@ def submit_answer(
 
         # Persist this round (assisted already resolved above)
         _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
+        if active_stage:
+            _bd["stage"] = active_stage
         raw_guard_applied = scoring_result.get("guard_applied")
         if is_inline_follow_up:
             _bd["inline_follow_up"] = True
@@ -1448,6 +1485,8 @@ def submit_answer(
                                     "problem_ids": expanded_spec.get("problem_ids") or None,
                                     "problem_id": (expanded_spec.get("problem_ids") or [None])[0],
                                 }
+                                if expanded_spec.get("stage"):
+                                    spec_config["stage"] = expanded_spec["stage"]
                                 legacy_cfg = dict(session.get("round_config") or {})
                                 for key in ("max_rows", "timeout_seconds"):
                                     if key in legacy_cfg:
@@ -1549,81 +1588,96 @@ def submit_answer(
                                 or expanded_spec.get("block_category")
                             )
                         else:
-                            # Block sessions constrain adaptation to the block's own
-                            # skills; legacy sessions adapt across all session skills.
-                            adaptive_skills = (
-                                session_skills if expanded_spec
-                                else (session.get("skills") or [session.get("skill")])
-                            )
-                            target = adaptive_question_selector.choose_adaptive_target(
-                                user_id=str(session_user_id) if session_user_id else None,
-                                fallback_skill=rotation_skill,
-                                fallback_difficulty=rotation_difficulty,
-                                session_skills=adaptive_skills,
-                                target_role_id=str(session_target_role) if session_target_role else None,
-                                candidate_elo_by_skill=candidate_elos,
-                            )
-                            next_skill = target.skill
-                            if expanded_spec:
-                                # Stay inside the requested block topics.
-                                spec_skill_set = set(session_skills)
-                                if next_skill not in spec_skill_set:
-                                    next_skill = rotation_skill
-                            next_skill_elo = float(
-                                target.current_elo
-                                if target.current_elo is not None
-                                else candidate_elos.get(next_skill, elo_after)
-                            )
-                            next_round_difficulty = (
-                                str(expanded_spec.get("difficulty"))
-                                if expanded_spec and expanded_spec.get("difficulty")
-                                else target.difficulty
-                            )
-                            response_next_difficulty = next_round_difficulty
-                            # The block's explicit topic (if any) stays pinned
-                            # for every round of the block, like the opening
-                            # round at start.
-                            sub = ((expanded_spec or {}).get("topic")
-                                   or _sub_domain_for_skill(candidate_doc, next_skill))
                             asked = [item.get("question", "") for item in rounds]
-                            weak_context = list(target.target_concepts or [])
-                            if target.source != "rotation" and target.skill:
-                                weak_context.insert(0, target.skill)
-
-                            try:
-                                question_payload = _get_next_question(
-                                    skill=next_skill,
-                                    sub_domain=sub,
-                                    difficulty=next_round_difficulty,
-                                    asked=asked,
-                                    user_id=str(session_user_id) if session_user_id else None,
-                                    target_company_id=str(session_target_company) if session_target_company else None,
-                                    target_role_id=str(session_target_role) if session_target_role else None,
-                                    target_concepts=target.target_concepts,
-                                    resume_skills=resume_skills,
-                                    weak_skills=weak_context,
+                            next_spec_stage = (expanded_spec or {}).get("stage")
+                            non_core = select_non_core_stage_question(
+                                stage=next_spec_stage,
+                                skill=rotation_skill,
+                                asked=asked,
+                            )
+                            if non_core is not None:
+                                question_payload, next_skill, next_round_difficulty = non_core
+                                next_skill_elo = float(
+                                    candidate_elos.get(next_skill, settings.initial_elo)
                                 )
-                            except IntegrationError as exc:
-                                progression_blocked_reason = str(exc)
-                                question_payload = None
-                            if question_payload is not None:
+                                response_next_difficulty = next_round_difficulty
+                                next_target = None
+                                next_round_type = "technical_short_answer"
+                            else:
+                                # Block sessions constrain adaptation to the block's own
+                                # skills; legacy sessions adapt across all session skills.
+                                adaptive_skills = (
+                                    session_skills if expanded_spec
+                                    else (session.get("skills") or [session.get("skill")])
+                                )
+                                target = adaptive_question_selector.choose_adaptive_target(
+                                    user_id=str(session_user_id) if session_user_id else None,
+                                    fallback_skill=rotation_skill,
+                                    fallback_difficulty=rotation_difficulty,
+                                    session_skills=adaptive_skills,
+                                    target_role_id=str(session_target_role) if session_target_role else None,
+                                    candidate_elo_by_skill=candidate_elos,
+                                )
+                                next_skill = target.skill
+                                if expanded_spec:
+                                    # Stay inside the requested block topics.
+                                    spec_skill_set = set(session_skills)
+                                    if next_skill not in spec_skill_set:
+                                        next_skill = rotation_skill
+                                next_skill_elo = float(
+                                    target.current_elo
+                                    if target.current_elo is not None
+                                    else candidate_elos.get(next_skill, elo_after)
+                                )
+                                next_round_difficulty = (
+                                    str(expanded_spec.get("difficulty"))
+                                    if expanded_spec and expanded_spec.get("difficulty")
+                                    else target.difficulty
+                                )
+                                response_next_difficulty = next_round_difficulty
+                                # The block's explicit topic (if any) stays pinned
+                                # for every round of the block, like the opening
+                                # round at start.
+                                sub = ((expanded_spec or {}).get("topic")
+                                       or _sub_domain_for_skill(candidate_doc, next_skill))
+                                weak_context = list(target.target_concepts or [])
+                                if target.source != "rotation" and target.skill:
+                                    weak_context.insert(0, target.skill)
+
                                 try:
-                                    _verify_served_topic(
-                                        requested=(expanded_spec or {}).get("topic"),
-                                        served=question_payload.get("sub_domain"),
+                                    question_payload = _get_next_question(
                                         skill=next_skill,
+                                        sub_domain=sub,
                                         difficulty=next_round_difficulty,
+                                        asked=asked,
+                                        user_id=str(session_user_id) if session_user_id else None,
+                                        target_company_id=str(session_target_company) if session_target_company else None,
+                                        target_role_id=str(session_target_role) if session_target_role else None,
+                                        target_concepts=target.target_concepts,
+                                        resume_skills=resume_skills,
+                                        weak_skills=weak_context,
                                     )
-                                except ValueError as exc:
+                                except IntegrationError as exc:
                                     progression_blocked_reason = str(exc)
                                     question_payload = None
+                                if question_payload is not None:
+                                    try:
+                                        _verify_served_topic(
+                                            requested=(expanded_spec or {}).get("topic"),
+                                            served=question_payload.get("sub_domain"),
+                                            skill=next_skill,
+                                            difficulty=next_round_difficulty,
+                                        )
+                                    except ValueError as exc:
+                                        progression_blocked_reason = str(exc)
+                                        question_payload = None
+                                if question_payload is not None:
+                                    question_payload["adaptive_target"] = target.to_dict()
+                                    next_target = target.to_dict()
+                                next_round_type = "technical_short_answer"
                             if question_payload is None:
                                 pass
                             else:
-                                question_payload["adaptive_target"] = target.to_dict()
-                                next_target = target.to_dict()
-                                next_round_type = "technical_short_answer"
-
                                 next_config_value: dict[str, Any] = {}
                                 if expanded_spec and expanded_spec.get("duration_minutes"):
                                     minutes = int(expanded_spec["duration_minutes"])
@@ -1631,6 +1685,8 @@ def submit_answer(
                                         "duration_minutes": minutes,
                                         DURATION_SECONDS_KEY: minutes * 60,
                                     }
+                                if next_spec_stage:
+                                    next_config_value["stage"] = next_spec_stage
                                 next_round_doc = {
                                     "round": next_round,
                                     "skill": next_skill,
@@ -1661,6 +1717,8 @@ def submit_answer(
                                     "block_index": (expanded_spec or {}).get("block_index"),
                                     "block_total": (expanded_spec or {}).get("block_total"),
                                 }
+                                if next_spec_stage:
+                                    next_round_doc["stage"] = next_spec_stage
                                 if expanded_spec and expanded_spec.get("is_follow_up"):
                                     next_round_doc["is_follow_up"] = True
                                     next_round_doc["follow_up_parent_round"] = (
@@ -1964,8 +2022,12 @@ def submit_answer(
                 inline_followup_result and inline_followup_result.get("scheduled")
             ),
         }
+        if active_stage:
+            response_payload["stage"] = active_stage
         if is_inline_follow_up:
             response_payload.pop("scoring_breakdown", None)
             if inline_follow_up_outcome is not None:
                 response_payload["follow_up_outcome"] = dict(inline_follow_up_outcome)
+        if is_staged_v1_session(session):
+            response_payload = apply_deferred_answer_mask(response_payload)
         return response_payload

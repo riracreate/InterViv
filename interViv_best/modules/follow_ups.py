@@ -680,6 +680,11 @@ def can_schedule_inline_follow_up(
     parent_type = str(parent_round_doc.get("round_type") or "").strip()
     if parent_type and parent_type != "technical_short_answer":
         return False, "non_technical_round"
+    from modules.staged_flow import round_stage
+
+    parent_stage = round_stage(parent_round_doc)
+    if parent_stage is not None and parent_stage != "core":
+        return False, "non_core_stage"
     if (parent_round_doc.get("round_meta") or {}).get("skipped"):
         return False, "parent_skipped"
 

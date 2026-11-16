@@ -207,6 +207,8 @@ def continue_session(
                             "problem_ids": (expanded_spec or {}).get("problem_ids") or None,
                             "problem_id": ((expanded_spec or {}).get("problem_ids") or [None])[0],
                         }
+                        if expanded_spec and expanded_spec.get("stage"):
+                            spec_config["stage"] = expanded_spec["stage"]
                         if spec_config.get("duration_minutes") is None:
                             spec_config.pop("duration_minutes", None)
                         next_doc = build_round_document(
@@ -243,61 +245,78 @@ def continue_session(
                             ready_status=ROUND_STATUS_READY,
                         )
                     else:
-                        # Technical short answer: keep explicit topic pin.
-                        adaptive_skills = (
-                            session_skills if expanded_spec
-                            else (session.get("skills") or [session.get("skill")])
-                        )
-                        target = adaptive_question_selector.choose_adaptive_target(
-                            user_id=str(session["user_id"]) if session.get("user_id") else None,
-                            fallback_skill=rotation_skill,
-                            fallback_difficulty=rotation_difficulty,
-                            session_skills=adaptive_skills,
-                            target_role_id=(
-                                str(session["target_role_id"])
-                                if session.get("target_role_id") else None
-                            ),
-                            candidate_elo_by_skill=candidate_elos,
-                        )
-                        next_skill = target.skill
-                        if expanded_spec:
-                            if next_skill not in set(session_skills):
-                                next_skill = rotation_skill
-                        next_difficulty = (
-                            str(expanded_spec.get("difficulty"))
-                            if expanded_spec and expanded_spec.get("difficulty")
-                            else target.difficulty
-                        )
-                        sub = (
-                            (expanded_spec or {}).get("topic")
-                            or _sub_domain_for_skill(candidate_doc, next_skill)
-                        )
-                        question_payload = _get_next_question(
-                            skill=next_skill,
-                            sub_domain=sub,
-                            difficulty=next_difficulty,
+                        from modules.staged_flow import select_non_core_stage_question
+
+                        spec_stage = (expanded_spec or {}).get("stage")
+                        non_core = select_non_core_stage_question(
+                            stage=spec_stage,
+                            skill=rotation_skill,
                             asked=_asked_questions(rounds),
-                            user_id=str(session["user_id"]) if session.get("user_id") else None,
-                            target_company_id=(
-                                str(session["target_company_id"])
-                                if session.get("target_company_id") else None
-                            ),
-                            target_role_id=(
-                                str(session["target_role_id"])
-                                if session.get("target_role_id") else None
-                            ),
-                            target_concepts=list(target.target_concepts or []),
-                            resume_skills=list(
-                                candidate_doc.get("resume_skills") or session_skills
-                            ),
-                            weak_skills=list(target.target_concepts or []),
                         )
-                        _verify_served_topic(
-                            requested=(expanded_spec or {}).get("topic"),
-                            served=question_payload.get("sub_domain"),
-                            skill=next_skill,
-                            difficulty=next_difficulty,
-                        )
+                        if non_core is not None:
+                            question_payload, next_skill, next_difficulty = non_core
+                        else:
+                            # Technical short answer: keep explicit topic pin.
+                            adaptive_skills = (
+                                session_skills if expanded_spec
+                                else (session.get("skills") or [session.get("skill")])
+                            )
+                            target = adaptive_question_selector.choose_adaptive_target(
+                                user_id=str(session["user_id"]) if session.get("user_id") else None,
+                                fallback_skill=rotation_skill,
+                                fallback_difficulty=rotation_difficulty,
+                                session_skills=adaptive_skills,
+                                target_role_id=(
+                                    str(session["target_role_id"])
+                                    if session.get("target_role_id") else None
+                                ),
+                                candidate_elo_by_skill=candidate_elos,
+                            )
+                            next_skill = target.skill
+                            if expanded_spec:
+                                if next_skill not in set(session_skills):
+                                    next_skill = rotation_skill
+                            next_difficulty = (
+                                str(expanded_spec.get("difficulty"))
+                                if expanded_spec and expanded_spec.get("difficulty")
+                                else target.difficulty
+                            )
+                            sub = (
+                                (expanded_spec or {}).get("topic")
+                                or _sub_domain_for_skill(candidate_doc, next_skill)
+                            )
+                            question_payload = _get_next_question(
+                                skill=next_skill,
+                                sub_domain=sub,
+                                difficulty=next_difficulty,
+                                asked=_asked_questions(rounds),
+                                user_id=str(session["user_id"]) if session.get("user_id") else None,
+                                target_company_id=(
+                                    str(session["target_company_id"])
+                                    if session.get("target_company_id") else None
+                                ),
+                                target_role_id=(
+                                    str(session["target_role_id"])
+                                    if session.get("target_role_id") else None
+                                ),
+                                target_concepts=list(target.target_concepts or []),
+                                resume_skills=list(
+                                    candidate_doc.get("resume_skills") or session_skills
+                                ),
+                                weak_skills=list(target.target_concepts or []),
+                            )
+                            _verify_served_topic(
+                                requested=(expanded_spec or {}).get("topic"),
+                                served=question_payload.get("sub_domain"),
+                                skill=next_skill,
+                                difficulty=next_difficulty,
+                            )
+                        cont_config: dict[str, Any] = {}
+                        if expanded_spec and expanded_spec.get("duration_minutes"):
+                            cont_config["duration_minutes"] = int(expanded_spec["duration_minutes"])
+                            cont_config[DURATION_SECONDS_KEY] = int(expanded_spec["duration_minutes"]) * 60
+                        if spec_stage:
+                            cont_config["stage"] = spec_stage
                         next_payload = {
                             "round": next_round,
                             "round_type": "technical_short_answer",
@@ -327,15 +346,10 @@ def continue_session(
                             "block_total": (expanded_spec or {}).get("block_total"),
                             # Same time budget the answer route gives a
                             # planned technical round.
-                            "config_json": (
-                                {
-                                    "duration_minutes": int(expanded_spec["duration_minutes"]),
-                                    DURATION_SECONDS_KEY: int(expanded_spec["duration_minutes"]) * 60,
-                                }
-                                if expanded_spec and expanded_spec.get("duration_minutes")
-                                else {}
-                            ),
+                            "config_json": cont_config,
                         }
+                        if spec_stage:
+                            next_payload["stage"] = spec_stage
                 except (ValueError, IntegrationError) as exc:
                     blocked_reason = str(exc)
                     next_payload = None

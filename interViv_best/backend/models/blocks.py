@@ -76,13 +76,15 @@ class BlockSpec(BaseModel):
     allow_optional_follow_ups: bool | None = None
     # Acceptance: lower per-block follow-up cap (default 2 when unset).
     max_follow_ups: int | None = Field(default=None, ge=0)
+    # Slice 2 (staged_v1): optional stage label stored in existing JSON columns.
+    stage: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _strip_strings(cls, data: Any) -> Any:
         if isinstance(data, dict):
             for key in ("id", "round_type", "category", "difficulty", "topic",
-                        "problem_id", "language", "review_policy"):
+                        "problem_id", "language", "review_policy", "stage"):
                 if isinstance(data.get(key), str):
                     data[key] = data[key].strip()
             for key in ("skills", "topics", "question_ids", "problem_ids"):
@@ -216,6 +218,15 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"Block {index + 1}: unsupported review_policy "
                 f"'{spec.review_policy}'."
             )
+        stage_value = (spec.stage or "").strip().lower() or None
+        if stage_value is not None:
+            from modules.staged_flow import STAGE_NAMES
+
+            if stage_value not in STAGE_NAMES:
+                raise ValueError(
+                    f"Block {index + 1}: unsupported stage '{spec.stage}'. "
+                    f"Allowed: {list(STAGE_NAMES)}."
+                )
         language = (spec.language or "").strip().lower() or None
         if category == "sql":
             if language is not None and language != "sql":
@@ -362,6 +373,7 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "position": index + 1,
             "round_type": round_type,
             "category": category,
+            "stage": stage_value,
             "skills": skills,
             "topic": topic,
             "count": count_value,
@@ -522,6 +534,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "block_total": 1,
                 "round_type": block["round_type"],
                 "category": category,
+                "stage": block.get("stage"),
                 "skills": list(block.get("skills") or []),
                 "topic": block.get("topic"),
                 "count": int(block.get("count") or 15),
@@ -550,6 +563,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": block["round_type"],
                     "category": category,
+                    "stage": block.get("stage"),
                     "skills": list(block.get("skills") or default_skills),
                     "topic": block.get("topic"),
                     "count": 1,
@@ -576,6 +590,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": "system_design",
                     "category": "system_design",
+                    "stage": block.get("stage"),
                     "skills": list(block.get("skills") or [SYSTEM_DESIGN_SKILL]),
                     "topic": block.get("topic"),
                     "count": 1,
@@ -599,6 +614,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": "technical_short_answer",
                     "category": "interview",
+                    "stage": block.get("stage"),
                     "skills": list(block.get("skills") or []),
                     "topic": block.get("topic"),
                     "count": 1,

@@ -75,6 +75,7 @@ def sanitize_round_for_client(
     *,
     is_session_completed: bool = False,
     review_policy: str = DEFAULT_REVIEW_POLICY,
+    defer_feedback: bool = False,
 ) -> dict[str, Any]:
     """Return a strictly sanitized copy of a round document for candidate delivery."""
     cleaned = dict(round_doc)
@@ -95,6 +96,8 @@ def sanitize_round_for_client(
     config.setdefault("attempt_policy", "single_submission_final")
     config.setdefault("review_policy", review_policy if review_policy in SUPPORTED_REVIEW_POLICIES else DEFAULT_REVIEW_POLICY)
     cleaned["config_json"] = config
+    if config.get("stage"):
+        cleaned["stage"] = config["stage"]
 
     effective_policy = config.get("review_policy", DEFAULT_REVIEW_POLICY)
     allow_review = is_session_completed and (effective_policy == "after_session")
@@ -272,7 +275,27 @@ def sanitize_round_for_client(
         cleaned["score_explanation"] = {}
         cleaned["guard_applied"] = None
         outcome = cleaned.get("follow_up_outcome") or config.get("follow_up_outcome")
-        if isinstance(outcome, dict):
+        if isinstance(outcome, dict) and not defer_feedback:
             cleaned["follow_up_outcome"] = dict(outcome)
+        else:
+            cleaned.pop("follow_up_outcome", None)
+
+    if defer_feedback:
+        cleaned.pop("scoring_breakdown", None)
+        cleaned.pop("follow_up_outcome", None)
+        cleaned["final_score"] = None
+        cleaned["nlp_score"] = None
+        cleaned["kg_score"] = None
+        cleaned["svm_label"] = None
+        cleaned["ner_entities"] = []
+        cleaned["covered_concepts"] = []
+        cleaned["missing_concepts"] = []
+        cleaned["feedback"] = {"content": [], "strengths": [], "weakness": [], "next_step": ""}
+        cleaned["score_explanation"] = {}
+        cleaned["rubric"] = {}
+        cleaned["guard_applied"] = None
+        cleaned["elo_after"] = None
+        cleaned["difficulty_change"] = None
+        cleaned["feedback_deferred"] = True
 
     return cleaned
