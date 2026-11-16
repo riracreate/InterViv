@@ -2,11 +2,11 @@
 
 ## State
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
-- **Latest commit**: updating for `F5` (after `M1` `5136f0d`, `F3` `fb8f02f`, `F4` `d84c357`)
+- **Latest commit**: updating for `S1b-3` (after `6705272`, `S1b-1` `9b292b1`, `S1b-2` `8c254d2`)
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
 - **Parked guard proposal**: The previous working-tree draft is parked at `docs/parked/guard_short_cap_v4_1.patch` (with rationale and `pos=35` note in `docs/parked/README.md`). Working tree `modules/answer_guard_v4.py` (`sha256: 90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae`) and `tests/test_scorer_v4.py` are restored to `2bcd3d7`.
 - **Default flags**: `v3` remains default (`SCORER_VERSION=v4` OFF); `REVIEWED_BUNDLES_ONLY=false` (`backend/config.py:138`); `STAGED_INLINE_FOLLOW_UPS=false` (`backend/config.py:43`); `LLM_LIVE_FETCH=0`.
-- **Tests**: Full suite passed (`1164 passed, 6 skipped, 0 failed`).
+- **Tests**: Full suite passed (`1168 passed, 6 skipped, 0 failed`); frontend `199 passed, 0 failed` + production `vite build` passed.
 
 ## Decisions & Known Limitations
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
@@ -40,9 +40,10 @@
 - **F4 (`d84c357`)**: Decoupled bundle status trust floor from `STAGED_INLINE_FOLLOW_UPS` in `modules/bundle_selector.py` so `generated` and `rejected` bundles are never served (`auto_checked`/`reviewed` floor only).
 - **F5 (Offline Demo Seeder & Frontend Payload Tests)**: Added `scripts/seed_demo_bundles.py` (reuses protected DB guard + refuses unset/`:memory:`/`interviv.db`; idempotently imports 3 `auto_checked` `"Python"` bundles tagged `origin="demo_fixture"`/`demo_fixture=True`) and `TestClient` end-to-end payload tests in `tests/test_slice1_inline_follow_ups.py` (`16` tests in file; full suite `1164 passed, 6 skipped`).
 
-- **F1–F5 & Design Amendments (`A7–A9`)**: Design note & handoff updated with deferred-feedback rule (`A7`), inline follow-up outcome rule (`A8`), and `target_concepts` bundle limitation (`A9`); implementing Slice 1b (`S1b-1`–`S1b-3`).
+- **S1b-1 (`9b292b1`)**: Suppressed candidate-facing `final_score` (`None`), parent-rubric feedback, score narration, and client `scoring_breakdown` on inline bundle follow-ups (`modules/follow_ups.py`, `backend/routes/answer.py`, `backend/routes/feedback.py`, `backend/serializers/round_serializer.py`, `backend/routes/dashboard.py`, `modules/attempt_snapshot.py`), while retaining raw `v3` `scoring_breakdown` in DB for analysis and leaving manual `/follow-ups` + Core rounds unchanged.
+- **S1b-2 (`8c254d2`)**: Updated `frontend/src/lib/interviewLifecycle.js`, `frontend/src/lib/accountOverview.js`, and `frontend/src/pages/Interview.jsx` to carry `is_follow_up` / `follow_up_parent_round`, render a `Follow-up` badge on the question header, suppress `"Request optional follow-up"` on inline-scheduled or follow-up rounds, and show the targeted concept outcome without `%` (`npm test`: `199 passed, 0 failed`; `npm run build` succeeded).
+- **S1b-3 (Q1 Deferred-Feedback Acceptance Test)**: Added end-to-end 3-core shared-topic + 1 inline follow-up `coached_practice` acceptance test (`test_s1b3_deferred_feedback_three_core_shared_topic_one_followup_all_core_eligible`) verifying all 3 core rounds stay `eligible` and dashboard average matches their exact mean without touching `assistance_policy`. Full pytest passed (`1168 passed, 6 skipped, 0 failed`).
 
 ## Next
-- Complete **Slice 1b** (`S1b-1` inline follow-up outcome, `S1b-2` minimal UI, `S1b-3` 3-core deferred-feedback acceptance test).
-- Wait for reviewer inspection/sign-off on **Slice 1b** and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2**. Do not run Slice 2/3 or pilot yet.
+- Wait for reviewer sign-off on **Slice 1b** (`9b292b1`, `8c254d2`, `S1b-3`) and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2** (presets `Quick`/`Full`, optional `Practical`, unscored `Warm-up` & `HR`). Do not run Slice 2/3 or pilot yet.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).

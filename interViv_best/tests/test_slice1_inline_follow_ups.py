@@ -1716,3 +1716,189 @@ def test_s1b1_manual_followup_with_reviewed_bundle_keeps_legacy_behavior(slice1_
     assert isinstance(r3_body["final_score"], (int, float))
     assert "scoring_breakdown" in r3_body and r3_body["scoring_breakdown"]
     assert "follow_up_outcome" not in r3_body
+
+
+def test_s1b3_deferred_feedback_three_core_shared_topic_one_followup_all_core_eligible(
+    slice1_sql_env,
+):
+    """S1b-3 (Q1 acceptance): 3 bundle core rounds (>=2 sharing topic) + 1 inline follow-up, no mid-session /feedback."""
+    _seed_bundle(
+        "python.s1b3.core1",
+        status="auto_checked",
+        topic="Concurrency",
+        question="Core 1: Explain how the GIL affects bytecode threads vs blocking I/O.",
+    )
+    _seed_bundle(
+        "python.s1b3.core2",
+        status="auto_checked",
+        topic="Concurrency",
+        question="Core 2: How does releasing the lock on socket waits help multi-threaded servers?",
+        required_concepts=[
+            {
+                "id": "socket_release",
+                "descriptor": "Socket I/O waits release the GIL lock so worker threads run",
+                "aliases": ["socket waits", "release lock"],
+                "expected_propositions": ["socket waits release lock"],
+            },
+        ],
+        followups=[
+            {
+                "prompt": "Follow-up Core 2: Why can threads still progress during socket waits?",
+                "targets_concept": "socket_release",
+            }
+        ],
+    )
+    _seed_bundle(
+        "python.s1b3.core3",
+        status="auto_checked",
+        topic="Generators",
+        question="Core 3: How does yield suspend generator execution in memory?",
+        required_concepts=[
+            {
+                "id": "yield_frame",
+                "descriptor": "Yield suspends the execution frame between next steps",
+                "aliases": ["yield suspends", "execution frame"],
+                "expected_propositions": ["yield suspends execution frame"],
+            },
+        ],
+        followups=[
+            {
+                "prompt": "Follow-up Core 3: What does yield preserve across next calls?",
+                "targets_concept": "yield_frame",
+            }
+        ],
+    )
+
+    client = TestClient(app)
+    user = _make_user("s1b3-q1")
+    start = client.post(
+        "/session/start",
+        headers=_headers(user),
+        json={
+            "blocks": [
+                {
+                    "round_type": "technical_short_answer",
+                    "category": "interview",
+                    "skills": ["Python"],
+                    "difficulty": "medium",
+                    "count": 3,
+                    "practice_mode": "coached_practice",
+                }
+            ],
+            "practice_mode": "coached_practice",
+        },
+    )
+    assert start.status_code == 200, start.text
+    sid = start.json()["session_id"]
+
+    # Round 1 (Core 1, topic="Concurrency"): omit io_release -> schedules inline follow-up at Round 2.
+    # No /feedback calls during active session (Q1 deferred feedback).
+    r1 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 1,
+            "answer_text": "Only one thread executes bytecode at once under the mutex lock.",
+        },
+    )
+    assert r1.status_code == 200, r1.text
+    b1 = r1.json()
+    assert b1["assessment_eligibility"] == "eligible"
+    assert b1["follow_up_scheduled"] is True
+    assert b1["next_round"] == 2
+    assert b1["total_rounds"] == 4
+    core1_score = float(b1["final_score"])
+
+    # Round 2 (Inline follow-up for Core 1): excluded, candidate final_score is null.
+    act2 = activate(client, _headers(user), sid, 2)
+    assert act2["is_follow_up"] is True
+    r2 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 2,
+            "answer_text": "Blocking I/O syscalls release the lock so other threads run.",
+        },
+    )
+    assert r2.status_code == 200, r2.text
+    b2 = r2.json()
+    assert b2["is_follow_up"] is True
+    assert b2["final_score"] is None
+    assert b2["assessment_eligibility"] == "excluded"
+    assert b2["follow_up_scheduled"] is False
+    assert b2["follow_up_outcome"]["demonstrated"] is True
+    assert b2["next_round"] == 3
+
+    # Round 3 (Core 2, shares topic="Concurrency" with Core 1): full answer -> eligible, no follow-up.
+    act3 = activate(client, _headers(user), sid, 3)
+    assert not act3.get("is_follow_up")
+    r3 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 3,
+            "answer_text": (
+                "Blocking socket waits release the lock cleanly so other Python worker threads "
+                "can execute I/O concurrently under the interpreter mutex."
+            ),
+        },
+    )
+    assert r3.status_code == 200, r3.text
+    b3 = r3.json()
+    assert b3["assessment_eligibility"] == "eligible"
+    assert b3["follow_up_scheduled"] is False
+    assert b3["next_round"] == 4
+    core2_score = float(b3["final_score"])
+
+    # Round 4 (Core 3, topic="Generators"): full answer -> eligible, completes session.
+    act4 = activate(client, _headers(user), sid, 4)
+    assert not act4.get("is_follow_up")
+    r4 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 4,
+            "answer_text": (
+                "The yield statement suspends execution frame state cleanly between next calls "
+                "and resumes lazily without materializing full lists in memory."
+            ),
+        },
+    )
+    assert r4.status_code == 200, r4.text
+    b4 = r4.json()
+    assert b4["assessment_eligibility"] == "eligible"
+    assert b4["follow_up_scheduled"] is False
+    assert b4["session_complete"] is True
+    core3_score = float(b4["final_score"])
+
+    expected_mean = round((core1_score + core2_score + core3_score) / 3.0, 2)
+
+    # Debrief: fetch dashboard and per-round feedback strictly after completion.
+    dash = client.get(f"/dashboard/{sid}", headers=_headers(user))
+    assert dash.status_code == 200, dash.text
+    dash_body = dash.json()
+    by_round = {int(r["round"]): r for r in dash_body["rounds"]}
+
+    for rn in (1, 3, 4):
+        assert by_round[rn]["assessment_eligibility"] == "eligible"
+    assert by_round[2]["assessment_eligibility"] == "excluded"
+    assert "follow_up" in by_round[2]["eligibility_exclusion_reasons"]
+    assert by_round[2]["final_score"] is None
+    assert "scoring_breakdown" not in by_round[2]
+
+    assert dash_body["averages"]["final_score"] == pytest.approx(expected_mean, abs=0.05)
+    assert dash_body["block_results"][0]["assessment_eligible_rounds"] == 3
+    assert dash_body["block_results"][0]["average_score"] == pytest.approx(expected_mean, abs=0.05)
+    assert dash_body["overall_readiness_score"] == pytest.approx(expected_mean, abs=0.05)
+
+    for rn in (1, 2, 3, 4):
+        fb = client.get(f"/session/{sid}/rounds/{rn}/feedback", headers=_headers(user))
+        assert fb.status_code == 200, fb.text
+        if rn == 2:
+            assert fb.json()["final_score"] is None
+        else:
+            assert fb.json()["assessment_eligibility"] == "eligible"
