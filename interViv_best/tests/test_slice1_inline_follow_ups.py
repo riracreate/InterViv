@@ -353,13 +353,15 @@ def test_a4_never_serves_generated_or_rejected_and_enforces_status_floor(
         is None
     )
 
-    # With flag OFF, legacy select_bundle_question keeps serving generated (never rejected).
+    # With flag OFF too (F4: trust floor decoupled from follow-up flag), generated & rejected never serve.
     monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", "0")
     _clear_caches()
-    gen_hit = bundle_selector.select_bundle_question(
-        skill="Python", difficulty="medium", topic="GenOnly"
+    assert (
+        bundle_selector.select_bundle_question(
+            skill="Python", difficulty="medium", topic="GenOnly"
+        )
+        is None
     )
-    assert gen_hit is not None and gen_hit["bundle_id"] == "python.s1.gen"
     assert (
         bundle_selector.select_bundle_question(
             skill="Python", difficulty="medium", topic="RejOnly"
@@ -1281,4 +1283,56 @@ def test_bundle_selected_with_non_empty_target_concepts_flag_off_and_on(
             get_engine().dispose()
         except Exception:
             pass
+        _clear_caches()
+
+
+def test_f4_incomplete_inline_live_generation_leftover_is_never_served(
+    monkeypatch,
+):
+    """F4: even if inline live generation aborts after importing a generated bundle, it is never served."""
+    from backend.routes import session as session_routes
+    from modules import bundle_generator
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "true")
+    monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", "0")
+    monkeypatch.setenv("REVIEWED_BUNDLES_ONLY", "false")
+    _clear_caches()
+    bundle_store.reset_memory_store()
+
+    # Simulate an aborted inline generation run leaving a status="generated" bundle in DB.
+    _seed_bundle(
+        "custom.f4.aborted",
+        status="generated",
+        skill="Product Positioning",
+        topic="AbortGen",
+        question="Leftover generated prompt?",
+    )
+
+    def fail_step_e(*, skill: str, topic: str, difficulty: str, role: str | None = None, **kwargs):
+        raise RuntimeError("simulated Step E outage after initial import")
+
+    monkeypatch.setattr(bundle_generator, "generate_and_check_bundle", fail_step_e)
+    monkeypatch.setattr(bundle_generator, "_LLM_OVERRIDE", lambda *a, **kw: "{}")
+    try:
+        with pytest.raises(RuntimeError, match="simulated Step E outage"):
+            session_routes._maybe_prepare_opening_bundle(
+                skill="Product Positioning",
+                topic="AbortGen",
+                difficulty="medium",
+                role=None,
+            )
+        # Even with STAGED_INLINE_FOLLOW_UPS=0, leftover generated bundle is NEVER served.
+        assert (
+            bundle_selector.select_bundle_question(
+                skill="Product Positioning",
+                difficulty="medium",
+                asked=[],
+                topic="AbortGen",
+            )
+            is None
+        )
+    finally:
+        bundle_generator.set_bundle_llm_override(None)
+        bundle_store.reset_memory_store()
         _clear_caches()

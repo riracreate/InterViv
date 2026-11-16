@@ -570,7 +570,7 @@ def test_bundle_selector_trust_tier_ordering_and_reviewed_gate(ws2_memory, monke
     p3 = bundle_selector.select_bundle_question(
         skill="Python", difficulty="medium", asked=["Reviewed Q?", "Auto checked Q?"]
     )
-    assert p3 and p3["bundle_id"] == "python.b-gen-ok" and p3["source"] == "generated_bundle"
+    assert p3 is None
 
     p4 = bundle_selector.select_bundle_question(
         skill="Python",

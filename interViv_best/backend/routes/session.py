@@ -370,7 +370,6 @@ def _get_next_question(
             difficulty=difficulty,
             asked=asked,
             topic=topic,
-            include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
         )
         if bundle_payload is not None:
             return _normalize_question_payload(
@@ -1381,9 +1380,6 @@ def _validate_block_content(
                                     difficulty=d,
                                     asked=[],
                                     topic=topic,
-                                    include_unchecked_generated=not bool(
-                                        get_settings().staged_inline_follow_ups
-                                    ),
                                 )
                                 is not None
                                 for d in diffs_to_check
@@ -1444,7 +1440,6 @@ def _maybe_prepare_opening_bundle(
             difficulty=difficulty,
             asked=[],
             topic=explicit_topic,
-            include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
         )
         is not None
     ):

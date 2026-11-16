@@ -87,16 +87,14 @@ def select_bundle_question(
     difficulty: str,
     asked: list[str] | None = None,
     topic: str | None = None,
-    include_unchecked_generated: bool | None = None,
 ) -> dict | None:
     """Select an eligible bundle question ordered by trust tier.
 
     When ``REVIEWED_BUNDLES_ONLY`` is enabled, delegates strictly to
     ``select_reviewed_question`` (raising ``ReviewedInventoryUnavailable`` if
     no reviewed bundle is available). Otherwise floors at ``auto_checked``
-    (``reviewed`` > ``auto_checked``) whenever ``STAGED_INLINE_FOLLOW_UPS`` is
-    enabled (unless overridden by ``include_unchecked_generated``), and never
-    selects ``rejected``, ``draft``, or ``retired`` bundles.
+    (``reviewed`` > ``auto_checked``) in every configuration and never serves
+    ``generated``, ``rejected``, ``draft``, or ``retired`` bundles.
     """
     if reviewed_bundles_only():
         return select_reviewed_question(
@@ -105,13 +103,11 @@ def select_bundle_question(
             asked=asked,
             topic=topic,
         )
-    if include_unchecked_generated is None:
-        include_unchecked_generated = not bool(get_settings().staged_inline_follow_ups)
     versions = bundle_store.selectable_versions(
         skill,
         difficulty,
         topic,
         include_auto_checked=True,
-        include_unchecked_generated=bool(include_unchecked_generated),
+        include_unchecked_generated=False,
     )
     return _pick_unasked_payload(versions, asked)
