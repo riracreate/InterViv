@@ -61,6 +61,7 @@ def _sanitize_rounds(
     *,
     assessment_completed: bool = False,
     defer_feedback: bool = False,
+    staged_session: bool = False,
 ) -> list[dict[str, Any]]:
     from modules.staged_flow import round_stage
 
@@ -79,6 +80,8 @@ def _sanitize_rounds(
             )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
+        if staged_session:
+            cleaned["content_source"] = (cleaned.get("question_context") or {}).get("source")
         stage_val = round_stage(cleaned)
         if stage_val:
             cleaned["stage"] = stage_val
@@ -206,6 +209,8 @@ def _unscored_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
             reason = "follow_up_unscored"
         elif stage_val in UNSCORED_STAGES and item.get("status") not in (None, "in_progress", "ready"):
             reason = f"{stage_val}_unscored"
+        elif (item.get("scoring_breakdown") or {}).get("unscored_reason") == "no_reference_unscored":
+            reason = "no_reference_unscored"
         elif kind in ("coding", "ml_primitives"):
             reason = "execution_unavailable"
         elif item.get("status") not in (None, "in_progress", "ready"):
@@ -608,6 +613,7 @@ def get_dashboard(
         raw_rounds,
         assessment_completed=assessment_completed,
         defer_feedback=defer_feedback,
+        staged_session=staged_session,
     )
     completed_rounds = [item for item in rounds if item.get("final_score") is not None]
     # Primary report averages use assessment-eligible population only.

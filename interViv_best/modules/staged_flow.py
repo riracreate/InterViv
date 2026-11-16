@@ -452,6 +452,22 @@ def select_non_core_stage_question(
     return None
 
 
+
+def unscored_stage_result(*, stage: str, reason: str) -> dict[str, Any]:
+    """Unmeasured staged turn; no numeric result enters Elo or averages."""
+    return {
+        "final_score": None,
+        "nlp_score": None,
+        "svm_label": None,
+        "kg_score": None,
+        "ner_entities": [],
+        "feedback": {"content": [], "strengths": [], "weakness": [], "next_step": ""},
+        "scoring_breakdown": {"stage": stage, "unscored_reason": reason},
+        "score_explanation": {},
+        "guard_applied": None,
+    }
+
+
 def deferred_feedback_response(
     *,
     session_id: str,

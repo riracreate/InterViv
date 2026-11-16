@@ -768,6 +768,7 @@ def submit_answer(
             is_staged_v1_session,
             round_stage,
             select_non_core_stage_question,
+            unscored_stage_result,
         )
 
         active_stage = round_stage(active_round)
@@ -778,26 +779,10 @@ def submit_answer(
                 or active_round.get("follow_up_scoring")
             )
             if active_stage in UNSCORED_STAGES:
-                # Warm-up and Behavioural turns are unscored by design (Q1/Q4).
-                scoring_result = {
-                    "final_score": None,
-                    "nlp_score": None,
-                    "svm_label": None,
-                    "kg_score": None,
-                    "ner_entities": [],
-                    "feedback": {
-                        "content": [],
-                        "strengths": [],
-                        "weakness": [],
-                        "next_step": "",
-                    },
-                    "scoring_breakdown": {
-                        "stage": active_stage,
-                        "unscored_reason": f"{active_stage}_unscored",
-                    },
-                    "score_explanation": {},
-                    "guard_applied": None,
-                }
+                # Warm-up and Behavioural share the same null-score mechanism.
+                scoring_result = unscored_stage_result(
+                    stage=active_stage, reason=f"{active_stage}_unscored"
+                )
             elif is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
                 # Unreviewed follow-ups are explicitly unscored practice even
                 # when REVIEWED_BUNDLES_ONLY is false. No numeric score.
@@ -893,17 +878,32 @@ def submit_answer(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail=str(exc),
                     ) from exc
-                scoring_result = score_round(
-                    round_type=round_type,
-                    answer_text=request.answer_text,
-                    word_count=_server_word_count(request.answer_text or ""),
-                    engagement_label=request.engagement_label,
-                    wpm=request.wpm,
-                    pause_count=request.pause_count,
-                    question_context=scoring_question_context,
-                    difficulty=active_round.get("difficulty", "medium"),
-                    candidate_baseline=candidate_baseline,
-                )
+                reference = str(
+                    scoring_question_context.get("ideal_answer")
+                    or scoring_question_context.get("reference_answer")
+                    or ""
+                ).strip()
+                if (
+                    is_staged_v1_session(session)
+                    and active_stage == "core"
+                    and not reference
+                    and not scoring_question_context.get("required_concepts")
+                ):
+                    scoring_result = unscored_stage_result(
+                        stage=active_stage, reason="no_reference_unscored"
+                    )
+                else:
+                    scoring_result = score_round(
+                        round_type=round_type,
+                        answer_text=request.answer_text,
+                        word_count=_server_word_count(request.answer_text or ""),
+                        engagement_label=request.engagement_label,
+                        wpm=request.wpm,
+                        pause_count=request.pause_count,
+                        question_context=scoring_question_context,
+                        difficulty=active_round.get("difficulty", "medium"),
+                        candidate_baseline=candidate_baseline,
+                    )
         except Exception as exc:
             # Rollback status on failure so round is not stuck in 'finalizing'
             _release_claim_to_pre_submit(
