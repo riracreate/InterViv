@@ -185,6 +185,28 @@
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
+/* Notices inside a panel. One warning and one error treatment for every
+   page: they are block elements with their own colours, so a page-level
+   paragraph rule (the hub pages have one) cannot grey them out. */
+.app-notice {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.app-notice-warn {
+  border-color: var(--color-warn);
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+}
+.app-notice-error {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.app-text-error { color: var(--color-danger); }
 .app-form-error {
   border: 1px solid var(--color-danger);
   border-radius: var(--radius-card);

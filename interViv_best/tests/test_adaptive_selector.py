@@ -130,7 +130,11 @@ def _fake_targeted_llm(captured: list[str]):
         concept_phrase = m.group(1).strip() if m else "the topic"
         return json.dumps({
             "question": f"Discuss {concept_phrase} in depth and explain trade-offs.",
-            "ideal_answer": "A sample reference answer covering the targeted concepts.",
+            "ideal_answer": (
+                "A sample reference answer covering the targeted concepts. It "
+                "explains the recursive structure, how overlapping subproblems "
+                "are memoized, and what that does to the time complexity."
+            ),
             "ideal_keywords": "tree, dynamic programming, recursion, memoization, complexity",
         })
     return call
@@ -288,12 +292,20 @@ def test_adaptive_selector_bypasses_cached_question_on_subsequent_round(
     responses = [
         json.dumps({
             "question": "What is the height of a balanced binary tree with N nodes?",
-            "ideal_answer": "A balanced binary tree has height O(log N).",
+            "ideal_answer": (
+                "A balanced binary tree has height O(log N). Each level doubles "
+                "the number of nodes, so N nodes fill about log2(N) levels, and "
+                "search, insert and delete all take that many steps."
+            ),
             "ideal_keywords": ["binary tree", "height", "O(log N)", "balance", "nodes"],
         }),
         json.dumps({
             "question": "How do you serialize and deserialize a binary tree?",
-            "ideal_answer": "Use preorder traversal with null markers or level-order BFS.",
+            "ideal_answer": (
+                "Use preorder traversal with null markers or level-order BFS. "
+                "Write each node and a marker for every missing child, then "
+                "rebuild by reading the values back in the same order."
+            ),
             "ideal_keywords": ["serialize", "preorder", "BFS", "binary tree", "null marker"],
         }),
     ]

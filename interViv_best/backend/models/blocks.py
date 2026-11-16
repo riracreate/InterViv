@@ -129,6 +129,41 @@ def derive_category(round_type: str, skills: list[str]) -> str:
     return "interview"
 
 
+def distribute_skills(skills: list[str], total: int) -> list[str]:
+    """Planned skill for each of an Interview block's ``total`` questions.
+
+    Confirmed order is kept and every skill gets a contiguous, near-equal
+    share (earlier skills take the remainder): ``[A, B, C]`` over 5 questions
+    is ``A A B B C``. With more skills than questions only the first
+    ``total`` skills are planned; :func:`interview_scope` reports the rest.
+    One skill keeps every question, as before.
+    """
+    planned = [s for s in skills if s][: max(0, int(total))]
+    if not planned:
+        return []
+    base, extra = divmod(int(total), len(planned))
+    out: list[str] = []
+    for index, skill in enumerate(planned):
+        out.extend([skill] * (base + (1 if index < extra else 0)))
+    return out
+
+
+def interview_scope(block: dict[str, Any]) -> dict[str, Any]:
+    """What an Interview block will ask: questions per skill, and any
+    confirmed skill the question budget cannot reach."""
+    skills = [s for s in (block.get("skills") or []) if s]
+    total = int(block.get("count") or 3)
+    planned = distribute_skills(skills, total)
+    counts: dict[str, int] = {}
+    for skill in planned:
+        counts[skill] = counts.get(skill, 0) + 1
+    return {
+        "questions": total,
+        "planned": [{"skill": skill, "questions": n} for skill, n in counts.items()],
+        "not_covered": [s for s in skills if s not in counts],
+    }
+
+
 def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Validate structure and assign stable ids/positions.
 
@@ -430,6 +465,12 @@ def legacy_to_blocks(
         coding_ids = [str(p).strip()
                       for p in (cfg.get("coding_problem_ids") or [])
                       if str(p).strip()]
+        # Free-text rounds share the confirmed skills in order, one skill per
+        # round, the way a multi-skill Interview block shares its questions.
+        # With the whole list on every round, each one resolved to the first
+        # skill.
+        free_text = [e for e in plan if e not in ("mcq", "sql", "coding")]
+        free_text_skills = iter(distribute_skills(skills, len(free_text)))
         for entry in plan:
             if entry == "mcq":
                 blocks.append({
@@ -476,9 +517,10 @@ def legacy_to_blocks(
                     coding_item["problem_ids"] = selected_coding
                 blocks.append(coding_item)
             else:
+                planned = next(free_text_skills, None)
                 blocks.append({
                     "round_type": "technical_short_answer",
-                    "skills": skills,
+                    "skills": [planned] if planned else skills,
                     "count": 1,
                     "duration_minutes": cfg.get("duration_minutes"),
                     "difficulty": cfg.get("difficulty"),
@@ -604,6 +646,10 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 })
         else:
             total = int(block.get("count") or 3)
+            # One planned skill per question. A spec that carried the whole
+            # list resolved every round to its first skill, so a multi-skill
+            # block never credited (or covered) the others.
+            planned = distribute_skills(list(block.get("skills") or []), total)
             for item_index in range(total):
                 round_number += 1
                 expanded.append({
@@ -615,7 +661,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "round_type": "technical_short_answer",
                     "category": "interview",
                     "stage": block.get("stage"),
-                    "skills": list(block.get("skills") or []),
+                    "skills": [planned[item_index]] if planned else [],
                     "topic": block.get("topic"),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),

@@ -83,7 +83,9 @@ def test_generate_question_falls_back_after_llm_failure(monkeypatch: pytest.Monk
     )
 
     assert payload["question"]
-    assert payload["source"] in {"structured_fallback", "csv", "domain_fallback", "template"}
+    # Only bank questions with a reference answer are served as a fallback.
+    assert payload["source"] in {"structured_fallback", "csv"}
+    assert payload["ideal_answer"].strip()
     assert payload["skill"] == "DSA"
 
 
@@ -120,7 +122,10 @@ def test_generate_question_returns_market_metadata_from_llm_json(monkeypatch: py
     monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
     raw = json.dumps({
         "question": "How would you use a hash map to optimize pair-sum lookup?",
-        "ideal_answer": "Use a hash map to store complements while scanning once. This reduces lookup to average O(1).",
+        "ideal_answer": (
+            "Use a hash map to store complements while scanning the array once. "
+            "Each lookup is O(1) on average, so the whole pass is O(n) time and O(n) space."
+        ),
         "ideal_keywords": ["hash map", "complement", "O(n)", "lookup", "pair sum"],
         "sub_domain": "hashing",
         "topic": "Pair sum",
@@ -252,7 +257,11 @@ def test_ollama_auto_provider_when_cloud_keys_unset(monkeypatch: pytest.MonkeyPa
     seen_urls: list[str] = []
     ollama_reply = json.dumps({
         "question": "How does a B-tree index optimize range queries?",
-        "ideal_answer": "Keys are sorted in balanced leaf pages linked sequentially.",
+        "ideal_answer": (
+            "Keys are sorted in balanced leaf pages linked sequentially. A range "
+            "query descends once to the first key and then follows the leaf "
+            "links, so it never rescans the tree for each value."
+        ),
         "ideal_keywords": ["B-tree", "range scan", "page", "index", "O(log n)"],
     })
 
@@ -296,7 +305,11 @@ def test_ollama_api_generate_fallback_and_coding_coach_model(
     seen_urls: list[str] = []
     ollama_reply = json.dumps({
         "question": "Explain Python list comprehensions vs generator expressions.",
-        "ideal_answer": "List comprehensions materialize elements eagerly in memory while generators yield lazily.",
+        "ideal_answer": (
+            "List comprehensions materialize elements eagerly in memory while "
+            "generators yield lazily. A generator keeps only the current item, "
+            "so it suits large or unbounded inputs that are read once."
+        ),
         "ideal_keywords": ["generator", "list comprehension", "lazy evaluation", "memory", "iterator"],
     })
 

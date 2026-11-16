@@ -35,6 +35,7 @@ from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
+from modules.staged_flow import is_staged_v1_session
 from modules.follow_ups import (
     build_bundle_follow_up_round_doc,
     is_inline_bundle_follow_up_spec,
@@ -232,6 +233,7 @@ def continue_session(
                             allow_unknown_fallback=bool(
                                 session.get("allow_unknown_topic_fallback")
                             ),
+                            staged_v1=is_staged_v1_session(session),
                         )
                         next_payload = prepare_round(next_doc.model_dump())
                         next_payload["skill"] = rotation_skill
@@ -304,6 +306,8 @@ def continue_session(
                                     candidate_doc.get("resume_skills") or session_skills
                                 ),
                                 weak_skills=list(target.target_concepts or []),
+                                relaxed=(is_staged_v1_session(session)
+                                         and (expanded_spec or {}).get("stage") == "core"),
                             )
                             _verify_served_topic(
                                 requested=(expanded_spec or {}).get("topic"),

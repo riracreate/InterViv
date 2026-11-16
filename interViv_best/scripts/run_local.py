@@ -8,11 +8,15 @@ Usage:
   .venv/bin/python scripts/run_local.py --trusted-local-execution  # Python coding + ML, no Docker
   .venv/bin/python scripts/run_local.py --with-executor  # also start the Docker coding executor
   .venv/bin/python scripts/run_local.py --with-executor --live-jobs  # live jobs and coding
+  .venv/bin/python scripts/run_local.py --live-questions # generate interview questions with the .env provider
 
 Ctrl+C stops only the processes started by this launcher. Interview questions
-stay offline using the CSV question bank by default (pass --live-questions to
-enable LLM generation with CSV fallback); --live-jobs explicitly enables job
-provider requests. Model downloads happen only with --fetch-models.
+stay offline using the CSV question bank by default: a provider key in .env is
+not enough, because this launcher pins the offline bank. --live-questions
+enables LLM generation with CSV fallback and opens the LLM gate for question
+generation only (LLM_LIVE_CONSUMERS=questions); the guidance coach and
+narration stay offline. --live-jobs explicitly enables job provider requests.
+Model downloads happen only with --fetch-models.
 
 Coding and ML execution, in order of preference:
 - --with-executor starts the isolated local Piston executor (Docker required)
@@ -164,7 +168,11 @@ def _runtime_environment(
         "DATABASE_URL": f"sqlite:///{state / 'interviv-local.sqlite3'}",
         "ENVIRONMENT": "development",
         "REDIS_URL": "",
+        # The LLM provider is dialed only when asked, and then only to
+        # generate interview questions: the gate is limited to that consumer,
+        # so the guidance coach and narration do not start using it too.
         "LLM_LIVE_FETCH": "1" if live_questions else "0",
+        "LLM_LIVE_CONSUMERS": "questions" if live_questions else "",
         "JOBS_LIVE_FETCH": "1" if live_jobs else "0",
         "QUESTION_GENERATION_MODE": "llm_csv_fallback" if live_questions else "csv",
         "QUESTION_REQUIRE_LLM": "false",
@@ -198,7 +206,8 @@ def main() -> int:
     parser.add_argument("--live-jobs", action="store_true",
                         help="enable live Adzuna and Greenhouse searches (Adzuna needs credentials in .env)")
     parser.add_argument("--live-questions", action="store_true",
-                        help="enable live LLM question generation with offline CSV fallback")
+                        help="enable live LLM question generation with offline CSV fallback; "
+                             "nothing else (coach, narration) uses the provider")
     parser.add_argument("--trusted-local-execution", action="store_true",
                         help="run Python coding and NumPy ML submissions in a local worker process "
                              "when no executor is running (trusted local demo only, not a sandbox)")
@@ -273,7 +282,8 @@ def main() -> int:
         print("App ready: http://127.0.0.1:5173", flush=True)
         print(f"Accounts and progress are saved in {state / 'interviv-local.sqlite3'}", flush=True)
         if args.live_questions:
-            print("Question generation uses LLM with offline CSV fallback (--live-questions).", flush=True)
+            print("Question generation uses LLM with offline CSV fallback (--live-questions). "
+                  "The guidance coach and narration stay offline.", flush=True)
         else:
             print("Question generation uses the offline bank; pass --live-questions for LLM questions.", flush=True)
         print("Live job search is enabled." if args.live_jobs else "Jobs use sample listings; pass --live-jobs for live results.", flush=True)

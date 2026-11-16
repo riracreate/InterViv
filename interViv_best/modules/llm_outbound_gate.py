@@ -21,6 +21,28 @@ def llm_live_fetch_enabled() -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# What can dial out once the gate is open. ``LLM_LIVE_CONSUMERS`` (a comma
+# list of these) narrows an open gate to some of them; unset keeps every
+# consumer, as before the variable existed.
+LLM_CONSUMERS = ("questions", "coach", "narration")
+
+
+def llm_live_consumers() -> frozenset[str] | None:
+    """Consumers the open gate is limited to, or ``None`` for all of them."""
+    raw = os.getenv("LLM_LIVE_CONSUMERS")
+    if raw is None or not raw.strip():
+        return None
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+def llm_consumer_enabled(consumer: str) -> bool:
+    """True when live fetch is on and ``consumer`` is allowed to use it."""
+    if not llm_live_fetch_enabled():
+        return False
+    allowed = llm_live_consumers()
+    return allowed is None or consumer in allowed
+
+
 def question_generation_mode() -> str:
     """Mirror ``question_bank._question_generation_mode`` without importing it.
 
@@ -45,8 +67,8 @@ def question_generation_mode() -> str:
 
 
 def question_llm_outbound_allowed() -> bool:
-    """True only when live fetch is on and generation mode permits dialing."""
-    if not llm_live_fetch_enabled():
+    """True only when live fetch is on for questions and generation mode permits dialing."""
+    if not llm_consumer_enabled("questions"):
         return False
     return question_generation_mode() in {"llm", "llm_csv_fallback"}
 
@@ -75,6 +97,8 @@ def question_source_health() -> dict[str, object]:
     return {
         "configured_mode": configured,
         "llm_live_fetch": live,
+        # Additive: which consumers the open gate covers ("all" when unset).
+        "llm_live_consumers": sorted(llm_live_consumers() or ()) or "all",
         "outbound_allowed": outbound,
         "effective_mode": effective,
         "operator_note": note,

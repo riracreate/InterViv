@@ -87,11 +87,6 @@ export default function InterviewResumePanel({
     }
   };
 
-  const applyAllExtracted = () => {
-    if (!extractedSkills.length) return;
-    onSkillsChange?.(extractedSkills.slice(0, 5));
-  };
-
   return (
     <section
       data-testid="interview-resume-panel"
@@ -193,18 +188,9 @@ export default function InterviewResumePanel({
 
       {extractedSkills.length > 0 && (
         <div className="mt-4 border-t border-[var(--color-border)] pt-4" data-testid="interview-extracted-skills">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-              Extracted from resume ({extractedSkills.length}) — tap to toggle in this interview
-            </p>
-            <button
-              type="button"
-              onClick={applyAllExtracted}
-              className="text-xs font-medium text-[var(--color-ink)] underline hover:no-underline"
-            >
-              Use top resume skills
-            </button>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+            Found in your resume ({extractedSkills.length}, listed A–Z) — tap the skills to practise
+          </p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {extractedSkills.map((skill) => {
               const active = hasSkill(selectedSkills, skill);

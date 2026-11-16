@@ -358,13 +358,18 @@ def _settle_narration(db: Any, session_id: str, round_number: int) -> str | None
     rules script, so it is rendered here (post-commit, no network) instead of
     leaving the job queued for a worker that the local app never runs. With
     live narration on, the job stays queued for the worker.
+
+    Live narration needs the live-LLM gate to cover narration and a
+    narration provider to be installed. The gate is shared with question
+    generation, so being open does not by itself mean anything can narrate.
     """
-    from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.llm_outbound_gate import llm_consumer_enabled
     from modules.narration_jobs import narration_job_id, process_narration_job
+    from modules.narration_provider import narration_provider_installed
 
     job_id = narration_job_id(session_id, round_number)
     try:
-        if llm_live_fetch_enabled():
+        if llm_consumer_enabled("narration") and narration_provider_installed():
             job = db["narration_jobs"].find_one({"id": job_id})
         else:
             job = process_narration_job(db, job_id)
@@ -1530,6 +1535,7 @@ def submit_answer(
                                     block_index=(expanded_spec or {}).get("block_index"),
                                     block_total=(expanded_spec or {}).get("block_total"),
                                     allow_unknown_fallback=bool(session.get("allow_unknown_topic_fallback")),
+                                    staged_v1=is_staged_v1_session(session),
                                 )
                             except ValueError as exc:
                                 progression_blocked_reason = str(exc)
@@ -1656,6 +1662,8 @@ def submit_answer(
                                         target_concepts=target.target_concepts,
                                         resume_skills=resume_skills,
                                         weak_skills=weak_context,
+                                        relaxed=(is_staged_v1_session(session)
+                                                 and (expanded_spec or {}).get("stage") == "core"),
                                     )
                                 except IntegrationError as exc:
                                     progression_blocked_reason = str(exc)

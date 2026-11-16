@@ -37,6 +37,7 @@ from backend.models.blocks import (
     VERBAL_SKILL,
     canonicalize_verbal_skills,
     expand_blocks,
+    interview_scope,
     legacy_to_blocks,
     normalize_blocks,
 )
@@ -419,8 +420,14 @@ def _get_next_question(
     target_concepts: list[str] | None = None,
     resume_skills: list[str] | None = None,
     weak_skills: list[str] | None = None,
+    relaxed: bool = False,
 ) -> dict:
     """Return the next question payload.
+
+    ``relaxed`` is set for staged_v1 rounds. That flow also accepts
+    reference-only bank questions and, as a last resort, a reference-free
+    prompt which it leaves unscored. Everywhere else a question has to meet
+    the content rules in full or the caller is told none is available.
 
     When ``REVIEWED_BUNDLES_ONLY`` is on, select a genuinely reviewed pinned
     version or raise assessment-unavailable (no draft/legacy scored fallback).
@@ -486,6 +493,7 @@ def _get_next_question(
                 target_concepts=target_concepts,
                 resume_skills=resume_skills,
                 weak_skills=weak_skills,
+                relaxed=relaxed,
             )
         except Exception as exc:
             raise IntegrationError(str(exc)) from exc
@@ -507,6 +515,7 @@ def _get_next_question(
                 resume_skills=tuple(resume_skills or ()),
                 weak_skills=tuple(weak_skills or target_concepts or ()),
             ),
+            relaxed=relaxed,
         )
     except Exception as exc:
         raise IntegrationError(str(exc)) from exc
@@ -695,6 +704,7 @@ def build_round_document(
     block_index: int | None = None,
     block_total: int | None = None,
     allow_unknown_fallback: bool = False,
+    staged_v1: bool = False,
 ) -> RoundDocument:
     """Build a RoundDocument for technical / MCQ / SQL (shared by start + answer).
 
@@ -902,6 +912,7 @@ def build_round_document(
             target_company_id=target_company_id,
             target_role_id=target_role_id,
             resume_skills=resume_skills or skills,
+            relaxed=staged_v1 and stage_val == "core",
         )
     duration_value = cfg.get("duration_minutes")
     expires_at = None
@@ -928,6 +939,15 @@ def build_round_document(
         block_index=block_index,
         block_total=block_total,
     ), cfg)
+
+
+def _interview_live_generation() -> bool:
+    from modules import question_runtime
+
+    try:
+        return bool(question_runtime.live_generation_available())
+    except Exception:  # pragma: no cover - metadata must not break the catalog
+        return False
 
 
 def _interview_topic_metadata() -> dict[str, list[str]]:
@@ -1021,6 +1041,10 @@ def list_practice_bank_items() -> dict[str, Any]:
         "system_design": system_design,
         "ml_primitives": ml_primitives,
         "interview_topics": _interview_topic_metadata(),
+        # Additive: whether new interview questions are generated now or come
+        # from the offline bank. The form's default question count depends on
+        # it. A boolean only; nothing about the provider is exposed.
+        "interview_live_generation": _interview_live_generation(),
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),
@@ -1344,11 +1368,137 @@ def _verify_served_topic(
     )
 
 
+def _interview_planned_scopes(
+    block_plan: list[dict[str, Any]],
+    *,
+    staged_v1: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Each Interview block's actual scope, keyed by block id.
+
+    Questions per confirmed skill and where they come from, plus the skills
+    the question budget cannot reach. Offline questions are counted across
+    the whole plan with the rule serving uses
+    (``question_runtime.eligible_offline_questions``), because skills in
+    different blocks can draw on the same questions. No writes, no
+    generation.
+    """
+    from modules import question_runtime
+    from modules.bundle_selector import reviewed_bundles_only
+
+    # Only a validated staged_v1 request gets the relaxed contract. Custom
+    # blocks may carry a stage label without belonging to that flow.
+    if staged_v1:
+        return {}
+    blocks = [b for b in block_plan if b.get("category") == "interview"]
+    scopes = [interview_scope(b) for b in blocks]
+    planned = [item for scope in scopes for item in scope["planned"]]
+    if reviewed_bundles_only():
+        sourced = [dict(item, source="reviewed") for item in planned]
+    else:
+        sourced = question_runtime.scope_sources(planned)
+    out: dict[str, dict[str, Any]] = {}
+    cursor = 0
+    for block, scope in zip(blocks, scopes):
+        size = len(scope["planned"])
+        out[str(block.get("id"))] = {
+            "questions": scope["questions"],
+            "skills": sourced[cursor:cursor + size],
+            "not_covered": scope["not_covered"],
+        }
+        cursor += size
+    return out
+
+
+def launch_planned_scope(
+    start_body: dict[str, Any],
+    confirmed_skills: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Planned scope of a practice launch whose plan the server builds.
+
+    Jobs and Coach propose a start payload (blocks, or skills with a round
+    plan) from a list of skills. This is the same summary Practice shows
+    before a start: free-text questions per skill and where they come from,
+    and the confirmed skills that get no free-text question. Read-only;
+    ``None`` when the payload has no interview questions or is not valid.
+    """
+    try:
+        if start_body.get("blocks"):
+            block_plan = normalize_blocks(list(start_body["blocks"]))
+        else:
+            block_plan = legacy_to_blocks(
+                skills=list(start_body.get("skills") or []),
+                rounds_per_skill=int(start_body.get("rounds_per_skill") or 3),
+                round_type=str(start_body.get("round_type") or "technical_short_answer"),
+                round_config=start_body.get("round_config"),
+                round_plan=list(start_body.get("round_plan") or []) or None,
+            )
+    except (TypeError, ValueError):
+        return None
+    scopes = list(_interview_planned_scopes(block_plan).values())
+    if not scopes:
+        return None
+    skills = [item for scope in scopes for item in scope["skills"]]
+    planned = {str(item["skill"]).strip().lower() for item in skills}
+    not_covered: list[str] = []
+    for skill in [s for scope in scopes for s in scope["not_covered"]] + list(confirmed_skills or []):
+        if str(skill).strip().lower() not in planned and skill not in not_covered:
+            not_covered.append(skill)
+    return {
+        "questions": sum(int(scope["questions"]) for scope in scopes),
+        "skills": skills,
+        "not_covered": not_covered,
+    }
+
+
+def _reference_shortfall(scope: dict[str, Any]) -> str | None:
+    """Why an Interview block cannot be asked as scored questions, if it can't.
+
+    Every planned question needs a reference answer and keywords to be
+    scored, and has to be about its skill. With generation off, the offline
+    bank must hold enough such questions for each planned skill; the scope
+    is never quietly filled from another skill's questions.
+    """
+    short = [item for item in scope["skills"] if item.get("available") is False]
+    if not short:
+        return None
+
+    def planned(item: dict[str, Any]) -> int:
+        return item.get("planned_total") or item["questions"]
+
+    def pronoun(items: list[dict[str, Any]]) -> str:
+        return "it" if len(items) == 1 else "them"
+
+    # Two different problems with two different remedies: nothing offline is
+    # about the skill at all, or there is some content but less than planned.
+    none = [item for item in short if not item["offline_questions"]]
+    few = [item for item in short if item["offline_questions"]]
+    parts = ["Not enough scored interview questions are available offline."]
+    if none:
+        listed = ", ".join(f"'{item['skill']}' ({planned(item)} planned)" for item in none)
+        parts.append(
+            f"No offline questions for {listed}: remove {pronoun(none)}, or use "
+            "live question generation where it is configured."
+        )
+    if few:
+        listed = ", ".join(
+            f"'{item['skill']}' ({planned(item)} planned, {item['offline_questions']} available"
+            + (f", shared with {' and '.join(item['shared_with'])}" if item.get("shared_with") else "")
+            + ")"
+            for item in few
+        )
+        parts.append(
+            f"Fewer than planned for {listed}: lower the question count or "
+            f"remove {pronoun(few)}."
+        )
+    return " ".join(parts)
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
     allow_unknown_fallback: bool = False,
     sub_domain: str | None = None,
+    staged_v1: bool = False,
 ) -> None:
     """Check every block's content limits upfront (no writes).
 
@@ -1514,6 +1664,12 @@ def _validate_block_content(
                                 + ". Split the block, adjust skills, or clear "
                                 "the topic."
                             )
+    # Scored interview questions need a reference answer; checked across the
+    # plan passed in, since blocks can share one offline pool.
+    for scope in _interview_planned_scopes(block_plan, staged_v1=staged_v1).values():
+        shortfall = _reference_shortfall(scope)
+        if shortfall:
+            raise ValueError(shortfall)
 
 
 def _inline_bundle_generation_enabled() -> bool:
@@ -1654,7 +1810,8 @@ def start_session(
     try:
         _validate_block_content(block_plan, expanded,
                                 allow_unknown_fallback=allow_unknown_fallback,
-                                sub_domain=request.sub_domain)
+                                sub_domain=request.sub_domain,
+                                staged_v1=staged_meta is not None)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1800,6 +1957,7 @@ def start_session(
             block_index=opening_spec.get("block_index"),
             block_total=opening_spec.get("block_total"),
             allow_unknown_fallback=allow_unknown_fallback,
+            staged_v1=staged_meta is not None,
         )
         if opening_stage not in ("warm_up", "behavioural"):
             _verify_served_topic(
@@ -2023,15 +2181,26 @@ def check_availability(
         by_block.setdefault(str(spec.get("block_id")), []).append(spec)
 
     gate_on = reviewed_bundles_only()
+    # Additive: the scope each Interview block will actually ask, with
+    # offline pools counted across the whole plan as the start does.
+    scopes = _interview_planned_scopes(block_plan, staged_v1=staged_meta is not None)
     results: list[dict[str, object]] = []
     for block in block_plan:
         specs = by_block.get(str(block.get("id")), [])
+        scope = scopes.get(str(block.get("id")))
+        planned_scope = {"planned_scope": scope} if scope else {}
         try:
             _validate_block_content(
                 [block], specs,
                 allow_unknown_fallback=allow_unknown_fallback,
                 sub_domain=request.sub_domain,
+                staged_v1=staged_meta is not None,
             )
+            # A pool shared with other blocks can be short even when this
+            # block alone fits.
+            shortfall = _reference_shortfall(scope) if scope else None
+            if shortfall:
+                raise ValueError(shortfall)
         except ValueError as exc:
             results.append({
                 "position": block.get("position"),
@@ -2040,6 +2209,7 @@ def check_availability(
                 "topic": block.get("topic"),
                 "available": False,
                 "reason": str(exc),
+                **planned_scope,
             })
             continue
         detail: dict[str, object] = {}
@@ -2055,6 +2225,7 @@ def check_availability(
             "available": True,
             "reason": None,
             "detail": detail,
+            **planned_scope,
         })
     return {
         "reviewed_only": gate_on,
