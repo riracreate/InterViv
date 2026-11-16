@@ -1093,6 +1093,59 @@ def _humanize_concept_label(targets_concept: str) -> str:
     return clean or "Targeted concept"
 
 
+_PROMPT_ECHO_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "because", "by", "can", "could",
+    "did", "do", "does", "during", "even", "follow", "followup", "for", "from",
+    "how", "in", "into", "is", "it", "its", "of", "on", "or", "other", "should",
+    "so", "still", "that", "the", "their", "them", "then", "there", "these",
+    "they", "this", "to", "under", "up", "very", "what", "when", "where",
+    "which", "while", "who", "why", "will", "with", "would", "yes", "no",
+    "not", "never", "without", "cannot", "cant",
+})
+
+
+def _content_word_stems(text: str) -> set[str]:
+    """Normalized non-stopword tokens for prompt-echo discounting (P1)."""
+    out: set[str] = set()
+    for raw in re.findall(r"[A-Za-z0-9]+", (text or "").casefold()):
+        if len(raw) <= 2 or raw in _PROMPT_ECHO_STOPWORDS:
+            continue
+        stem = raw[:-1] if len(raw) > 4 and raw.endswith("s") and not raw.endswith("ss") else raw
+        out.add(stem)
+    return out
+
+
+def _supported_with_novel_evidence(
+    *,
+    answer_text: str,
+    prompt_text: str,
+    matched_entry: dict[str, Any],
+) -> bool:
+    """True only when at least one supported proposition adds evidence beyond the prompt."""
+    from modules.concept_evaluator_v2 import _proposition_support
+
+    answer_stems = _content_word_stems(answer_text)
+    prompt_stems = _content_word_stems(prompt_text)
+    if not answer_stems:
+        return False
+    # Repeating prompt words alone (0 new content tokens outside prompt) never passes.
+    if prompt_stems and not (answer_stems - prompt_stems):
+        return False
+
+    for raw_prop in matched_entry.get("expected_propositions") or []:
+        prop = str(raw_prop or "").strip()
+        if not prop:
+            continue
+        if _proposition_support(answer_text, prop) != "supported":
+            continue
+        prop_stems = _content_word_stems(prop)
+        # Discount propositions whose entire content-word vocabulary was supplied by the prompt.
+        if prop_stems and prompt_stems and prop_stems.issubset(prompt_stems):
+            continue
+        return True
+    return False
+
+
 def evaluate_inline_follow_up_outcome(
     *,
     active_round: dict[str, Any],
@@ -1100,12 +1153,13 @@ def evaluate_inline_follow_up_outcome(
     answer_text: str,
     scoring_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build concept-only outcome & feedback for an inline bundle follow-up (A8).
+    """Build concept-only 3-state outcome & feedback for an inline bundle follow-up (A8/P1).
 
-    Evaluates strictly whether the follow-up answer demonstrated its
-    ``targets_concept`` using the bundle concept definition (without excluding
-    terms mentioned in the follow-up prompt itself) and suppresses all
-    parent-rubric messages and numeric scores.
+    Maps ``concept_evaluator_v2`` states to three outcomes:
+      - ``demonstrated`` (proposition supported with non-prompt evidence)
+      - ``unclear`` (``uncertain`` — alias/mention without resolved proposition)
+      - ``not_clearly_demonstrated`` (``not_demonstrated``, ``contradicted``,
+        active misconception, or prompt-word repetition only)
     """
     cfg = active_round.get("config_json") or {}
     if not isinstance(cfg, dict):
@@ -1142,8 +1196,12 @@ def evaluate_inline_follow_up_outcome(
     if not concept_label:
         concept_label = _humanize_concept_label(targets_concept)
 
+    prompt_text = str(active_round.get("question") or (scoring_question_context or {}).get("question") or "")
+    answer_stems = _content_word_stems(answer_text or "")
+    prompt_stems = _content_word_stems(prompt_text)
+    is_pure_prompt_echo = bool(prompt_stems) and (not answer_stems or not (answer_stems - prompt_stems))
+
     eval_state: str | None = None
-    demonstrated = False
 
     if matched_entry is not None and matched_entry.get("expected_propositions"):
         from modules.concept_evaluator_v2 import evaluate_answer
@@ -1156,9 +1214,31 @@ def evaluate_inline_follow_up_outcome(
             },
         )
         items = evidence.get("concepts") or []
-        if items:
-            eval_state = str(items[0].get("state") or "not_demonstrated").strip().lower()
-            demonstrated = eval_state == "supported"
+        raw_state = (
+            str(items[0].get("state") or "not_demonstrated").strip().lower()
+            if items
+            else "not_demonstrated"
+        )
+        active_misconception = any(
+            bool(m.get("matched")) and not bool(m.get("refuted"))
+            for m in (evidence.get("misconceptions") or [])
+            if isinstance(m, dict)
+        )
+        if raw_state == "contradicted" or active_misconception:
+            eval_state = "contradicted"
+        elif raw_state == "supported":
+            if _supported_with_novel_evidence(
+                answer_text=answer_text or "",
+                prompt_text=prompt_text,
+                matched_entry=matched_entry,
+            ):
+                eval_state = "supported"
+            else:
+                eval_state = "not_demonstrated"
+        elif raw_state == "uncertain":
+            eval_state = "not_demonstrated" if is_pure_prompt_echo else "uncertain"
+        else:
+            eval_state = "not_demonstrated"
 
     if eval_state is None:
         sr = dict(scoring_result or {})
@@ -1179,13 +1259,12 @@ def evaluate_inline_follow_up_outcome(
             status_val = str(entry.get("status") or "").strip().lower()
             if method == "contradicted":
                 eval_state = "contradicted"
-                demonstrated = False
+            elif method == "uncertain" or status_val == "uncertain":
+                eval_state = "not_demonstrated" if is_pure_prompt_echo else "uncertain"
             elif bool(entry.get("matched")) or method == "supported" or status_val == "matched":
-                eval_state = "supported"
-                demonstrated = True
+                eval_state = "not_demonstrated" if is_pure_prompt_echo else "supported"
             else:
                 eval_state = "not_demonstrated"
-                demonstrated = False
             break
 
         if eval_state is None:
@@ -1198,26 +1277,36 @@ def evaluate_inline_follow_up_outcome(
             for item in matched_list:
                 lbl = _extract_concept_label(item)
                 if lbl and target_keys and (target_keys & _concept_match_keys(lbl)):
-                    eval_state = "supported"
-                    demonstrated = True
+                    eval_state = "not_demonstrated" if is_pure_prompt_echo else "supported"
                     break
             if eval_state is None:
                 eval_state = "not_demonstrated"
-                demonstrated = False
 
-    if demonstrated:
+    if eval_state == "supported":
+        demonstrated = True
+        status_label = "demonstrated"
         feedback = {
             "content": [f"{concept_label}: demonstrated in your follow-up answer."],
             "strengths": [f"Demonstrated {concept_label}."],
             "weakness": [],
             "next_step": "Continue with the remaining rounds.",
         }
-        status_label = "demonstrated"
+    elif eval_state == "uncertain":
+        demonstrated = False
+        status_label = "unclear"
+        feedback = {
+            "content": [f"{concept_label}: unclear from your follow-up answer."],
+            "strengths": [],
+            "weakness": [f"{concept_label} was unclear in this follow-up."],
+            "next_step": f"Clarify {concept_label} with concrete mechanism detail.",
+        }
     else:
+        demonstrated = False
+        status_label = "not_clearly_demonstrated"
         qualifier = (
-            "contradicted"
+            "not clearly demonstrated (contradicted)"
             if eval_state == "contradicted"
-            else "not demonstrated"
+            else "not clearly demonstrated"
         )
         feedback = {
             "content": [f"{concept_label}: {qualifier} in your follow-up answer."],
@@ -1225,7 +1314,6 @@ def evaluate_inline_follow_up_outcome(
             "weakness": [f"{concept_label} was {qualifier} in this follow-up."],
             "next_step": f"Review {concept_label} before your next session.",
         }
-        status_label = "not_demonstrated"
 
     return {
         "targets_concept": targets_concept,

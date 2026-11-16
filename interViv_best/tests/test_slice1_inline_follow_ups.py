@@ -1564,9 +1564,11 @@ def test_s1b1_inline_followup_client_hides_score_and_breakdown_while_preserving_
     ).lower()
     assert outcome["concept_label"].lower() in fb_text
     if expected_demonstrated:
-        assert "demonstrated" in fb_text and "not demonstrated" not in fb_text
+        assert outcome["status"] == "demonstrated"
+        assert "demonstrated" in fb_text and "not clearly demonstrated" not in fb_text
     else:
-        assert "not demonstrated" in fb_text
+        assert outcome["status"] == "not_clearly_demonstrated"
+        assert "not clearly demonstrated" in fb_text
     for forbidden in ("very brief", "lacked specific technical keywords", "review the core concepts"):
         assert forbidden not in fb_text
 
@@ -1902,3 +1904,141 @@ def test_s1b3_deferred_feedback_three_core_shared_topic_one_followup_all_core_el
             assert fb.json()["final_score"] is None
         else:
             assert fb.json()["assessment_eligibility"] == "eligible"
+
+
+def test_p1_followup_outcome_robustness_prompt_echo_without_alias_wrong_alias_and_three_states():
+    """P1: prompt-echo rejection (a), explanation without alias (b), wrong with alias (c), and 3 states."""
+    from modules.follow_ups import evaluate_inline_follow_up_outcome
+
+    bundle_ctx = {
+        "question": "Explain how CPython GIL affects blocking I/O.",
+        "required_concepts": [
+            {
+                "id": "io_release",
+                "descriptor": "Blocking I/O syscalls release the lock so other threads run",
+                "aliases": ["blocking io", "blocking i/o", "io syscalls"],
+                "expected_propositions": ["blocking io releases lock", "syscalls release lock"],
+            }
+        ],
+        "misconceptions": [
+            {
+                "id": "never_release",
+                "description": "blocking io keeps holding lock across cores",
+                "candidate_patterns": ["threads run python bytecode simultaneously across cores"],
+            }
+        ],
+    }
+
+    # Case (a): prompt names concept/proposition terms and candidate ONLY repeats prompt wording.
+    prompt_echo_round = {
+        "round": 2,
+        "question": "Follow-up: How do blocking I/O syscalls release the lock?",
+        "targets_concept": "io_release",
+        "config_json": {"targets_concept": "io_release", "stage": "follow_up"},
+    }
+    res_a = evaluate_inline_follow_up_outcome(
+        active_round=prompt_echo_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Blocking I/O syscalls release the lock.",
+    )
+    assert res_a["demonstrated"] is False
+    assert res_a["status"] == "not_clearly_demonstrated"
+
+    # Also Case (a) when prompt only names the alias and candidate merely echoes prompt phrasing.
+    prompt_alias_round = {
+        "round": 2,
+        "question": "Follow-up: Why can blocking I/O threads overlap cleanly?",
+        "targets_concept": "io_release",
+        "config_json": {"targets_concept": "io_release", "stage": "follow_up"},
+    }
+    res_a2 = evaluate_inline_follow_up_outcome(
+        active_round=prompt_alias_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Blocking I/O threads overlap cleanly.",
+    )
+    assert res_a2["demonstrated"] is False
+    assert res_a2["status"] == "not_clearly_demonstrated"
+
+    # Case (b): correct explanation WITHOUT using the concept aliases ("blocking io" / "io syscalls").
+    res_b = evaluate_inline_follow_up_outcome(
+        active_round=prompt_alias_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Wait syscalls temporarily release the interpreter lock so another thread executes.",
+    )
+    assert res_b["demonstrated"] is True
+    assert res_b["status"] == "demonstrated"
+
+    # Case (c1): wrong statement containing alias that contradicts proposition -> not clearly demonstrated.
+    res_c_wrong = evaluate_inline_follow_up_outcome(
+        active_round=prompt_alias_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Blocking I/O never releases lock state cleanly for other waiting threads.",
+    )
+    assert res_c_wrong["demonstrated"] is False
+    assert res_c_wrong["status"] == "not_clearly_demonstrated"
+
+    # Case (c2): off-base claim containing alias without proposition resolution -> evaluator "uncertain" -> "unclear" (never "demonstrated").
+    res_unclear = evaluate_inline_follow_up_outcome(
+        active_round=prompt_alias_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Blocking I/O optimizes hash bucket caching across tuples cleanly.",
+    )
+    assert res_unclear["demonstrated"] is False
+    assert res_unclear["status"] == "unclear"
+    assert "unclear" in " ".join(res_unclear["feedback"]["content"]).lower()
+
+    # Case (c3): active misconception + alias -> not_clearly_demonstrated.
+    res_misc = evaluate_inline_follow_up_outcome(
+        active_round=prompt_alias_round,
+        scoring_question_context=bundle_ctx,
+        answer_text="Blocking I/O means threads run python bytecode simultaneously across cores.",
+    )
+    assert res_misc["demonstrated"] is False
+    assert res_misc["status"] == "not_clearly_demonstrated"
+
+
+def test_p1_end_to_end_unclear_alias_only_followup_status_propagates(slice1_sql_env):
+    """P1: evaluator 'uncertain' (alias-only mention) surfaces status='unclear' via API."""
+    _seed_bundle(
+        "python.p1.unclear",
+        status="auto_checked",
+        topic="Interpreter Mutex",
+        question="Explain GIL bytecode mutex and blocking I/O release.",
+    )
+    client = TestClient(app)
+    user = _make_user("p1-unclear")
+    start = client.post(
+        "/session/start",
+        headers=_headers(user),
+        json={"skills": ["Python"], "rounds_per_skill": 1, "practice_mode": "coached_practice"},
+    )
+    assert start.status_code == 200
+    sid = start.json()["session_id"]
+
+    r1 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 1,
+            "answer_text": "Only one thread runs bytecode at once under the GIL mutex.",
+        },
+    )
+    assert r1.status_code == 200 and r1.json()["follow_up_scheduled"] is True
+
+    activate(client, _headers(user), sid, 2)
+    r2 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 2,
+            "answer_text": "Blocking IO scheduling involves queues inside kernel drivers.",
+        },
+    )
+    assert r2.status_code == 200, r2.text
+    b2 = r2.json()
+    assert b2["final_score"] is None
+    assert b2["follow_up_outcome"]["status"] == "unclear"
+    assert b2["follow_up_outcome"]["demonstrated"] is False
+    assert "unclear" in b2["feedback"]["content"][0].lower()

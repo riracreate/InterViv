@@ -5,6 +5,7 @@ import {
   PHASES,
   canRequestManualFollowUp,
   followUpOutcomeFromPayload,
+  followUpOutcomeLabel,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
@@ -194,6 +195,19 @@ test('S1b-2: activation and history carry isFollowUp, followUpParentRound, and c
   });
   assert.equal(state.isFollowUp, true);
   assert.equal(state.followUpParentRound, 1);
+
+  assert.equal(
+    followUpOutcomeLabel({ status: 'demonstrated', demonstrated: true }),
+    'Demonstrated',
+  );
+  assert.equal(
+    followUpOutcomeLabel({ status: 'not_clearly_demonstrated', demonstrated: false }),
+    'Not clearly demonstrated',
+  );
+  assert.equal(
+    followUpOutcomeLabel({ status: 'unclear', demonstrated: false }),
+    'Unclear',
+  );
 });
 
 test('S1b-2: manual follow-up CTA is suppressed when inline follow-up is scheduled or on any follow-up round', () => {

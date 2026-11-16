@@ -7,6 +7,7 @@ import {
   TECHNICAL_ADVISORY_SECONDS,
   canRequestManualFollowUp,
   followUpOutcomeFromPayload,
+  followUpOutcomeLabel,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
@@ -1493,13 +1494,15 @@ export default function Interview({ sessionState = null }) {
                     style={{
                       fontFamily: "var(--font-display)",
                       color: followUpOutcome
-                        ? (followUpOutcome.demonstrated ? '#16A34A' : '#D97706')
+                        ? (followUpOutcome.demonstrated
+                          ? '#16A34A'
+                          : followUpOutcome.status === 'unclear'
+                            ? '#D97706'
+                            : '#DC2626')
                         : 'var(--color-ink)',
                     }}
                   >
-                    {followUpOutcome
-                      ? (followUpOutcome.demonstrated ? 'Concept demonstrated' : 'Concept not demonstrated')
-                      : 'Follow-up submitted'}
+                    {followUpOutcomeLabel(followUpOutcome)}
                   </div>
                   {followUpOutcome?.concept_label && (
                     <p className="text-xs font-medium text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>

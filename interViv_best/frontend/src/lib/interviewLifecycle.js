@@ -106,6 +106,19 @@ export function followUpOutcomeFromPayload(payload) {
   return outcome;
 }
 
+/** Display label for the three inline follow-up outcomes (P1). */
+export function followUpOutcomeLabel(outcome) {
+  if (!outcome) return 'Follow-up submitted';
+  const status = String(outcome.status || '').trim().toLowerCase();
+  if (status === 'demonstrated' || outcome.demonstrated === true) {
+    return 'Demonstrated';
+  }
+  if (status === 'unclear') {
+    return 'Unclear';
+  }
+  return 'Not clearly demonstrated';
+}
+
 /** Whether the legacy "Request optional follow-up" CTA may be shown for this round. */
 export function canRequestManualFollowUp({
   roundType,
