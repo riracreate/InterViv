@@ -186,3 +186,63 @@ def test_live_cli_with_sqlite_database_prints_path_and_runs(
     assert f"Database: {db_path}" in out
     assert calls.get("bundle_generation", 0) >= 1
     assert db_path.exists()
+
+
+def test_refuses_protected_db_in_every_mode_absolute_relative_and_symlink(
+    guard_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    protected_dir = guard_env / "protected_dir"
+    protected_dir.mkdir(parents=True, exist_ok=True)
+    protected_db = protected_dir / "protected.sqlite3"
+    protected_db.write_bytes(b"original-protected-bytes")
+    symlink_db = guard_env / "alias_link.sqlite3"
+    symlink_db.symlink_to(protected_db)
+
+    monkeypatch.setattr(pregenerate_bundles, "_PROTECTED_LOCAL_DB_PATH", protected_db)
+    monkeypatch.setenv("INTERVIV_ALLOW_LIVE_ON_MEMORY_DB", "1")
+    monkeypatch.chdir(guard_env)
+
+    calls: dict[str, int] = {}
+    _counting_overrides(calls)
+
+    candidate_urls = [
+        f"sqlite:///{protected_db}",
+        "sqlite:///protected_dir/protected.sqlite3",
+        f"sqlite:///{symlink_db}",
+        "sqlite:///alias_link.sqlite3",
+    ]
+
+    for url in candidate_urls:
+        monkeypatch.setenv("DATABASE_URL", url)
+        _clear_all_caches()
+
+        for mode_kwargs in (
+            {"dry_run": True},
+            {"estimate_only": True},
+            {"allow_live": False},
+            {"allow_live": True},
+        ):
+            report = pregenerate_bundles.run_pregeneration(
+                roles=["Backend Engineer"],
+                max_bundles=1,
+                export_yaml=False,
+                **mode_kwargs,
+            )
+            assert report["aborted"] is True
+            assert report["abort_reason"] == "protected_local_database"
+            assert "Refusing to run" in (report["abort_error"] or "")
+
+        for cli_args in (
+            ["--roles", "Backend Engineer", "--max-bundles", "1", "--dry-run", "--no-export-yaml"],
+            ["--roles", "Backend Engineer", "--max-bundles", "1", "--estimate", "--no-export-yaml"],
+            ["--roles", "Backend Engineer", "--max-bundles", "1", "--no-export-yaml"],
+            ["--roles", "Backend Engineer", "--max-bundles", "1", "--live", "--no-export-yaml"],
+        ):
+            code = pregenerate_bundles.main(cli_args)
+            out = capsys.readouterr().out
+            assert code == 1
+            assert "ABORTED (protected_local_database)" in out
+
+    assert calls == {}
+    assert protected_db.read_bytes() == b"original-protected-bytes"
+

@@ -91,6 +91,58 @@ def _temporarily_set_live_fetch(allow_live: bool | None):
             os.environ["LLM_LIVE_FETCH"] = prev
 
 
+_PROTECTED_LOCAL_DB_PATH = ROOT / "local-data" / "interviv-local.sqlite3"
+
+
+def _protected_local_db_path() -> Path:
+    return Path(_PROTECTED_LOCAL_DB_PATH).expanduser().resolve(strict=False)
+
+
+def _resolve_sqlite_db_path(database_url: str | None) -> Path | None:
+    """Resolve a SQLite DATABASE_URL to a canonical filesystem path, or None."""
+    raw = (database_url or "").strip()
+    if not raw:
+        return None
+    try:
+        from sqlalchemy.engine import make_url
+
+        parsed = make_url(raw)
+        if parsed.get_backend_name() != "sqlite":
+            return None
+        db_str = (parsed.database or "").strip()
+    except Exception:
+        if not raw.lower().startswith("sqlite"):
+            return None
+        sep = raw.find(":///")
+        if sep < 0:
+            return None
+        db_str = raw[sep + 4 :].split("?", 1)[0].strip()
+
+    if not db_str or db_str == ":memory:":
+        return None
+    if db_str.startswith("file:"):
+        from urllib.parse import unquote, urlparse
+
+        db_str = unquote(urlparse(db_str).path or db_str.removeprefix("file:"))
+    if not db_str or db_str == ":memory:":
+        return None
+    return Path(db_str).expanduser().resolve(strict=False)
+
+
+def protected_local_db_error() -> str | None:
+    """Unconditional refusal when DATABASE_URL resolves to the protected local DB."""
+    url = get_settings().database_url
+    resolved = _resolve_sqlite_db_path(url)
+    protected = _protected_local_db_path()
+    if resolved is not None and resolved == protected:
+        return (
+            f"Refusing to run: DATABASE_URL resolves to the protected local "
+            f"database ({protected}). Point DATABASE_URL to a separate SQLite "
+            f"file (for example sqlite:///<path>/interviv.db)."
+        )
+    return None
+
+
 def describe_database_target() -> str:
     """Human-readable write target for the currently resolved database."""
     url = get_settings().database_url
@@ -713,6 +765,22 @@ def run_pregeneration(
         "results": [],
     }
 
+    protected_error = protected_local_db_error()
+    if protected_error is not None:
+        report["aborted"] = True
+        report["abort_reason"] = "protected_local_database"
+        report["abort_error"] = protected_error
+        report["errors"].append({"error": protected_error})
+        report["usage"] = {
+            "count": 0,
+            "ok_count": 0,
+            "error_count": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        return report
+
     if dry_run or estimate_only:
         with _temporarily_set_live_fetch(False):
             planned = plan_bundle_cells(
@@ -1047,6 +1115,12 @@ def main(argv: list[str] | None = None) -> int:
         demoted_audit_path=args.demoted_audit_path,
         export_review_csv=args.export_review_csv,
     )
+
+    if report.get("abort_reason") == "protected_local_database":
+        if not (args.live and not args.dry_run and not args.estimate):
+            print(f"Database: {describe_database_target()}")
+        print(f"ABORTED (protected_local_database): {report.get('abort_error')}")
+        return 1
 
     if args.estimate:
         if report.get("estimate"):
