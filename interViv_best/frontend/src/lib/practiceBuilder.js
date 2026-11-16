@@ -656,6 +656,28 @@ export function multiSkillTopicNote(skills, metadata, metadataReady) {
   return `No topic is shared by ${list.join(' and ')}. Split into separate blocks, adjust skills, or leave the topic unrestricted.`;
 }
 
+export const INTERVIEW_QUESTION_COUNT = 10;
+// Offline, the largest single-skill pool of the default skill is nine scored
+// questions, so ten cannot start. Eight leaves room and is only a default.
+export const OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT = 8;
+
+/**
+ * Question count for the Interview practice form.
+ *
+ * A count the candidate chose always wins, including ten offline: the scope
+ * panel then reports the shortage, and nothing is shortened for them. Until
+ * they choose, Coached practice with no live generation starts at eight.
+ * Live generation, Assessment, and an unknown question source keep ten.
+ * `chosen` is null until the candidate edits a count; `liveGeneration` is
+ * the server's `interview_live_generation` (null while unknown).
+ */
+export function interviewQuestionCount({ chosen = null, practiceMode, liveGeneration = null }) {
+  if (chosen != null) return chosen;
+  return practiceMode === 'coached_practice' && liveGeneration === false
+    ? OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT
+    : INTERVIEW_QUESTION_COUNT;
+}
+
 function plannedTotal(item) {
   return Number(item.planned_total) || Number(item.questions) || 0;
 }

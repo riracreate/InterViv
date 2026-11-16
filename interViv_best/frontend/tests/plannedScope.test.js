@@ -8,7 +8,13 @@ import { mapCoachPlan } from '../src/lib/coachMapping.js';
 import {
   jobLaunchScope, jobPracticeBody, jobSkillKey, jobSkillList, jobStartState,
 } from '../src/lib/jobsMapping.js';
-import { summarizeLaunchScope, summarizePlannedScope } from '../src/lib/practiceBuilder.js';
+import {
+  INTERVIEW_QUESTION_COUNT,
+  OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT,
+  interviewQuestionCount,
+  summarizeLaunchScope,
+  summarizePlannedScope,
+} from '../src/lib/practiceBuilder.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
@@ -293,4 +299,44 @@ test('Jobs start request carries the previewed skills and blocks, not the raw fi
   assert.match(jobs, /disabled=\{busy \|\| !startState\.canStart\}/);
   assert.match(jobs, /if \(!prepare\?\.job_id \|\| !startState\.canStart\) return;/);
   assert.doesNotMatch(jobs, /job-scope-edited/);
+});
+
+test('offline Coached practice starts at eight questions; every other default stays ten', () => {
+  assert.equal(INTERVIEW_QUESTION_COUNT, 10);
+  assert.equal(OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT, 8);
+  const count = (args) => interviewQuestionCount(args);
+  // New session, nothing chosen yet.
+  assert.equal(count({ practiceMode: 'coached_practice', liveGeneration: false }), 8);
+  assert.equal(count({ practiceMode: 'coached_practice', liveGeneration: true }), 10);
+  assert.equal(count({ practiceMode: 'assessment', liveGeneration: false }), 10);
+  assert.equal(count({ practiceMode: 'assessment', liveGeneration: true }), 10);
+  // The question source is not known yet (or the lookup failed): no guess.
+  assert.equal(count({ practiceMode: 'coached_practice', liveGeneration: null }), 10);
+  assert.equal(count({ practiceMode: 'coached_practice' }), 10);
+});
+
+test('a count the candidate chose is never changed for them', () => {
+  const offline = { practiceMode: 'coached_practice', liveGeneration: false };
+  // Ten offline is kept, so the scope panel can report the shortage.
+  assert.equal(interviewQuestionCount({ ...offline, chosen: 10 }), 10);
+  assert.equal(interviewQuestionCount({ ...offline, chosen: 3 }), 3);
+  assert.equal(interviewQuestionCount({ ...offline, chosen: 8 }), 8);
+  // A cleared field stays what was typed; the form's own range check reports it.
+  assert.equal(interviewQuestionCount({ ...offline, chosen: 0 }), 0);
+  assert.equal(interviewQuestionCount({ practiceMode: 'assessment', liveGeneration: true, chosen: 4 }), 4);
+});
+
+test('only the Interview practice form uses the mode default, and only until a count is chosen', () => {
+  const practice = read('src/pages/Practice.jsx');
+  assert.match(practice, /chosen: countChosen \? standaloneCount : null,\s+practiceMode,\s+liveGeneration,/);
+  // The interview field, its scope preview and its start request share one count.
+  assert.match(practice, /data-testid="interview-question-count"[\s\S]{0,220}value=\{interviewCount\}/);
+  assert.equal((practice.match(/count: interviewCount,/g) || []).length, 2);
+  // Every count field records that the candidate chose; none sets it silently.
+  assert.equal((practice.match(/onChange=\{\(e\) => chooseCount\(Number\(e\.target\.value\)\)\}/g) || []).length, 4);
+  assert.doesNotMatch(practice, /onChange=\{\(e\) => setStandaloneCount\(/);
+  // The other standalone forms (OA, Verbal, SQL) keep their own shared count.
+  assert.equal((practice.match(/value=\{standaloneCount\}/g) || []).length, 3);
+  // The question source comes from the metadata the page already loads.
+  assert.equal((practice.match(/data\.interview_live_generation/g) || []).length, 4);
 });

@@ -799,6 +799,15 @@ def build_round_document(
     )
 
 
+def _interview_live_generation() -> bool:
+    from modules import question_runtime
+
+    try:
+        return bool(question_runtime.live_generation_available())
+    except Exception:  # pragma: no cover - metadata must not break the catalog
+        return False
+
+
 def _interview_topic_metadata() -> dict[str, list[str]]:
     """Skill → sorted interview topic names (metadata only).
 
@@ -890,6 +899,10 @@ def list_practice_bank_items() -> dict[str, Any]:
         "system_design": system_design,
         "ml_primitives": ml_primitives,
         "interview_topics": _interview_topic_metadata(),
+        # Additive: whether new interview questions are generated now or come
+        # from the offline bank. The form's default question count depends on
+        # it. A boolean only; nothing about the provider is exposed.
+        "interview_live_generation": _interview_live_generation(),
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),

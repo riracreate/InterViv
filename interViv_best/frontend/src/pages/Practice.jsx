@@ -62,6 +62,8 @@ import {
   sharedTopicsForSkills,
   summarizeAvailability,
   summarizePlannedScope,
+  INTERVIEW_QUESTION_COUNT,
+  interviewQuestionCount,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
@@ -131,7 +133,16 @@ export default function Practice() {
   const [sqlCases, setSqlCases] = useState(1);
 
   // Phase B standalone forms
-  const [standaloneCount, setStandaloneCount] = useState(10);
+  const [standaloneCount, setStandaloneCount] = useState(INTERVIEW_QUESTION_COUNT);
+  // False until the candidate edits a count. Until then Interview practice
+  // uses its mode's default (interviewQuestionCount) instead of this state.
+  const [countChosen, setCountChosen] = useState(false);
+  const chooseCount = (value) => {
+    setCountChosen(true);
+    setStandaloneCount(value);
+  };
+  // Whether new interview questions are generated live; null until known.
+  const [liveGeneration, setLiveGeneration] = useState(null);
   const [standaloneDuration, setStandaloneDuration] = useState(20);
   const [standaloneDifficulty, setStandaloneDifficulty] = useState('');
   const [standaloneTopics, setStandaloneTopics] = useState(DEFAULT_STANDALONE_TOPICS);
@@ -235,6 +246,9 @@ export default function Practice() {
         if (cancelled) return;
         setTopicMetadataError(false);
         setTopicMetadata(data.interview_topics || {});
+        setLiveGeneration(
+          typeof data.interview_live_generation === 'boolean' ? data.interview_live_generation : null
+        );
       })
       .catch(() => {
         if (cancelled) return;
@@ -252,6 +266,9 @@ export default function Practice() {
       .then((data) => {
         setTopicMetadataError(false);
         setTopicMetadata(data.interview_topics || {});
+        setLiveGeneration(
+          typeof data.interview_live_generation === 'boolean' ? data.interview_live_generation : null
+        );
       })
       .catch(() => {
         setTopicMetadata({});
@@ -366,6 +383,14 @@ export default function Practice() {
     [standaloneTopics]
   );
 
+  // Interview practice: the count the candidate chose, else the default for
+  // this session mode and question source. Other forms use standaloneCount.
+  const interviewCount = interviewQuestionCount({
+    chosen: countChosen ? standaloneCount : null,
+    practiceMode,
+    liveGeneration,
+  });
+
   // Planned scope preview: the server's plan for the current interview
   // selection, from the same endpoint the start button probes.
   const [plannedScope, setPlannedScope] = useState(null);
@@ -374,7 +399,7 @@ export default function Practice() {
     if (mode === 'interview') {
       mapped = mapStandaloneToStartPayload('interview', {
         skills: standaloneSkillList,
-        count: standaloneCount,
+        count: interviewCount,
         difficulty: standaloneDifficulty || undefined,
         topic: standaloneTopic || undefined,
         targetCompanyId: target.companyId,
@@ -394,7 +419,7 @@ export default function Practice() {
       });
     }
     return mapped?.payload && payloadHasInterview(mapped.payload) ? mapped.payload : null;
-  }, [mode, standaloneSkillList, standaloneCount, standaloneDifficulty, standaloneTopic,
+  }, [mode, standaloneSkillList, interviewCount, standaloneDifficulty, standaloneTopic,
     skills, roundsPerSkill, blocks, target.companyId, target.roleId]);
   useEffect(() => {
     if (!scopePayload || !userId) {
@@ -954,7 +979,7 @@ export default function Practice() {
                   type="number" min={1} max={30}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1002,7 +1027,7 @@ export default function Practice() {
                   type="number" min={1} max={30}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1173,7 +1198,7 @@ export default function Practice() {
                   type="number" min={1} max={5}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1280,9 +1305,10 @@ export default function Practice() {
                 Questions (1–10)
                 <input
                   type="number" min={1} max={10}
+                  data-testid="interview-question-count"
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                  value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  value={interviewCount}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1305,7 +1331,7 @@ export default function Practice() {
               className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               onClick={() => runStart(mapStandaloneToStartPayload('interview', {
                 skills: standaloneSkillList,
-                count: standaloneCount,
+                count: interviewCount,
                 difficulty: standaloneDifficulty || undefined,
                 topic: standaloneTopic || undefined,
                 candidateId: resumeState.candidateId || undefined,

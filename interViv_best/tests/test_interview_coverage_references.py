@@ -1118,6 +1118,54 @@ def test_live_questions_leave_narration_rendered_at_submit(monkeypatch: pytest.M
     assert job["artifact"]["metadata"]["validation"] == "generation_disabled"
 
 
+# ── The default question count depends on where questions come from ─────────
+
+def test_practice_metadata_says_whether_interview_questions_are_generated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+    headers = _headers(_make_user("cov-source"))
+    assert client.get("/session/practice-bank").status_code == 401
+
+    offline = client.get("/session/practice-bank", headers=headers)
+    assert offline.status_code == 200, offline.text
+    assert offline.json()["interview_live_generation"] is False
+    # A key alone is not live generation: the gate has to be open for questions.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    assert client.get("/session/practice-bank", headers=headers).json()["interview_live_generation"] is False
+
+    monkeypatch.setenv("LLM_LIVE_FETCH", "1")
+    monkeypatch.setenv("QUESTION_GENERATION_MODE", "llm_csv_fallback")
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "questions")
+    assert client.get("/session/practice-bank", headers=headers).json()["interview_live_generation"] is True
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "coach")
+    assert client.get("/session/practice-bank", headers=headers).json()["interview_live_generation"] is False
+
+
+def test_the_offline_default_of_eight_starts_and_an_explicit_ten_is_reported_short() -> None:
+    """The form's offline Coached default is eight DBMS questions. Ten is
+    still accepted as a request and answered with the shortage, never cut."""
+    client = TestClient(app)
+    user = _make_user("cov-default")
+    headers = _headers(user)
+    eight = {"blocks": [_interview(["DBMS"], 8)], "practice_mode": "coached_practice"}
+    assert client.post("/session/availability", headers=headers, json=eight).json()["available"] is True
+
+    ten = {"blocks": [_interview(["DBMS"], 10)], "practice_mode": "coached_practice"}
+    availability = client.post("/session/availability", headers=headers, json=ten).json()
+    assert availability["available"] is False
+    item = availability["blocks"][0]["planned_scope"]["skills"][0]
+    assert (item["questions"], item["offline_questions"], item["available"]) == (10, 9, False)
+    refused = client.post("/session/start", headers=headers, json=ten)
+    assert refused.status_code == 422, refused.text
+    assert "Fewer than planned for 'DBMS' (10 planned, 9 available)" in refused.json()["detail"]
+    assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
+
+    started = client.post("/session/start", headers=headers, json=eight)
+    assert started.status_code == 200, started.text
+    assert started.json()["total_rounds"] == 8
+
+
 # ── The launcher ─────────────────────────────────────────────────────────────
 
 def test_local_launcher_generates_questions_only_when_asked(tmp_path, monkeypatch) -> None:
