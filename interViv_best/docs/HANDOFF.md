@@ -2,11 +2,11 @@
 
 ## State
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
-- **Latest implementation**: S2b staged reference-free Core handling (this task commit), following Slice 2 checkpoint `d2253df`. Use `git log -1` for HEAD; 3a is the next approved task.
+- **Latest implementation**: Slice 3a Quick launcher and separate resumable staged screen (this task commit), after S2b `1dff9e6` and approved plan D3 `afd384e`. Use `git log -1` for HEAD. Stop before 3b–3e; they require further approval.
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
 - **Parked guard proposal**: The previous working-tree draft is parked at `docs/parked/guard_short_cap_v4_1.patch` (with rationale and `pos=35` note in `docs/parked/README.md`). Working tree `modules/answer_guard_v4.py` (`sha256: 90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae`) and `tests/test_scorer_v4.py` are restored to `2bcd3d7`.
 - **Default flags**: `v3` remains default (`SCORER_VERSION=v4` OFF); `REVIEWED_BUNDLES_ONLY=false` (`backend/config.py:138`); `STAGED_INLINE_FOLLOW_UPS=false` (`backend/config.py:43`); `LLM_LIVE_FETCH=0`.
-- **Tests**: Owner/reference expected with S2b: `1181 passed, 6 skipped` (owner run pending). Latest sandbox full suite: `1175 passed, 6 skipped, 6 environmental failures`, accepted under the revised cause-based rule below. Last frontend verification: `199 passed`; build exit `0`.
+- **Tests**: Owner/reference expected with S2b: `1181 passed, 6 skipped` (owner run pending). Latest sandbox full suite after 3a: `1175 passed, 6 skipped, 6 environmental failures`, satisfying the revised cause-based rule below. Frontend: `216 passed, 0 failed`; build exit `0`.
 
 ## Decisions & Known Limitations
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
@@ -50,7 +50,7 @@
 
 - **T0 integrity**: Takeover HEAD `d2253df`, branch `ws2-pre-pilot-checkpoint`, clean Git status before and after tests/build, no untracked or unfinished work. Real DB SHA256 remained the value in State above; all 8 v4 manifest files matched before and after. One stash and three other registered worktrees were left untouched, including the existing prunable entry; no cleanup was attempted.
 - **Owner/reference pytest baseline**: `1176 passed, 6 skipped, 0 failed`. The owner runs the full suite outside the sandbox at acceptance points; this agent has not run pytest outside the sandbox.
-- **Accepted sandbox baseline (T0 measured)**: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m pytest -q -rs` completed with `1171 passed, 6 skipped, 5 failed` (exit `1`, `102.26s`). The five exact node IDs below all failed with `PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)`, through `backend/local_runner.py:172` (`parent.children(recursive=True)`), called at `backend/local_runner.py:267`. Reviewer accepted this environment mismatch only. Any different failure, additional node, or different cause is a real mismatch: stop and report. Never run pytest outside the sandbox or modify the runner/tests to accommodate this environment.
+- **Historical sandbox baseline (T0 measured; fixed-node rule superseded by the S2b cause-based rule below)**: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m pytest -q -rs` completed with `1171 passed, 6 skipped, 5 failed` (exit `1`, `102.26s`). The five exact node IDs below all failed with `PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)`, through `backend/local_runner.py:172` (`parent.children(recursive=True)`), called at `backend/local_runner.py:267`. Never run pytest outside the sandbox or modify the runner/tests to accommodate this environment.
 
 ```text
 tests/test_local_runner.py::test_worker_enforces_limits[while True:\n    pass\n-timeout]
@@ -99,8 +99,66 @@ tests/test_ml_execution.py::test_candidate_errors_score_zero_with_a_kind[import 
 - **Call-path finding**: `tests/test_ml_execution.py:83` -> `backend/ml_primitives/evaluate.py:144` -> `backend/local_runner.py:267` -> `_rss_bytes` at `local_runner.py:166-178`. Line 172 runs during ordinary memory polling after the worker is ready and while it is still running, before output/timeout/memory termination (`local_runner.py:257-270`), not only on the timeout/kill path. Short-lived workers can finish before polling reaches it. None of the execution-path files changed in S2b. The test module imports `backend.main` during collection for other tests, but this target does not call the changed routes/helper.
 - **Full-suite failing nodes (all six meet the revised rule)**: the five exact node IDs at lines 56–60 above, plus `tests/test_ml_execution.py::test_buggy_variants_through_the_worker[layer_norm.v1:batch_loop]`. Existing expectations changed: none. Protected real DB SHA256 and all 8 v4 hashes remain unchanged.
 
+## 3a — Usable Quick Interview (2026-11-16)
+
+- **Delivered**: `frontend/src/components/staged/StagedLauncherCard.jsx:3` and the separate handler at `frontend/src/pages/Practice.jsx:552` start Quick with the exact staged preset payload after an explicit availability probe. Existing legacy launchers/mappers remain unchanged. `frontend/src/components/InterviewRoute.jsx:23` dispatches staged sessions before the legacy completion redirect. `frontend/src/pages/StagedInterview.jsx:8` supports text answers, drafts, inline follow-up identity, saved-answer/Continue receipts, blocked-content retry and completion/dashboard link. No StageRail, ConversationThread, StagedDebriefCard or Practical composer was built; `Interview.jsx` and `dashboardMapping.js` remain unchanged.
+- **Lifecycle**: `frontend/src/lib/stagedSession.js:60,84` restores server round identity/status/counts/deadlines from GET, serializes mutations, refetches authoritative state and reconciles failed responses before permitting retries. Only prompt/progress fields enter the view; mutation evaluations are ignored, with no feedback/narration/coach requests. Drafts use the existing nested contract; a draft 404 is normal, other failures retain typed text. Completed sessions currently show only a receipt and dashboard link; 3c owns the sole-score debrief and dashboard Completion fix.
+- **Tests**: `frontend/tests/stagedQuick.test.js:25` adds 17 cases for payload/legacy isolation, availability failure, refresh phases, real offline Quick payloads including follow-ups, duplicate submission, reconciliation/activation/continuation retries, drafts and result-free rendering. Its helper `frontend/tests/helpers/emit_staged_quick_payloads.py:18` uses disposable SQLite with demo fixtures and explicit dotenv/network blockers. Existing test expectations changed: none. Full `npm test` passed `216` tests (`0` failed, `0` skipped); final `npm run build` exited `0` (`25.04s` Vite phase). Existing chunk-size/Browserslist notices remain.
+- **Full pytest**: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m pytest -q -rs` -> `1175 passed, 6 skipped, 6 failed`, exit `1`, `111.94s`. Every failure below meets the revised rule: one of the two runner test files, the exact sysctl PermissionError through unchanged `backend/local_runner.py:172`, and an empty required diff from `e76d29f`. Unlike S2b's layer-norm extra failure, this run's sixth node is softmax `naive_exp`. No pytest was run outside the sandbox.
+
+```text
+tests/test_local_runner.py::test_worker_enforces_limits[while True:\n    pass\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[import time\ntime.sleep(30)\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[x = []\nwhile True:\n    x.append(bytearray(8_000_000))\n-memory]
+tests/test_local_runner.py::test_candidate_failures_are_scored_outcomes[def two_sum(nums, target):\n    while True:\n        pass\n-timeout]
+tests/test_ml_execution.py::test_candidate_errors_score_zero_with_a_kind[import numpy as np\ndef softmax(logits):\n    while True:\n        pass\n-timeout]
+tests/test_ml_execution.py::test_buggy_variants_through_the_worker[softmax_stable.v1:naive_exp]
+```
+
+- **Copied-DB launch verification**: The real DB/copy was at Alembic `20261103_0017`, retaining the old bundle status constraint (`alembic/versions/20260913_0010_phase1a_question_bundles.py:55-57`). The first copy-only seeder attempt exited `2`: the seeder imports `generated` (`scripts/seed_demo_bundles.py:347`), while the old constraint lacks that status; the store masks IntegrityError as a generic conflict (`modules/bundle_store.py:209-217`). The reviewer explicitly authorized applying existing migrations to disposable copies outside the repo, with `DATABASE_URL` explicit per command. The clarified rule still forbids new/edited migration files and real-DB schema changes.
+- **Copy-only result**: `/private/tmp/interviv-quick-launch-up9reyoi/interviv-demo.sqlite3` successfully upgraded using existing migration 0018, then seeded all 3 demo fixtures as `auto_checked`. No migration file changed, no server/pilot was launched, and the copy was retained. Real DB SHA256 before and after was exactly `93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`; all 8 v4 manifest hashes match. The stash and all other worktrees, including the prunable entry, are untouched.
+
+### Launch Quick against a fresh disposable copy
+
+Backend terminal (existing migrations affect only this copy; no `.env` is loaded):
+
+```bash
+cd "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best"
+shasum -a 256 local-data/interviv-local.sqlite3
+demo_dir="$(mktemp -d /private/tmp/interviv-quick.XXXXXX)"
+demo_url="sqlite:///$demo_dir/interviv-demo.sqlite3"
+DATABASE_URL="$demo_url" .venv/bin/python - "$demo_dir/interviv-demo.sqlite3" <<'PY'
+import sqlite3, sys
+with sqlite3.connect('file:local-data/interviv-local.sqlite3?mode=ro', uri=True) as source:
+    with sqlite3.connect(sys.argv[1]) as target:
+        source.backup(target)
+PY
+export INTERVIV_DISABLE_DOTENV=1 INTERVIV_USE_MEMORY_DB=false ENVIRONMENT=development
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0
+export SCORER_VERSION=v3 STAGED_INLINE_FOLLOW_UPS=1 REVIEWED_BUNDLES_ONLY=false
+export QUESTION_GENERATION_MODE=csv
+export JWT_SECRET_KEY="$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export FOLLOWUP_DECISIONS_AUDIT_PATH="$demo_dir/followups.jsonl"
+export REJECTED_BUNDLES_AUDIT_PATH="$demo_dir/rejected.jsonl"
+export DEMOTED_BUNDLES_AUDIT_PATH="$demo_dir/demoted.jsonl"
+export NEW_CANONICAL_SKILLS_AUDIT_PATH="$demo_dir/canonical.jsonl"
+DATABASE_URL="$demo_url" .venv/bin/python -m alembic upgrade head
+DATABASE_URL="$demo_url" .venv/bin/python -m scripts.seed_demo_bundles
+shasum -a 256 local-data/interviv-local.sqlite3
+DATABASE_URL="$demo_url" .venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Frontend terminal (IPv4 DNS ordering matches the backend bind for the existing localhost proxy):
+
+```bash
+cd "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/frontend"
+NODE_OPTIONS=--dns-result-order=ipv4first npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Click path: open `http://127.0.0.1:5173`, sign in to the copied account, then **Practice → AI mock interview → Full interview** (existing settings page). Select **Python**, choose **Coached practice**, enable **Allow optional follow-ups**, then click the new **Start Quick interview** button. Submit/Continue through Warm-up, Core and any scheduled follow-ups; refresh the same `/interview/{id}` URL to resume. Completion offers **View dashboard**. Behavioural is skipped while its compiled bank is absent; Quick has no Practical stage.
+
 ## Next
-- **S2b complete; proceed with approved 3a only**. Build the Quick launcher and separate staged screen; stop before 3b–3e. Behavioural stays skipped while its reviewed bank is absent. Preserve the real DB, v4 hashes, stash and other worktrees. Do not run the pilot.
+- **Stop after completed 3a**. Do not start 3b–3e without approval. Owner full pytest result remains pending (reference expected `1181 passed, 6 skipped`). Behavioural stays skipped while its reviewed bank is absent. Preserve the real DB, v4 hashes, stash and other worktrees. Do not run the pilot.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).
 - **Backlog — offline template inventory check**: Reviewer accepts template fallback for Slice 3; no inventory work is authorized now. In a separate future workstream, review whether Core needs an explicit offline inventory check in start/availability to distinguish available bundles/CSV content from generic template fallback (`backend/routes/session.py:1483-1516,2030-2034`). Keep scorer, evaluator, guard, assistance-policy, eligibility and local-runner code unchanged.
 - **Backlog — SQL Run sample fallback**: `backend/routes/session.py:2237-2241` prefers a visible sample but falls back to `cases[0]` when none is tagged visible. Review this separately; no SQL Run fallback fix is authorized in D3/S2b/3a.

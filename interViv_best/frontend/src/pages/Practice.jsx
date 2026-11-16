@@ -21,6 +21,8 @@ import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import SkillChipInput from '../components/SkillChipInput';
 import InterviewResumePanel from '../components/InterviewResumePanel';
+import StagedLauncherCard from '../components/staged/StagedLauncherCard';
+import { startQuickInterview } from '../lib/stagedSession';
 import { readScoped, writeScoped } from '../lib/accountStorage';
 import {
   WIZARD_STORAGE_NAME,
@@ -110,6 +112,7 @@ export default function Practice() {
   const [error, setError] = useState('');
   const [availability, setAvailability] = useState(null);
   const [busy, setBusy] = useState(false);
+  const quickStartBusy = useRef(false);
   const [skills, setSkills] = useState(DEFAULT_SKILLS);
   const [skillsExplicit, setSkillsExplicit] = useState(false);
   // Async target prefill reads the latest values, not a stale closure.
@@ -546,6 +549,28 @@ export default function Practice() {
     }
   };
 
+  const runQuickStart = async () => {
+    if (busy || quickStartBusy.current) return;
+    quickStartBusy.current = true;
+    setBusy(true);
+    setError('');
+    setAvailability(null);
+    try {
+      const started = await startQuickInterview({
+        skills, practiceMode, allowOptionalFollowUps,
+        candidateId: resumeState.candidateId || undefined,
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+      navigate(`/interview/${encodeURIComponent(started.session_id)}`);
+    } catch (err) {
+      reportStartIssue(err);
+    } finally {
+      quickStartBusy.current = false;
+      setBusy(false);
+    }
+  };
+
   const handleResumeExtracted = ({ candidateId, fileName, extractedSkills, domainProfile }) => {
     const nextState = {
       candidateId: candidateId || '',
@@ -784,6 +809,8 @@ export default function Practice() {
             </p>
           </section>
         )}
+
+        {mode === 'full' && <StagedLauncherCard busy={busy} onStart={runQuickStart} />}
 
         {mode === 'full' && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
