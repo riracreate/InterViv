@@ -70,6 +70,10 @@ export function interviewStateFromSession(session) {
     progressionBlocked,
     progressionBlockedReason: blocked.progressionBlockedReason || session.progression_blocked_reason || '',
     progression_blocked_reason: blocked.progressionBlockedReason || session.progression_blocked_reason || '',
+    isFollowUp: Boolean(current.isFollowUp),
+    followUpParentRound: current.followUpParentRound ?? null,
+    followUpOutcome: result ? (result.followUpOutcome || null) : null,
+    followUpScheduled: Boolean(session?.pending_round?.is_follow_up),
     // Review after a refresh: the submitted answer and its result.
     answerText: result ? result.answerText : '',
     currentScore: result ? result.score : undefined,

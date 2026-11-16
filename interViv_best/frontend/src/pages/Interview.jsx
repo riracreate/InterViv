@@ -5,6 +5,8 @@ import {
   MAX_NARRATION_POLLS,
   PHASES,
   TECHNICAL_ADVISORY_SECONDS,
+  canRequestManualFollowUp,
+  followUpOutcomeFromPayload,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
@@ -160,6 +162,23 @@ export default function Interview({ sessionState = null }) {
   const [eligibilityLabel, setEligibilityLabel] = useState('');
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpNote, setFollowUpNote] = useState('');
+  const [isFollowUp, setIsFollowUp] = useState(
+    Boolean(initState.isFollowUp || initState.is_follow_up || initState.config_json?.is_follow_up)
+  );
+  const [followUpParentRound, setFollowUpParentRound] = useState(
+    initState.followUpParentRound
+    ?? initState.follow_up_parent_round
+    ?? initState.config_json?.follow_up_parent_round
+    ?? null
+  );
+  const [followUpScheduledForRound, setFollowUpScheduledForRound] = useState(
+    Boolean(initState.followUpScheduled)
+  );
+  const [followUpOutcome, setFollowUpOutcome] = useState(
+    restoredResult
+      ? (initState.followUpOutcome || followUpOutcomeFromPayload({ config_json: initState.config_json }) || null)
+      : null
+  );
   const feedbackPollRef = useRef(null);
   const feedbackRoundRef = useRef(null);
   const [currentRubric, setCurrentRubric] = useState(restoredResult ? (initState.currentRubric || null) : null);
@@ -544,6 +563,10 @@ export default function Interview({ sessionState = null }) {
       expires_at: expiresAt,
       elo,
       totalRounds,
+      isFollowUp,
+      followUpParentRound,
+      followUpScheduled: followUpScheduledForRound,
+      followUpOutcome,
       progressionBlocked,
       progressionBlockedReason,
       status: progressionBlocked ? 'content_blocked' : undefined,
@@ -561,6 +584,10 @@ export default function Interview({ sessionState = null }) {
     difficulty,
     elo,
     expiresAt,
+    followUpOutcome,
+    followUpParentRound,
+    followUpScheduledForRound,
+    isFollowUp,
     progressionBlocked,
     progressionBlockedReason,
     question,
@@ -813,11 +840,19 @@ export default function Interview({ sessionState = null }) {
       const resp = await apiSubmitAnswer(payload);
 
       // Never invent a score when the API omits one.
-      const score = typeof resp.final_score === 'number' ? resp.final_score : null;
-      const feedbackRaw = resp.feedback?.next_step || resp.feedback?.content?.[0] || resp.feedback || '';
+      const outcome = followUpOutcomeFromPayload(resp);
+      const isInlineFollowUpResp = Boolean(outcome);
+      const score = isInlineFollowUpResp
+        ? null
+        : (typeof resp.final_score === 'number' ? resp.final_score : null);
+      const feedbackRaw = isInlineFollowUpResp
+        ? (resp.feedback?.content?.[0] || resp.feedback?.next_step || '')
+        : (resp.feedback?.next_step || resp.feedback?.content?.[0] || resp.feedback || '');
       const feedback = typeof feedbackRaw === 'string' ? feedbackRaw : '';
-      const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
-      const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
+      const rubric = isInlineFollowUpResp ? null : (resp.rubric || resp.scoring_breakdown?.rubric || null);
+      const concepts = isInlineFollowUpResp ? null : (resp.concepts || resp.scoring_breakdown?.concepts || null);
+      setFollowUpOutcome(outcome);
+      setFollowUpScheduledForRound(Boolean(resp.follow_up_scheduled));
       setCurrentScore(score);
       const elig = resp.assessment_eligibility;
       if (elig === 'excluded' || resp.assisted) {
@@ -971,6 +1006,8 @@ export default function Interview({ sessionState = null }) {
     setEvaluationMode(null); setEvaluationBoundary(null);
     setEligibilityLabel('');
     setFollowUpNote(''); setFollowUpBusy(false);
+    setIsFollowUp(false); setFollowUpParentRound(null);
+    setFollowUpScheduledForRound(false); setFollowUpOutcome(null);
     setActionError('');
     recordedMsRef.current = 0;
     recordingSinceRef.current = null;
@@ -988,6 +1025,10 @@ export default function Interview({ sessionState = null }) {
     setExpiresAt(fields.expiresAt);
     setStartedAt(fields.startedAt);
     setRound(fields.round);
+    setIsFollowUp(Boolean(fields.isFollowUp));
+    setFollowUpParentRound(fields.followUpParentRound ?? null);
+    setFollowUpScheduledForRound(false);
+    setFollowUpOutcome(null);
     setNowMs(Date.now());
   };
 
@@ -1263,6 +1304,15 @@ export default function Interview({ sessionState = null }) {
                 style={{ fontFamily: "var(--font-body)" }}>
                 Question {String(round).padStart(2, '0')} / {String(totalRounds).padStart(2, '0')}
               </span>
+              {isFollowUp && (
+                <span
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-800 border border-amber-500/20"
+                  style={{ fontFamily: "var(--font-body)" }}
+                  data-testid="followup-badge"
+                >
+                  Follow-up{followUpParentRound != null ? ` (Round ${followUpParentRound})` : ''}
+                </span>
+              )}
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[var(--color-ink-muted)] capitalize"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {currentSkill} · {difficulty}
@@ -1436,10 +1486,33 @@ export default function Interview({ sessionState = null }) {
 
           {showingResult && (
             <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5" data-testid="verbal-review">
-              <div className="text-3xl font-normal mb-1 text-center"
-                style={{ fontFamily: "var(--font-display)", color: currentScore == null ? 'var(--color-ink-muted)' : scoreColor(currentScore) }}>
-                {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
-              </div>
+              {followUpOutcome || (isFollowUp && currentScore == null) ? (
+                <div className="text-center mb-1" data-testid="followup-concept-outcome">
+                  <div
+                    className="text-xl font-medium mb-1"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      color: followUpOutcome
+                        ? (followUpOutcome.demonstrated ? '#16A34A' : '#D97706')
+                        : 'var(--color-ink)',
+                    }}
+                  >
+                    {followUpOutcome
+                      ? (followUpOutcome.demonstrated ? 'Concept demonstrated' : 'Concept not demonstrated')
+                      : 'Follow-up submitted'}
+                  </div>
+                  {followUpOutcome?.concept_label && (
+                    <p className="text-xs font-medium text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+                      {followUpOutcome.concept_label}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-3xl font-normal mb-1 text-center"
+                  style={{ fontFamily: "var(--font-display)", color: currentScore == null ? 'var(--color-ink-muted)' : scoreColor(currentScore) }}>
+                  {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
+                </div>
+              )}
               {eligibilityLabel && (
                 <p className="text-[11px] uppercase tracking-wider text-center text-[var(--color-ink-muted)] mb-2"
                   style={{ fontFamily: "var(--font-body)" }}>
@@ -1506,7 +1579,13 @@ export default function Interview({ sessionState = null }) {
                   <span className="font-medium text-[var(--color-ink)]">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
-              {roundType === 'technical_short_answer' && phase === PHASES.REVIEWING && !followUpNote && (
+              {canRequestManualFollowUp({
+                roundType,
+                phase,
+                followUpNote,
+                followUpScheduled: followUpScheduledForRound,
+                isFollowUp,
+              }) && (
                 <button
                   type="button"
                   className="mt-4 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-ink)] disabled:opacity-50"

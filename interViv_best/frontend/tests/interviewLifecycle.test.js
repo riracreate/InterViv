@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   PHASES,
+  canRequestManualFollowUp,
+  followUpOutcomeFromPayload,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
@@ -125,4 +127,104 @@ test('header progress counts the reviewed round as answered', () => {
   assert.equal(progressPercent({ round: 1, totalRounds: 4, phase: PHASES.ANSWERING }), 0);
   assert.equal(progressPercent({ round: 1, totalRounds: 4, phase: PHASES.REVIEWING }), 25);
   assert.equal(progressPercent({ round: 4, totalRounds: 4, phase: PHASES.COMPLETED }), 100);
+});
+
+test('S1b-2: activation and history carry isFollowUp, followUpParentRound, and concept outcome without percentage', () => {
+  const opened = roundFieldsFromPayload({
+    round: 2,
+    question: 'Follow-up: Why can blocking I/O overlap under the GIL?',
+    round_type: 'technical_short_answer',
+    difficulty: 'medium',
+    skill: 'Python',
+    is_follow_up: true,
+    follow_up_parent_round: 1,
+    config_json: { is_follow_up: true, follow_up_parent_round: 1 },
+  });
+  assert.equal(opened.isFollowUp, true);
+  assert.equal(opened.followUpParentRound, 1);
+
+  const outcome = followUpOutcomeFromPayload({
+    follow_up_outcome: {
+      targets_concept: 'io_release',
+      concept_label: 'Blocking I/O syscalls release the lock',
+      demonstrated: true,
+      status: 'demonstrated',
+    },
+  });
+  assert.equal(outcome.concept_label, 'Blocking I/O syscalls release the lock');
+  assert.equal(outcome.demonstrated, true);
+
+  const restored = restoreFromSession({
+    session_id: 's-fu',
+    status: 'active',
+    total_rounds: 3,
+    review_round: 2,
+    round_history: [{
+      round: 2,
+      round_type: 'technical_short_answer',
+      status: 'submitted',
+      is_follow_up: true,
+      follow_up_parent_round: 1,
+      final_score: null,
+      feedback: {
+        content: ['Blocking I/O syscalls release the lock: demonstrated in your follow-up answer.'],
+        next_step: 'Continue with the remaining rounds.',
+      },
+      follow_up_outcome: outcome,
+    }],
+  });
+  assert.equal(restored.current.isFollowUp, true);
+  assert.equal(restored.current.followUpParentRound, 1);
+  assert.equal(restored.result.score, null);
+  assert.equal(restored.result.followUpOutcome.demonstrated, true);
+  assert.match(restored.result.feedback, /demonstrated/i);
+
+  const state = interviewStateFromSession({
+    session_id: 's-fu2',
+    status: 'active',
+    total_rounds: 3,
+    active_round: {
+      round: 2,
+      status: 'in_progress',
+      question: 'Follow-up Q?',
+      round_type: 'technical_short_answer',
+      is_follow_up: true,
+      follow_up_parent_round: 1,
+    },
+  });
+  assert.equal(state.isFollowUp, true);
+  assert.equal(state.followUpParentRound, 1);
+});
+
+test('S1b-2: manual follow-up CTA is suppressed when inline follow-up is scheduled or on any follow-up round', () => {
+  assert.equal(
+    canRequestManualFollowUp({
+      roundType: 'technical_short_answer',
+      phase: PHASES.REVIEWING,
+      followUpNote: '',
+      followUpScheduled: false,
+      isFollowUp: false,
+    }),
+    true,
+  );
+  assert.equal(
+    canRequestManualFollowUp({
+      roundType: 'technical_short_answer',
+      phase: PHASES.REVIEWING,
+      followUpNote: '',
+      followUpScheduled: true,
+      isFollowUp: false,
+    }),
+    false,
+  );
+  assert.equal(
+    canRequestManualFollowUp({
+      roundType: 'technical_short_answer',
+      phase: PHASES.REVIEWING,
+      followUpNote: '',
+      followUpScheduled: false,
+      isFollowUp: true,
+    }),
+    false,
+  );
 });
