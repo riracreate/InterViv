@@ -144,6 +144,9 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
         submitted_at = submitted_at.isoformat()
     round_type = scored_round.get("round_type") or "technical_short_answer"
     question_context = scored_round.get("question_context") or {}
+    from modules.follow_ups import is_inline_bundle_follow_up_round
+
+    is_inline_fu = is_inline_bundle_follow_up_round(scored_round)
     core = {
         "snapshot_version": SNAPSHOT_VERSION,
         "round": scored_round.get("round"),
@@ -156,10 +159,14 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
             "svm_label": scored_round.get("svm_label"),
             "kg_score": scored_round.get("kg_score"),
             "ner_entities": copy.deepcopy(scored_round.get("ner_entities") or []),
-            "final_score": scored_round.get("final_score"),
+            "final_score": None if is_inline_fu else scored_round.get("final_score"),
         },
-        "guard_applied": breakdown.get("guard_applied", scored_round.get("guard_applied")),
-        "guard_softened": breakdown.get("guard_softened"),
+        "guard_applied": (
+            None
+            if is_inline_fu
+            else breakdown.get("guard_applied", scored_round.get("guard_applied"))
+        ),
+        "guard_softened": None if is_inline_fu else breakdown.get("guard_softened"),
         "scoring_breakdown": breakdown,
         "scoring_schema_version": (
             scoring_result.get("scoring_schema_version")
@@ -183,7 +190,7 @@ def freeze_attempt_snapshot(scored_round: dict[str, Any], scoring_result: dict[s
             "review_policy": (config or {}).get("review_policy"),
         },
         "submitted_at": submitted_at,
-        "rules_replayable": round_type in RULES_REPLAYABLE_ROUND_TYPES,
+        "rules_replayable": (round_type in RULES_REPLAYABLE_ROUND_TYPES) and not is_inline_fu,
         "reference": _reference_from_context(question_context),
         "scorer_provenance": _scorer_provenance(scored_round, scoring_result, breakdown),
     }
@@ -217,6 +224,24 @@ def narration_allowed_claims(snapshot: dict[str, Any] | None) -> dict[str, Any]:
     scores = snapshot.get("scores") or {}
     feedback = snapshot.get("feedback") or {}
     breakdown = snapshot.get("scoring_breakdown") or {}
+    if breakdown.get("inline_follow_up"):
+        return {
+            "final_score": None,
+            "guard_applied": None,
+            "feedback": {
+                "content": list(feedback.get("content") or []),
+                "strengths": list(feedback.get("strengths") or []),
+                "weakness": list(
+                    feedback.get("weakness") or feedback.get("weaknesses") or []
+                ),
+                "next_step": feedback.get("next_step") or feedback.get("recommendation") or "",
+            },
+            "strengths": list(feedback.get("strengths") or []),
+            "covered_concepts": [],
+            "missing_concepts": [],
+            "evidence_ids": [],
+            "criterion_ids": [],
+        }
     concepts = breakdown.get("concepts") if isinstance(breakdown.get("concepts"), dict) else {}
     covered = (
         breakdown.get("covered_concepts")

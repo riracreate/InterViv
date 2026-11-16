@@ -740,7 +740,17 @@ def test_end_to_end_real_v3_splice_preserves_round_rows_and_excludes_from_elo(
     )
     assert r2_ans.status_code == 200, r2_ans.text
     body2 = r2_ans.json()
-    assert body2["final_score"] is not None
+    assert body2["final_score"] is None
+    assert "scoring_breakdown" not in body2
+    assert body2["rubric"] == {}
+    assert body2["score_explanation"] == {}
+    assert body2["follow_up_outcome"]["targets_concept"] == "io_release"
+    assert body2["follow_up_outcome"]["demonstrated"] is True
+    joined_fb2 = " ".join(body2["feedback"]["content"]).lower()
+    assert body2["follow_up_outcome"]["concept_label"].lower() in joined_fb2
+    assert "demonstrated" in joined_fb2
+    assert "very brief" not in joined_fb2
+    assert "lacked specific technical keywords" not in joined_fb2
     assert body2["is_follow_up"] is True
     assert body2["assessment_eligibility"] != "eligible"
     assert body2["elo_after"] == elo_after_r1
@@ -1469,3 +1479,240 @@ def test_f5_demo_bundles_end_to_end_frontend_payload_shape(monkeypatch, tmp_path
     finally:
         get_engine().dispose()
         _clear_caches()
+
+
+@pytest.mark.parametrize(
+    ("followup_answer", "expected_demonstrated"),
+    [
+        ("Blocking I/O syscalls release the lock so other threads execute.", True),
+        ("Okay.", False),
+    ],
+)
+def test_s1b1_inline_followup_client_hides_score_and_breakdown_while_preserving_db_v3(
+    slice1_sql_env,
+    followup_answer: str,
+    expected_demonstrated: bool,
+):
+    """S1b-1: null candidate final_score, concept-only feedback, score-free narration, raw DB breakdown."""
+    _seed_bundle(
+        "python.s1b1.gil",
+        status="auto_checked",
+        topic="Interpreter Mutex",
+        question="Explain GIL bytecode execution and blocking I/O release.",
+    )
+    client = TestClient(app)
+    user = _make_user(f"s1b1-{expected_demonstrated}")
+
+    start = client.post(
+        "/session/start",
+        headers=_headers(user),
+        json={
+            "skills": ["Python"],
+            "rounds_per_skill": 1,
+            "practice_mode": "coached_practice",
+        },
+    )
+    assert start.status_code == 200, start.text
+    sid = start.json()["session_id"]
+
+    r1 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={
+            "session_id": sid,
+            "round": 1,
+            "answer_text": "Only one thread executes bytecode at a time because the mutex serializes bytecode.",
+        },
+    )
+    assert r1.status_code == 200, r1.text
+    r1_body = r1.json()
+    assert r1_body["follow_up_scheduled"] is True
+    assert isinstance(r1_body["final_score"], (int, float))
+    assert "scoring_breakdown" in r1_body and r1_body["scoring_breakdown"]
+
+    act2 = activate(client, _headers(user), sid, 2)
+    assert act2["is_follow_up"] is True
+
+    r2 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={"session_id": sid, "round": 2, "answer_text": followup_answer},
+    )
+    assert r2.status_code == 200, r2.text
+    r2_body = r2.json()
+
+    # 1 & 4: /session/answer hides final_score and raw scoring_breakdown.
+    assert r2_body["final_score"] is None
+    assert "scoring_breakdown" not in r2_body
+    assert r2_body["rubric"] == {}
+    assert r2_body["score_explanation"] == {}
+    assert r2_body["nlp_score"] is None
+    assert r2_body["kg_score"] is None
+    assert r2_body["svm_label"] is None
+    assert r2_body["guard_applied"] is None
+
+    # 2: Feedback strictly covers targeted concept label + demonstrated state, no parent boilerplate.
+    outcome = r2_body["follow_up_outcome"]
+    assert outcome["targets_concept"] == "io_release"
+    assert "blocking i/o" in outcome["concept_label"].lower()
+    assert outcome["demonstrated"] is expected_demonstrated
+    fb_text = " ".join(
+        r2_body["feedback"]["content"]
+        + r2_body["feedback"]["strengths"]
+        + r2_body["feedback"]["weakness"]
+        + [r2_body["feedback"]["next_step"]]
+    ).lower()
+    assert outcome["concept_label"].lower() in fb_text
+    if expected_demonstrated:
+        assert "demonstrated" in fb_text and "not demonstrated" not in fb_text
+    else:
+        assert "not demonstrated" in fb_text
+    for forbidden in ("very brief", "lacked specific technical keywords", "review the core concepts"):
+        assert forbidden not in fb_text
+
+    # 1, 2, 3: /feedback hides final_score, keeps concept-only feedback, and narration states no score.
+    fb2 = client.get(f"/session/{sid}/rounds/2/feedback", headers=_headers(user))
+    assert fb2.status_code == 200, fb2.text
+    fb2_body = fb2.json()
+    assert fb2_body["final_score"] is None
+    assert "guard_applied" not in fb2_body
+    assert fb2_body["follow_up_outcome"] == outcome
+    fb2_text = " ".join(fb2_body["feedback"]["content"]).lower()
+    assert outcome["concept_label"].lower() in fb2_text
+    assert "very brief" not in fb2_text
+    assert "lacked specific technical keywords" not in fb2_text
+    script = str((fb2_body.get("narration") or {}).get("script") or "")
+    assert script
+    assert "out of 100" not in script.lower()
+    assert "scored" not in script.lower()
+    assert outcome["concept_label"].lower() in script.lower()
+
+    # Core round /feedback still keeps score & narration unchanged.
+    fb1 = client.get(f"/session/{sid}/rounds/1/feedback", headers=_headers(user))
+    assert fb1.status_code == 200, fb1.text
+    assert isinstance(fb1.json()["final_score"], (int, float))
+    assert "out of 100" in str(fb1.json()["narration"]["script"]).lower()
+
+    # 1 & 4: GET /session/{id} round_history and GET /dashboard/{id} never expose score or breakdown.
+    sess_resp = client.get(f"/session/{sid}", headers=_headers(user))
+    assert sess_resp.status_code == 200, sess_resp.text
+    hist_r2 = next(r for r in sess_resp.json()["round_history"] if r["round"] == 2)
+    assert hist_r2["final_score"] is None
+    assert "scoring_breakdown" not in hist_r2
+    assert hist_r2["follow_up_outcome"] == outcome
+
+    dash = client.get(f"/dashboard/{sid}", headers=_headers(user))
+    assert dash.status_code == 200, dash.text
+    dash_body = dash.json()
+    dash_r1 = next(r for r in dash_body["rounds"] if r["round"] == 1)
+    dash_r2 = next(r for r in dash_body["rounds"] if r["round"] == 2)
+    assert isinstance(dash_r1["final_score"], (int, float))
+    assert "scoring_breakdown" in dash_r1 and dash_r1["scoring_breakdown"]
+    assert dash_r2["final_score"] is None
+    assert dash_r2["performance_band"] is None
+    assert dash_r2["confidence_band"] is None
+    assert "scoring_breakdown" not in dash_r2
+    assert dash_r2["score_explanation"] == {}
+    assert dash_r2["follow_up_outcome"] == outcome
+    assert "very brief" not in " ".join(dash_r2["feedback"]["content"]).lower()
+    assert dash_body["averages"]["final_score"] == pytest.approx(float(r1_body["final_score"]), abs=0.05)
+
+    # 4: Raw v3 breakdown stays stored on RoundRow in DB for offline analysis.
+    with session_scope() as s:
+        db_r2 = (
+            s.query(RoundRow)
+            .filter(RoundRow.session_id == sid, RoundRow.round_number == 2)
+            .one()
+        )
+        assert db_r2.final_score is None
+        raw_bd = db_r2.scoring_breakdown_json
+        assert raw_bd.get("inline_follow_up") is True
+        assert isinstance(raw_bd.get("raw_v3_final_score"), (int, float))
+        assert raw_bd.get("concepts") is not None
+
+
+def test_s1b1_manual_followup_with_reviewed_bundle_keeps_legacy_behavior(slice1_sql_env):
+    """S1b-1: manual follow-up with a reviewed bundle keeps its existing numeric/feedback behavior."""
+    from backend.db import get_database
+    from backend.db.follow_up_allocate import allocate_follow_up
+    from modules.follow_ups import build_follow_up_plan_entry
+
+    _seed_bundle(
+        "python.s1b1.manual",
+        status="reviewed",
+        topic="ManualTopic",
+        question="Manual parent Q?",
+    )
+    _seed_bundle(
+        "python.s1b1.manual2",
+        status="reviewed",
+        topic="ManualTopic",
+        question="Manual Q2?",
+    )
+    client = TestClient(app)
+    user = _make_user("s1b1-manual")
+    start = client.post(
+        "/session/start",
+        headers=_headers(user),
+        json={
+            "blocks": [
+                {
+                    "round_type": "technical_short_answer",
+                    "category": "interview",
+                    "skills": ["Python"],
+                    "topic": "ManualTopic",
+                    "difficulty": "medium",
+                    "count": 2,
+                    "allow_optional_follow_ups": True,
+                    "practice_mode": "coached_practice",
+                }
+            ],
+            "practice_mode": "coached_practice",
+        },
+    )
+    assert start.status_code == 200
+    sid = start.json()["session_id"]
+
+    full_answer = (
+        "Only one thread executes bytecode at once under the GIL mutex while "
+        "blocking I/O syscalls release the lock so other threads run cleanly."
+    )
+    r1 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={"session_id": sid, "round": 1, "answer_text": full_answer},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["follow_up_scheduled"] is False
+
+    # Manually allocate a reviewed follow-up (followup:... identity, no stage="follow_up").
+    db = get_database()
+    sess_doc = db["sessions"].find_one({"session_id": sid})
+    entry = build_follow_up_plan_entry(
+        parent_round_doc=sess_doc["rounds"][0],
+        reviewed_bundle={"bundle_id": "python.s1b1.manual", "version": 1},
+    )
+    alloc = allocate_follow_up(db, session_id=sid, parent_round=1, plan_entry=entry)
+    assert alloc["scheduled"] is True
+
+    activate(client, _headers(user), sid, 2)
+    r2 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={"session_id": sid, "round": 2, "answer_text": full_answer},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["next_round"] == 3
+
+    act3 = activate(client, _headers(user), sid, 3)
+    assert act3["is_follow_up"] is True
+    r3 = client.post(
+        "/session/answer",
+        headers=_headers(user),
+        json={"session_id": sid, "round": 3, "answer_text": "Manual follow-up explanation."},
+    )
+    assert r3.status_code == 200, r3.text
+    r3_body = r3.json()
+    assert isinstance(r3_body["final_score"], (int, float))
+    assert "scoring_breakdown" in r3_body and r3_body["scoring_breakdown"]
+    assert "follow_up_outcome" not in r3_body

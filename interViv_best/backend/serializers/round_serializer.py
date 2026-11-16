@@ -258,4 +258,21 @@ def sanitize_round_for_client(
     ):
         cleaned.pop(forbidden, None)
 
+    from modules.follow_ups import is_inline_bundle_follow_up_round
+
+    if is_inline_bundle_follow_up_round(cleaned):
+        cleaned.pop("scoring_breakdown", None)
+        cleaned["final_score"] = None
+        cleaned["nlp_score"] = None
+        cleaned["kg_score"] = None
+        cleaned["svm_label"] = None
+        cleaned["ner_entities"] = []
+        cleaned["covered_concepts"] = []
+        cleaned["missing_concepts"] = []
+        cleaned["score_explanation"] = {}
+        cleaned["guard_applied"] = None
+        outcome = cleaned.get("follow_up_outcome") or config.get("follow_up_outcome")
+        if isinstance(outcome, dict):
+            cleaned["follow_up_outcome"] = dict(outcome)
+
     return cleaned

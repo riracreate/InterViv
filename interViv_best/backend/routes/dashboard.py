@@ -16,6 +16,7 @@ from backend.evidence_kind import (
 )
 from backend.routes.auth import require_authenticated, require_user
 from backend.serializers.round_serializer import sanitize_sql_artifact_for_client
+from modules.follow_ups import is_inline_bundle_follow_up_round
 from modules.gap_analysis import GapAnalyzer, GapAnalysisError
 from modules.learning_signals import build_signals_payload
 from modules.skill_graph import StudentSkillGraph
@@ -74,6 +75,40 @@ def _sanitize_rounds(
             )
         cleaned = dict(round_document)
         cleaned.pop("attempt_snapshot", None)
+        is_inline_fu = is_inline_bundle_follow_up_round(cleaned)
+        if is_inline_fu:
+            cfg = cleaned.get("config_json") or {}
+            outcome = cleaned.get("follow_up_outcome") or (
+                cfg.get("follow_up_outcome") if isinstance(cfg, dict) else None
+            )
+            cleaned.pop("scoring_breakdown", None)
+            cleaned["ideal_answer"] = ""
+            cleaned["ideal_keywords"] = ""
+            cleaned["topic"] = (cleaned.get("question_context") or {}).get("topic") or (cleaned.get("question_context") or {}).get("sub_domain")
+            cleaned["sub_domain"] = (cleaned.get("question_context") or {}).get("sub_domain") or cleaned.get("sub_domain")
+            cleaned["question_type"] = (cleaned.get("question_context") or {}).get("question_type")
+            cleaned["company"] = (cleaned.get("question_context") or {}).get("company")
+            cleaned["role"] = (cleaned.get("question_context") or {}).get("role")
+            cleaned["followups"] = []
+            cleaned.pop("question_context", None)
+            cleaned["final_score"] = None
+            cleaned["performance_band"] = None
+            cleaned["confidence_band"] = None
+            cleaned["score_explanation"] = {}
+            cleaned["nlp_score"] = None
+            cleaned["kg_score"] = None
+            cleaned["svm_label"] = None
+            cleaned["ner_entities"] = []
+            cleaned["covered_concepts"] = []
+            cleaned["missing_concepts"] = []
+            cleaned["guard_applied"] = None
+            mode = scoring_mode_for_round(cleaned)
+            cleaned["scoring_mode"] = mode
+            cleaned["scoring_mode_label"] = scoring_mode_label_for_display(mode)
+            if isinstance(outcome, dict):
+                cleaned["follow_up_outcome"] = dict(outcome)
+            sanitized.append(cleaned)
+            continue
         question_context = cleaned.get("question_context", {}) or {}
         # Reference ideals only after a completed assessment. content_blocked
         # and active sessions keep practice feedback but not solution keys.

@@ -79,6 +79,8 @@ from modules.assistance_policy import (
 )
 from modules.follow_ups import (
     build_bundle_follow_up_round_doc,
+    evaluate_inline_follow_up_outcome,
+    is_inline_bundle_follow_up_round,
     is_inline_bundle_follow_up_spec,
     log_follow_up_decision,
     maybe_apply_inline_bundle_follow_up,
@@ -760,6 +762,7 @@ def submit_answer(
                 float(item["final_score"]) for item in rounds_so_far
             ) / len(rounds_so_far)
 
+        scoring_question_context: dict[str, Any] = dict(active_round.get("question_context", {}) or {})
         try:
             follow_up_scoring_pre = (
                 (active_round.get("config_json") or {}).get("follow_up_scoring")
@@ -1106,8 +1109,33 @@ def submit_answer(
                 },
             }
 
+        is_inline_follow_up = is_inline_bundle_follow_up_round(active_round)
+        inline_follow_up_outcome: dict[str, Any] | None = None
+        inline_client_feedback: dict[str, Any] | None = None
+
         # Persist this round (assisted already resolved above)
         _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
+        raw_guard_applied = scoring_result.get("guard_applied")
+        if is_inline_follow_up:
+            _bd["inline_follow_up"] = True
+            _bd["raw_v3_final_score"] = scoring_result.get("final_score")
+            if raw_guard_applied is not None:
+                _bd["guard_applied"] = raw_guard_applied
+            outcome_eval = evaluate_inline_follow_up_outcome(
+                active_round=active_round,
+                scoring_question_context=scoring_question_context,
+                answer_text=request.answer_text or "",
+                scoring_result=scoring_result,
+            )
+            inline_follow_up_outcome = {
+                "targets_concept": outcome_eval["targets_concept"],
+                "concept_label": outcome_eval["concept_label"],
+                "demonstrated": outcome_eval["demonstrated"],
+                "status": outcome_eval["status"],
+            }
+            inline_client_feedback = outcome_eval["feedback"]
+            _bd["follow_up_outcome"] = inline_follow_up_outcome
+
         scoring_mode = (
             SCORING_MODE_PRACTICE_ESTIMATE
             if scoring_result.get("evaluation_mode") == SYSTEM_DESIGN_CONTENT_MODE
@@ -1177,10 +1205,14 @@ def submit_answer(
             "covered_concepts": _bd.get("covered_concepts", []),
             "missing_concepts": _bd.get("missing_concepts", []),
             "ner_entities": scoring_result.get("ner_entities", []),
-            "final_score": scoring_result["final_score"],
+            "final_score": None if is_inline_follow_up else scoring_result["final_score"],
             "difficulty_change": difficulty_change,
-            "feedback": scoring_result["feedback"],
-            "score_explanation": scoring_result.get("score_explanation", {}),
+            "feedback": (
+                inline_client_feedback
+                if is_inline_follow_up and inline_client_feedback is not None
+                else scoring_result["feedback"]
+            ),
+            "score_explanation": {} if is_inline_follow_up else scoring_result.get("score_explanation", {}),
             "elo_before": elo_before,
             "elo_after": elo_after,
             "engagement_label": request.engagement_label,
@@ -1191,7 +1223,18 @@ def submit_answer(
             "pause_count": request.pause_count,
             "scoring_breakdown": _bd,
             "artifact_json": scoring_result.get("artifact_json") or _scored_base.get("artifact_json", {}),
-            "guard_applied": scoring_result.get("guard_applied"),
+            "guard_applied": None if is_inline_follow_up else scoring_result.get("guard_applied"),
+            **(
+                {
+                    "config_json": {
+                        **(active_round.get("config_json") or {}),
+                        "follow_up_outcome": inline_follow_up_outcome,
+                    },
+                    "follow_up_outcome": inline_follow_up_outcome,
+                }
+                if is_inline_follow_up and inline_follow_up_outcome is not None
+                else {}
+            ),
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evidence_kind": evidence_kind,
             "scoring_mode": scoring_mode,
@@ -1740,8 +1783,16 @@ def submit_answer(
                         round_number=request.round,
                         user_id=session.get("user_id"),
                         skill=current_skill,
-                        final_score=scoring_result.get("final_score"),
-                        feedback=scoring_result["feedback"],
+                        final_score=(
+                            None
+                            if is_inline_follow_up
+                            else scoring_result.get("final_score")
+                        ),
+                        feedback=(
+                            inline_client_feedback
+                            if is_inline_follow_up and inline_client_feedback is not None
+                            else scoring_result["feedback"]
+                        ),
                         snapshot_digest=scored_snapshot.get("digest"),
                     )
                     if (
@@ -1847,16 +1898,20 @@ def submit_answer(
         if round_type == "sql" and resp_artifact:
             resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)
 
-        return {
-            "svm_label": scoring_result.get("svm_label"),
-            "nlp_score": scoring_result.get("nlp_score"),
-            "kg_score": scoring_result.get("kg_score"),
-            "ner_entities": scoring_result.get("ner_entities", []),
-            "final_score": scoring_result["final_score"],
-            "feedback": scoring_result["feedback"],
-            "score_explanation": scoring_result.get("score_explanation", {}),
+        response_payload: dict[str, Any] = {
+            "svm_label": None if is_inline_follow_up else scoring_result.get("svm_label"),
+            "nlp_score": None if is_inline_follow_up else scoring_result.get("nlp_score"),
+            "kg_score": None if is_inline_follow_up else scoring_result.get("kg_score"),
+            "ner_entities": [] if is_inline_follow_up else scoring_result.get("ner_entities", []),
+            "final_score": None if is_inline_follow_up else scoring_result["final_score"],
+            "feedback": (
+                inline_client_feedback
+                if is_inline_follow_up and inline_client_feedback is not None
+                else scoring_result["feedback"]
+            ),
+            "score_explanation": {} if is_inline_follow_up else scoring_result.get("score_explanation", {}),
             "scoring_schema_version": scoring_result.get("scoring_schema_version"),
-            "rubric": scoring_result.get("rubric", {}),
+            "rubric": {} if is_inline_follow_up else scoring_result.get("rubric", {}),
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evaluation_boundary": scoring_result.get("boundary"),
             "evidence_kind": evidence_kind,
@@ -1870,11 +1925,11 @@ def submit_answer(
                 scoring_result.get("semantic_fallback_reason"),
             ),
             "scoring_mode_label": scoring_mode,
-            "concepts": scoring_result.get("concepts", {}),
-            "guard": scoring_result.get("guard", {}),
+            "concepts": {} if is_inline_follow_up else scoring_result.get("concepts", {}),
+            "guard": {} if is_inline_follow_up else scoring_result.get("guard", {}),
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
-            "artifact_json": resp_artifact,
-            "guard_applied": scoring_result.get("guard_applied"),
+            "artifact_json": {} if is_inline_follow_up else resp_artifact,
+            "guard_applied": None if is_inline_follow_up else scoring_result.get("guard_applied"),
             # The next prompt is revealed only by activation, so reading time
             # is never free; these keys stay for compatibility and are null.
             "next_question": None,
@@ -1909,3 +1964,8 @@ def submit_answer(
                 inline_followup_result and inline_followup_result.get("scheduled")
             ),
         }
+        if is_inline_follow_up:
+            response_payload.pop("scoring_breakdown", None)
+            if inline_follow_up_outcome is not None:
+                response_payload["follow_up_outcome"] = dict(inline_follow_up_outcome)
+        return response_payload

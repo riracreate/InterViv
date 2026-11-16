@@ -1065,6 +1065,177 @@ def build_bundle_follow_up_round_doc(
     }
 
 
+def is_inline_bundle_follow_up_round(round_doc: dict[str, Any] | None) -> bool:
+    """True only for Slice 1 inline bundle follow-ups (manual/other rounds False)."""
+    if not isinstance(round_doc, dict):
+        return False
+    cfg = round_doc.get("config_json") or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    is_fu = bool(
+        round_doc.get("is_follow_up") is True
+        or cfg.get("is_follow_up")
+        or str(round_doc.get("purpose") or "").lower() == "follow_up"
+    )
+    if not is_fu:
+        return False
+    identity = str(
+        round_doc.get("follow_up_identity")
+        or cfg.get("follow_up_identity")
+        or ""
+    )
+    stage = str(round_doc.get("stage") or cfg.get("stage") or "").strip().lower()
+    return identity.startswith("inline:") or stage == "follow_up"
+
+
+def _humanize_concept_label(targets_concept: str) -> str:
+    clean = " ".join(str(targets_concept or "").replace("_", " ").replace("-", " ").split())
+    return clean or "Targeted concept"
+
+
+def evaluate_inline_follow_up_outcome(
+    *,
+    active_round: dict[str, Any],
+    scoring_question_context: dict[str, Any] | None,
+    answer_text: str,
+    scoring_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build concept-only outcome & feedback for an inline bundle follow-up (A8).
+
+    Evaluates strictly whether the follow-up answer demonstrated its
+    ``targets_concept`` using the bundle concept definition (without excluding
+    terms mentioned in the follow-up prompt itself) and suppresses all
+    parent-rubric messages and numeric scores.
+    """
+    cfg = active_round.get("config_json") or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    targets_concept = str(
+        active_round.get("targets_concept")
+        or cfg.get("targets_concept")
+        or ""
+    ).strip()
+
+    qctx = dict(scoring_question_context or {})
+    required_concepts = list(qctx.get("required_concepts") or [])
+    target_keys = _concept_match_keys(targets_concept)
+
+    matched_entry: dict[str, Any] | None = None
+    concept_label = ""
+    for raw_entry in required_concepts:
+        if isinstance(raw_entry, dict):
+            entry_id = str(raw_entry.get("id") or raw_entry.get("concept_id") or "").strip()
+            entry_keys = _concept_match_keys(entry_id)
+            if target_keys and (target_keys & entry_keys):
+                matched_entry = raw_entry
+                concept_label = str(
+                    raw_entry.get("descriptor")
+                    or raw_entry.get("label")
+                    or raw_entry.get("name")
+                    or entry_id
+                ).strip()
+                break
+        elif isinstance(raw_entry, str) and target_keys and (target_keys & _concept_match_keys(raw_entry)):
+            concept_label = raw_entry.strip()
+            break
+
+    if not concept_label:
+        concept_label = _humanize_concept_label(targets_concept)
+
+    eval_state: str | None = None
+    demonstrated = False
+
+    if matched_entry is not None and matched_entry.get("expected_propositions"):
+        from modules.concept_evaluator_v2 import evaluate_answer
+
+        evidence = evaluate_answer(
+            answer_text=answer_text or "",
+            bundle_content={
+                "required_concepts": [matched_entry],
+                "misconceptions": list(qctx.get("misconceptions") or []),
+            },
+        )
+        items = evidence.get("concepts") or []
+        if items:
+            eval_state = str(items[0].get("state") or "not_demonstrated").strip().lower()
+            demonstrated = eval_state == "supported"
+
+    if eval_state is None:
+        sr = dict(scoring_result or {})
+        bd = sr.get("scoring_breakdown") if isinstance(sr.get("scoring_breakdown"), dict) else {}
+        concepts_obj = sr.get("concepts") or (bd or {}).get("concepts") or {}
+        if not isinstance(concepts_obj, dict):
+            concepts_obj = {}
+        trace = [
+            entry
+            for entry in (concepts_obj.get("concept_match_trace") or [])
+            if isinstance(entry, dict)
+        ]
+        for entry in trace:
+            label = _extract_concept_label(entry)
+            if not label or (target_keys and not (target_keys & _concept_match_keys(label))):
+                continue
+            method = str(entry.get("method") or "").strip().lower()
+            status_val = str(entry.get("status") or "").strip().lower()
+            if method == "contradicted":
+                eval_state = "contradicted"
+                demonstrated = False
+            elif bool(entry.get("matched")) or method == "supported" or status_val == "matched":
+                eval_state = "supported"
+                demonstrated = True
+            else:
+                eval_state = "not_demonstrated"
+                demonstrated = False
+            break
+
+        if eval_state is None:
+            matched_list = (
+                concepts_obj.get("matched_concepts")
+                or concepts_obj.get("covered")
+                or (bd or {}).get("covered_concepts")
+                or []
+            )
+            for item in matched_list:
+                lbl = _extract_concept_label(item)
+                if lbl and target_keys and (target_keys & _concept_match_keys(lbl)):
+                    eval_state = "supported"
+                    demonstrated = True
+                    break
+            if eval_state is None:
+                eval_state = "not_demonstrated"
+                demonstrated = False
+
+    if demonstrated:
+        feedback = {
+            "content": [f"{concept_label}: demonstrated in your follow-up answer."],
+            "strengths": [f"Demonstrated {concept_label}."],
+            "weakness": [],
+            "next_step": "Continue with the remaining rounds.",
+        }
+        status_label = "demonstrated"
+    else:
+        qualifier = (
+            "contradicted"
+            if eval_state == "contradicted"
+            else "not demonstrated"
+        )
+        feedback = {
+            "content": [f"{concept_label}: {qualifier} in your follow-up answer."],
+            "strengths": [],
+            "weakness": [f"{concept_label} was {qualifier} in this follow-up."],
+            "next_step": f"Review {concept_label} before your next session.",
+        }
+        status_label = "not_demonstrated"
+
+    return {
+        "targets_concept": targets_concept,
+        "concept_label": concept_label,
+        "demonstrated": demonstrated,
+        "status": status_label,
+        "feedback": feedback,
+    }
+
+
 def maybe_apply_inline_bundle_follow_up(
     *,
     session: dict[str, Any],
