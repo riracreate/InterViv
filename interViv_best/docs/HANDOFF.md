@@ -14,6 +14,9 @@
 - **Known limitation (Mohler tune 1–2 word reference false positives)**: Short 1–2 word Mohler tune reference answers trigger `v4` guard false positives; interview references are multi-sentence, so this is accepted as a known limitation with no fix.
 - **Model precedence (M1)**: `QUESTION_LLM_PROVIDER` (`openai` checked before `openrouter` under `auto`) -> `QUESTION_LLM_MODEL` -> `BUNDLE_CHECK_MODEL` (bundle checks) -> `OPENROUTER_MODEL`.
 - **Known limit (M1 `:free` models & HTTP `429`)**: Do **not** run a pilot on an OpenRouter `:free` model until HTTP `429` handling distinguishes a per-minute limit from a daily quota cap and stops on a daily cap.
+- **Deferred feedback (`A7` / `Q1`)**: In `staged_v1`, all feedback and scores are deferred to Debrief (client makes no `/rounds/{n}/feedback` call and shows no score until session completion) so mid-session `feedback_reveal` (`scope_certainty="topic"`) never excludes subsequent Core rounds via `coarse_topic_scope` (`F2`).
+- **Inline follow-up outcome (`A8` / `Q2`)**: Candidate-facing `final_score` is `null` in `/session/answer`, `/feedback`, narration scripts, and `/dashboard`; feedback shows only the targeted concept's label and whether the follow-up demonstrated it (raw `v3` `scoring_breakdown` remains server-only; manual `/follow-ups` and all other rounds unchanged).
+- **Known limit (`A9` / `F3`)**: Bundle selection ignores `target_concepts`, so adaptive concept targeting (`ConceptMastery`) does not apply to bundle questions.
 
 ## Done (Takeover Verification, T1–T4, H1–H3, D1, R1–R2)
 - **Takeover Verification (`0a`–`0f`)**: Verified DB hash, full pytest, existing DB guard, diagnostic artifacts (`artifacts/scorer_v4_diagnostics.json` holds `spearman_diff_v4with_minus_blended_all = [-0.0056, 0.0305]`), and `50`-answer band definitions.
@@ -37,6 +40,9 @@
 - **F4 (`d84c357`)**: Decoupled bundle status trust floor from `STAGED_INLINE_FOLLOW_UPS` in `modules/bundle_selector.py` so `generated` and `rejected` bundles are never served (`auto_checked`/`reviewed` floor only).
 - **F5 (Offline Demo Seeder & Frontend Payload Tests)**: Added `scripts/seed_demo_bundles.py` (reuses protected DB guard + refuses unset/`:memory:`/`interviv.db`; idempotently imports 3 `auto_checked` `"Python"` bundles tagged `origin="demo_fixture"`/`demo_fixture=True`) and `TestClient` end-to-end payload tests in `tests/test_slice1_inline_follow_ups.py` (`16` tests in file; full suite `1164 passed, 6 skipped`).
 
+- **F1–F5 & Design Amendments (`A7–A9`)**: Design note & handoff updated with deferred-feedback rule (`A7`), inline follow-up outcome rule (`A8`), and `target_concepts` bundle limitation (`A9`); implementing Slice 1b (`S1b-1`–`S1b-3`).
+
 ## Next
-- Wait for reviewer inspection/sign-off on `M1` + `F1–F5` and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2** (presets `Quick`/`Full`, optional `Practical`, unscored `Warm-up` & `HR`) and Slice 1 UI fixes noted in F5. Do not run Slice 2/3 or pilot yet.
+- Complete **Slice 1b** (`S1b-1` inline follow-up outcome, `S1b-2` minimal UI, `S1b-3` 3-core deferred-feedback acceptance test).
+- Wait for reviewer inspection/sign-off on **Slice 1b** and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2**. Do not run Slice 2/3 or pilot yet.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).
