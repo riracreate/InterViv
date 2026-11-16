@@ -679,12 +679,16 @@ def test_offline_skill_without_scored_content_is_refused_before_any_session() ->
         "offline_questions": 0, "offline_needed": 3, "shared_with": [],
         "source": "bank", "available": False,
     }]
-    assert "'Agile' (3 planned, none in the offline bank)" in block["reason"]
+    # Nothing offline is about Agile: the advice is to remove it or generate
+    # live, not to lower the count.
+    no_content = ("No offline questions for 'Agile' (3 planned): remove it, or use live "
+                  "question generation where it is configured.")
+    assert no_content in block["reason"]
+    assert "lower the question count" not in block["reason"]
 
     start = client.post("/session/start", headers=headers, json=body)
     assert start.status_code == 422, start.text
-    assert "'Agile' (3 planned, none in the offline bank)" in start.json()["detail"]
-    assert "turn on live question generation" in start.json()["detail"]
+    assert no_content in start.json()["detail"]
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
 
@@ -708,10 +712,12 @@ def test_the_observed_five_skill_plan_is_reported_short_not_filled_from_other_sk
     start = client.post("/session/start", headers=headers, json=body)
     assert start.status_code == 422, start.text
     detail = start.json()["detail"]
-    for expected in ("'AWS' (2 planned, 1 in the offline bank)", "'Agile' (2 planned, none in the offline bank)",
-                     "'Azure' (2 planned, 1 in the offline bank)", "'CI/CD' (2 planned, 1 in the offline bank)",
-                     "'Docker' (2 planned, 1 in the offline bank)"):
-        assert expected in detail
+    # Two problems, each with its own remedy.
+    assert ("No offline questions for 'Agile' (2 planned): remove it, or use live question "
+            "generation where it is configured.") in detail
+    assert ("Fewer than planned for 'AWS' (2 planned, 1 available), 'Azure' (2 planned, 1 available), "
+            "'CI/CD' (2 planned, 1 available), 'Docker' (2 planned, 1 available): lower the question "
+            "count or remove them.") in detail
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
 
@@ -757,11 +763,14 @@ def test_offline_questions_are_counted_across_the_whole_plan() -> None:
     assert availability.json()["available"] is False
     oop, java = availability.json()["blocks"]
     assert oop["available"] is False and java["available"] is True
-    assert "'OOP' (4 planned, 7 in the offline bank, shared with Java)" in oop["reason"]
+    insufficient = ("Fewer than planned for 'OOP' (4 planned, 7 available, shared with Java): "
+                    "lower the question count or remove it.")
+    assert insufficient in oop["reason"]
+    assert "live question generation" not in oop["reason"]
 
     start = client.post("/session/start", headers=headers, json=body)
     assert start.status_code == 422, start.text
-    assert "'OOP' (4 planned, 7 in the offline bank, shared with Java)" in start.json()["detail"]
+    assert insufficient in start.json()["detail"]
     assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
     fits = client.post("/session/availability", headers=headers, json={
@@ -774,7 +783,7 @@ def test_offline_questions_are_counted_across_the_whole_plan() -> None:
         "blocks": [_interview(["DBMS"], 5), _interview(["DBMS"], 5)],
     })
     assert twice.status_code == 422, twice.text
-    assert "'DBMS' (10 planned, 9 in the offline bank)" in twice.json()["detail"]
+    assert "Fewer than planned for 'DBMS' (10 planned, 9 available)" in twice.json()["detail"]
 
 
 def test_single_skill_session_with_live_generation_stays_on_that_skill(
@@ -942,7 +951,7 @@ def test_job_practice_draft_shows_its_planned_scope_before_confirming() -> None:
         refused = client.post(f"/jobs/{job_id}/practice", headers=headers, json={
             "confirm": True, "blocks": backend.json()["proposed_blocks"]})
         assert refused.status_code == 422, refused.text
-        assert "'Django' (1 planned, none in the offline bank)" in refused.json()["detail"]
+        assert "No offline questions for 'Django' (1 planned)" in refused.json()["detail"]
         assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
 
         # With the skills edited, the server plans from the confirmed list:
@@ -957,6 +966,70 @@ def test_job_practice_draft_shows_its_planned_scope_before_confirming() -> None:
         assert body["planned_scope"]["not_covered"] == ["OOP"]
         stored = _stored(body["session_id"])
         assert [spec["skills"] for spec in stored["expanded_plan"][:3]] == [["DBMS"], ["DSA"], ["Python"]]
+    finally:
+        set_fetch_override(None)
+        reset_memory_store()
+
+
+def test_job_practice_preview_is_rebuilt_for_edited_skills_and_the_start_uses_it() -> None:
+    """Editing the skills in the confirm dialog must change what is previewed
+    and what is started, together."""
+    from modules.jobs_explorer import load_fixture_jobs, reset_memory_store, set_fetch_override
+
+    reset_memory_store()
+    set_fetch_override(lambda **kwargs: load_fixture_jobs()[:3])
+    try:
+        client = TestClient(app)
+        user = _make_user("cov-jobs-refresh")
+        headers = _headers(user)
+        jobs = {job["title"]: job["id"]
+                for job in client.get("/jobs?q=intern&where=Pune&page=1", headers=headers).json()["jobs"]}
+        job_id = jobs["Software Development Intern — Backend"]
+        proposed = client.post(f"/jobs/{job_id}/prepare", headers=headers).json()
+        assert [block["skills"] for block in proposed["proposed_blocks"][:3]] == [["DBMS"], ["DSA"], ["Django"]]
+
+        # The candidate replaces Django. The draft is rebuilt for that list:
+        # blocks and scope both describe the edited skills.
+        edited = ["DBMS", "DSA", "Python", "OOP"]
+        refreshed = client.post(f"/jobs/{job_id}/prepare", headers=headers, json={"skills": edited})
+        assert refreshed.status_code == 200, refreshed.text
+        draft = refreshed.json()
+        assert draft["proposed_skills"] == edited
+        assert [block["skills"] for block in draft["proposed_blocks"][:3]] == [["DBMS"], ["DSA"], ["Python"]]
+        assert [(item["skill"], item["questions"], item["available"])
+                for item in draft["planned_scope"]["skills"]] == [
+            ("DBMS", 1, True), ("DSA", 1, True), ("Python", 1, True)]
+        assert draft["planned_scope"]["not_covered"] == ["OOP"]
+
+        # The typed list is cleaned, never reinterpreted or padded.
+        cleaned = client.post(f"/jobs/{job_id}/prepare", headers=headers,
+                              json={"skills": ["  DBMS ", "dbms", "", "DSA"]}).json()
+        assert cleaned["proposed_skills"] == ["DBMS", "DSA"]
+        empty = client.post(f"/jobs/{job_id}/prepare", headers=headers, json={"skills": []}).json()
+        assert empty["proposed_skills"] == [] and empty["proposed_blocks"] == []
+        assert empty["planned_scope"] is None
+        # A skill with nothing offline is still flagged after an edit.
+        flagged = client.post(f"/jobs/{job_id}/prepare", headers=headers,
+                              json={"skills": ["DBMS", "Agile"]}).json()
+        assert [(item["skill"], item["available"]) for item in flagged["planned_scope"]["skills"]] == [
+            ("DBMS", True), ("Agile", False)]
+
+        # Blocks left over from the first proposal are not the edited plan.
+        stale = client.post(f"/jobs/{job_id}/practice", headers=headers, json={
+            "confirm": True, "skills": edited, "blocks": proposed["proposed_blocks"]})
+        assert stale.status_code == 422, stale.text
+        assert "does not match the confirmed skills (not in the list: Django)" in stale.json()["detail"]
+        assert get_database()["sessions"].find_one({"user_id": user["id"]}) is None
+
+        # The refreshed draft is what starts, and it passes the same checks.
+        started = client.post(f"/jobs/{job_id}/practice", headers=headers, json={
+            "confirm": True, "skills": draft["proposed_skills"], "blocks": draft["proposed_blocks"]})
+        assert started.status_code == 200, started.text
+        body = started.json()
+        assert body["planned_scope"] == draft["planned_scope"]
+        stored = _stored(body["session_id"])
+        assert [spec["skills"] for spec in stored["expanded_plan"][:3]] == [["DBMS"], ["DSA"], ["Python"]]
+        assert _context(stored["rounds"][0])["skill"] == "DBMS"
     finally:
         set_fetch_override(None)
         reset_memory_store()

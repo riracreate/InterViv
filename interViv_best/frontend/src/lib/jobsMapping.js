@@ -3,44 +3,62 @@
  */
 import { summarizeLaunchScope } from './practiceBuilder.js';
 
-function skillList(text) {
+/** Skills as typed in the confirm dialog: comma-separated, trimmed, no blanks. */
+export function jobSkillList(text) {
   return String(text || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 /**
- * True when the skills typed in the confirm dialog are no longer the ones
- * the draft's proposed blocks were built from.
+ * Identity of a typed skill list. The dialog records the key its preview was
+ * built for; a different key means the preview no longer describes what
+ * would be started.
  */
-export function jobSkillsEdited(draft, skillsText) {
-  const proposed = (draft?.proposed_skills || []).map((s) => String(s).trim().toLowerCase());
-  const typed = skillList(skillsText).map((s) => s.toLowerCase());
-  return proposed.length !== typed.length || proposed.some((s, i) => s !== typed[i]);
+export function jobSkillKey(text) {
+  return jobSkillList(text).map((s) => s.toLowerCase()).join('|');
+}
+
+/** Planned scope of the draft the dialog currently holds. */
+export function jobLaunchScope(draft) {
+  return summarizeLaunchScope(draft?.planned_scope);
 }
 
 /**
- * Planned scope for the confirm dialog. The server's summary describes the
- * proposed blocks, so it is shown only while the skills are unchanged.
+ * Whether the confirm dialog may start practice, and the reason when it may
+ * not. Starting is allowed only when the preview on screen was built for
+ * the skills in the field and nothing in it is short of content, so the
+ * request that is sent is the plan the candidate just saw.
  */
-export function jobLaunchScope(draft, skillsText) {
-  return jobSkillsEdited(draft, skillsText) ? null : summarizeLaunchScope(draft?.planned_scope);
+export function jobStartState({ draft, skillsText, previewKey, previewBusy = false, previewError = '' }) {
+  if (!jobSkillList(skillsText).length) {
+    return { canStart: false, reason: 'Enter at least one skill.' };
+  }
+  if (previewError) {
+    return { canStart: false, reason: `Could not update the preview: ${previewError}` };
+  }
+  if (previewBusy || jobSkillKey(skillsText) !== previewKey) {
+    return { canStart: false, reason: 'Updating the preview for these skills…' };
+  }
+  const scope = jobLaunchScope(draft);
+  if (scope && scope.unavailable.length) {
+    return { canStart: false, reason: 'Change the skills marked above to start.' };
+  }
+  return { canStart: true, reason: '' };
 }
 
 /**
- * Body for POST /jobs/{id}/practice. The proposed blocks are sent only while
- * they still match the skills: after an edit the server plans from the
- * confirmed skills (one free-text question for each of the first three)
- * instead of starting the blocks of skills the candidate removed.
+ * Body for POST /jobs/{id}/practice: the skills and blocks of the draft that
+ * was previewed, never text typed after it. The server refuses blocks that
+ * do not belong to those skills.
  */
-export function jobPracticeBody(draft, { skillsText, company, role, fullJd } = {}) {
-  const body = {
+export function jobPracticeBody(draft, { company, role, fullJd } = {}) {
+  return {
     confirm: true,
-    skills: skillList(skillsText),
+    skills: [...(draft?.proposed_skills || [])],
+    blocks: draft?.proposed_blocks,
     company,
     role,
     full_jd: fullJd || undefined,
   };
-  if (!jobSkillsEdited(draft, skillsText)) body.blocks = draft?.proposed_blocks;
-  return body;
 }
 
 export function mapJobCard(job) {

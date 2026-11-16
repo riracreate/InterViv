@@ -1301,20 +1301,35 @@ def _reference_shortfall(scope: dict[str, Any]) -> str | None:
     if not short:
         return None
 
-    def describe(item: dict[str, Any]) -> str:
-        have = item["offline_questions"]
-        planned = item.get("planned_total") or item["questions"]
-        text = f"'{item['skill']}' ({planned} planned, {have or 'none'} in the offline bank"
-        if have and item.get("shared_with"):
-            text += f", shared with {' and '.join(item['shared_with'])}"
-        return text + ")"
+    def planned(item: dict[str, Any]) -> int:
+        return item.get("planned_total") or item["questions"]
 
-    return (
-        "Not enough scored interview questions are available for "
-        f"{', '.join(describe(item) for item in short)}. Remove "
-        + ("that skill" if len(short) == 1 else "those skills")
-        + ", lower the question count, or turn on live question generation."
-    )
+    def pronoun(items: list[dict[str, Any]]) -> str:
+        return "it" if len(items) == 1 else "them"
+
+    # Two different problems with two different remedies: nothing offline is
+    # about the skill at all, or there is some content but less than planned.
+    none = [item for item in short if not item["offline_questions"]]
+    few = [item for item in short if item["offline_questions"]]
+    parts = ["Not enough scored interview questions are available offline."]
+    if none:
+        listed = ", ".join(f"'{item['skill']}' ({planned(item)} planned)" for item in none)
+        parts.append(
+            f"No offline questions for {listed}: remove {pronoun(none)}, or use "
+            "live question generation where it is configured."
+        )
+    if few:
+        listed = ", ".join(
+            f"'{item['skill']}' ({planned(item)} planned, {item['offline_questions']} available"
+            + (f", shared with {' and '.join(item['shared_with'])}" if item.get("shared_with") else "")
+            + ")"
+            for item in few
+        )
+        parts.append(
+            f"Fewer than planned for {listed}: lower the question count or "
+            f"remove {pronoun(few)}."
+        )
+    return " ".join(parts)
 
 
 def _validate_block_content(

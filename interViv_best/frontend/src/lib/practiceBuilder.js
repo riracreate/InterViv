@@ -656,12 +656,16 @@ export function multiSkillTopicNote(skills, metadata, metadataReady) {
   return `No topic is shared by ${list.join(' and ')}. Split into separate blocks, adjust skills, or leave the topic unrestricted.`;
 }
 
+function plannedTotal(item) {
+  return Number(item.planned_total) || Number(item.questions) || 0;
+}
+
 function plannedSkillNote(item) {
   if (item.available === false) {
     const have = Number(item.offline_questions) || 0;
-    if (!have) return 'no scored questions in the offline bank';
+    if (!have) return 'no offline questions';
     const shared = (item.shared_with || []).length ? `, shared with ${item.shared_with.join(' and ')}` : '';
-    return `only ${have} scored question${have === 1 ? '' : 's'} in the offline bank${shared}`;
+    return `${plannedTotal(item)} planned, ${have} available offline${shared}`;
   }
   if (item.source === 'generated') return 'generated for this skill';
   if (item.source === 'reviewed') return 'reviewed questions';
@@ -672,15 +676,19 @@ function plannedSkillNote(item) {
 /**
  * The scope an interview will actually ask, from the `planned_scope` of a
  * POST /session/availability response: questions per confirmed skill and
- * where they come from, skills the question budget cannot reach, and
- * skills with no scored content. Pure for tests. Returns null when the
- * response carries no planned scope (no interview block, older server).
+ * where they come from, and three kinds of gap that need different advice:
+ * `notCovered` (the question budget does not reach the skill), `noContent`
+ * (nothing offline is about the skill) and `insufficient` (some offline
+ * questions, fewer than planned). `unavailable` names every skill that
+ * blocks a start. Pure for tests. Returns null when the response carries
+ * no planned scope (no interview block, older server).
  */
 export function summarizePlannedScope(resp) {
   const scopes = (resp?.blocks || []).map((b) => b?.planned_scope).filter(Boolean);
   if (!scopes.length) return null;
   // One row per skill: several blocks can plan the same one.
   const bySkill = new Map();
+  const shortBySkill = new Map();
   scopes.flatMap((scope) => scope.skills || []).forEach((item) => {
     const skill = String(item.skill);
     const row = bySkill.get(skill) || { skill, questions: 0, available: true, note: plannedSkillNote(item) };
@@ -688,15 +696,24 @@ export function summarizePlannedScope(resp) {
     if (item.available === false) {
       row.available = false;
       row.note = plannedSkillNote(item);
+      shortBySkill.set(skill, {
+        skill,
+        planned: plannedTotal(item),
+        available: Number(item.offline_questions) || 0,
+        sharedWith: (item.shared_with || []).map(String),
+      });
     }
     bySkill.set(skill, row);
   });
   const skills = [...bySkill.values()];
+  const short = [...shortBySkill.values()];
   const notCovered = scopes.flatMap((scope) => scope.not_covered || []).map(String);
   return {
     questions: scopes.reduce((sum, scope) => sum + (Number(scope.questions) || 0), 0),
     skills,
     notCovered: [...new Set(notCovered)].filter((skill) => !bySkill.has(skill)),
+    noContent: short.filter((item) => !item.available).map((item) => item.skill),
+    insufficient: short.filter((item) => item.available > 0),
     unavailable: skills.filter((item) => !item.available).map((item) => item.skill),
   };
 }

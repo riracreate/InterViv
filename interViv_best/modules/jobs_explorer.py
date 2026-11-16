@@ -706,16 +706,32 @@ def missing_skills_for_job(job: dict[str, Any], user_skills: list[str] | None) -
     return out[:MAX_PRACTICE_SKILLS] or job_skills[:MAX_PRACTICE_SKILLS] or ["DSA"]
 
 
+def confirmed_skill_list(skills: list[str] | None) -> list[str]:
+    """Skills as the candidate typed them: trimmed, no blanks, no repeats."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in skills or []:
+        skill = " ".join(str(raw).split())
+        if skill and skill.lower() not in seen:
+            seen.add(skill.lower())
+            out.append(skill)
+    return out
+
+
 def build_practice_prepare_payload(
     *,
     job: dict[str, Any],
     user_skills: list[str] | None,
     full_jd: str | None = None,
+    skills: list[str] | None = None,
 ) -> dict[str, Any]:
     """Draft practice handoff — no session started.
 
     Snippet-derived skills are proposals only. Optional full_jd may refine
     lexicon skills; neither invents company-specific interview questions.
+    When ``skills`` is given, the draft is built for exactly those skills
+    (the candidate edited the proposal), so the preview and the plan that is
+    started describe the same list.
     """
     base_skills = missing_skills_for_job(job, user_skills)
     jd_note = (
@@ -723,7 +739,13 @@ def build_practice_prepare_payload(
         "Confirm skills and blocks before starting. Ordinary Practice remains available."
     )
     refined = list(base_skills)
-    if full_jd and full_jd.strip():
+    if skills is not None:
+        refined = confirmed_skill_list(skills)
+        jd_note = (
+            "This plan is for the skills you entered. The first three get one "
+            "free-text question each. Ordinary Practice remains available."
+        )
+    elif full_jd and full_jd.strip():
         # Lexicon extraction only — never treated as scored content or bundle promotion.
         extra = extract_skills_from_text(full_jd.strip()[:8000])
         for skill in extra:

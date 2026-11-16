@@ -14,6 +14,7 @@ from modules.jobs_explorer import (
     PROVIDER_GREENHOUSE,
     build_practice_prepare_payload,
     build_practice_start_payload,
+    confirmed_skill_list,
     get_job,
     missing_skills_for_job,
     rate_limit_ok,
@@ -33,10 +34,11 @@ def _with_planned_scope(draft: dict[str, Any]) -> dict[str, Any]:
     proposed skills; the summary names the rest and any skill without scored
     content, before the candidate confirms.
     """
+    blocks = draft.get("proposed_blocks") or []
+    # No blocks (every skill was removed) is no plan, not a default one.
     draft["planned_scope"] = launch_planned_scope(
-        {"blocks": draft.get("proposed_blocks") or []},
-        list(draft.get("proposed_skills") or []),
-    )
+        {"blocks": blocks}, list(draft.get("proposed_skills") or []),
+    ) if blocks else None
     return draft
 
 
@@ -157,8 +159,11 @@ def prepare_practice_for_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
     user_skills = user_skills_for_overlay(str(user["id"]))
     full_jd = body.full_jd if body else None
+    # With ``skills`` the draft is rebuilt for the edited list, so the dialog
+    # can show the scope of what will actually be started.
     draft = build_practice_prepare_payload(
-        job=job, user_skills=user_skills, full_jd=full_jd
+        job=job, user_skills=user_skills, full_jd=full_jd,
+        skills=body.skills if body else None,
     )
     return _with_planned_scope(draft)
 
@@ -180,13 +185,32 @@ def practice_for_job(
         # Back-compat: return prepare draft instead of silently starting.
         user_skills = user_skills_for_overlay(str(user["id"]))
         draft = build_practice_prepare_payload(
-            job=job, user_skills=user_skills, full_jd=req.full_jd
+            job=job, user_skills=user_skills, full_jd=req.full_jd, skills=req.skills
         )
         return {**_with_planned_scope(draft), "started": False}
 
     user_skills = user_skills_for_overlay(str(user["id"]))
-    skills = [s for s in (req.skills or missing_skills_for_job(job, user_skills)) if s][:5]
+    confirmed = confirmed_skill_list(req.skills) or missing_skills_for_job(job, user_skills)
+    skills = confirmed[:5]
     blocks = req.blocks
+    if blocks and req.skills is not None:
+        # The plan has to be the one previewed for these skills. Blocks left
+        # over from an earlier proposal would start skills the candidate
+        # removed.
+        allowed = {skill.lower() for skill in confirmed}
+        stale = sorted({
+            str(skill) for block in blocks for skill in (block.get("skills") or [])
+            if str(skill).strip().lower() not in allowed
+        })
+        if stale:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "The practice plan does not match the confirmed skills "
+                    f"(not in the list: {', '.join(stale)}). Refresh the preview "
+                    "and start again."
+                ),
+            )
 
     db = get_database()
     candidate = db["candidates"].find_one({"user_id": user["id"]})
@@ -213,7 +237,7 @@ def practice_for_job(
         "started": True,
         "round_plan": start_body.get("round_plan"),
         "blocks": start_body.get("blocks"),
-        "planned_scope": launch_planned_scope(start_body, skills),
+        "planned_scope": launch_planned_scope(start_body, confirmed),
         "navigate": f"/interview/{session.get('session_id')}",
         "practice_href": "/practice",
         "job_id": job_id,

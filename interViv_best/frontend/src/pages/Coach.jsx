@@ -387,6 +387,7 @@ export default function Coach() {
             <PlannedScope
               scope={plan.practicePreview.plannedScope}
               notCoveredHint="Coach practice asks at most three free-text questions."
+              countFixed
             />
             <button
               type="button"
