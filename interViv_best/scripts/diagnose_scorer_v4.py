@@ -187,3 +187,67 @@ out={"A":A,"B":B,"C":C,"D":D}
 (ROOT/"artifacts/scorer_v4_diagnostics.json").write_text(json.dumps(out,indent=1))
 print(json.dumps({"A":A,"B":B,"D":{k:v for k,v in D.items() if k!="calibration_knots"}}, indent=1))
 print("C:", json.dumps(C, indent=1))
+
+# Per-row exports (post-diagnostics; zero impact on metrics above)
+heldout_per_row = []
+for r, v3_i, bl_i, wo_i, w_i in zip(rows, v3, blended, v4wo, v4w):
+    g_out = check_answer_quality_v4(
+        r["student_answer"],
+        question_text=r["question"],
+        ideal_answer=r["instructor_answer"],
+    )
+    heldout_per_row.append({
+        "answer_id": r["id"],
+        "human_grade": round(float(r["score_avg"]), 4),
+        "v3": round(float(v3_i), 4),
+        "blended_cosine": round(float(bl_i), 4),
+        "v4_without_model": round(float(wo_i), 4),
+        "v4_with_model": round(float(w_i), 4),
+        "guard_decision": {
+            "cap_required": bool(g_out.get("cap_required")),
+            "reason": g_out.get("reason") or "",
+            "score_cap": int(g_out.get("score_cap", 100)),
+        },
+    })
+(ROOT / "artifacts/scorer_v4_heldout_per_row.json").write_text(
+    json.dumps(heldout_per_row, indent=1) + "\n", encoding="utf-8"
+)
+
+os.environ.pop("SCORER_VERSION", None)
+from backend.scoring.pipeline import run_scoring_pipeline as _run_v3_pipeline
+
+n50_per_row = []
+for s, it in zip(sys_rows, items):
+    k = key_rows[int(s["row_id"])]
+    q, ans = k["question"], k["answer"]
+    v6_row = v6.get(q) or {}
+    ideal = v6_row.get("ideal_answer") or ""
+    kw = v6_row.get("ideal_keywords") or ""
+    v3_out = _run_v3_pipeline(
+        answer_text=ans,
+        question_context={"question": q, "ideal_answer": ideal, "ideal_keywords": kw},
+    )
+    f = it["feats"]
+    bl_n = float((0.4 * f["tfidf_score"] + 0.6 * f["semantic_score"]) * 100.0)
+    wo_n = float(calib(np.array([base(f, None)]))[0])
+    g_out = check_answer_quality_v4(ans, question_text=q, ideal_answer=ideal)
+    n50_per_row.append({
+        "answer_id": int(s["row_id"]),
+        "form_position": int(s["form_position"]),
+        "dataset_label": s["label"],
+        "human_grade": round(float(it["human"]), 4),
+        "v3": round(float(v3_out["final_score"]), 4),
+        "baseline_v2_system_score": round(float(s["system_score"]), 4),
+        "blended_cosine": round(bl_n, 4),
+        "v4_without_model": round(wo_n, 4),
+        "v4_with_model": round(float(it["v4_cal"]), 4),
+        "guard_decision": {
+            "cap_required": bool(g_out.get("cap_required")),
+            "reason": g_out.get("reason") or "",
+            "score_cap": int(g_out.get("score_cap", 100)),
+        },
+    })
+(ROOT / "artifacts/scorer_v4_n50_dev_per_row.json").write_text(
+    json.dumps(n50_per_row, indent=1) + "\n", encoding="utf-8"
+)
+
