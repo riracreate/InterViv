@@ -12,6 +12,8 @@
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
 - **Guard `v4.1` parked (not implemented)**: Removing `content_recall < 0.50` changed `0` decisions on Mohler tune and `1` of `50` on `n=50-dev`, and no hyphen/dangling-ending rule is added for `pos=35`. Guard changes wait for the fresh human rating set.
 - **Known limitation (Mohler tune 1–2 word reference false positives)**: Short 1–2 word Mohler tune reference answers trigger `v4` guard false positives; interview references are multi-sentence, so this is accepted as a known limitation with no fix.
+- **Model precedence (M1)**: `QUESTION_LLM_PROVIDER` (`openai` checked before `openrouter` under `auto`) -> `QUESTION_LLM_MODEL` -> `BUNDLE_CHECK_MODEL` (bundle checks) -> `OPENROUTER_MODEL`.
+- **Known limit (M1 `:free` models & HTTP `429`)**: Do **not** run a pilot on an OpenRouter `:free` model until HTTP `429` handling distinguishes a per-minute limit from a daily quota cap and stops on a daily cap.
 
 ## Done (Takeover Verification, T1–T4, H1–H3, D1, R1–R2)
 - **Takeover Verification (`0a`–`0f`)**: Verified DB hash, full pytest, existing DB guard, diagnostic artifacts (`artifacts/scorer_v4_diagnostics.json` holds `spearman_diff_v4with_minus_blended_all = [-0.0056, 0.0305]`), and `50`-answer band definitions.
