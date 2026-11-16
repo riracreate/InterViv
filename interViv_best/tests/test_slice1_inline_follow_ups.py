@@ -1336,3 +1336,136 @@ def test_f4_incomplete_inline_live_generation_leftover_is_never_served(
         bundle_generator.set_bundle_llm_override(None)
         bundle_store.reset_memory_store()
         _clear_caches()
+
+
+def test_f5_seed_demo_bundles_guard_and_idempotency(monkeypatch, tmp_path: Path):
+    """F5: seed_demo_bundles refuses protected DB and interviv.db, seeds demo_fixture idempotently."""
+    from scripts import pregenerate_bundles, seed_demo_bundles
+
+    # 1. Refuses unset / memory / interviv.db / protected DB (including symlink)
+    for bad_url in (
+        "",
+        "sqlite:///:memory:",
+        f"sqlite:///{tmp_path / 'interviv.db'}",
+        f"sqlite:///{pregenerate_bundles._protected_local_db_path()}",
+    ):
+        monkeypatch.setenv("DATABASE_URL", bad_url)
+        _clear_caches()
+        with pytest.raises(RuntimeError, match="Refusing to run"):
+            seed_demo_bundles.seed_demo_bundles()
+
+    fake_real = tmp_path / "real-target.sqlite3"
+    fake_real.write_bytes(b"")
+    symlink_target = tmp_path / "link-to-protected.sqlite3"
+    symlink_target.symlink_to(fake_real)
+    monkeypatch.setattr(pregenerate_bundles, "_protected_local_db_path", lambda: fake_real.resolve())
+    monkeypatch.setattr(seed_demo_bundles, "_protected_local_db_path", lambda: fake_real.resolve())
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{symlink_target}")
+    _clear_caches()
+    with pytest.raises(RuntimeError, match="Refusing to run"):
+        seed_demo_bundles.seed_demo_bundles()
+    assert seed_demo_bundles.main([]) == 2
+
+    # 2. Succeeds idempotently on a clean SQLite copy path
+    demo_db = tmp_path / "interviv-copy.sqlite3"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{demo_db}")
+    monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
+    _clear_caches()
+    create_all_for_smoke()
+    try:
+        first = seed_demo_bundles.seed_demo_bundles()
+        assert len(first) == 3
+        assert all(item["status"] == "auto_checked" for item in first)
+        assert all(item["origin"] == "demo_fixture" for item in first)
+        assert all(item["import_result"] == "created" for item in first)
+
+        for item in first:
+            stored = bundle_store.get_version(item["bundle_id"], item["version"])
+            attr = stored["attribution_json"]
+            assert attr.get("origin") == "demo_fixture"
+            assert attr.get("demo_fixture") is True
+            assert attr.get("generated_by_model") is None
+
+        second = seed_demo_bundles.seed_demo_bundles()
+        assert all(item["import_result"] == "unchanged" for item in second)
+    finally:
+        get_engine().dispose()
+        _clear_caches()
+
+
+def test_f5_demo_bundles_end_to_end_frontend_payload_shape(monkeypatch, tmp_path: Path):
+    """F5: verify exact /session/answer + /activate payloads the frontend receives on splice."""
+    from scripts import seed_demo_bundles
+
+    demo_db = tmp_path / "interviv-demo-copy.sqlite3"
+    audit_path = tmp_path / "f5_audit.jsonl"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{demo_db}")
+    monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
+    monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", "1")
+    monkeypatch.setenv("REVIEWED_BUNDLES_ONLY", "false")
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+    monkeypatch.setenv("FOLLOWUP_DECISIONS_AUDIT_PATH", str(audit_path))
+    _clear_caches()
+    create_all_for_smoke()
+    try:
+        seed_demo_bundles.seed_demo_bundles()
+        client = TestClient(app)
+        user = _make_user("f5-ui")
+
+        start = client.post(
+            "/session/start",
+            headers=_headers(user),
+            json={
+                "skills": ["Python"],
+                "rounds_per_skill": 2,
+                "practice_mode": "coached_practice",
+            },
+        )
+        assert start.status_code == 200, start.text
+        start_body = start.json()
+        sid = start_body["session_id"]
+        assert start_body["total_rounds"] == 2
+        assert start_body["question_context"]["bundle_id"] == "demo.python.01_gil.v1"
+
+        ans = client.post(
+            "/session/answer",
+            headers=_headers(user),
+            json={
+                "session_id": sid,
+                "round": 1,
+                "answer_text": (
+                    "Only one thread executes bytecode at a time because the mutex "
+                    "serializes bytecode execution."
+                ),
+            },
+        )
+        assert ans.status_code == 200, ans.text
+        ans_body = ans.json()
+        assert ans_body["follow_up_scheduled"] is True
+        assert ans_body["total_rounds"] == 3
+        assert ans_body["next_round"] == 2
+        assert ans_body["next_round_type"] == "technical_short_answer"
+        assert ans_body["next_round_status"] == "ready"
+        assert ans_body["next_skill"] == "Python"
+        assert ans_body["session_status"] == "active"
+        assert ans_body["session_complete"] is False
+
+        act = client.post(f"/session/{sid}/rounds/2/activate", headers=_headers(user))
+        assert act.status_code == 200, act.text
+        act_body = act.json()
+        active_round = act_body["active_round"]
+        assert act_body["total_rounds"] == 3
+        assert active_round["round"] == 2
+        assert active_round["status"] == "in_progress"
+        assert active_round["is_follow_up"] is True
+        assert active_round["follow_up_parent_round"] == 1
+        assert active_round["skill"] == "Python"
+        assert (
+            active_round["question"]
+            == "Follow-up: Why can blocking I/O threads still overlap cleanly even while CPython enforces the GIL?"
+        )
+        assert active_round["question_context"]["bundle_id"] == "demo.python.01_gil.v1"
+        assert "targets_concept" not in active_round
+    finally:
+        get_engine().dispose()
+        _clear_caches()

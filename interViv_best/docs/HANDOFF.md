@@ -2,11 +2,11 @@
 
 ## State
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
-- **Latest commit**: updating for `S1` (after `E3` `aeb33ec` and `D1a` `c8542a2`)
+- **Latest commit**: updating for `F5` (after `M1` `5136f0d`, `F3` `fb8f02f`, `F4` `d84c357`)
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
 - **Parked guard proposal**: The previous working-tree draft is parked at `docs/parked/guard_short_cap_v4_1.patch` (with rationale and `pos=35` note in `docs/parked/README.md`). Working tree `modules/answer_guard_v4.py` (`sha256: 90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae`) and `tests/test_scorer_v4.py` are restored to `2bcd3d7`.
 - **Default flags**: `v3` remains default (`SCORER_VERSION=v4` OFF); `REVIEWED_BUNDLES_ONLY=false` (`backend/config.py:138`); `STAGED_INLINE_FOLLOW_UPS=false` (`backend/config.py:43`); `LLM_LIVE_FETCH=0`.
-- **Tests**: Full suite passed (`1159 passed, 6 skipped, 0 failed`).
+- **Tests**: Full suite passed (`1164 passed, 6 skipped, 0 failed`).
 
 ## Decisions & Known Limitations
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
@@ -32,6 +32,11 @@
 - **D1a + HR Export**: Exported `93` `HR` rows (`31` unique questions) from `data/interview_dataset_v6.csv` to `artifacts/hr_questions_review.csv` (gitignored); applied `Q1–Q4` & `A1–A6` amendments to `docs/design/interview_flow.md` (`c8542a2`).
 - **S1 (Slice 1 — Inline Bundle Follow-Ups, Default OFF)**: Implemented `STAGED_INLINE_FOLLOW_UPS` (`backend/config.py`, `.env.example`), `A4` bundle status floor (`auto_checked` in `coached_practice`, never `generated`/`rejected`, plus fixing `session.py:366` so `target_concepts` does not bypass bundle inventory when staged mode is on), `Q2` strict `contradicted > missing` extraction without `uncertain` or `followups[0]` fallback (`modules/follow_ups.py`), `A5` atomic `parent+1` splice inside `POST /session/answer` without `RoundRow` renumbering (`backend/routes/answer.py`, `backend/routes/session_continue.py`), `Q3` score/Elo exclusion, `A6` JSONL + `private_meta_json["follow_up_decision"]` decision logging (`tests/conftest.py`, `backend/db/round_meta.py`), preserved manual `/follow-ups`, and added `11` fixture/SQLite/v3 tests (`tests/test_slice1_inline_follow_ups.py`). Full pytest passed (`1159 passed, 6 skipped, 0 failed`).
 
+- **F1–F2 (Read-only Audit & Walk-Through)**: Audited Slice 1 selection, follow-up grading against the parent bundle's full rubric, post-feedback `coarse_topic_scope` exclusion, `allow_optional_follow_ups`, the 11 original Slice 1 tests, and a Quick-preset `coached_practice` session walk-through.
+- **F3 (`fb8f02f`)**: Always attempt `select_bundle_question(...)` in `backend/routes/session.py` and `modules/question_runtime.py` even when `target_concepts` is non-empty (regardless of `STAGED_INLINE_FOLLOW_UPS`).
+- **F4 (`d84c357`)**: Decoupled bundle status trust floor from `STAGED_INLINE_FOLLOW_UPS` in `modules/bundle_selector.py` so `generated` and `rejected` bundles are never served (`auto_checked`/`reviewed` floor only).
+- **F5 (Offline Demo Seeder & Frontend Payload Tests)**: Added `scripts/seed_demo_bundles.py` (reuses protected DB guard + refuses unset/`:memory:`/`interviv.db`; idempotently imports 3 `auto_checked` `"Python"` bundles tagged `origin="demo_fixture"`/`demo_fixture=True`) and `TestClient` end-to-end payload tests in `tests/test_slice1_inline_follow_ups.py` (`16` tests in file; full suite `1164 passed, 6 skipped`).
+
 ## Next
-- Wait for reviewer inspection/sign-off on `S1` and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2** (presets `Quick`/`Full`, optional `Practical`, unscored `Warm-up` & `HR`). Do not run Slice 2/3 or pilot yet.
+- Wait for reviewer inspection/sign-off on `M1` + `F1–F5` and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2** (presets `Quick`/`Full`, optional `Practical`, unscored `Warm-up` & `HR`) and Slice 1 UI fixes noted in F5. Do not run Slice 2/3 or pilot yet.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).
