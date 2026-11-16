@@ -363,25 +363,24 @@ def _get_next_question(
             payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
         )
 
-    if not target_concepts or get_settings().staged_inline_follow_ups:
-        try:
-            topic = _explicit_reviewed_topic(sub_domain)
-            bundle_payload = select_bundle_question(
+    try:
+        topic = _explicit_reviewed_topic(sub_domain)
+        bundle_payload = select_bundle_question(
+            skill=skill,
+            difficulty=difficulty,
+            asked=asked,
+            topic=topic,
+            include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
+        )
+        if bundle_payload is not None:
+            return _normalize_question_payload(
+                bundle_payload,
                 skill=skill,
+                sub_domain=sub_domain,
                 difficulty=difficulty,
-                asked=asked,
-                topic=topic,
-                include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
             )
-            if bundle_payload is not None:
-                return _normalize_question_payload(
-                    bundle_payload,
-                    skill=skill,
-                    sub_domain=sub_domain,
-                    difficulty=difficulty,
-                )
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     if user_id:
         from modules import adaptive_question_selector

@@ -1177,3 +1177,108 @@ def test_manual_follow_up_endpoint_keeps_unreviewed_unscored_behavior(
     assert r3.status_code == 200, r3.text
     assert r3.json()["final_score"] is None
     assert r3.json()["is_follow_up"] is True
+
+
+@pytest.mark.parametrize("staged_flag", ["0", "1"])
+def test_bundle_selected_with_non_empty_target_concepts_flag_off_and_on(
+    monkeypatch, tmp_path: Path, staged_flag: str
+):
+    """F3: Bundle selection still works when target_concepts is set and topic has no CSV rows."""
+    from modules.concept_mastery import ConceptMastery
+    from modules import question_runtime as qr
+
+    db_path = tmp_path / f"f3_{staged_flag}.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "false")
+    monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", staged_flag)
+    monkeypatch.setenv("REVIEWED_BUNDLES_ONLY", "false")
+    monkeypatch.setenv("LLM_LIVE_FETCH", "0")
+    monkeypatch.setenv(
+        "FOLLOWUP_DECISIONS_AUDIT_PATH", str(tmp_path / f"f3_audit_{staged_flag}.jsonl")
+    )
+    _clear_caches()
+    create_all_for_smoke()
+    try:
+        _seed_bundle(
+            "custom.f3.01",
+            status="auto_checked",
+            skill="Product Positioning",
+            topic="PositioningMatrix",
+            question="How do you position an enterprise workflow product?",
+        )
+        _seed_bundle(
+            "custom.f3.02",
+            status="auto_checked",
+            skill="Product Positioning",
+            topic="PositioningMatrix",
+            question="How do you validate differentiation against incumbent tools?",
+        )
+        client = TestClient(app)
+        user = _make_user(f"f3-{staged_flag}")
+
+        # Pre-populate ConceptMastery so adaptive_question_selector emits non-empty target_concepts.
+        ConceptMastery().update_from_round(
+            user_id=user["id"],
+            skill="Product Positioning",
+            covered_concepts=[],
+            missing_concepts=["positioning_anchor"],
+        )
+
+        # Direct generate_question with non-empty target_concepts also selects the bundle.
+        qr_hit = qr.generate_question(
+            "Product Positioning",
+            "PositioningMatrix",
+            "medium",
+            asked=[],
+            target_concepts=["positioning_anchor"],
+        )
+        assert qr_hit["bundle_id"] == "custom.f3.01"
+
+        start = client.post(
+            "/session/start",
+            headers=_headers(user),
+            json={
+                "blocks": [
+                    {
+                        "round_type": "technical_short_answer",
+                        "category": "interview",
+                        "skills": ["Product Positioning"],
+                        "topic": "PositioningMatrix",
+                        "difficulty": "medium",
+                        "count": 2,
+                        "practice_mode": "assessment",
+                    }
+                ],
+                "practice_mode": "assessment",
+            },
+        )
+        assert start.status_code == 200, start.text
+        sid = start.json()["session_id"]
+        assert start.json()["question_context"]["bundle_id"] == "custom.f3.01"
+
+        ans1 = client.post(
+            "/session/answer",
+            headers=_headers(user),
+            json={
+                "session_id": sid,
+                "round": 1,
+                "answer_text": "Weak unclear answer.",
+            },
+        )
+        assert ans1.status_code == 200, ans1.text
+        body = ans1.json()
+        assert body["progression_blocked"] is False
+        assert body["session_status"] == "active"
+        assert body["next_round"] == 2
+
+        act2 = activate(client, _headers(user), sid, 2)
+        assert (
+            act2["question"]
+            == "How do you validate differentiation against incumbent tools?"
+        )
+    finally:
+        try:
+            get_engine().dispose()
+        except Exception:
+            pass
+        _clear_caches()

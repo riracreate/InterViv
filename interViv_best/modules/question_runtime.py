@@ -755,39 +755,38 @@ def generate_question(
     market = _resolve_market_context(market_context)
     asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
 
-    if not target_concepts:
-        try:
-            from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
+    try:
+        from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
 
-            if not reviewed_bundles_only():
-                norm_topic = str(raw_sub or "").strip()
-                explicit_topic = (
-                    None
-                    if not norm_topic or norm_topic.lower() in {"general", "all", "default"}
-                    else norm_topic
-                )
-                bundle_hit = select_bundle_question(
-                    skill=skill,
-                    difficulty=difficulty,
-                    asked=asked,
-                    topic=explicit_topic,
-                )
-                if bundle_hit is not None:
-                    return {
-                        "question": bundle_hit["question"],
-                        "skill": bundle_hit.get("skill") or resolved_skill,
-                        "sub_domain": bundle_hit.get("topic") or sub_domain,
-                        "topic": bundle_hit.get("topic") or sub_domain,
-                        "difficulty": bundle_hit.get("difficulty") or difficulty,
-                        "source": bundle_hit.get("source") or "auto_checked_bundle",
-                        "bundle_id": bundle_hit.get("bundle_id"),
-                        "version": bundle_hit.get("version"),
-                        "content_hash": bundle_hit.get("content_hash"),
-                        "target_concepts": [],
-                        "adaptive_selected": False,
-                    }
-        except Exception:
-            pass
+        if not reviewed_bundles_only():
+            norm_topic = str(raw_sub or "").strip()
+            explicit_topic = (
+                None
+                if not norm_topic or norm_topic.lower() in {"general", "all", "default"}
+                else norm_topic
+            )
+            bundle_hit = select_bundle_question(
+                skill=skill,
+                difficulty=difficulty,
+                asked=asked,
+                topic=explicit_topic,
+            )
+            if bundle_hit is not None:
+                return {
+                    "question": bundle_hit["question"],
+                    "skill": bundle_hit.get("skill") or resolved_skill,
+                    "sub_domain": bundle_hit.get("topic") or sub_domain,
+                    "topic": bundle_hit.get("topic") or sub_domain,
+                    "difficulty": bundle_hit.get("difficulty") or difficulty,
+                    "source": bundle_hit.get("source") or "auto_checked_bundle",
+                    "bundle_id": bundle_hit.get("bundle_id"),
+                    "version": bundle_hit.get("version"),
+                    "content_hash": bundle_hit.get("content_hash"),
+                    "target_concepts": [],
+                    "adaptive_selected": False,
+                }
+    except Exception:
+        pass
 
     if mode in {"llm", "llm_csv_fallback"}:
         prompt = build_question_prompt(
