@@ -2,11 +2,11 @@
 
 ## State
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
-- **Latest commit**: updating for `R1`/`R2` (`data/baselines/v4_diagnostics/summary.json` + per-row exports in `e3c5167`) after `D1` (`b18ea6e`)
+- **Latest commit**: updating for `S1` (after `E3` `aeb33ec` and `D1a` `c8542a2`)
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
 - **Parked guard proposal**: The previous working-tree draft is parked at `docs/parked/guard_short_cap_v4_1.patch` (with rationale and `pos=35` note in `docs/parked/README.md`). Working tree `modules/answer_guard_v4.py` (`sha256: 90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae`) and `tests/test_scorer_v4.py` are restored to `2bcd3d7`.
-- **Default scorer**: `v3` remains default; `v4` sits behind `SCORER_VERSION=v4` and stays OFF (`v1`–`v4` baselines and hash locks untouched).
-- **Tests**: Full suite passed (`1148 passed, 6 skipped, 0 failed`).
+- **Default flags**: `v3` remains default (`SCORER_VERSION=v4` OFF); `REVIEWED_BUNDLES_ONLY=false` (`backend/config.py:138`); `STAGED_INLINE_FOLLOW_UPS=false` (`backend/config.py:43`); `LLM_LIVE_FETCH=0`.
+- **Tests**: Full suite passed (`1159 passed, 6 skipped, 0 failed`).
 
 ## Decisions & Known Limitations
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
@@ -25,7 +25,11 @@
 - **D1**: Wrote `docs/design/interview_flow.md` covering all 10 sections (no code implemented yet; committed `b18ea6e`).
 - **R1**: Copied `09:53` edited-guard diagnostics to `artifacts/scorer_v4_diagnostics_edited_guard_0953.json`, verified clean tree + all 8 `SHA256SUMS.json` hashes, committed per-row exports to `scripts/diagnose_scorer_v4.py` (`e3c5167`), ran once on locked `2bcd3d7` scorer/guard — reproducing all held-out figures (`10/482` FPs, `10/18` catch, `14/20` `n=50` Poor catch) + `artifacts/scorer_v4_{heldout,n50_dev}_per_row.json`; committed aggregate-only summary under `data/baselines/v4_diagnostics/summary.json`.
 - **R2**: Confirmed `2bcd3d7` commit time `2026-11-16 00:56:09 +0530` vs `artifacts/scorer_v4_validation.json` mtime `00:40:32`, why no pre-`2bcd3d7` guard revision exists in git, why the `00:40` working-tree guard differed from committed `2bcd3d7` (`15/20` vs `14/20`), and that `data/baselines/v4/report.md:16` records `v4 0.75 (n=20)`.
+- **E1–E3**: Reconciled `data/baselines/v4/report.md` against `data/baselines/v4_diagnostics/summary.json`, recorded `data/baselines/v4_diagnostics/ERRATA.md` (`aeb33ec`), and verified all 8 files in `data/baselines/v4/SHA256SUMS.json`.
+- **M1 (Read-only)**: Audited all LLM call sites, `OPENROUTER_MODEL` override precedence (`QUESTION_LLM_MODEL`, `BUNDLE_CHECK_MODEL`, `OPENAI_API_KEY`, `CODING_COACH_MODEL`), `google/gemini-2.5-flash` fallback (`modules/question_bank.py:210`), `response_format` vs Ollama-only `"format": "json"`, bundle/usage model attribution, and `429` retry blindness to RPM vs daily caps.
+- **D1a + HR Export**: Exported `93` `HR` rows (`31` unique questions) from `data/interview_dataset_v6.csv` to `artifacts/hr_questions_review.csv` (gitignored); applied `Q1–Q4` & `A1–A6` amendments to `docs/design/interview_flow.md` (`c8542a2`).
+- **S1 (Slice 1 — Inline Bundle Follow-Ups, Default OFF)**: Implemented `STAGED_INLINE_FOLLOW_UPS` (`backend/config.py`, `.env.example`), `A4` bundle status floor (`auto_checked` in `coached_practice`, never `generated`/`rejected`, plus fixing `session.py:366` so `target_concepts` does not bypass bundle inventory when staged mode is on), `Q2` strict `contradicted > missing` extraction without `uncertain` or `followups[0]` fallback (`modules/follow_ups.py`), `A5` atomic `parent+1` splice inside `POST /session/answer` without `RoundRow` renumbering (`backend/routes/answer.py`, `backend/routes/session_continue.py`), `Q3` score/Elo exclusion, `A6` JSONL + `private_meta_json["follow_up_decision"]` decision logging (`tests/conftest.py`, `backend/db/round_meta.py`), preserved manual `/follow-ups`, and added `11` fixture/SQLite/v3 tests (`tests/test_slice1_inline_follow_ups.py`). Full pytest passed (`1159 passed, 6 skipped, 0 failed`).
 
 ## Next
-- Wait for reviewer sign-off on **D1** open questions (`Q1–Q4` in `docs/design/interview_flow.md`) before implementing Slice 1–3.
+- Wait for reviewer inspection/sign-off on `S1` and `artifacts/hr_questions_review.csv` (`93` rows) before starting **Slice 2** (presets `Quick`/`Full`, optional `Practical`, unscored `Warm-up` & `HR`). Do not run Slice 2/3 or pilot yet.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).

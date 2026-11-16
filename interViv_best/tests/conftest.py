@@ -103,6 +103,10 @@ def isolated_test_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         "NEW_CANONICAL_SKILLS_AUDIT_PATH",
         str(tmp_path / "new_canonical_skills_audit.jsonl"),
     )
+    monkeypatch.setenv(
+        "FOLLOWUP_DECISIONS_AUDIT_PATH",
+        str(tmp_path / "followup_decisions_audit.jsonl"),
+    )
 
     monkeypatch.setattr(dotenv, "load_dotenv", _guarded_load_dotenv)
     monkeypatch.setattr(dotenv, "dotenv_values", _guarded_dotenv_values)

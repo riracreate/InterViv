@@ -363,7 +363,7 @@ def _get_next_question(
             payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
         )
 
-    if not target_concepts:
+    if not target_concepts or get_settings().staged_inline_follow_ups:
         try:
             topic = _explicit_reviewed_topic(sub_domain)
             bundle_payload = select_bundle_question(
@@ -371,6 +371,7 @@ def _get_next_question(
                 difficulty=difficulty,
                 asked=asked,
                 topic=topic,
+                include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
             )
             if bundle_payload is not None:
                 return _normalize_question_payload(
@@ -1381,6 +1382,9 @@ def _validate_block_content(
                                     difficulty=d,
                                     asked=[],
                                     topic=topic,
+                                    include_unchecked_generated=not bool(
+                                        get_settings().staged_inline_follow_ups
+                                    ),
                                 )
                                 is not None
                                 for d in diffs_to_check
@@ -1437,7 +1441,11 @@ def _maybe_prepare_opening_bundle(
     explicit_topic = _explicit_reviewed_topic(topic)
     if (
         select_bundle_question(
-            skill=skill, difficulty=difficulty, asked=[], topic=explicit_topic
+            skill=skill,
+            difficulty=difficulty,
+            asked=[],
+            topic=explicit_topic,
+            include_unchecked_generated=not bool(get_settings().staged_inline_follow_ups),
         )
         is not None
     ):

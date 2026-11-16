@@ -35,6 +35,10 @@ from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
 from backend.serializers.round_serializer import sanitize_round_for_client
 from modules import adaptive_question_selector
+from modules.follow_ups import (
+    build_bundle_follow_up_round_doc,
+    is_inline_bundle_follow_up_spec,
+)
 
 router = APIRouter(prefix="/session", tags=["session-continue"])
 
@@ -229,6 +233,15 @@ def continue_session(
                         )
                         next_payload = prepare_round(next_doc.model_dump())
                         next_payload["skill"] = rotation_skill
+                    elif is_inline_bundle_follow_up_spec(expanded_spec):
+                        assert expanded_spec is not None
+                        next_payload = build_bundle_follow_up_round_doc(
+                            expanded_spec=expanded_spec,
+                            round_number=next_round,
+                            candidate_elos=candidate_elos,
+                            initial_elo=settings.initial_elo,
+                            ready_status=ROUND_STATUS_READY,
+                        )
                     else:
                         # Technical short answer: keep explicit topic pin.
                         adaptive_skills = (

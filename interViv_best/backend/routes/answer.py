@@ -77,7 +77,16 @@ from modules.assistance_policy import (
     evaluate_eligibility,
     is_follow_up_round,
 )
-from modules.teaching_exposures import list_exposures_for_eligibility
+from modules.follow_ups import (
+    build_bundle_follow_up_round_doc,
+    is_inline_bundle_follow_up_spec,
+    log_follow_up_decision,
+    maybe_apply_inline_bundle_follow_up,
+)
+from modules.teaching_exposures import (
+    list_exposures_for_eligibility,
+    record_teaching_exposure,
+)
 
 router = APIRouter(prefix="/session", tags=["answer"])
 logger = logging.getLogger(__name__)
@@ -1198,7 +1207,9 @@ def submit_answer(
 
         from backend.db.sqlalchemy_store import SessionWriteConflict
 
+        inline_followup_result: dict[str, Any] | None = None
         for _commit_attempt in range(MAX_SUBMIT_COMMIT_ATTEMPTS):
+            inline_followup_result = None
             if _commit_attempt:
                 # Lost a write race: reload, revalidate ownership of this
                 # round, and re-run progression against the fresh session so
@@ -1286,6 +1297,15 @@ def submit_answer(
                 break
 
             total_rounds = _total_rounds(session, settings)
+            if settings.staged_inline_follow_ups:
+                inline_followup_result = maybe_apply_inline_bundle_follow_up(
+                    session=session,
+                    active_round=active_round,
+                    rounds=rounds,
+                    total_rounds=total_rounds,
+                    target_difficulty=next_difficulty,
+                )
+                total_rounds = int(inline_followup_result["total_rounds"])
 
             next_skill: str | None = None
             next_target: dict[str, object] | None = None
@@ -1460,6 +1480,31 @@ def submit_answer(
                                 next_block_category = next_doc.block_category
                                 # No write here: the appended round joins the single
                                 # commit below with the scored round and Elo.
+                        elif is_inline_bundle_follow_up_spec(expanded_spec):
+                            assert expanded_spec is not None
+                            next_skill = str(expanded_spec.get("skill") or rotation_skill)
+                            next_round_difficulty = str(
+                                expanded_spec.get("difficulty") or rotation_difficulty
+                            )
+                            response_next_difficulty = next_round_difficulty
+                            next_round_type = "technical_short_answer"
+                            next_target = None
+                            next_round_doc = build_bundle_follow_up_round_doc(
+                                expanded_spec=expanded_spec,
+                                round_number=next_round,
+                                candidate_elos=candidate_elos,
+                                initial_elo=settings.initial_elo,
+                                ready_status=ROUND_STATUS_READY,
+                            )
+                            rounds.append(next_round_doc)
+                            next_round_number = next_round
+                            next_round_status = ROUND_STATUS_READY
+                            next_block_id = expanded_spec.get("block_id")
+                            next_block_position = expanded_spec.get("block_position")
+                            next_block_category = (
+                                expanded_spec.get("category")
+                                or expanded_spec.get("block_category")
+                            )
                         else:
                             # Block sessions constrain adaptation to the block's own
                             # skills; legacy sessions adapt across all session skills.
@@ -1637,6 +1682,8 @@ def submit_answer(
                 }
                 if progression_blocked_reason:
                     session_update["progression_blocked_reason"] = progression_blocked_reason
+                if inline_followup_result and inline_followup_result.get("plan_update"):
+                    session_update.update(inline_followup_result["plan_update"])
                 if session_status == "completed":
                     session_update["completed_at"] = datetime.now(timezone.utc)
                     session_update["overall_readiness_score"] = (
@@ -1651,6 +1698,25 @@ def submit_answer(
                         {"$set": session_update},
                         expected_revision=session.get("revision"),
                     )
+                    if inline_followup_result and inline_followup_result.get("scheduled"):
+                        exposure_concept = inline_followup_result.get("exposure_concept")
+                        record_teaching_exposure(
+                            db,
+                            kind="follow_up_prompt",
+                            item_type="follow_up",
+                            item_id=str(inline_followup_result["follow_up_identity"]),
+                            session=session,
+                            user_id=session.get("user_id"),
+                            round_number=int(inline_followup_result["parent_round"]),
+                            block_id=active_round.get("block_id"),
+                            content_fingerprint=str(inline_followup_result["follow_up_identity"]),
+                            concept_topic_scope=(
+                                {"concept": exposure_concept}
+                                if exposure_concept
+                                else None
+                            ),
+                            also_legacy_assistance=False,
+                        )
                     if (
                         not practice_only
                         and not is_spaced_review
@@ -1751,6 +1817,12 @@ def submit_answer(
                     exc_info=True,
                 )
 
+        if (
+            inline_followup_result is not None
+            and inline_followup_result.get("decision_record")
+        ):
+            log_follow_up_decision(inline_followup_result["decision_record"])
+
         # Clear the saved draft for the submitted round: submitted attempts
         # are immutable and drafts must not survive submission.
         try:
@@ -1833,4 +1905,7 @@ def submit_answer(
             "eligibility_policy_version": eligibility["policy_version"],
             "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
             "is_follow_up": bool(is_follow_up_round(active_round)),
+            "follow_up_scheduled": bool(
+                inline_followup_result and inline_followup_result.get("scheduled")
+            ),
         }

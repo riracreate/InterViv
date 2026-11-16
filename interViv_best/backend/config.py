@@ -38,6 +38,9 @@ class Settings:
     # never feeds production scoring, mastery, Elo, or readiness.
     experimental_concept_evaluator: bool
     length_ratio_multiplier_enabled: bool
+    # Staged interview flow Slice 1: automatic inline bundle follow-ups inside
+    # POST /session/answer (coached_practice only). Default off.
+    staged_inline_follow_ups: bool
     adzuna_app_id: str | None
     adzuna_app_key: str | None
     jobs_live_fetch: bool
@@ -138,6 +141,7 @@ def get_settings() -> Settings:
         reviewed_bundles_only=_env_bool("REVIEWED_BUNDLES_ONLY", False),
         experimental_concept_evaluator=_env_bool("EXPERIMENTAL_CONCEPT_EVALUATOR", False),
         length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
+        staged_inline_follow_ups=_env_bool("STAGED_INLINE_FOLLOW_UPS", False),
         adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
         adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
         jobs_live_fetch=_env_bool("JOBS_LIVE_FETCH", False),
