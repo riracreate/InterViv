@@ -39,7 +39,9 @@ class Clock:
 def catalog():
     def row(model, prompt="0", completion="0", parameters=None):
         return {"id": model, "pricing": {"prompt": prompt, "completion": completion},
-                "supported_parameters": parameters if parameters is not None else ["structured_outputs", "response_format"]}
+                "context_length": 32768,
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                "supported_parameters": parameters if parameters is not None else ["structured_outputs", "response_format", "max_tokens"]}
     return {"data": [row(FREE_B), row(FREE_A), row("fixture/not-structured", parameters=["response_format"]),
                      row("fixture/missing-price", prompt=None), row("fixture/negative", prompt="-1"),
                      row(PAID, "0.000001", "0.000005")]}

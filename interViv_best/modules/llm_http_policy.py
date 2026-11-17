@@ -43,7 +43,8 @@ def _reset_time(headers: Mapping[str, str], now: float) -> float | None:
         return None
 
 
-def classify_http_error(status: int, body: bytes | str, headers: Mapping[str, str], *, now: float) -> LimitDecision:
+def classify_http_error(status: int, body: bytes | str, headers: Mapping[str, str], *, now: float,
+                        lane: str = "content") -> LimitDecision:
     """Prefer structured limit_source; recognize older body-only responses too.
 
     A 402 is not always permanent, and a 429 is not always transient. Unknown
@@ -60,6 +61,12 @@ def classify_http_error(status: int, body: bytes | str, headers: Mapping[str, st
     source = str(metadata.get("limit_source", "")) if isinstance(metadata, dict) else ""
     evidence = (source + " " + str(error) + " " + text).casefold()
     reset = _reset_time(headers, now)
+    if status in {401, 403}:
+        return LimitDecision("authorization")
+    if status in {400, 422}:
+        return LimitDecision("model_unavailable" if lane == "content" else "request_rejected", now + 300)
+    if status == 408 or 500 <= status <= 599:
+        return LimitDecision("model_unavailable", reset or now + 300)
     if status in {402, 429}:
         if any(word in evidence for word in ("free_tier_daily", "daily limit", "daily quota", "per day", "per-day")):
             return LimitDecision("free_daily", max(next_utc_day(now), reset or 0))
@@ -74,6 +81,6 @@ def classify_http_error(status: int, body: bytes | str, headers: Mapping[str, st
         if reset is not None:
             return LimitDecision("rpm", reset)
         return LimitDecision("unknown_quota")
-    if status in {404, 502, 503}:
+    if status == 404:
         return LimitDecision("model_unavailable", reset or now + 300)
     return LimitDecision("http_error")

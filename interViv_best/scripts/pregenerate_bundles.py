@@ -21,7 +21,8 @@ import csv
 import json
 import os
 import sys
-from contextlib import contextmanager
+import uuid
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -36,11 +37,13 @@ from backend.runtime_env import apply_runtime_env  # noqa: E402
 from modules import (  # noqa: E402
     bundle_generator,
     bundle_store,
+    interview_llm,
     llm_outbound_gate,
     llm_usage,
     role_skills,
 )
 from modules.llm_errors import LLMCreditExhaustedError  # noqa: E402
+from modules.interview_llm_budget import DispatchDeferred  # noqa: E402
 from modules.question_bundles import (  # noqa: E402
     DIFFICULTIES,
     safe_bundle_relative_path,
@@ -218,18 +221,28 @@ def _parse_csv_list(values: list[str] | str | None, default: list[str]) -> list[
     return items or list(default)
 
 
+def _cached_role_profile(role: str) -> dict | None:
+    """Read a prepared generic role profile; a content batch cannot extract it."""
+    clean = " ".join(role_skills.sanitize_untrusted_text(role, max_chars=role_skills.MAX_ROLE_CHARS).split())
+    key, _ = role_skills._compute_cache_key(clean, "")
+    return role_skills._cache_get(key)
+
+
 def plan_bundle_cells(
     *,
     roles: list[str],
     difficulties: list[str],
     max_bundles: int,
     dry_run: bool = False,
+    cached_only: bool = False,
 ) -> list[dict[str, str]]:
     """Expand roles -> weighted skills/topics x difficulties balanced up to max_bundles."""
     per_role_cells: list[list[dict[str, str]]] = []
     with _temporarily_set_live_fetch(False if dry_run else None):
         for role in roles:
-            extracted = role_skills.extract_role_skills(role=role, max_skills=6)
+            extracted = _cached_role_profile(role) if cached_only else role_skills.extract_role_skills(role=role, max_skills=6)
+            if extracted is None:
+                raise ValueError("Routed content batches require cached generic role profiles; prepare paid extraction separately.")
             skill_specs = list(extracted.get("skill_specs") or [])
             if not skill_specs and extracted.get("skills"):
                 skill_specs = [
@@ -723,6 +736,8 @@ def run_pregeneration(
     demoted_audit_path: Path | str | None = None,
     export_review_csv: Path | str | None = None,
     pricing_by_model: dict[str, dict[str, Any]] | None = None,
+    max_requests: int | None = None,
+    batch_id: str | None = None,
 ) -> dict[str, Any]:
     """Plan, generate/verify (unless dry_run/estimate_only), export, and summarize bundles."""
     role_list = _parse_csv_list(roles, DEFAULT_ROLES)
@@ -827,6 +842,23 @@ def run_pregeneration(
             report["usage"] = llm_usage.summarize_usage()
             return report
 
+    routed = interview_llm.enabled()
+    if routed:
+        if type(max_requests) is not int or max_requests < 1:
+            report.update(aborted=True, abort_reason="routing_budget_required",
+                          abort_error="Routed pre-generation requires explicit --max-requests.")
+            return report
+        if any(_cached_role_profile(role) is None for role in role_list):
+            report.update(aborted=True, abort_reason="cached_roles_required",
+                          abort_error="Content-only batches require cached generic roles; paid role extraction is separate.")
+            return report
+        batch_id = batch_id or f"pregenerate:{uuid.uuid4().hex}"
+        report.update(routing_batch_id=batch_id, routing_max_requests=max_requests)
+    elif max_requests is not None or batch_id is not None:
+        report.update(aborted=True, abort_reason="routing_disabled",
+                      abort_error="--max-requests/--batch-id require AI_INTERVIEW_ROUTING_ENABLED=1.")
+        return report
+
     if allow_live is True:
         db_error = live_on_memory_db_error()
         if db_error is not None:
@@ -853,7 +885,7 @@ def run_pregeneration(
             max_bundles=max(1, int(max_bundles)),
             dry_run=True,
         )
-        uncached_roles = _count_uncached_roles(role_list)
+        uncached_roles = 0 if routed else _count_uncached_roles(role_list)
         try:
             preflight_est = bundle_generator.estimate_pregeneration_cost(
                 planned_cells=preview_planned,
@@ -925,13 +957,15 @@ def run_pregeneration(
             written = export_bundles_review_csv(report["results"], Path(export_review_csv))
             report["review_csv_path"] = str(written)
 
-    with _temporarily_set_live_fetch(allow_live):
+    scope = interview_llm.batch_scope(batch_id, max_requests=max_requests) if routed else nullcontext()
+    with _temporarily_set_live_fetch(allow_live), scope:
         try:
             planned = plan_bundle_cells(
                 roles=role_list,
                 difficulties=diff_list,
                 max_bundles=max(1, int(max_bundles)),
                 dry_run=False,
+                cached_only=routed,
             )
         except LLMCreditExhaustedError as exc:
             report["aborted"] = True
@@ -996,6 +1030,14 @@ def run_pregeneration(
                 report["errors"].append({**cell, "error": str(exc)})
                 break
             except Exception as exc:
+                deferred = exc
+                while deferred is not None and not isinstance(deferred, DispatchDeferred):
+                    deferred = deferred.__cause__
+                if routed and isinstance(deferred, DispatchDeferred):
+                    report.update(aborted=True, abort_reason=deferred.reason, abort_error=str(deferred),
+                                  retry_at=deferred.retry_at, remaining_cells=planned[idx:])
+                    report["errors"].append({**cell, "error": str(deferred)})
+                    break
                 report["errors"].append({**cell, "error": str(exc)})
                 continue
 
@@ -1053,6 +1095,10 @@ def main(argv: list[str] | None = None) -> int:
         default=30,
         help="Maximum number of bundles to process (default: 30).",
     )
+    parser.add_argument("--max-requests", type=int, default=None,
+                        help="Required routed content-only completion-attempt budget, including retries/checks.")
+    parser.add_argument("--batch-id", default=None,
+                        help="Reuse this ID to resume a durable routed budget; its max-requests cannot be increased.")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1123,6 +1169,8 @@ def main(argv: list[str] | None = None) -> int:
         rejected_audit_path=args.rejected_audit_path,
         demoted_audit_path=args.demoted_audit_path,
         export_review_csv=args.export_review_csv,
+        max_requests=args.max_requests,
+        batch_id=args.batch_id,
     )
 
     if report.get("abort_reason") == "protected_local_database":

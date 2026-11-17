@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
+import re
 import ssl
 import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
@@ -29,6 +32,8 @@ CONTENT_PURPOSES = frozenset({"bundle_generation", "bundle_blind_answer", "bundl
 PERSONAL_PURPOSES = frozenset({"role_skill_extraction", "resume_extraction", "interviewer_turn", "debrief"})
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+MIN_CONTENT_CONTEXT = 16384
+LOGGER = logging.getLogger("interviv.interview_llm")
 
 
 class RoutingError(RuntimeError):
@@ -49,8 +54,10 @@ def _flag(name: str) -> bool:
 
 @dataclass(frozen=True)
 class RoutingSettings:
-    # No hardcoded free IDs: an empty ordered override means catalog discovery.
+    # Real content dispatch requires an owner order unless discovery is opted in.
     content_models: tuple[str, ...] = ()
+    allow_content_discovery: bool = False
+    min_content_context: int = MIN_CONTENT_CONTEXT
     conversation_model: str = PAID_CONVERSATION_MODEL
     allow_paid_content: bool = False
     high_free_limit: bool = False
@@ -61,6 +68,8 @@ class RoutingSettings:
     def from_env(cls):
         return cls(
             content_models=tuple(x.strip() for x in os.getenv("INTERVIEW_CONTENT_MODELS", "").split(",") if x.strip()),
+            allow_content_discovery=_flag("INTERVIEW_ALLOW_CONTENT_DISCOVERY"),
+            min_content_context=int(os.getenv("INTERVIEW_CONTENT_MIN_CONTEXT") or MIN_CONTENT_CONTEXT),
             conversation_model=os.getenv("INTERVIEW_CONVERSATION_MODEL", PAID_CONVERSATION_MODEL).strip(),
             allow_paid_content=_flag("ALLOW_PAID_CONTENT_FALLBACK"),
             high_free_limit=_flag("OPENROUTER_FREE_HIGH_LIMIT_CONFIRMED"),
@@ -76,7 +85,14 @@ class InterviewScope:
     models: dict[str, str] = field(default_factory=dict)
 
 
-_SCOPE: contextvars.ContextVar[InterviewScope | None] = contextvars.ContextVar("interview_llm_scope", default=None)
+@dataclass
+class BatchScope:
+    batch_id: str
+    max_requests: int
+    models: dict[str, str] = field(default_factory=dict)
+
+
+_SCOPE: contextvars.ContextVar[InterviewScope | BatchScope | None] = contextvars.ContextVar("interview_llm_scope", default=None)
 
 
 @contextmanager
@@ -85,6 +101,19 @@ def interview_scope(interview_id: str, core_count: int):
     if not interview_id or core_count not in {2, 4} or type(core_count) is not int:
         raise RoutingError("A stable interview ID and 2/4 core slots are required.")
     scope = InterviewScope(interview_id, core_count)
+    token = _SCOPE.set(scope)
+    try:
+        yield scope
+    finally:
+        _SCOPE.reset(token)
+
+
+@contextmanager
+def batch_scope(batch_id: str, *, max_requests: int):
+    """Explicit content-only allowance; never a source of conversation budget."""
+    if not batch_id or type(max_requests) is not int or max_requests < 1:
+        raise RoutingError("A stable batch ID and positive explicit max_requests are required.")
+    scope = BatchScope(batch_id, max_requests)
     token = _SCOPE.set(scope)
     try:
         yield scope
@@ -146,12 +175,61 @@ def _price(entry: dict, key: str) -> Decimal | None:
         return None
 
 
-def _free_structured(entry: dict) -> bool:
+def content_context_length(entry: dict) -> int:
+    """Respect a lower advertised provider limit as well as the model limit."""
+    context = entry.get("context_length")
+    provider = entry.get("top_provider") or {}
+    if type(context) is not int or context <= 0 or not isinstance(provider, dict):
+        return 0
+    if "context_length" in provider:
+        limit = provider["context_length"]
+        if type(limit) is not int or limit <= 0:
+            return 0
+        context = min(context, limit)
+    return context
+
+
+def _free_structured(entry: dict, min_context: int = MIN_CONTENT_CONTEXT) -> bool:
     parameters = entry.get("supported_parameters")
-    return (bool(entry.get("id")) and _price(entry, "prompt") == 0
+    model = entry.get("id") or ""
+    architecture = entry.get("architecture") or {}
+    if not isinstance(architecture, dict):
+        return False
+    inputs, outputs = architecture.get("input_modalities"), architecture.get("output_modalities")
+    model_type = entry.get("type", entry.get("model_type", "chat"))
+    return (isinstance(model, str) and "/" in model and not model.casefold().startswith("openrouter/")
+            and not any(kind in model.casefold() for kind in ("rerank", "embedding"))
+            and isinstance(model_type, str) and model_type in {"chat", "text-generation", "text_generation", "language", "llm"}
+            and isinstance(inputs, list) and "text" in inputs and outputs == ["text"]
+            and content_context_length(entry) >= min_context and _price(entry, "prompt") == 0
             and _price(entry, "completion") == 0
-            and isinstance(parameters, list) and "structured_outputs" in parameters
+            and isinstance(parameters, list)
+            and all(isinstance(parameter, str) for parameter in parameters)
+            and {"structured_outputs", "response_format", "max_tokens"}.issubset(parameters)
             and ("request" not in (entry.get("pricing") or {}) or _price(entry, "request") == 0))
+
+
+def same_model_family(requested: str, returned: str | None) -> bool:
+    """Only exact identities or valid date snapshots of the same vendor/name.
+
+    A :free request may be reported by its base family, but a paid request may
+    never be reported as :free. Versions, sizes and vendors are not aliases.
+    """
+    if not returned or not isinstance(returned, str):
+        return False
+    if returned.endswith(":free") and not requested.endswith(":free"):
+        return False
+    def family(model):
+        model = model.removesuffix(":free")
+        match = re.search(r"-(\d{8}|\d{4}-\d{2}-\d{2})$", model)
+        if match:
+            try:
+                datetime.strptime(match[1].replace("-", ""), "%Y%m%d")
+            except ValueError:
+                return model
+            model = model[:match.start()]
+        return model
+    return family(requested) == family(returned)
 
 
 @dataclass(frozen=True)
@@ -159,12 +237,16 @@ class Completion:
     text: str
     usage: tuple[int, int, int]
     model: str
+    requested_model: str | None = None
+    truncated: bool = False
 
 
 class InterviewRouter:
     def __init__(self, settings: RoutingSettings, *, catalog_source: Callable[[], dict] | None = None,
                  clock=time.time, budget: RequestBudget | None = None):
         self.settings = settings
+        if type(settings.min_content_context) is not int or settings.min_content_context < 1:
+            raise RoutingError("Content context minimum must be a positive integer.")
         self.clock = clock
         self.budget = budget or RequestBudget(settings.state_path, account=settings.account,
                                               high_free_limit=settings.high_free_limit, clock=clock)
@@ -206,9 +288,10 @@ class InterviewRouter:
 
     def content_candidates(self, *, offline_override: bool = False) -> tuple[str, ...]:
         models = self._models("questions", offline_override)
-        choices = self.settings.content_models or tuple(sorted(model for model, row in models.items() if _free_structured(row))[:3])
-        if len(set(choices)) != len(choices) or any(not _free_structured(models.get(model, {})) for model in choices):
-            raise RoutingError("Every ordered content override must exist, be zero-priced and support structured output.")
+        choices = self.settings.content_models or tuple(sorted(model for model, row in models.items()
+                                                               if _free_structured(row, self.settings.min_content_context))[:3])
+        if len(set(choices)) != len(choices) or any(not _free_structured(models.get(model, {}), self.settings.min_content_context) for model in choices):
+            raise RoutingError("Every content ID must be an eligible zero-priced text chat model with sufficient context and JSON capabilities.")
         if self.settings.allow_paid_content:
             choices = (*choices, self._paid_model(models))
         if not choices:
@@ -229,6 +312,10 @@ class InterviewRouter:
         scope = _SCOPE.get()
         if scope is None:
             raise RoutingError("Missing interview_scope; no unbudgeted routing is permitted.")
+        if isinstance(scope, BatchScope) and lane != "content":
+            raise PrivacyViolation("Batch scope is content-only; conversation purposes are forbidden.")
+        if lane == "content" and override is None and not self.settings.content_models and not self.settings.allow_content_discovery:
+            raise RoutingError("Real content dispatch requires INTERVIEW_CONTENT_MODELS or explicit discovery opt-in.")
         models = self._models(consumer, override is not None)
         choices = self.content_candidates(offline_override=override is not None) if lane == "content" else (self._paid_model(models),)
         if model is not None:
@@ -237,18 +324,23 @@ class InterviewRouter:
             choices = (model,)
         for choice in choices:
             enforce_outbound_policy(purpose=purpose, model=choice, personal_text=personal_text)
-            free = _free_structured(models.get(choice, {}))
+            free = _free_structured(models.get(choice, {}), self.settings.min_content_context)
             try:
-                token = self.budget.reserve(interview_id=scope.interview_id, core_count=scope.core_count,
-                                            lane=lane, model=choice, free=free)
+                if isinstance(scope, BatchScope):
+                    token = self.budget.reserve_batch(batch_id=scope.batch_id, max_requests=scope.max_requests,
+                                                      lane=lane, model=choice, free=free, timeout_s=timeout_s)
+                else:
+                    token = self.budget.reserve(interview_id=scope.interview_id, core_count=scope.core_count,
+                                                lane=lane, model=choice, free=free, timeout_s=timeout_s)
             except DispatchDeferred as exc:
-                if exc.reason == "model_backoff" and model is None:
+                if exc.reason == "model_backoff" and model is None and lane == "content":
                     continue
                 if exc.reason == "free_daily" and self.settings.allow_paid_content and lane == "content" and free:
                     continue
                 raise
             started = time.monotonic()
             usage = (0, 0, 0)
+            returned_model = None
             status, error_kind = "ok", None
             try:
                 # Recheck after catalog/admission as flags may have changed concurrently.
@@ -256,19 +348,36 @@ class InterviewRouter:
                 enforce_outbound_policy(purpose=purpose, model=choice, personal_text=personal_text)
                 scope.models[purpose] = choice
                 if override is not None:
-                    text, usage = override(choice)
+                    result = override(choice)
+                    if isinstance(result, Completion):
+                        text, usage, returned_model = result.text, result.usage, result.model
+                    else:
+                        text, usage = result
+                        returned_model = choice
                 else:
-                    text, usage = self._chat_once(choice, messages, max_tokens, temperature, timeout_s, expect_json)
-                return Completion(text, usage, choice)
+                    result = self._chat_once(choice, messages, max_tokens, temperature, timeout_s, expect_json)
+                    text, usage, returned_model = result.text, result.usage, result.model
+                if not same_model_family(choice, returned_model):
+                    raise PrivacyViolation("Provider model identifier is missing or outside the requested family.")
+                scope.models[purpose] = returned_model
+                if isinstance(result, Completion) and result.truncated:
+                    from modules.llm_errors import LLMTruncatedError
+                    raise LLMTruncatedError(model=returned_model, provider="openrouter", usage=usage)
+                return Completion(text, usage, returned_model, choice)
             except urllib.error.HTTPError as exc:
                 status = "error"
-                decision = classify_http_error(exc.code, exc.read(), exc.headers or {}, now=self.clock())
+                decision = classify_http_error(exc.code, exc.read(), exc.headers or {}, now=self.clock(), lane=lane)
                 error_kind = decision.kind
                 self.budget.record_failure(choice, decision, free=free)
                 raise DispatchDeferred(decision.kind, decision.retry_at) from exc
-            except TimeoutError as exc:
-                status, error_kind = "error", "timeout"
-                raise DispatchDeferred("timeout") from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                from modules.llm_http_policy import LimitDecision
+                reason = getattr(exc, "reason", exc)
+                error_kind = "timeout" if isinstance(reason, TimeoutError) else "network_unavailable"
+                status = "error"
+                decision = LimitDecision(error_kind, self.clock() + 4)
+                self.budget.record_failure(choice, decision, free=free)
+                raise DispatchDeferred(error_kind, decision.retry_at) from exc
             except Exception as exc:
                 from modules.llm_errors import LLMTruncatedError
                 status, error_kind = "error", type(exc).__name__
@@ -280,7 +389,10 @@ class InterviewRouter:
                     self.budget.release(token)
                 finally:
                     from modules.llm_usage import log_llm_usage
-                    log_llm_usage(provider="openrouter", model=choice, purpose=purpose,
+                    LOGGER.info("interview_llm_dispatch requested_model=%s returned_model=%s status=%s",
+                                choice, returned_model, status,
+                                extra={"requested_model": choice, "returned_model": returned_model, "purpose": purpose})
+                    log_llm_usage(provider="openrouter", model=returned_model or choice, purpose=purpose,
                                   prompt_tokens=usage[0], completion_tokens=usage[1], total_tokens=usage[2],
                                   latency_ms=int((time.monotonic() - started) * 1000), status=status,
                                   error=error_kind, bundle_id=bundle_id)
@@ -298,15 +410,11 @@ class InterviewRouter:
                                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=timeout_s, context=ssl.create_default_context()) as response:
             data = json.loads(response.read())
-        if data.get("model", model) != model:
-            raise PrivacyViolation("Provider returned an unrequested model identifier.")
         message = data["choices"][0]
         usage = data.get("usage") or {}
         counts = (int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
-        if message.get("finish_reason") == "length":
-            from modules.llm_errors import LLMTruncatedError
-            raise LLMTruncatedError(model=model, provider="openrouter", usage=(*counts, sum(counts)))
-        return str(message["message"]["content"]), (*counts, sum(counts))
+        return Completion(str(message["message"]["content"]), (*counts, sum(counts)), data.get("model"), model,
+                          message.get("finish_reason") == "length")
 
 
 @lru_cache(maxsize=4)
