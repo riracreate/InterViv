@@ -6,7 +6,7 @@ import { deliverySignals } from '../src/lib/speech/stt.js';
 import { createSpeaker } from '../src/lib/speech/tts.js';
 import { pickEnglishVoice, rankEnglishVoices, readStoredVoiceName, selectVoiceName, writeStoredVoiceName } from '../src/lib/speech/voiceChoice.js';
 import { CLOSING_LINE, FOLLOW_UP_LINE, GREETING_LINE, attachInterviewSpeech, interviewerLines } from '../src/lib/speech/interviewerScript.js';
-import { deliveryReport, fillerCount } from '../src/lib/speech/deliveryReport.js';
+import { deliveryAnswerLabel, deliveryReport, fillerCount, paceCell, speakingCell } from '../src/lib/speech/deliveryReport.js';
 import { createPresenceSampler } from '../src/lib/speech/presence.js';
 import { isVoiceInterview, markVoiceInterview, speechInputMode } from '../src/lib/speech/voiceSession.js';
 import { quickInterviewPayload } from '../src/lib/stagedSession.js';
@@ -132,6 +132,15 @@ test('delivery notes count fillers, pace and face presence without a score', () 
   assert.equal(brief.wpm, null);
   assert.equal(brief.fillerWords, 0);
   assert.equal(brief.faceVisiblePercent, null);
+  assert.equal(deliveryAnswerLabel({ stage: 'warm_up', skill: 'Python' }), 'Warm-up');
+  assert.equal(deliveryAnswerLabel({ stage: 'core', skill: 'Python' }), 'Python');
+  assert.equal(deliveryAnswerLabel({ stage: 'follow_up', skill: 'Python' }), 'Python follow-up');
+  assert.equal(deliveryAnswerLabel({ stage: 'core', skill: 'Agile', isFollowUp: true }), 'Agile follow-up');
+  assert.equal(deliveryAnswerLabel({ stage: 'warm_up' }), 'Warm-up');
+  assert.equal(speakingCell(0), 'Typed');
+  assert.equal(speakingCell(12500), '12.5 s');
+  assert.equal(paceCell({ speakingMs: 0, wpm: 120 }), '—');
+  assert.equal(paceCell({ speakingMs: 15000, wpm: 52 }), '52');
 });
 
 test('presence sampling uses the mocked camera and ignores a frame that is not ready', async () => {
