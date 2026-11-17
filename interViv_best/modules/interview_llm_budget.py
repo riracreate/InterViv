@@ -229,7 +229,8 @@ class RequestBudget:
                 state["operator_block"] = "authorization"
             elif decision.kind in {"rpm", "in_flight", "timeout", "network_unavailable"}:
                 state["all_until"] = max(state["all_until"], decision.retry_at or now + 60)
-            elif decision.kind in {"upstream", "model_unavailable", "request_rejected"}:
+            elif decision.kind in {"upstream", "model_unavailable", "request_rejected", "provider_error",
+                                   "invalid_response", "empty_response"}:
                 state["models"][model] = decision.retry_at or now + 300
             elif decision.kind == "unknown_quota":
                 if free:

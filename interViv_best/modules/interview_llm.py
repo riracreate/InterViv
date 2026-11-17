@@ -7,6 +7,7 @@ Quota failures defer to a future call; they never sleep/spin or change sessions.
 from __future__ import annotations
 
 import contextvars
+import http.client
 import json
 import logging
 import os
@@ -25,7 +26,7 @@ from typing import Callable
 
 from modules import llm_outbound_gate
 from modules.interview_llm_budget import DispatchDeferred, RequestBudget
-from modules.llm_http_policy import classify_http_error
+from modules.llm_http_policy import LimitDecision, classify_http_error
 
 PAID_CONVERSATION_MODEL = "anthropic/claude-haiku-4.5"
 CONTENT_PURPOSES = frozenset({"bundle_generation", "bundle_blind_answer", "bundle_check_audit", "bundle_regeneration"})
@@ -42,6 +43,14 @@ class RoutingError(RuntimeError):
 
 class PrivacyViolation(RoutingError):
     pass
+
+
+class ProviderResponseDeferred(DispatchDeferred):
+    """Validated response failure, carrying billed metadata back to admission."""
+    def __init__(self, reason, *, usage=(0, 0, 0), model=None, code=None, body="", headers=None):
+        super().__init__(reason)
+        self.usage, self.model, self.code = usage, model, code
+        self.body, self.headers = body, headers or {}
 
 
 def enabled() -> bool:
@@ -160,11 +169,27 @@ def _gate(consumer: str, *, offline_override: bool) -> None:
         raise RoutingError("LLM live fetch is disabled.")
 
 
+def catalog_rows(payload: dict) -> list[dict]:
+    """Require a complete single page, including for injected offline catalogs."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise RoutingError("Model catalog must contain a data array.")
+    links = payload.get("links")
+    if links is not None and not isinstance(links, dict):
+        raise RoutingError("Model catalog links are invalid; completeness is unverified.")
+    if isinstance(links, dict) and "next" in links:
+        raise RoutingError(f"Model catalog pagination unsupported: total_rows_received={len(payload['data'])}, "
+                           "links.next present; refusing an incomplete catalog.")
+    return payload["data"]
+
+
 def _fetch_catalog() -> dict:
-    # Only called after _gate; offline overrides require an injected catalog.
+    # Single GET only; links.next (even null) fails closed, never silently truncates.
+    # Only called after the live gate; overrides require an injected catalog.
     request = urllib.request.Request(CATALOG_URL, headers={"Accept": "application/json"})
     with urllib.request.urlopen(request, timeout=20, context=ssl.create_default_context()) as response:
-        return json.loads(response.read())
+        payload = json.loads(response.read())
+    catalog_rows(payload)
+    return payload
 
 
 def _price(entry: dict, key: str) -> Decimal | None:
@@ -181,7 +206,7 @@ def content_context_length(entry: dict) -> int:
     provider = entry.get("top_provider") or {}
     if type(context) is not int or context <= 0 or not isinstance(provider, dict):
         return 0
-    if "context_length" in provider:
+    if provider.get("context_length") is not None:
         limit = provider["context_length"]
         if type(limit) is not int or limit <= 0:
             return 0
@@ -209,8 +234,8 @@ def _free_structured(entry: dict, min_context: int = MIN_CONTENT_CONTEXT) -> boo
             and ("request" not in (entry.get("pricing") or {}) or _price(entry, "request") == 0))
 
 
-def same_model_family(requested: str, returned: str | None) -> bool:
-    """Only exact identities or valid date snapshots of the same vendor/name.
+def same_model_family(requested: str, returned: str | None, *, canonical_slug: str | None = None) -> bool:
+    """Exact catalog canonical slug, or identities/date snapshots of one family.
 
     A :free request may be reported by its base family, but a paid request may
     never be reported as :free. Versions, sizes and vendors are not aliases.
@@ -219,6 +244,12 @@ def same_model_family(requested: str, returned: str | None) -> bool:
         return False
     if returned.endswith(":free") and not requested.endswith(":free"):
         return False
+    if isinstance(canonical_slug, str) and canonical_slug:
+        canonical_ids = {canonical_slug}
+        if requested.endswith(":free"):
+            canonical_ids.add(canonical_slug.removesuffix(":free"))
+        if returned in canonical_ids:
+            return True
     def family(model):
         model = model.removesuffix(":free")
         match = re.search(r"-(\d{8}|\d{4}-\d{2}-\d{2})$", model)
@@ -261,9 +292,7 @@ class InterviewRouter:
             if offline_override and not self.injected_catalog:
                 raise RoutingError("Offline override requires an injected model catalog.")
             try:
-                rows = self.catalog_source()["data"]
-                if not isinstance(rows, list):
-                    raise ValueError("invalid catalog")
+                rows = catalog_rows(self.catalog_source())
                 catalog = {}
                 for row in rows:
                     if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -272,7 +301,7 @@ class InterviewRouter:
                     if not model or model in catalog:
                         raise ValueError("duplicate/empty model ID")
                     catalog[model] = row
-            except (KeyError, TypeError, ValueError, OSError) as exc:
+            except (KeyError, TypeError, ValueError, OSError, http.client.HTTPException) as exc:
                 raise RoutingError("Model catalog unavailable; no unvalidated model permitted.") from exc
             self.catalog, self.catalog_until = catalog, self.clock() + 300
         return self.catalog
@@ -357,7 +386,7 @@ class InterviewRouter:
                 else:
                     result = self._chat_once(choice, messages, max_tokens, temperature, timeout_s, expect_json)
                     text, usage, returned_model = result.text, result.usage, result.model
-                if not same_model_family(choice, returned_model):
+                if not same_model_family(choice, returned_model, canonical_slug=models[choice].get("canonical_slug")):
                     raise PrivacyViolation("Provider model identifier is missing or outside the requested family.")
                 scope.models[purpose] = returned_model
                 if isinstance(result, Completion) and result.truncated:
@@ -370,8 +399,16 @@ class InterviewRouter:
                 error_kind = decision.kind
                 self.budget.record_failure(choice, decision, free=free)
                 raise DispatchDeferred(decision.kind, decision.retry_at) from exc
-            except (urllib.error.URLError, TimeoutError) as exc:
-                from modules.llm_http_policy import LimitDecision
+            except ProviderResponseDeferred as exc:
+                usage, returned_model, status = exc.usage, exc.model, "error"
+                decision = (classify_http_error(exc.code, exc.body, exc.headers, now=self.clock(), lane=lane)
+                            if exc.code is not None else LimitDecision(exc.reason, self.clock() + 300))
+                if decision.kind == "http_error":
+                    decision = LimitDecision("provider_error", self.clock() + 300)
+                error_kind = decision.kind
+                self.budget.record_failure(choice, decision, free=free)
+                raise DispatchDeferred(decision.kind, decision.retry_at) from exc
+            except (OSError, http.client.HTTPException) as exc:
                 reason = getattr(exc, "reason", exc)
                 error_kind = "timeout" if isinstance(reason, TimeoutError) else "network_unavailable"
                 status = "error"
@@ -409,12 +446,44 @@ class InterviewRouter:
         request = urllib.request.Request(CHAT_URL, data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=timeout_s, context=ssl.create_default_context()) as response:
-            data = json.loads(response.read())
-        message = data["choices"][0]
-        usage = data.get("usage") or {}
-        counts = (int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
-        return Completion(str(message["message"]["content"]), (*counts, sum(counts)), data.get("model"), model,
-                          message.get("finish_reason") == "length")
+            raw = response.read()
+            headers = getattr(response, "headers", {})
+        try:
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ProviderResponseDeferred("invalid_response") from exc
+        if not isinstance(data, dict):
+            raise ProviderResponseDeferred("invalid_response")
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        def count(key):
+            value = usage.get(key)
+            if isinstance(value, str) and len(value) <= 20 and value.isascii() and value.isdigit():
+                return int(value)
+            return value if type(value) is int and value >= 0 else 0
+        prompt, completion = count("prompt_tokens"), count("completion_tokens")
+        counts = (prompt, completion, count("total_tokens") or prompt + completion)
+        metadata = {"usage": counts, "model": data.get("model")}
+        if "error" in data:
+            error = data["error"]
+            code = error.get("code") if isinstance(error, dict) else None
+            if isinstance(code, str) and len(code) == 3 and code.isascii() and code.isdigit():
+                code = int(code)
+            code = code if type(code) is int and 400 <= code <= 599 else None
+            raise ProviderResponseDeferred("provider_error", **metadata, code=code,
+                                           body=json.dumps(data), headers=headers)
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        content = message.get("content")
+        if content is None or isinstance(content, str) and not content.strip():
+            raise ProviderResponseDeferred("empty_response", **metadata)
+        if not isinstance(content, str):
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        return Completion(content, counts, data.get("model"), model, choices[0].get("finish_reason") == "length")
 
 
 @lru_cache(maxsize=4)

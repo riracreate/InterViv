@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import sys
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from modules import interview_llm, llm_outbound_gate  # noqa: E402
 def main(argv=None, *, catalog_source=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--min-context", type=int, default=interview_llm.RoutingSettings.from_env().min_content_context)
+    parser.add_argument("--diagnostics", action="store_true",
+                        help="Also print row count, links.next presence and conversation ID/canonical slug.")
     args = parser.parse_args(argv)
     if args.min_context < 1:
         parser.error("--min-context must be positive")
@@ -22,11 +25,19 @@ def main(argv=None, *, catalog_source=None) -> int:
         parser.error("LLM_LIVE_FETCH=1 and the questions consumer are required; no catalog was fetched")
     # This endpoint carries no candidate text and creates no budget/journal.
     try:
-        rows = (catalog_source or interview_llm._fetch_catalog)()["data"]
-        if not isinstance(rows, list):
-            raise ValueError("invalid model catalog")
-    except (KeyError, TypeError, ValueError, OSError) as exc:
+        payload = (catalog_source or interview_llm._fetch_catalog)()
+        rows = interview_llm.catalog_rows(payload)
+    except interview_llm.RoutingError as exc:
+        parser.exit(1, f"Catalog unavailable: {exc}\n")
+    except (KeyError, TypeError, ValueError, OSError, http.client.HTTPException) as exc:
         parser.exit(1, f"Catalog unavailable: {type(exc).__name__}\n")
+    if args.diagnostics:
+        print(f"total_rows_received\t{len(rows)}")
+        print(f"links_next_present\t{str('next' in (payload.get('links') or {})).lower()}")
+        paid = next((row for row in rows if isinstance(row, dict)
+                     and row.get("id") == interview_llm.PAID_CONVERSATION_MODEL), {})
+        print(f"conversation_model_id\t{paid.get('id') or '(absent)'}")
+        print(f"conversation_canonical_slug\t{paid.get('canonical_slug') or '(absent)'}")
     print("id\tcontext_length\tparameters")
     for entry in sorted((row for row in rows if isinstance(row, dict)
                          and interview_llm._free_structured(row, args.min_context)), key=lambda row: row["id"]):
