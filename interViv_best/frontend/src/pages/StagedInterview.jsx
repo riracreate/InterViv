@@ -1,11 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AppNav from '../components/AppNav';
+import VoiceInterview from '../components/staged/VoiceInterview';
 import { createStagedSessionController, stagedSessionState } from '../lib/stagedSession';
+import { isVoiceInterview } from '../lib/speech/voiceSession';
 
 const STAGE_LABELS = { warm_up: 'Warm-up', core: 'Core', follow_up: 'Follow-up', behavioural: 'Behavioural' };
 
 export default function StagedInterview({ session }) {
+  if (isVoiceInterview(session?.session_id)) return <VoiceInterview session={session} />;
+  return <ClassicStagedInterview session={session} />;
+}
+
+function ClassicStagedInterview({ session }) {
   const [view, setView] = useState(() => stagedSessionState(session));
   const [answer, setAnswer] = useState('');
   const [draftReady, setDraftReady] = useState(false);
