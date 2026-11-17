@@ -91,3 +91,57 @@ Against accepted base `aff1408`:
 | `modules/interview_llm_budget.py` | 2 | 1 |
 | `scripts/list_interview_content_models.py` | 15 | 4 |
 | `tests/test_ai_interview_routing_step1c.py` | 263 | 0 |
+
+## Step 1d — terminal pagination links, 17 November 2026
+
+Base: accepted `fe7f1a0`. This addendum supersedes the earlier null/empty pagination rule and the credit gate for catalog inspection only. Completion calls remain unauthorized until the owner's credit confirmation. No pilot, build step 2, migration, dependency, protected-source change, launcher or push.
+
+`modules/interview_llm.py:179` now accepts `links.next:null` and `links.next:""` as a complete catalog. A non-empty next link and malformed links still fail closed; `_fetch_catalog` still makes only one GET and does not follow pages. `scripts/list_interview_content_models.py:38` now reports whether a links field/object and next key are present plus their JSON values, as required for the authorized read. It stores no raw catalog in the repo and makes no completion call.
+
+### The one authorized existing expectation change
+
+| Test | Old expectation | New expectation |
+|---|---|---|
+| `test_catalog_fetch_fails_closed_on_links_next_without_following_it` | `tests/test_ai_interview_routing_step1c.py:229` at `fe7f1a0`: all three values (URL, null, empty string) raise `RoutingError`. | `tests/test_ai_interview_routing_step1c.py:230`: null/empty return the original catalog; `:232` retains the error for a non-empty URL. |
+
+The single-GET assertion is unchanged (old `:231`, current `:234`). AST comparison confirms all other pre-existing test functions/assertions are unchanged. Two new test functions add eight cases: `test_malformed_links_still_fail_closed` (`tests/test_ai_interview_routing_step1c.py:270`) and `test_catalog_diagnostics_report_link_presence_and_values` (`:279`). The latter checks absent/empty/terminal link metadata without network or a journal.
+
+### Step 1d verification
+
+| Step 1d run | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---|
+| Focused routing | 214 | 0 | 0 | 7.55 s; exit 0 |
+| Full backend | 1,447 | 6 | 0 | 150.16 s; exit 0 |
+| Full frontend | 243 | 0 | 0 | 9.12 s; exit 0 |
+
+Failing node IDs in all three runs: **none**. The six skips and 124 warnings have the same causes as Step 1c. Backend ran offline with the previously approved outside-sandbox sysctl access; all new catalog cases were mocked/injected. Python compilation and `git diff --check` passed. Logs/XML: `/private/tmp/interviv-step1d.kqX5sM/`; these committed counts survive restart.
+
+Full backend command (frontend: `npm test` from `frontend/`):
+
+```bash
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest -q -ra --junitxml=/private/tmp/interviv-step1d.kqX5sM/backend.xml
+```
+
+Protected real DB SHA256 before/after this slice:
+
+```text
+before  93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+after   93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+```
+
+Flag-off fixture SHA256 remains `c7bd7382554fd751b3c8b83986b18fa2ba73250629d4d5e33538e4ff1d6ead1f` (byte-identical).
+
+### Authorized next action after this commit
+
+Run `LLM_LIVE_FETCH=1 LLM_LIVE_CONSUMERS=questions .venv/bin/python -m scripts.list_interview_content_models --diagnostics` once. Catalog GET only; no credits or candidate text needed. Keep diagnostic output outside the repo; do not save the raw catalog there. Report total rows, links/next presence and values, eligible free IDs with context/parameters, and Haiku's ID/canonical slug. Then stop for the owner to choose ordered `INTERVIEW_CONTENT_MODELS`. Do not make any completion call or push. No live read was made during the offline verification before this commit.
+
+### Step 1d diffstat
+
+Against accepted `fe7f1a0`:
+
+| File (under `interViv_best/`) | Added | Removed |
+|---|---:|---:|
+| `docs/ai_interview_step1c_report.md` | 54 | 0 |
+| `modules/interview_llm.py` | 2 | 2 |
+| `scripts/list_interview_content_models.py` | 6 | 0 |
+| `tests/test_ai_interview_routing_step1c.py` | 26 | 2 |

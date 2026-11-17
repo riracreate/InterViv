@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import json
 import sys
 from pathlib import Path
 
@@ -32,8 +33,13 @@ def main(argv=None, *, catalog_source=None) -> int:
     except (KeyError, TypeError, ValueError, OSError, http.client.HTTPException) as exc:
         parser.exit(1, f"Catalog unavailable: {type(exc).__name__}\n")
     if args.diagnostics:
+        links = payload.get("links")
         print(f"total_rows_received\t{len(rows)}")
+        print(f"links_present\t{str('links' in payload).lower()}")
+        print(f"links_object_present\t{str(isinstance(links, dict)).lower()}")
+        print(f"links_value\t{json.dumps(links, sort_keys=True)}")
         print(f"links_next_present\t{str('next' in (payload.get('links') or {})).lower()}")
+        print(f"links_next_value\t{json.dumps(links.get('next') if isinstance(links, dict) else None, sort_keys=True)}")
         paid = next((row for row in rows if isinstance(row, dict)
                      and row.get("id") == interview_llm.PAID_CONVERSATION_MODEL), {})
         print(f"conversation_model_id\t{paid.get('id') or '(absent)'}")

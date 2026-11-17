@@ -176,14 +176,14 @@ def catalog_rows(payload: dict) -> list[dict]:
     links = payload.get("links")
     if links is not None and not isinstance(links, dict):
         raise RoutingError("Model catalog links are invalid; completeness is unverified.")
-    if isinstance(links, dict) and "next" in links:
+    if isinstance(links, dict) and links.get("next") not in (None, ""):
         raise RoutingError(f"Model catalog pagination unsupported: total_rows_received={len(payload['data'])}, "
                            "links.next present; refusing an incomplete catalog.")
     return payload["data"]
 
 
 def _fetch_catalog() -> dict:
-    # Single GET only; links.next (even null) fails closed, never silently truncates.
+    # Single GET only; a non-empty links.next fails closed, never silently truncates.
     # Only called after the live gate; overrides require an injected catalog.
     request = urllib.request.Request(CATALOG_URL, headers={"Accept": "application/json"})
     with urllib.request.urlopen(request, timeout=20, context=ssl.create_default_context()) as response:

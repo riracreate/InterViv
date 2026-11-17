@@ -226,8 +226,11 @@ def test_catalog_fetch_fails_closed_on_links_next_without_following_it(env, monk
         calls.append(request)
         return Response(json.dumps(payload).encode())
     monkeypatch.setattr(routing.urllib.request, "urlopen", get)
-    with pytest.raises(routing.RoutingError, match=r"pagination unsupported.*total_rows_received=6.*links.next present"):
-        routing._fetch_catalog()
+    if next_link in (None, ""):
+        assert routing._fetch_catalog() == payload
+    else:
+        with pytest.raises(routing.RoutingError, match=r"pagination unsupported.*total_rows_received=6.*links.next present"):
+            routing._fetch_catalog()
     assert len(calls) == 1 and calls[0].full_url == routing.CATALOG_URL and calls[0].data is None
 
 
@@ -261,3 +264,24 @@ def test_catalog_diagnostics_report_row_count_pagination_and_haiku_identity_with
     assert f"conversation_model_id\t{PAID}" in output and f"conversation_canonical_slug\t{PAID_CANONICAL}" in output
     assert f"{FREE_A}\t32768\t" in output and f"{FREE_B}\t32768\t" in output
     assert calls == ["catalog only"] and not router.settings.state_path.exists()
+
+
+@pytest.mark.parametrize("links", [[], False, {"next": []}, {"next": False}])
+def test_malformed_links_still_fail_closed(links):
+    with pytest.raises(routing.RoutingError):
+        routing.catalog_rows({**catalog(), "links": links})
+
+
+@pytest.mark.parametrize("links_fields,object_present,next_present,next_value", [
+    ({}, False, False, None), ({"links": {}}, True, False, None),
+    ({"links": {"next": None}}, True, True, None), ({"links": {"next": ""}}, True, True, ""),
+])
+def test_catalog_diagnostics_report_link_presence_and_values(env, capsys, links_fields, object_present, next_present, next_value):
+    assert list_interview_content_models.main(["--diagnostics"], catalog_source=lambda: {**catalog(), **links_fields}) == 0
+    output = capsys.readouterr().out
+    assert f"links_present\t{str('links' in links_fields).lower()}" in output
+    assert f"links_object_present\t{str(object_present).lower()}" in output
+    assert f"links_value\t{json.dumps(links_fields.get('links'), sort_keys=True)}" in output
+    assert f"links_next_present\t{str(next_present).lower()}" in output
+    assert f"links_next_value\t{json.dumps(next_value)}" in output
+    assert not env[0].settings.state_path.exists()
