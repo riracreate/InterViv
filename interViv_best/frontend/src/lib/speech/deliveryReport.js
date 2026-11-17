@@ -8,6 +8,28 @@ export function fillerCount(text) {
   return FILLERS.reduce((total, pattern) => total + (source.match(pattern) || []).length, 0);
 }
 
+/** Row name for the delivery table. Never a raw stage key. */
+export function deliveryAnswerLabel({ stage, skill, isFollowUp = false } = {}) {
+  const name = String(skill || '').trim();
+  if (isFollowUp || stage === 'follow_up') return name ? `${name} follow-up` : 'Follow-up';
+  if (stage === 'warm_up') return 'Warm-up';
+  if (stage === 'behavioural') return name || 'Behavioural';
+  if (name) return name;
+  if (stage === 'core') return 'Core';
+  return 'Answer';
+}
+
+export function speakingCell(speakingMs) {
+  const ms = Number(speakingMs) || 0;
+  if (ms <= 0) return 'Typed';
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+export function paceCell({ speakingMs = 0, wpm = null } = {}) {
+  if (!(Number(speakingMs) > 0) || wpm == null) return '—';
+  return String(wpm);
+}
+
 export function deliveryReport({ text = '', speakingMs = 0, faceSamples = [] } = {}) {
   const signals = deliverySignals(text, Number(speakingMs) || 0);
   const samples = Array.isArray(faceSamples) ? faceSamples : [];

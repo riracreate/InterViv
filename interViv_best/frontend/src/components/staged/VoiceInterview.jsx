@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import AppNav from '../AppNav';
 import { fetchAvCapabilities, transcribeAudio } from '../../lib/api';
 import { createStagedSessionController, stagedSessionState } from '../../lib/stagedSession';
-import { deliveryReport } from '../../lib/speech/deliveryReport';
+import { deliveryAnswerLabel, deliveryReport, paceCell, speakingCell } from '../../lib/speech/deliveryReport';
 import { CLOSING_LINE, attachInterviewSpeech, interviewerLines } from '../../lib/speech/interviewerScript';
 import { createPresenceSampler, detectFaceCount } from '../../lib/speech/presence';
 import { createRecognitionController, recognitionClass } from '../../lib/speech/stt';
@@ -18,17 +18,6 @@ function railKey(stage, phase) {
   if (stage === 'follow_up') return 'follow_up';
   if (stage === 'core') return 'core';
   return 'warm_up';
-}
-
-function formatSeconds(ms) {
-  return `${(Math.max(0, Number(ms) || 0) / 1000).toFixed(1)} s`;
-}
-
-function answerLabel(item) {
-  const stage = { warm_up: 'Warm-up', core: 'Core', follow_up: 'Follow-up', behavioural: 'Behavioural' }[item.stage] || '';
-  if (item.stage === 'follow_up') return [item.skill, 'Follow-up'].filter(Boolean).join(' · ');
-  if (item.skill && item.stage !== 'warm_up') return item.skill;
-  return stage || item.skill || `Question ${item.round}`;
 }
 
 export default function VoiceInterview({ session }) {
@@ -255,7 +244,7 @@ export default function VoiceInterview({ session }) {
       faceSamples: samplerRef.current?.samples() || [],
     });
     setReports(prev => [...prev.filter(item => item.round !== active.round), {
-      round: active.round, skill: active.skill, stage: active.stage, ...report,
+      round: active.round, skill: active.skill, stage: active.stage, isFollowUp: active.isFollowUp, ...report,
     }]);
   }
 
@@ -394,7 +383,7 @@ export default function VoiceInterview({ session }) {
               <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[var(--color-border)] text-sm font-semibold" aria-hidden="true">IV</div>
               <div>
                 <p className="font-semibold">Interviewer</p>
-                <p data-testid="speaking-indicator" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">{speaking ? 'Speaking' : 'Quiet'}</p>
+                <p data-testid="speaking-indicator" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">{speaking ? 'Speaking' : 'Listening'}</p>
               </div>
             </div>
             <p className="mt-4 min-h-16 text-base leading-7" data-testid="live-caption">{caption || question}</p>
@@ -435,9 +424,9 @@ export default function VoiceInterview({ session }) {
               </thead>
               <tbody>
                 {reports.map(item => <tr key={item.round} className="border-t border-[var(--color-border)]">
-                  <td className="py-2 pr-3">{answerLabel(item)}</td>
-                  <td className="py-2 pr-3">{formatSeconds(item.speakingMs)}</td>
-                  <td className="py-2 pr-3">{item.wpm == null ? '—' : item.wpm}</td>
+                  <td className="py-2 pr-3">{deliveryAnswerLabel(item)}</td>
+                  <td className="py-2 pr-3">{speakingCell(item.speakingMs)}</td>
+                  <td className="py-2 pr-3">{paceCell(item)}</td>
                   <td className="py-2 pr-3">{item.fillerWords}</td>
                   <td className="py-2 pr-3">{item.faceVisiblePercent == null ? '—' : `${item.faceVisiblePercent}%`}</td>
                   <td className="py-2">{item.multipleFaceSamples}</td>
