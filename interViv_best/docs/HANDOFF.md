@@ -1,6 +1,48 @@
 # interViv Session Handoff
 
-## State
+## Owner handoff — 17 November 2026 (active)
+
+- **Direction**: AI-run job interview; entry card **Practice for a job**. N1–N3 are replaced. Slices 3b–3e remain paused. This task stops after the design/verification/handoff commit; no further feature implementation or pilot is authorized.
+- **Working line**: `fix/coverage-on-ws2`, in `.worktrees/coverage-ws2`, based on `2d6025b`. Main folder is on `codex/launcher-backup-20261117`: launcher-only commit `0d4df77`, separate preserved handoff commit `7084b67`. Merge `dd6e81c` brought both onto the working line. `Practice.jsx` auto-merged with **no conflicts**.
+- **Checks**: Full backend **1,233 passed, 6 skipped, zero failures** in the approved outside-sandbox rerun; the initial sandbox run had 1,224 passed / 6 skipped / 9 sysctl-permission failures. Full frontend **243 passed**; production build exit **0**. Every initial failing node ID and commands/log locations are in [the verification record](design/ai_interview_verification.md#full-suites). No protected implementation file was changed to make tests pass.
+- **Integrity**: Main `local-data/interviv-local.sqlite3` SHA256 before and after tests is `93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`. All database inspection was immutable/read-only. No migration, dependency change, live model call, pilot or `run_local.py` launch. Nothing pushed; exact push commands are at the end of [the verification record](design/ai_interview_verification.md#exact-owner-push-commands--not-executed).
+- **Review**: [AI interview plan](design/ai_interview_plan.md), including two model lanes, preparing state, first-card placement, quote validation, estimates, build slices and older-code reuse in item 10. Findings a–h are in [the verification record](design/ai_interview_verification.md#step-1--findings-ah). The current code allows ordinary `auto_checked` answers into measured evidence; reviewed-only Elo/readiness is a required future orchestration fix, not an already-enforced property.
+- **Reading the owner block below**: Preserved verbatim as requested. Finding h qualifies “only” to the interview workstream, distinguishes the proposed 100-turn gate from the old document's larger protocol, and records the prompt validator's reference-language limitation and selective constant dependencies. Neither older branch was merged or deleted.
+
+```text
+OLDER BRANCHES (checked 17 Nov)
+Only codex/step0-slice1 (8 commits) and codex/policy-stage-a
+(1 commit) hold work missing from fix/coverage-on-ws2; both branch
+from dc5fdfe. Do not merge them. Copy pure pieces only:
+- modules/answer_bands.py: band (nonanswer / wrong / vague /
+  adequate / strong) as a veto on the interviewer turn's action.
+  Thresholds are in-sample (n=50): steer only, never score.
+- validate_system_prompt (modules/system_follow_ups.py): check on
+  every model-written follow-up (300 chars max, no feedback or
+  reference language).
+- modules/adaptive_policy.py + adaptive_skill_graph.py: pure,
+  unwired next-skill/difficulty policy (COVER, PROBE_HARDER,
+  BRIDGE). Built for budgets 8-12 and 11 canonical skills; must be
+  adapted or limited to COVER and PROBE_HARDER.
+- docs/adaptive_policy_go_live_criteria.md: model for a human-
+  review gate on interviewer turns (100 turns, two reviewers, at
+  least 90% sensible, at most 5% false probes, zero invented
+  quotes, zero leaked references), fixed before results.
+- FollowUpSection.tsx and the slice1 flag-off transcript harness.
+They need POLICY_*, BAND_* constants in backend/config.py, which
+the working line lacks. The agent message asks the agent to verify
+all of this (finding h) and plan the reuse (design note item 10).
+```
+
+### BUILD ORDER
+
+1. **Step 0 complete**: Separate launcher/handoff backup commits, merge into coverage working line, older-branch comparison and full offline suites.
+2. **Step 1 complete**: Read-only verification a–h, including the later owner block and the reviewed-only trust gap.
+3. **Step 2 design only**: Commit `docs/design/ai_interview_plan.md`, its verification record and this updated handoff, then **stop**. Future one-session build slices are proposed in the plan, not started. Keep v3 as base scorer; model opinions never move Elo/readiness. Answer/resume text may go only to paid `anthropic/claude-haiku-4.5` in the proposed implementation. No schema/dependency change or edits to protected scorer/evaluator/guard/policy/eligibility/auth/runner paths.
+
+Everything below is the preserved earlier handoff/history. Its old stopped/uncommitted state, sandbox-only instructions, next-task list and template acceptance are superseded by the active owner direction above.
+
+## Historical state (superseded 17 November)
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
 - **Latest committed implementation**: Slice 3a `10b81fa`, after S2b `1dff9e6` and approved plan D3 `afd384e`. B1 top-level Quick launcher is implemented but UNCOMMITTED: validation stopped on the out-of-rule journey-test failure below. B2 and B3 have not started. Use `git log -1` for HEAD; do not start 3b–3e.
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
