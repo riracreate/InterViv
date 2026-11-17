@@ -348,7 +348,7 @@ Against accepted `a1d90d7`:
 
 | File (under `interViv_best/`) | Added | Removed |
 |---|---:|---:|
-| `docs/ai_interview_step1c_report.md` | 51 | 0 |
+| `docs/ai_interview_step1c_report.md` | 58 | 0 |
 | `modules/bundle_generator.py` | 41 | 7 |
 | `modules/interview_llm.py` | 143 | 4 |
 | `tests/test_ai_interview_routing_review.py` | 12 | 1 |
