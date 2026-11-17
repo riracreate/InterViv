@@ -28,10 +28,11 @@ class BudgetUnavailable(RuntimeError):
 
 
 class DispatchDeferred(RuntimeError):
-    def __init__(self, reason: str, retry_at: float | None = None):
+    def __init__(self, reason: str, retry_at: float | None = None, *, reasoning_tokens: int | None = None):
         super().__init__(f"Interview LLM dispatch stopped: {reason}")
         self.reason = reason
         self.retry_at = retry_at
+        self.reasoning_tokens = reasoning_tokens
 
 
 class RequestBudget:
@@ -230,7 +231,7 @@ class RequestBudget:
             elif decision.kind in {"rpm", "in_flight", "timeout", "network_unavailable"}:
                 state["all_until"] = max(state["all_until"], decision.retry_at or now + 60)
             elif decision.kind in {"upstream", "model_unavailable", "request_rejected", "provider_error",
-                                   "invalid_response", "empty_response"}:
+                                   "invalid_response", "empty_response", "truncated"}:
                 state["models"][model] = decision.retry_at or now + 300
             elif decision.kind == "unknown_quota":
                 if free:

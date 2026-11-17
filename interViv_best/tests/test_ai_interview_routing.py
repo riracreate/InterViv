@@ -108,15 +108,31 @@ def test_catalog_discovery_and_owner_order_are_validated(env):
     assert ordered.content_candidates() == (FREE_B, FREE_A)
 
 
-@pytest.mark.parametrize("model", ["fixture/unknown", PAID, "fixture/not-structured", "fixture/missing-price", "fixture/negative"])
-def test_invalid_owner_id_anywhere_in_order_blocks_before_dispatch(env, model):
+@pytest.mark.parametrize("model,expected_reason", [
+    ("fixture/unknown", "absent_from_catalog"),
+    (PAID, "nonzero_or_missing_price"),
+    ("fixture/not-structured", "missing_structured_params"),
+    ("fixture/missing-price", "nonzero_or_missing_price"),
+    ("fixture/negative", "nonzero_or_missing_price"),
+])
+def test_invalid_owner_id_anywhere_in_order_blocks_before_dispatch(env, caplog, model, expected_reason):
     router, clock = env
-    invalid = routing.InterviewRouter(replace(router.settings, content_models=(FREE_A, model)), catalog_source=catalog, clock=clock)
+    mixed = routing.InterviewRouter(replace(router.settings, content_models=(model, FREE_A)), catalog_source=catalog, clock=clock)
     calls = []
-    with routing.interview_scope("invalid-model", 2), pytest.raises(routing.RoutingError):
-        send(invalid, override=lambda model: calls.append(model))
-    assert calls == []
-    assert not router.settings.state_path.exists()
+    with caplog.at_level("WARNING", logger=routing.LOGGER.name), routing.interview_scope("skip-invalid-model", 2):
+        assert send(mixed, override=lambda chosen: (calls.append(chosen) or "completion", (2, 3, 5))).model == FREE_A
+    assert calls == [FREE_A]
+    warnings = [r for r in caplog.records if r.name == routing.LOGGER.name and r.levelname == "WARNING"]
+    assert len(warnings) == 1 and warnings[0].requested_model == model and warnings[0].reason == expected_reason
+    only_invalid = routing.InterviewRouter(replace(router.settings, content_models=(model,)), catalog_source=catalog, clock=clock)
+    blocked_calls = []
+    empty_state = router.settings.state_path.with_name("none-remain.json")
+    only_invalid.settings = replace(only_invalid.settings, state_path=empty_state)
+    only_invalid.budget = RequestBudget(empty_state, clock=clock)
+    with routing.interview_scope("all-invalid-models", 2), pytest.raises(routing.RoutingError):
+        send(only_invalid, override=lambda chosen: blocked_calls.append(chosen))
+    assert blocked_calls == []
+    assert not empty_state.exists()
 
 
 @pytest.mark.parametrize("bad_price", [None, "NaN", "Infinity", "invalid", "-1", "0.01"])

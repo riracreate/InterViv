@@ -189,3 +189,58 @@ Against accepted `3f60f25`:
 | `modules/interview_llm.py` | 5 | 2 |
 | `scripts/list_interview_content_models.py` | 22 | 0 |
 | `tests/test_ai_interview_routing_step1c.py` | 59 | 0 |
+
+## Step 1f — reasoning control, truncation precedence and resilient content order, 17 November 2026
+
+Base: accepted `3f787c8`. In the two-call controlled live check on `3f787c8`, paid `role_skill_extraction` (`anthropic/claude-haiku-4.5`) succeeded (`765` prompt / `404` completion / `0` reasoning tokens, `finish_reason="stop"`, `3,028 ms`), while free `bundle_generation` (`nvidia/nemotron-3.5-super-vl:free`) spent all `2,200` completion tokens in `message.reasoning` (`completion_tokens_details.reasoning_tokens=2200`, `finish_reason="length"`, `message.content=null`). Default flags remain off; no migration, dependency, launcher, session-route or protected-source file changed, and nothing was pushed.
+
+1. **Content-lane reasoning control.** `modules/interview_llm.py:39`, `:75`, `:89`, `:266`, `:459`, `:565` reads both structured `entry["reasoning"]` metadata (`mandatory` / `required`, `default_enabled`, `supports_max_tokens`) when present and the live OpenRouter catalog fields quoted from the Step 1e `--diagnostics` read (`supported_parameters` containing `"reasoning"`, `"include_reasoning"` on all six eligible `:free` entries including `nvidia/nemotron-3.5-super-vl:free`, and `"reasoning_effort"` on the two effort-capable entries, plus `pricing.internal_reasoning` / `default_parameters.reasoning`):
+   - Not mandatory: sends `reasoning={"enabled": False, "exclude": True}` and leaves `max_tokens` at the purpose budget.
+   - Mandatory with `supports_max_tokens`: sends `reasoning={"max_tokens": INTERVIEW_CONTENT_REASONING_MAX_TOKENS, "exclude": True}` (default `1024`) and sets `max_tokens = purpose_budget + cap`, clamped strictly below `effective_context - prompt` (and `top_provider.max_completion_tokens` when positive).
+   - Mandatory without a token budget: sends `reasoning={"effort": "low", "exclude": True}` when `"reasoning_effort"` is in `supported_parameters` (else `{"exclude": True}`) and adds the same clamped headroom.
+   - Missing `"reasoning"` in `supported_parameters` or missing reasoning metadata: sends no `reasoning` field.
+   - Conversation lane (`PERSONAL_PURPOSES`): never sends `reasoning` or alters `max_tokens`.
+
+2. **Truncation before empty content and `reasoning_tokens` telemetry.** `modules/interview_llm.py:54`, `:519`, `:547`, `:589`, `:601` and `modules/interview_llm_budget.py:31`, `:234` check `choices[0].get("finish_reason") == "length"` ahead of `message.content` emptiness, raising `ProviderResponseDeferred("truncated")` → `DispatchDeferred("truncated")` with `reasoning_tokens` extracted from `usage.completion_tokens_details`, applying a 5-minute model backoff, logging `status="truncated"` / `error="truncated"` in `llm_usage`, and recording `reasoning_tokens` (integer count only, never reasoning prose) on `interview_llm_dispatch`.
+
+3. **Resilient owner content order.** `modules/interview_llm.py:226`, `:404` skips absent or ineligible entries in `INTERVIEW_CONTENT_MODELS` with one structured warning (`interview_llm_content_candidate_skipped`) and a fixed reason code (`absent_from_catalog`, `disallowed_model_kind`, `unsupported_modalities`, `insufficient_context`, `nonzero_or_missing_price`, `missing_structured_params`). Duplicate IDs fail closed before catalog lookup; when zero eligible candidates remain (and `ALLOW_PAID_CONTENT_FALLBACK` is off), `content_candidates` fails closed with `RoutingError` and zero attempts spent.
+
+### The one authorized existing expectation change
+
+| Test | Old expectation | New expectation |
+|---|---|---|
+| `test_invalid_owner_id_anywhere_in_order_blocks_before_dispatch` | `tests/test_ai_interview_routing.py:111-119` at `3f787c8`: `content_models=(FREE_A, model)` raised `RoutingError` with `calls == []`. | `tests/test_ai_interview_routing.py:111-136`: `content_models=(model, FREE_A)` skips `model` with one structured warning + fixed reason code and dispatches `FREE_A`; `content_models=(model,)` still raises `RoutingError` before admission with zero attempts spent and no journal created. |
+
+AST comparison across `test_ai_interview_routing.py`, `test_ai_interview_routing_review.py` and `test_ai_interview_routing_step1c.py` against `3f787c8` confirms no other pre-existing test function or assertion changed. Four appended test functions in `tests/test_ai_interview_routing_step1c.py` (`:384`, `:420`, `:466`, `:497`) add 17 offline cases.
+
+### Step 1f verification
+
+| Step 1f run | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---|
+| Focused routing | 237 | 0 | 0 | 6.78 s; exit 0 |
+| Full backend | 1,470 | 6 | 0 | 139.62 s; exit 0 |
+| Full frontend | 243 | 0 | 0 | 10.10 s; exit 0 |
+
+Failing node IDs in all three runs: **none**. Logs/XML: `/private/tmp/interviv-step1f.KQw6oi/`.
+
+Protected real DB SHA256 before/after this slice:
+
+```text
+before  93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+after   93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+```
+
+Flag-off fixture SHA256 remains `c7bd7382554fd751b3c8b83986b18fa2ba73250629d4d5e33538e4ff1d6ead1f` (byte-identical).
+
+### Step 1f diffstat
+
+Against accepted `3f787c8`:
+
+| File (under `interViv_best/`) | Added | Removed |
+|---|---:|---:|
+| `.env.example` | 2 | 0 |
+| `docs/ai_interview_step1c_report.md` | 55 | 0 |
+| `modules/interview_llm.py` | 160 | 38 |
+| `modules/interview_llm_budget.py` | 3 | 2 |
+| `tests/test_ai_interview_routing.py` | 23 | 7 |
+| `tests/test_ai_interview_routing_step1c.py` | 220 | 0 |

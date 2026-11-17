@@ -344,3 +344,223 @@ def test_catalog_script_prints_urlerror_reason_and_codes_without_secrets(env, mo
     for marker in ("PRIVATE_KEY_MARKER", "PRIVATE_HOST_MARKER", "PRIVATE_BODY_MARKER", "Authorization"):
         assert marker not in captured.err
     assert not env[0].settings.state_path.exists()
+
+
+STEP1E_NEMOTRON_PARAMS = [
+    "include_reasoning", "max_tokens", "reasoning", "response_format", "seed",
+    "structured_outputs", "temperature", "tool_choice", "tools", "top_p",
+]
+STEP1E_EFFORT_PARAMS = [
+    "include_reasoning", "max_tokens", "reasoning", "reasoning_effort",
+    "response_format", "structured_outputs", "temperature", "tool_choice", "tools", "top_p",
+]
+
+
+@pytest.mark.parametrize("case,params,meta,ctx,budget_tokens,cap,expected_reasoning,expected_max", [
+    ("step1e_nemotron_not_mandatory", STEP1E_NEMOTRON_PARAMS, None, 1000000, 2200, 1024,
+     {"enabled": False, "exclude": True}, 2200),
+    ("explicit_not_mandatory", STEP1E_NEMOTRON_PARAMS,
+     {"mandatory": False, "default_enabled": True, "supports_max_tokens": True}, 1000000, 2200, 1024,
+     {"enabled": False, "exclude": True}, 2200),
+    ("mandatory_supports_max_tokens", STEP1E_NEMOTRON_PARAMS,
+     {"mandatory": True, "supports_max_tokens": True}, 1000000, 2200, 768,
+     {"max_tokens": 768, "exclude": True}, 2968),
+    ("mandatory_clamped_below_context", STEP1E_NEMOTRON_PARAMS,
+     {"mandatory": True, "supports_max_tokens": True}, 16384, 15800, 1024,
+     {"max_tokens": 1024, "exclude": True}, None),
+    ("mandatory_effort_low", STEP1E_EFFORT_PARAMS,
+     {"mandatory": True, "supports_max_tokens": False}, 1024000, 2200, 1024,
+     {"effort": "low", "exclude": True}, 3224),
+    ("mandatory_without_budget_or_effort", STEP1E_NEMOTRON_PARAMS,
+     {"mandatory": True, "supports_max_tokens": False}, 1000000, 2200, 1024,
+     {"exclude": True}, 3224),
+    ("no_reasoning_parameter", ["structured_outputs", "response_format", "max_tokens"],
+     {"mandatory": True, "supports_max_tokens": True}, 32768, 2200, 1024,
+     None, 2200),
+    ("no_reasoning_metadata", ["structured_outputs", "response_format", "max_tokens", "reasoning"],
+     None, 32768, 2200, 1024,
+     None, 2200),
+])
+def test_content_reasoning_control_follows_catalog_metadata_and_clamps_headroom(
+    env, monkeypatch, case, params, meta, ctx, budget_tokens, cap, expected_reasoning, expected_max
+):
+    payload = catalog()
+    for row in payload["data"]:
+        if row["id"] == FREE_A:
+            row["context_length"] = ctx
+            row["supported_parameters"] = list(params)
+            if meta is not None:
+                row["reasoning"] = dict(meta)
+    sent_bodies = []
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    monkeypatch.setenv("INTERVIEW_CONTENT_REASONING_MAX_TOKENS", str(cap))
+    def capture_post(request, **kwargs):
+        sent_bodies.append(json.loads(request.data.decode()))
+        return Response(json.dumps(completion_body(model=FREE_A)).encode())
+    monkeypatch.setattr(routing.urllib.request, "urlopen", capture_post)
+    settings = replace(routing.RoutingSettings.from_env(),
+                       content_models=(FREE_A,), state_path=env[0].settings.state_path)
+    router = routing.InterviewRouter(settings, catalog_source=lambda: payload, clock=env[1])
+    messages = [{"role": "user", "content": "x" * 600}]
+    with routing.interview_scope(f"reasoning-{case}", 2):
+        result = router.dispatch(purpose="bundle_generation", messages=messages, max_tokens=budget_tokens)
+    assert result.model == FREE_A and len(sent_bodies) == 1
+    sent = sent_bodies[0]
+    assert sent.get("reasoning") == expected_reasoning
+    if expected_reasoning is None:
+        assert "reasoning" not in sent
+    if expected_max is None:
+        assert sent["max_tokens"] < ctx - routing._estimate_prompt_tokens(messages)
+        assert sent["max_tokens"] == ctx - routing._estimate_prompt_tokens(messages) - 1
+    else:
+        assert sent["max_tokens"] == expected_max
+
+
+@pytest.mark.parametrize("purpose", sorted(routing.PERSONAL_PURPOSES))
+def test_conversation_lane_never_sends_reasoning_or_adds_headroom(env, monkeypatch, purpose):
+    monkeypatch.setenv("LLM_LIVE_CONSUMERS", "questions,interviewer")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    payload = catalog()
+    for row in payload["data"]:
+        if row["id"] == PAID:
+            row["supported_parameters"] = list(STEP1E_EFFORT_PARAMS)
+            row["reasoning"] = {"mandatory": True, "supports_max_tokens": True}
+    sent_bodies = []
+    def capture_post(request, **kwargs):
+        sent_bodies.append(json.loads(request.data.decode()))
+        return Response(json.dumps({
+            **completion_body(model=PAID),
+            "usage": {**BILLED, "completion_tokens_details": {"reasoning_tokens": 0}},
+        }).encode())
+    monkeypatch.setattr(routing.urllib.request, "urlopen", capture_post)
+    router = routing.InterviewRouter(env[0].settings, catalog_source=lambda: payload, clock=env[1])
+    with caplog_for(routing.LOGGER.name) as records, routing.interview_scope(f"conv-{purpose}", 2):
+        result = router.dispatch(purpose=purpose, messages=[{"role": "user", "content": "PRIVATE_TEXT"}], max_tokens=700)
+    assert result.model == PAID and result.reasoning_tokens == 0
+    assert len(sent_bodies) == 1 and "reasoning" not in sent_bodies[0] and sent_bodies[0]["max_tokens"] == 700
+    assert len(records) == 1 and records[0].reasoning_tokens == 0
+
+
+from contextlib import contextmanager as _cm
+
+
+@_cm
+def caplog_for(logger_name):
+    records = []
+    class Handler(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+    handler = Handler(level=logging.INFO)
+    target = logging.getLogger(logger_name)
+    old_level = target.level
+    target.setLevel(logging.INFO)
+    target.addHandler(handler)
+    try:
+        yield records
+    finally:
+        target.removeHandler(handler)
+        target.setLevel(old_level)
+
+
+@pytest.mark.parametrize("content", [None, "", "  \n\t", '{"question": "cut off'])
+def test_finish_reason_length_precedes_empty_content_and_logs_reasoning_tokens(env, monkeypatch, caplog, content):
+    router, clock = content_router(env)
+    truncated_body = {
+        "model": FREE_A,
+        "choices": [{"message": {"content": content, "reasoning": "SECRET_REASONING_TRACE"}, "finish_reason": "length"}],
+        "usage": {"prompt_tokens": 735, "completion_tokens": 2200, "total_tokens": 2935,
+                  "completion_tokens_details": {"reasoning_tokens": 2200}},
+    }
+    fake_response(monkeypatch, truncated_body)
+    with pytest.raises(routing.ProviderResponseDeferred) as direct_err:
+        routing.InterviewRouter._chat_once(FREE_A, [], 2200, 0.25, 45, True)
+    assert direct_err.value.reason == "truncated"
+    assert direct_err.value.usage == (735, 2200, 2935)
+    assert direct_err.value.reasoning_tokens == 2200
+
+    deferred = call_failure(router, caplog)
+    assert deferred.reason == "truncated" and deferred.reasoning_tokens == 2200
+    assert deferred.retry_at == clock() + 300
+    event, = llm_usage.list_usage_events()
+    assert event["status"] == "truncated" and event["error"] == "truncated"
+    assert (event["prompt_tokens"], event["completion_tokens"], event["total_tokens"]) == (735, 2200, 2935)
+    records = [r for r in caplog.records if r.name == routing.LOGGER.name]
+    assert len(records) == 1 and records[0].returned_model == FREE_A and records[0].reasoning_tokens == 2200
+    assert "SECRET_REASONING_TRACE" not in caplog.text and "PRIVATE_PROMPT_MARKER" not in caplog.text
+    state = router.budget.inspect()["state"]
+    assert state["models"][FREE_A] == clock() + 300 and state["leases"] == {}
+    clock.advance()
+    with routing.interview_scope("step1c", 4):
+        assert send(router).model == FREE_B
+
+
+def test_owner_content_order_skips_ineligible_with_fixed_reasons_and_fails_closed_when_empty(env, caplog):
+    _, clock = env
+    payload = catalog()
+    payload["data"].extend([
+        {"id": "openrouter/auto", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 32768,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": ["structured_outputs", "response_format", "max_tokens"]},
+        {"id": "fixture/vision-out:free", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 32768,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["image"]},
+         "supported_parameters": ["structured_outputs", "response_format", "max_tokens"]},
+        {"id": "fixture/short-ctx:free", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 8192,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": ["structured_outputs", "response_format", "max_tokens"]},
+    ])
+    bad_order = (
+        "fixture/missing-from-catalog:free",
+        "openrouter/auto",
+        "fixture/vision-out:free",
+        "fixture/short-ctx:free",
+        PAID,
+        "fixture/not-structured",
+    )
+    expected_reasons = [
+        ("fixture/missing-from-catalog:free", "absent_from_catalog"),
+        ("openrouter/auto", "disallowed_model_kind"),
+        ("fixture/vision-out:free", "unsupported_modalities"),
+        ("fixture/short-ctx:free", "insufficient_context"),
+        (PAID, "nonzero_or_missing_price"),
+        ("fixture/not-structured", "missing_structured_params"),
+    ]
+    mixed_state = env[0].settings.state_path.with_name("mixed-skip.json")
+    mixed = routing.InterviewRouter(
+        replace(env[0].settings, content_models=(*bad_order, FREE_B), state_path=mixed_state),
+        catalog_source=lambda: payload, clock=clock,
+    )
+    with caplog.at_level(logging.WARNING, logger=routing.LOGGER.name), routing.interview_scope("skip-six", 2):
+        assert send(mixed).model == FREE_B
+    warnings = [(r.requested_model, r.reason) for r in caplog.records
+                if r.name == routing.LOGGER.name and r.levelname == "WARNING"]
+    assert warnings == expected_reasons
+    assert mixed.budget.inspect()["state"]["total_count"] == 1
+
+    caplog.clear()
+    empty_state = env[0].settings.state_path.with_name("all-skipped.json")
+    all_bad = routing.InterviewRouter(
+        replace(env[0].settings, content_models=bad_order, state_path=empty_state),
+        catalog_source=lambda: payload, clock=clock,
+    )
+    with caplog.at_level(logging.WARNING, logger=routing.LOGGER.name), routing.interview_scope("none-left", 2):
+        with pytest.raises(routing.RoutingError):
+            send(all_bad)
+    assert not empty_state.exists()
+
+    paid_state = env[0].settings.state_path.with_name("paid-fallback.json")
+    paid_fallback = routing.InterviewRouter(
+        replace(env[0].settings, content_models=("fixture/missing-from-catalog:free",),
+                allow_paid_content=True, state_path=paid_state),
+        catalog_source=lambda: payload, clock=clock,
+    )
+    with routing.interview_scope("paid-when-enabled", 2):
+        assert send(paid_fallback).model == PAID
+
+    dup_state = env[0].settings.state_path.with_name("dup.json")
+    dup = routing.InterviewRouter(
+        replace(env[0].settings, content_models=(FREE_A, FREE_A), state_path=dup_state),
+        catalog_source=lambda: pytest.fail("Duplicates fail before catalog"), clock=clock,
+    )
+    with routing.interview_scope("dup", 2), pytest.raises(routing.RoutingError, match="Duplicate"):
+        send(dup)
+    assert not dup_state.exists()
