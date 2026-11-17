@@ -31,7 +31,9 @@ from modules.interview_llm_budget import DispatchDeferred, RequestBudget
 from modules.llm_http_policy import LimitDecision, classify_http_error
 
 PAID_CONVERSATION_MODEL = "anthropic/claude-haiku-4.5"
-CONTENT_PURPOSES = frozenset({"bundle_generation", "bundle_blind_answer", "bundle_check_audit", "bundle_regeneration"})
+GENERATION_PURPOSES = frozenset({"bundle_generation", "bundle_regeneration"})
+CHECK_PURPOSES = frozenset({"bundle_blind_answer", "bundle_check_audit"})
+CONTENT_PURPOSES = GENERATION_PURPOSES | CHECK_PURPOSES
 PERSONAL_PURPOSES = frozenset({"role_skill_extraction", "resume_extraction", "interviewer_turn", "debrief"})
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -70,7 +72,9 @@ def _flag(name: str) -> bool:
 class RoutingSettings:
     # Real content dispatch requires an owner order unless discovery is opted in.
     content_models: tuple[str, ...] = ()
+    check_models: tuple[str, ...] = ()
     allow_content_discovery: bool = False
+    allow_self_check: bool = False
     min_content_context: int = MIN_CONTENT_CONTEXT
     content_reasoning_max_tokens: int = DEFAULT_CONTENT_REASONING_MAX_TOKENS
     conversation_model: str = PAID_CONVERSATION_MODEL
@@ -83,7 +87,9 @@ class RoutingSettings:
     def from_env(cls):
         return cls(
             content_models=tuple(x.strip() for x in os.getenv("INTERVIEW_CONTENT_MODELS", "").split(",") if x.strip()),
+            check_models=tuple(x.strip() for x in os.getenv("INTERVIEW_CHECK_MODELS", "").split(",") if x.strip()),
             allow_content_discovery=_flag("INTERVIEW_ALLOW_CONTENT_DISCOVERY"),
+            allow_self_check=_flag("INTERVIEW_ALLOW_SELF_CHECK"),
             min_content_context=int(os.getenv("INTERVIEW_CONTENT_MIN_CONTEXT") or MIN_CONTENT_CONTEXT),
             content_reasoning_max_tokens=int(
                 os.getenv("INTERVIEW_CONTENT_REASONING_MAX_TOKENS") or DEFAULT_CONTENT_REASONING_MAX_TOKENS
@@ -251,6 +257,12 @@ def _content_ineligible_reason(entry: dict | None, min_context: int = MIN_CONTEN
     return None
 
 
+def _vendor_prefix(model: str | None) -> str:
+    if not isinstance(model, str) or "/" not in model:
+        return ""
+    return model.split("/", 1)[0].strip().casefold()
+
+
 def _free_structured(entry: dict, min_context: int = MIN_CONTENT_CONTEXT) -> bool:
     return _content_ineligible_reason(entry, min_context) is None
 
@@ -401,13 +413,13 @@ class InterviewRouter:
             raise RoutingError("Paid conversation model was not validated in the catalog.")
         return model
 
-    def content_candidates(self, *, offline_override: bool = False) -> tuple[str, ...]:
-        if len(set(self.settings.content_models)) != len(self.settings.content_models):
-            raise RoutingError("Duplicate content model IDs in INTERVIEW_CONTENT_MODELS.")
-        models = self._models("questions", offline_override)
-        if self.settings.content_models:
+    def _select_free_candidates(self, configured: tuple[str, ...], setting_name: str,
+                                models: dict[str, dict]) -> tuple[str, ...]:
+        if len(set(configured)) != len(configured):
+            raise RoutingError(f"Duplicate content model IDs in {setting_name}.")
+        if configured:
             eligible: list[str] = []
-            for candidate in self.settings.content_models:
+            for candidate in configured:
                 entry = models.get(candidate)
                 reason = (
                     "absent_from_catalog"
@@ -420,24 +432,101 @@ class InterviewRouter:
                     LOGGER.warning("interview_llm_content_candidate_skipped model=%s reason=%s",
                                    candidate, reason,
                                    extra={"requested_model": candidate, "reason": reason})
-            choices: tuple[str, ...] = tuple(eligible)
-        else:
-            choices = tuple(sorted(model for model, row in models.items()
-                                   if _free_structured(row, self.settings.min_content_context))[:3])
+            return tuple(eligible)
+        return tuple(sorted(model for model, row in models.items()
+                            if _free_structured(row, self.settings.min_content_context)))
+
+    def content_candidates(self, *, offline_override: bool = False) -> tuple[str, ...]:
+        if len(set(self.settings.content_models)) != len(self.settings.content_models):
+            raise RoutingError("Duplicate content model IDs in INTERVIEW_CONTENT_MODELS.")
+        models = self._models("questions", offline_override)
+        raw = self._select_free_candidates(self.settings.content_models, "INTERVIEW_CONTENT_MODELS", models)
+        choices = raw if self.settings.content_models else raw[:3]
         if self.settings.allow_paid_content:
             choices = (*choices, self._paid_model(models))
         if not choices:
             raise RoutingError("No zero-priced structured-output content model is available.")
         return choices
 
+    def _active_generator_model(self, *, offline_override: bool = False) -> str | None:
+        scope = _SCOPE.get()
+        if scope is not None:
+            scoped = scope.models.get("bundle_regeneration") or scope.models.get("bundle_generation")
+            if scoped:
+                return scoped
+        if not offline_override and not self.settings.content_models and not self.settings.allow_content_discovery:
+            return None
+        try:
+            return self.resolve_content_model(offline_override=offline_override)
+        except RoutingError:
+            return None
+
+    def check_candidates(self, *, offline_override: bool = False,
+                         generator_model: str | None = None) -> tuple[str, ...]:
+        if len(set(self.settings.check_models)) != len(self.settings.check_models):
+            raise RoutingError("Duplicate content model IDs in INTERVIEW_CHECK_MODELS.")
+        models = self._models("questions", offline_override)
+        raw = self._select_free_candidates(self.settings.check_models, "INTERVIEW_CHECK_MODELS", models)
+        if self.settings.allow_paid_content:
+            raw = (*raw, self._paid_model(models))
+        scope = _SCOPE.get()
+        scoped_gen = (
+            (scope.models.get("bundle_regeneration") or scope.models.get("bundle_generation"))
+            if scope is not None else None
+        )
+        gen_model = generator_model or scoped_gen or self._active_generator_model(offline_override=offline_override)
+        gen_vendor = _vendor_prefix(gen_model)
+        legacy_unconfigured_override = (
+            offline_override
+            and generator_model is None
+            and scoped_gen is None
+            and not self.settings.check_models
+            and not self.settings.content_models
+            and not self.settings.allow_content_discovery
+        )
+        if not self.settings.allow_self_check and gen_vendor:
+            independent: list[str] = []
+            saw_same_vendor = False
+            for candidate in raw:
+                if _vendor_prefix(candidate) == gen_vendor:
+                    saw_same_vendor = True
+                    if self.settings.check_models:
+                        LOGGER.warning("interview_llm_content_candidate_skipped model=%s reason=%s",
+                                       candidate, "same_vendor_as_generator",
+                                       extra={"requested_model": candidate, "reason": "same_vendor_as_generator"})
+                else:
+                    independent.append(candidate)
+            choices = tuple(independent if self.settings.check_models else independent[:3])
+            if not choices and legacy_unconfigured_override:
+                choices = raw[:3]
+            if not choices:
+                if saw_same_vendor:
+                    raise RoutingError(
+                        f"Checker vendor prefix {gen_vendor!r} matches generator; "
+                        "configure an independent vendor in INTERVIEW_CHECK_MODELS or set INTERVIEW_ALLOW_SELF_CHECK=true."
+                    )
+                raise RoutingError("No zero-priced structured-output checker model is available.")
+            return choices
+        choices = raw if self.settings.check_models else raw[:3]
+        if not choices:
+            raise RoutingError("No zero-priced structured-output checker model is available.")
+        return choices
+
     def resolve_content_model(self, *, offline_override: bool = False) -> str:
         return self.content_candidates(offline_override=offline_override)[0]
+
+    def resolve_check_model(self, *, offline_override: bool = False,
+                            generator_model: str | None = None) -> str:
+        if not offline_override and not self.settings.check_models and not self.settings.allow_content_discovery:
+            raise RoutingError("Real checker dispatch requires INTERVIEW_CHECK_MODELS or explicit discovery opt-in.")
+        return self.check_candidates(offline_override=offline_override, generator_model=generator_model)[0]
 
     def dispatch(self, *, purpose: str, messages: list[dict[str, str]], max_tokens: int = 700,
                  temperature: float = 0.1, timeout_s: float = 20, personal_text: bool = False,
                  model: str | None = None, expect_json: bool = True, bundle_id: str | None = None,
                  override: Callable[[str], tuple[str, tuple[int, int, int]]] | None = None) -> Completion:
         lane, consumer = lane_for(purpose), consumer_for(purpose)
+        is_check = purpose in CHECK_PURPOSES
         # Classify by purpose, not an optional caller-supplied privacy boolean.
         enforce_outbound_policy(purpose=purpose, model=model or self.settings.conversation_model, personal_text=personal_text)
         _gate(consumer, offline_override=override is not None)
@@ -446,10 +535,17 @@ class InterviewRouter:
             raise RoutingError("Missing interview_scope; no unbudgeted routing is permitted.")
         if isinstance(scope, BatchScope) and lane != "content":
             raise PrivacyViolation("Batch scope is content-only; conversation purposes are forbidden.")
-        if lane == "content" and override is None and not self.settings.content_models and not self.settings.allow_content_discovery:
-            raise RoutingError("Real content dispatch requires INTERVIEW_CONTENT_MODELS or explicit discovery opt-in.")
+        if lane == "content" and override is None and not self.settings.allow_content_discovery:
+            if is_check and not self.settings.check_models:
+                raise RoutingError("Real checker dispatch requires INTERVIEW_CHECK_MODELS or explicit discovery opt-in.")
+            if not is_check and not self.settings.content_models:
+                raise RoutingError("Real content dispatch requires INTERVIEW_CONTENT_MODELS or explicit discovery opt-in.")
         if lane == "content":
-            choices = self.content_candidates(offline_override=override is not None)
+            choices = (
+                self.check_candidates(offline_override=override is not None)
+                if is_check
+                else self.content_candidates(offline_override=override is not None)
+            )
             models = self._models(consumer, override is not None)
         else:
             models = self._models(consumer, override is not None)

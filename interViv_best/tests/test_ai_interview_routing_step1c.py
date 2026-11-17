@@ -564,3 +564,265 @@ def test_owner_content_order_skips_ineligible_with_fixed_reasons_and_fails_close
     with routing.interview_scope("dup", 2), pytest.raises(routing.RoutingError, match="Duplicate"):
         send(dup)
     assert not dup_state.exists()
+
+
+def _multi_vendor_catalog():
+    payload = catalog()
+    payload["data"].extend([
+        {"id": "nvidia/gen-alpha:free", "canonical_slug": "nvidia/gen-alpha-20261015",
+         "pricing": {"prompt": "0", "completion": "0"}, "context_length": 1000000,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": list(STEP1E_NEMOTRON_PARAMS), "reasoning": {"mandatory": False}},
+        {"id": "nvidia/gen-beta:free", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 1000000,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": list(STEP1E_NEMOTRON_PARAMS), "reasoning": {"mandatory": False}},
+        {"id": "baidu/check-alpha:free", "canonical_slug": "baidu/check-alpha-20261101",
+         "pricing": {"prompt": "0", "completion": "0"}, "context_length": 1024000,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": list(STEP1E_EFFORT_PARAMS),
+         "reasoning": {"mandatory": True, "supports_max_tokens": False}},
+        {"id": "inclusionai/check-beta:free", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 1048576,
+         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+         "supported_parameters": list(STEP1E_NEMOTRON_PARAMS),
+         "reasoning": {"mandatory": True, "supports_max_tokens": True}},
+    ])
+    return payload
+
+
+def test_independent_checker_routes_blind_answer_and_audit_and_records_actual_model(env, monkeypatch, tmp_path):
+    from modules import bundle_generator, bundle_store
+    from tests.test_ai_interview_routing import http_error
+    from tests.test_ws2_content_generation import _sample_v2_payload
+
+    monkeypatch.setenv("INTERVIV_USE_MEMORY_DB", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    monkeypatch.setenv("REJECTED_BUNDLES_AUDIT_PATH", str(tmp_path / "rejected.jsonl"))
+    monkeypatch.setenv("DEMOTED_BUNDLES_AUDIT_PATH", str(tmp_path / "demoted.jsonl"))
+    bundle_store.reset_memory_store()
+    clock = env[1]
+    covering = (
+        "A mutex limits bytecode so one thread executes bytecode while syscalls release lock."
+    )
+    try:
+        router = routing.InterviewRouter(
+            replace(env[0].settings,
+                    content_models=("nvidia/gen-alpha:free",),
+                    check_models=("baidu/check-alpha:free", "inclusionai/check-beta:free"),
+                    state_path=tmp_path / "step1g-e2e.json"),
+            catalog_source=_multi_vendor_catalog,
+            clock=clock,
+        )
+        monkeypatch.setattr(routing, "get_router", lambda: router)
+        assert bundle_generator.resolve_generation_provider_and_model() == ("openrouter", "nvidia/gen-alpha:free")
+        assert bundle_generator.resolve_checker_provider_and_model() == ("openrouter", "baidu/check-alpha:free")
+
+        gen_calls = {"n": 0}
+        baidu_blind_fail = {"armed": False}
+
+        def fake_urlopen(request, **kwargs):
+            clock.advance(5)
+            sent = json.loads(request.data.decode())
+            model = sent["model"]
+            if model == "nvidia/gen-alpha:free":
+                gen_calls["n"] += 1
+                # First generation uses a tight proposition so audit + regeneration exercise check routing.
+                tight = gen_calls["n"] == 1
+                out_text = json.dumps(_sample_v2_payload(topic="Context Managers", tight_prop=tight))
+                return Response(json.dumps({
+                    "model": "nvidia/gen-alpha-20261015",
+                    "choices": [{"message": {"content": out_text}, "finish_reason": "stop"}],
+                    "usage": BILLED,
+                }).encode())
+            if model == "baidu/check-alpha:free":
+                if "response_format" not in sent and baidu_blind_fail["armed"]:
+                    raise http_error(503)
+                if "response_format" not in sent:
+                    return Response(json.dumps({
+                        "model": "baidu/check-alpha-20261101",
+                        "choices": [{"message": {"content": covering}, "finish_reason": "stop"}],
+                        "usage": BILLED,
+                    }).encode())
+                return Response(json.dumps({
+                    "model": "baidu/check-alpha-20261101",
+                    "choices": [{"message": {"content": json.dumps({
+                        "root_cause": "tight proposition", "issue_type": "propositions",
+                        "missed_concepts": ["bytecode_mutex"], "fixes": ["use two-word proposition"],
+                    })}, "finish_reason": "stop"}],
+                    "usage": BILLED,
+                }).encode())
+            assert model == "inclusionai/check-beta:free"
+            return Response(json.dumps({
+                "model": "inclusionai/check-beta:free",
+                "choices": [{"message": {"content": covering}, "finish_reason": "stop"}],
+                "usage": BILLED,
+            }).encode())
+
+        monkeypatch.setattr(routing.urllib.request, "urlopen", fake_urlopen)
+        # gen+blind+audit+regen+blind, plus one poison 503, plus second gen+blind.
+        with routing.batch_scope("step1g-batch", max_requests=10):
+            first = bundle_generator.generate_and_check_bundle(
+                skill="Python", topic="context_managers", difficulty="medium", force=True,
+            )
+            assert first["status"] == "auto_checked"
+            first_versions = bundle_store.list_versions(bundle_id=first["bundle_id"])
+            assert first_versions[-1]["attribution_json"]["auto_check"]["check_model"] == "baidu/check-alpha-20261101"
+            assert first_versions[-1]["attribution_json"]["generated_by_model"] == "nvidia/gen-alpha-20261015"
+
+            # Established pattern: 503 puts baidu in model_backoff; the next dispatch skips it.
+            baidu_blind_fail["armed"] = True
+            with pytest.raises(DispatchDeferred, match="model_unavailable"):
+                router.dispatch(
+                    purpose="bundle_blind_answer",
+                    messages=[{"role": "user", "content": "generic"}],
+                    expect_json=False,
+                )
+            baidu_blind_fail["armed"] = False
+            bundle_store.reset_memory_store()
+            gen_calls["n"] = 10  # subsequent generations stay non-tight
+            second = bundle_generator.generate_and_check_bundle(
+                skill="Python", topic="io_bound", difficulty="easy", force=True,
+            )
+        assert second["status"] == "auto_checked"
+        second_versions = bundle_store.list_versions(bundle_id=second["bundle_id"])
+        assert second_versions[-1]["attribution_json"]["auto_check"]["check_model"] == "inclusionai/check-beta:free"
+        assert second_versions[-1]["attribution_json"]["generated_by_model"] == "nvidia/gen-alpha-20261015"
+    finally:
+        bundle_store.reset_memory_store()
+
+
+@pytest.mark.parametrize("purpose", sorted(routing.CHECK_PURPOSES))
+def test_checker_refuses_same_vendor_prefix_unless_allow_self_check_enabled(env, monkeypatch, caplog, tmp_path, purpose):
+    from modules import bundle_generator
+
+    _, clock = env
+    same_state = tmp_path / f"same-{purpose}.json"
+    same_vendor = routing.InterviewRouter(
+        replace(env[0].settings,
+                content_models=("nvidia/gen-alpha:free",),
+                check_models=("NVIDIA/gen-beta:free",),
+                state_path=same_state),
+        catalog_source=lambda: {
+            **_multi_vendor_catalog(),
+            "data": [*_multi_vendor_catalog()["data"], {
+                "id": "NVIDIA/gen-beta:free", "pricing": {"prompt": "0", "completion": "0"}, "context_length": 1000000,
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                "supported_parameters": list(STEP1E_NEMOTRON_PARAMS), "reasoning": {"mandatory": False},
+            }],
+        },
+        clock=clock,
+    )
+    monkeypatch.setattr(routing, "get_router", lambda: same_vendor)
+    with pytest.raises(routing.RoutingError, match="vendor prefix"):
+        bundle_generator.resolve_checker_provider_and_model()
+    with routing.interview_scope(f"refuse-{purpose}", 2), pytest.raises(routing.RoutingError, match="vendor prefix"):
+        same_vendor.dispatch(purpose=purpose, messages=[{"role": "user", "content": "generic"}])
+    assert not same_state.exists()
+
+    # Failover order skips same-vendor with structured warning and picks independent vendor.
+    failover_state = tmp_path / f"failover-{purpose}.json"
+    failover = routing.InterviewRouter(
+        replace(env[0].settings,
+                content_models=("nvidia/gen-alpha:free",),
+                check_models=("nvidia/gen-beta:free", "baidu/check-alpha:free"),
+                state_path=failover_state),
+        catalog_source=_multi_vendor_catalog,
+        clock=clock,
+    )
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=routing.LOGGER.name), routing.interview_scope(f"ok-{purpose}", 2):
+        res = failover.dispatch(purpose=purpose, messages=[{"role": "user", "content": "generic"}],
+                                override=lambda chosen: ("ok", (1, 2, 3)))
+    assert res.model == "baidu/check-alpha:free"
+    warnings = [(r.requested_model, r.reason) for r in caplog.records
+                if r.name == routing.LOGGER.name and r.levelname == "WARNING"]
+    assert warnings == [("nvidia/gen-beta:free", "same_vendor_as_generator")]
+
+    # INTERVIEW_ALLOW_SELF_CHECK=true explicitly allows same-vendor checking.
+    monkeypatch.setenv("INTERVIEW_ALLOW_SELF_CHECK", "true")
+    monkeypatch.setenv("INTERVIEW_CONTENT_MODELS", "nvidia/gen-alpha:free")
+    monkeypatch.setenv("INTERVIEW_CHECK_MODELS", "nvidia/gen-beta:free")
+    allowed = routing.InterviewRouter(
+        replace(routing.RoutingSettings.from_env(), state_path=tmp_path / f"self-{purpose}.json"),
+        catalog_source=_multi_vendor_catalog,
+        clock=clock,
+    )
+    assert allowed.settings.allow_self_check is True
+    with routing.interview_scope(f"self-{purpose}", 2):
+        res_self = allowed.dispatch(purpose=purpose, messages=[{"role": "user", "content": "generic"}],
+                                    override=lambda chosen: ("ok", (1, 2, 3)))
+    assert res_self.model == "nvidia/gen-beta:free"
+
+    # Real checker dispatch without INTERVIEW_CHECK_MODELS or discovery opt-in fails closed.
+    missing_state = tmp_path / f"missing-{purpose}.json"
+    missing_check = routing.InterviewRouter(
+        replace(env[0].settings, content_models=("nvidia/gen-alpha:free",), check_models=(), state_path=missing_state),
+        catalog_source=_multi_vendor_catalog,
+        clock=clock,
+    )
+    with routing.interview_scope(f"missing-{purpose}", 2), pytest.raises(routing.RoutingError, match="INTERVIEW_CHECK_MODELS"):
+        missing_check.dispatch(purpose=purpose, messages=[{"role": "user", "content": "generic"}])
+    assert not missing_state.exists()
+
+
+def test_checker_candidates_share_eligibility_skip_warnings_reasoning_and_privacy_rules(env, monkeypatch, caplog, tmp_path):
+    _, clock = env
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    sent_bodies = []
+
+    def capture_post(request, **kwargs):
+        body = json.loads(request.data.decode())
+        sent_bodies.append(body)
+        return Response(json.dumps(completion_body(model=body["model"], content='{"ok": true}')).encode())
+
+    monkeypatch.setattr(routing.urllib.request, "urlopen", capture_post)
+    router = routing.InterviewRouter(
+        replace(env[0].settings,
+                content_models=("nvidia/gen-alpha:free",),
+                check_models=("baidu/missing:free", PAID, "fixture/not-structured",
+                              "baidu/check-alpha:free", "inclusionai/check-beta:free"),
+                state_path=tmp_path / "check-rules.json"),
+        catalog_source=_multi_vendor_catalog,
+        clock=clock,
+    )
+    # Content lane only: personal_text is forbidden on both checker purposes.
+    for purpose in sorted(routing.CHECK_PURPOSES):
+        with routing.interview_scope(f"priv-{purpose}", 2), pytest.raises(routing.PrivacyViolation):
+            router.dispatch(purpose=purpose, personal_text=True, messages=[{"role": "user", "content": "PRIVATE"}])
+    assert not (tmp_path / "check-rules.json").exists()
+
+    # Blind answer (expect_json=False) on mandatory-effort baidu model sends effort "low" + headroom, no response_format.
+    with caplog.at_level(logging.WARNING, logger=routing.LOGGER.name), routing.interview_scope("check-reasoning", 2):
+        res_blind = router.dispatch(purpose="bundle_blind_answer",
+                                    messages=[{"role": "user", "content": "generic"}],
+                                    max_tokens=380, expect_json=False)
+        clock.advance(5)
+        res_audit = router.dispatch(purpose="bundle_check_audit",
+                                    messages=[{"role": "user", "content": "generic"}],
+                                    max_tokens=400, expect_json=True)
+    assert res_blind.model == "baidu/check-alpha:free" and res_audit.model == "baidu/check-alpha:free"
+    assert sent_bodies[0]["reasoning"] == {"effort": "low", "exclude": True}
+    assert sent_bodies[0]["max_tokens"] == 380 + 1024 and "response_format" not in sent_bodies[0]
+    assert sent_bodies[1]["reasoning"] == {"effort": "low", "exclude": True}
+    assert sent_bodies[1]["max_tokens"] == 400 + 1024 and sent_bodies[1]["response_format"] == {"type": "json_object"}
+    warnings = [(r.requested_model, r.reason) for r in caplog.records
+                if r.name == routing.LOGGER.name and r.levelname == "WARNING"]
+    # Two dispatches -> three ineligible entries skipped each time with fixed reason codes.
+    assert warnings[:3] == [
+        ("baidu/missing:free", "absent_from_catalog"),
+        (PAID, "nonzero_or_missing_price"),
+        ("fixture/not-structured", "missing_structured_params"),
+    ]
+
+    # When zero checker candidates remain and allow_paid_content is False, fail closed with zero attempts.
+    none_state = tmp_path / "check-none.json"
+    none_left = routing.InterviewRouter(
+        replace(env[0].settings,
+                content_models=("nvidia/gen-alpha:free",),
+                check_models=("baidu/missing:free", "fixture/not-structured"),
+                state_path=none_state),
+        catalog_source=_multi_vendor_catalog,
+        clock=clock,
+    )
+    with routing.interview_scope("check-none", 2), pytest.raises(routing.RoutingError):
+        none_left.dispatch(purpose="bundle_blind_answer", messages=[{"role": "user", "content": "generic"}], expect_json=False)
+    assert not none_state.exists()

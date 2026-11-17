@@ -244,3 +244,54 @@ Against accepted `3f787c8`:
 | `modules/interview_llm_budget.py` | 3 | 2 |
 | `tests/test_ai_interview_routing.py` | 23 | 7 |
 | `tests/test_ai_interview_routing_step1c.py` | 220 | 0 |
+
+## Step 1g — Independent checker lane (offline)
+
+Accepted base: `fc1c15d` (Step 1f). Blind-answer and check-audit no longer reuse the generation model when routing is on.
+
+### What changed
+
+1. **`INTERVIEW_CHECK_MODELS`.** Owner-ordered checker IDs with the same eligibility, skip-with-warning, and content-lane reasoning rules as `INTERVIEW_CONTENT_MODELS`. Real checker dispatch requires this list (or explicit discovery opt-in). `bundle_blind_answer` and `bundle_check_audit` resolve through `check_candidates` / `resolve_check_model`; generation and regeneration stay on content models. Content lane only; personal text remains forbidden.
+
+2. **Same-vendor refusal.** Unless `INTERVIEW_ALLOW_SELF_CHECK=true` (default false), a checker whose vendor prefix (casefold before `/`) equals the active generator's is skipped with reason `same_vendor_as_generator`, or refused with `RoutingError` when no independent candidate remains. Generator identity comes from the batch/interview scope (`bundle_regeneration` or `bundle_generation`), else the configured content model.
+
+3. **Actual checker on the bundle.** `resolve_checker_provider_and_model` returns the check lane. Step E records `interview_llm.actual_model("bundle_blind_answer", …)` on auto-check attribution, including model-backoff failover to the next independent checker. Scope seeds the author model before the blind check so vendor filtering sees the writer.
+
+### Offline verification
+
+| Step 1g run | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---|
+| Focused routing | 241 | 0 | 0 | 7.18 s; exit 0 |
+| Full backend | 1,474 | 6 | 0 | 139.73 s; exit 0 |
+| Full frontend | 243 | 0 | 0 | 8.85 s; exit 0 |
+
+```text
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest tests/test_ai_interview_routing.py tests/test_ai_interview_routing_review.py tests/test_ai_interview_routing_step1c.py -q --tb=short --junitxml=/private/tmp/interviv-step1g/focused.xml
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest -q -ra --junitxml=/private/tmp/interviv-step1g/backend.xml
+cd frontend && npm test -- --run
+```
+
+Failing node IDs in all three runs: **none**. The six skips and 124 warnings have the same causes as Steps 1c–1f. Python compilation and `git diff --check` passed. Logs/XML: `/private/tmp/interviv-step1g/`.
+
+Protected real DB SHA256 before/after this slice:
+
+```text
+before  93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+after   93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+```
+
+Flag-off fixture SHA256 remains `c7bd7382554fd751b3c8b83986b18fa2ba73250629d4d5e33538e4ff1d6ead1f` (byte-identical).
+
+AST comparison against `fc1c15d` confirms zero pre-existing test function bodies changed in `test_ai_interview_routing.py`, `test_ai_interview_routing_review.py`, or `test_ai_interview_routing_step1c.py`. Three appended tests (`:592`, `:694`, `:767`) add four offline nodes covering independent routing + actual-model recording, same-vendor refuse/allow/missing-list, and shared eligibility/reasoning/privacy rules.
+
+### Step 1g diffstat
+
+Against accepted `fc1c15d`:
+
+| File (under `interViv_best/`) | Added | Removed |
+|---|---:|---:|
+| `.env.example` | 4 | 0 |
+| `docs/ai_interview_step1c_report.md` | 51 | 0 |
+| `modules/bundle_generator.py` | 8 | 1 |
+| `modules/interview_llm.py` | 110 | 14 |
+| `tests/test_ai_interview_routing_step1c.py` | 262 | 0 |

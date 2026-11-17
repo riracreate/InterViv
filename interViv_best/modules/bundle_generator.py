@@ -144,7 +144,7 @@ def resolve_checker_provider_and_model() -> tuple[str, str]:
     else ``question_bank._llm_provider()`` model.
     """
     if interview_llm.enabled():
-        return resolve_generation_provider_and_model()
+        return "openrouter", interview_llm.get_router().resolve_check_model(offline_override=_LLM_OVERRIDE is not None)
     gen_provider, gen_model = resolve_generation_provider_and_model()
     explicit_model = (os.getenv("BUNDLE_CHECK_MODEL") or "").strip()
     explicit_provider = (os.getenv("BUNDLE_CHECK_PROVIDER") or "").strip().lower()
@@ -1709,6 +1709,12 @@ def _run_step_e_for_version(
 ) -> dict[str, Any]:
     bundle_id = str(stored_version["bundle_id"])
     version = int(stored_version["version"])
+    if interview_llm.enabled():
+        scope = interview_llm._SCOPE.get()
+        if scope is not None:
+            author_model = (stored_version.get("attribution_json") or {}).get("generated_by_model") or gen_model
+            if author_model:
+                scope.models.setdefault("bundle_generation", str(author_model))
 
     blind_answer, eval_res, passed, hits = _evaluate_blind_answer(
         stored_version=stored_version,
@@ -2022,6 +2028,7 @@ def _run_step_e_for_version(
         role=role,
         allow_live=allow_live,
     )
+    check_model = interview_llm.actual_model("bundle_blind_answer", check_model)
     cov2 = eval2.get("coverage") or {}
     eval2_ver = str(eval2.get("evaluator_version") or "unknown")
     missed2 = [
