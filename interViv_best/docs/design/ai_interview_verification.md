@@ -1,5 +1,7 @@
 # AI interview — verification and landing record, 17 November 2026
 
+Historical Step 0 / `3384dd0` evidence. The later owner review and build-step-1 results are in [the routing report](../ai_interview_step1_report.md). Its revised estimates remove the separate content-plan call; the original worksheet below is preserved as history.
+
 Read with [the design](ai_interview_plan.md). Source references below are relative to `interViv_best/` on `fix/coverage-on-ws2` at implementation merge `dd6e81c`, unless a branch is named. The working checkout is `/Users/praneetsharma/Downloads/mega 2 copy/.worktrees/coverage-ws2`. The main checkout's ignored `.env` and databases were inspected without importing the application or exposing credentials. SQLite connections used `mode=ro&immutable=1` and `PRAGMA query_only=ON`.
 
 ## Step 0 — landed, no push

@@ -24,7 +24,7 @@ def llm_live_fetch_enabled() -> bool:
 # What can dial out once the gate is open. ``LLM_LIVE_CONSUMERS`` (a comma
 # list of these) narrows an open gate to some of them; unset keeps every
 # consumer, as before the variable existed.
-LLM_CONSUMERS = ("questions", "coach", "narration")
+LLM_CONSUMERS = ("questions", "coach", "narration", "interviewer")
 
 
 def llm_live_consumers() -> frozenset[str] | None:

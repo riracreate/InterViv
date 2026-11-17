@@ -1140,6 +1140,9 @@ def _validate_and_resolve_payload(
 
 
 def _safe_log_llm_usage(**kwargs: Any) -> None:
+    from modules import interview_llm
+    if interview_llm.enabled():
+        return  # The routed boundary logs each actual attempt once, including failures.
     try:
         from modules.llm_usage import log_llm_usage
 
@@ -1228,8 +1231,28 @@ def _dial_prompt_a(
     model: str,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     from modules import question_bank
+    from modules import interview_llm
 
     system_msg, user_msg = _build_prompt_a(role, jd_text, max_skills=max_skills)
+    if interview_llm.enabled():
+        t0 = time.monotonic()
+        def override(_model):
+            raw = _call_override(role, jd_text)
+            if isinstance(raw, list):
+                raw = {"role_title": role or "Target Role", "domain": "",
+                       "skills": [{"name": str(skill), "topics": [], "weight": 0.7} for skill in raw]}
+            return raw if isinstance(raw, str) else json.dumps(raw), (0, 0, 0)
+        result = interview_llm.get_router().dispatch(
+            purpose="role_skill_extraction",
+            messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}],
+            max_tokens=700, timeout_s=ROLE_SKILL_LLM_TIMEOUT_SECONDS,
+            override=override if _LLM_OVERRIDE is not None else None,
+        )
+        pt, ct, tt = result.usage
+        return _parse_json_object(result.text), {
+            "prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt,
+            "latency_ms": int((time.monotonic() - t0) * 1000), "error": None,
+        }
     url = question_bank._chat_completion_url(provider)
     ssl_ctx = _SSL_CTX if url.startswith("https://") else None
     body = json.dumps(
@@ -1258,6 +1281,9 @@ def _dial_prompt_a(
         if delay_s > 0:
             time.sleep(delay_s)
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        from modules.llm_outbound_gate import llm_consumer_enabled
+        if not llm_consumer_enabled("questions"):
+            break
         try:
             with urllib.request.urlopen(
                 req,
@@ -1270,6 +1296,8 @@ def _dial_prompt_a(
         except urllib.error.HTTPError as exc:
             if provider == "ollama" and exc.code == 404:
                 try:
+                    if not llm_consumer_enabled("questions"):
+                        break
                     gen_req = urllib.request.Request(
                         f"{question_bank._ollama_base_url()}/api/generate",
                         data=json.dumps(
@@ -1480,8 +1508,13 @@ def extract_role_skills(
             "model": cached.get("model"),
         }
 
-    # 2. Optional test override
-    if _LLM_OVERRIDE is not None:
+    # Offline overrides keep the legacy contract; an explicit consumer denial
+    # still applies. With routing on, use the same paid/guarded boundary as HTTP.
+    from modules import interview_llm
+    from modules.llm_outbound_gate import llm_consumer_enabled, llm_live_consumers
+    consumers = llm_live_consumers()
+    consumer_selected = consumers is None or "questions" in consumers
+    if _LLM_OVERRIDE is not None and not interview_llm.enabled() and consumer_selected:
         t0 = time.monotonic()
         try:
             raw_override = _call_override(clean_role, clean_jd)
@@ -1556,9 +1589,9 @@ def extract_role_skills(
 
     # 3. Outbound gate & provider check (Change I: no keyword/DSA fallback for uncached roles)
     from modules import question_bank
-    from modules.llm_outbound_gate import llm_live_fetch_enabled
-
-    if not llm_live_fetch_enabled():
+    if not llm_consumer_enabled("questions") and not (
+        interview_llm.enabled() and _LLM_OVERRIDE is not None and consumer_selected
+    ):
         return {
             "role": clean_role,
             "role_title": clean_role,
@@ -1572,7 +1605,13 @@ def extract_role_skills(
             "message": OFFLINE_UNCACHED_MESSAGE,
         }
 
-    provider, api_key, model = question_bank._llm_provider()
+    if interview_llm.enabled():
+        provider, api_key, model = (
+            "openrouter", os.getenv("OPENROUTER_API_KEY") or ("override" if _LLM_OVERRIDE else None),
+            interview_llm.RoutingSettings.from_env().conversation_model,
+        )
+    else:
+        provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:
         return {
             "role": clean_role,

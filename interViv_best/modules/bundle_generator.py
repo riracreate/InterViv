@@ -34,6 +34,7 @@ import certifi
 from modules import (
     bundle_store,
     concept_evaluator_v3,
+    interview_llm,
     llm_outbound_gate,
     llm_usage,
     question_bank,
@@ -120,6 +121,8 @@ def build_bundle_id_for_cell(skill: str, topic: str, difficulty: str) -> str:
 
 def resolve_generation_provider_and_model() -> tuple[str, str]:
     """Return the configured (provider, model) pair for bundle generation."""
+    if interview_llm.enabled():
+        return "openrouter", interview_llm.get_router().resolve_content_model(offline_override=_LLM_OVERRIDE is not None)
     provider, _api_key, model = question_bank._llm_provider()
     if not provider or not model:
         return (
@@ -140,6 +143,8 @@ def resolve_checker_provider_and_model() -> tuple[str, str]:
     Change E: ``BUNDLE_CHECK_MODEL`` env var, defaulting to ``OPENROUTER_MODEL``,
     else ``question_bank._llm_provider()`` model.
     """
+    if interview_llm.enabled():
+        return resolve_generation_provider_and_model()
     gen_provider, gen_model = resolve_generation_provider_and_model()
     explicit_model = (os.getenv("BUNDLE_CHECK_MODEL") or "").strip()
     explicit_provider = (os.getenv("BUNDLE_CHECK_PROVIDER") or "").strip().lower()
@@ -834,7 +839,30 @@ def _call_bundle_llm(
     pt = ct = tt = 0
     status = "ok"
     err_msg: str | None = None
+    routed = False
     try:
+        consumers = llm_outbound_gate.llm_live_consumers()
+        if consumers is not None and "questions" not in consumers:
+            raise BundleGenerationError("LLM consumer questions is disabled.")
+        if interview_llm.enabled():
+            routed = True
+            if allow_live is False and _LLM_OVERRIDE is None:
+                raise BundleGenerationError("Live bundle dispatch was explicitly disabled.")
+            def override(actual_model):
+                return _invoke_override(
+                    _LLM_OVERRIDE, purpose=purpose, provider="openrouter", model=actual_model,
+                    messages=messages, max_tokens=max_tokens, temperature=temperature,
+                )
+            result = interview_llm.get_router().dispatch(
+                purpose=purpose, messages=messages, max_tokens=max_tokens,
+                temperature=temperature, timeout_s=timeout_s,
+                override=override if _LLM_OVERRIDE is not None else None,
+                expect_json=expect_json,
+                bundle_id=bundle_id,
+            )
+            provider, model = "openrouter", result.model
+            pt, ct, tt = result.usage
+            return result.text
         if _LLM_OVERRIDE is not None:
             text, (pt, ct, tt) = _invoke_override(
                 _LLM_OVERRIDE,
@@ -894,19 +922,20 @@ def _call_bundle_llm(
     finally:
         latency_ms = max(0, int((time.monotonic() - t0) * 1000))
         try:
-            llm_usage.log_llm_usage(
-                provider=provider,
-                model=model,
-                purpose=purpose,
-                prompt_tokens=pt,
-                completion_tokens=ct,
-                total_tokens=tt,
-                latency_ms=latency_ms,
-                bundle_id=bundle_id,
-                role=role,
-                status=status,
-                error=err_msg,
-            )
+            if not routed:
+                llm_usage.log_llm_usage(
+                    provider=provider,
+                    model=model,
+                    purpose=purpose,
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    total_tokens=tt,
+                    latency_ms=latency_ms,
+                    bundle_id=bundle_id,
+                    role=role,
+                    status=status,
+                    error=err_msg,
+                )
         except Exception as log_exc:  # pragma: no cover - defensive logging
             log.warning("Failed to log llm_usage (%s): %s", purpose, log_exc)
 
@@ -1365,7 +1394,7 @@ def _generate_validated_doc(
                 canonical_skill=canonical_skill,
                 canonical_topic=canonical_topic,
                 difficulty=difficulty,
-                model=gen_model,
+                model=interview_llm.actual_model("bundle_generation", gen_model),
                 provider=gen_provider,
                 role=role,
             )
@@ -1691,6 +1720,7 @@ def _run_step_e_for_version(
         role=role,
         allow_live=allow_live,
     )
+    check_model = interview_llm.actual_model("bundle_blind_answer", check_model)
     coverage = eval_res.get("coverage") or {}
     evaluator_version = str(eval_res.get("evaluator_version") or "unknown")
     if passed:
@@ -1941,7 +1971,7 @@ def _run_step_e_for_version(
             canonical_skill=canonical_skill,
             canonical_topic=canonical_topic,
             difficulty=difficulty,
-            model=gen_model,
+            model=interview_llm.actual_model("bundle_regeneration", gen_model),
             provider=gen_provider,
             role=role,
             extra_attribution={"retried_from_version": version},

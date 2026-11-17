@@ -1,0 +1,1955 @@
+{
+  "bundle_override": "offline bundle completion",
+  "role_cached": {
+    "cache_hit": true,
+    "cache_key": "<hash>",
+    "domain": "Software",
+    "mode": "cached",
+    "model": "override",
+    "offline_uncached": false,
+    "role": "Backend engineer",
+    "role_title": "Backend engineer",
+    "skill_specs": [
+      {
+        "match_type": "exact",
+        "name": "Python",
+        "raw_name": "Python",
+        "topics": [
+          "Concurrency",
+          "Python Fundamentals"
+        ],
+        "weight": 0.8
+      }
+    ],
+    "skills": [
+      "Python"
+    ],
+    "source": "override"
+  },
+  "role_override": {
+    "cache_hit": false,
+    "cache_key": "<hash>",
+    "domain": "Software",
+    "mode": "llm",
+    "model": "override",
+    "offline_uncached": false,
+    "role": "Backend engineer",
+    "role_title": "Backend engineer",
+    "skill_specs": [
+      {
+        "match_type": "exact",
+        "name": "Python",
+        "raw_name": "Python",
+        "topics": [
+          "Concurrency",
+          "Python Fundamentals"
+        ],
+        "weight": 0.8
+      }
+    ],
+    "skills": [
+      "Python"
+    ],
+    "source": "override"
+  },
+  "source_health": {
+    "configured_mode": "csv",
+    "effective_mode": "csv",
+    "llm_live_consumers": "all",
+    "llm_live_fetch": false,
+    "operator_note": "Question generation uses the CSV/template bank; LLM is not dialed.",
+    "outbound_allowed": false
+  },
+  "steps": [
+    [
+      "start",
+      200,
+      {
+        "block_category": "interview",
+        "block_id": "<uuid>",
+        "block_plan": [
+          {
+            "allow_optional_follow_ups": false,
+            "category": "interview",
+            "count": 1,
+            "difficulty": null,
+            "duration_minutes": null,
+            "id": "<uuid>",
+            "language": null,
+            "max_follow_ups": null,
+            "negative_marking": 0.0,
+            "position": 1,
+            "problem_ids": [],
+            "question_ids": [],
+            "review_policy": "none",
+            "round_type": "technical_short_answer",
+            "skills": [
+              "Python"
+            ],
+            "stage": null,
+            "topic": null
+          }
+        ],
+        "block_position": 1,
+        "candidate_id": "<uuid>",
+        "config_json": {},
+        "current_skill": "Python",
+        "difficulty": "medium",
+        "elo": 1200.0,
+        "question": "Explain how Python asyncio event loop schedules coroutines.",
+        "question_context": {
+          "adaptive_selected": false,
+          "bundle_id": "test.py.reviewed.<id>",
+          "company": "",
+          "content_hash": "<hash>",
+          "difficulty": "medium",
+          "question": "Explain how Python asyncio event loop schedules coroutines.",
+          "question_type": "conceptual",
+          "role": "",
+          "skill": "Python",
+          "source": "reviewed_bundle",
+          "sub_domain": "general",
+          "target_concepts": [],
+          "topic": "Concurrency",
+          "version": 1
+        },
+        "round": 1,
+        "round_plan": [
+          "technical_short_answer"
+        ],
+        "round_type": "technical_short_answer",
+        "rounds_per_skill": 1,
+        "session_id": "<uuid>",
+        "skills": [
+          "Python"
+        ],
+        "total_rounds": 1,
+        "user_id": "user-<id>"
+      }
+    ],
+    [
+      "answer",
+      200,
+      {
+        "adaptive_target": null,
+        "artifact_json": null,
+        "assessment_eligibility": "eligible",
+        "assistance_kinds": [],
+        "assisted": false,
+        "concepts": {
+          "concept_index_status": "explicit_bundle",
+          "concept_match_trace": [
+            {
+              "concept": "await_yield",
+              "matched": false,
+              "method": "uncertain",
+              "model_revision": "<hash>",
+              "order": 0,
+              "similarity": null,
+              "source": "bundle_v2",
+              "status": "uncertain",
+              "status_reason": "bundle_uncertain",
+              "threshold": null
+            },
+            {
+              "concept": "coroutine",
+              "matched": true,
+              "method": "exact",
+              "model_revision": "<hash>",
+              "order": 3,
+              "similarity": null,
+              "source": "ideal_keywords",
+              "status": "uncertain",
+              "status_reason": "legacy_hit_without_token_evidence",
+              "threshold": 0.72
+            },
+            {
+              "concept": "cooperative",
+              "matched": true,
+              "method": "exact",
+              "model_revision": "<hash>",
+              "order": 4,
+              "similarity": null,
+              "source": "ideal_keywords",
+              "status": "uncertain",
+              "status_reason": "legacy_hit_without_token_evidence",
+              "threshold": 0.72
+            }
+          ],
+          "concept_source": "bundle_v2",
+          "concept_status_cutoffs": {
+            "calibration_status": "in_sample_manual_review",
+            "match_at_least": 0.72,
+            "miss_below": 0.3
+          },
+          "concept_status_version": "concept_status_v1_in_sample",
+          "concept_statuses": {
+            "matched": [],
+            "missed": [],
+            "uncertain": [
+              "await_yield",
+              "coroutine",
+              "cooperative"
+            ]
+          },
+          "covered": [
+            "OOP",
+            "await",
+            "coroutine",
+            "event_loop",
+            "thread",
+            "yield"
+          ],
+          "matched_concepts": [
+            "coroutine",
+            "cooperative"
+          ],
+          "missed_concepts": [
+            "await_yield"
+          ],
+          "missing": [
+            "GIL",
+            "generator",
+            "asyncio"
+          ],
+          "question_concepts_excluded": [
+            "asyncio",
+            "event loop"
+          ]
+        },
+        "current_skill": "Python",
+        "difficulty_change": "same",
+        "eligibility_exclusion_reasons": [],
+        "eligibility_policy_version": "assistance_v1",
+        "elo_after": 1218.9,
+        "evaluation_boundary": null,
+        "evaluation_mode": null,
+        "evidence_kind": "measured",
+        "feedback": {
+          "content": [
+            "Your response was very brief. Technical answers usually require more elaboration.",
+            "Your answer lacked specific technical keywords associated with this topic."
+          ],
+          "next_step": "Try incorporating precise industry terminology.",
+          "strengths": [
+            "High Relevance"
+          ],
+          "weakness": []
+        },
+        "final_score": 74.17,
+        "follow_up_scheduled": false,
+        "guard": {
+          "applied": false,
+          "guards_fired": [],
+          "raw_reason": null,
+          "reason": null,
+          "score_cap": null,
+          "score_caps": [],
+          "softened": false
+        },
+        "guard_applied": null,
+        "is_follow_up": false,
+        "kg_score": 0.0,
+        "narration_status": "skipped",
+        "ner_entities": [],
+        "next_block_category": null,
+        "next_block_id": null,
+        "next_block_position": null,
+        "next_config_json": null,
+        "next_difficulty": "medium",
+        "next_expires_at": null,
+        "next_question": null,
+        "next_question_context": null,
+        "next_round": null,
+        "next_round_status": null,
+        "next_round_type": null,
+        "next_skill": null,
+        "nlp_score": 53.55,
+        "progression_blocked": false,
+        "progression_blocked_reason": null,
+        "rubric": {
+          "clarity": 6.04,
+          "correctness": 7.71,
+          "coverage": 4.09,
+          "depth": 2.68,
+          "guard_capped": false,
+          "scale": "0-10",
+          "version": "rubric_v1",
+          "weighted_score": 5.46,
+          "weights": {
+            "clarity": 0.2,
+            "correctness": 0.35,
+            "coverage": 0.25,
+            "depth": 0.2
+          }
+        },
+        "score_explanation": {
+          "guard_reason": null,
+          "semantic_available": true,
+          "strengths": [
+            "strong semantic match",
+            "covered event loop, coroutine"
+          ],
+          "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+          "weaknesses": [
+            "missed asyncio"
+          ]
+        },
+        "scoring_breakdown": {
+          "accuracy_score": 0.4,
+          "advanced_bonus": 0.0,
+          "clarity_score": 1.0,
+          "classifier_component": 0.75,
+          "classifier_confidence": 0.798,
+          "classifier_label": "Good",
+          "classifier_model_type": "LogisticRegression",
+          "classifier_probabilities": {
+            "Average": 0.2019,
+            "Good": 0.798,
+            "Poor": 0.0001
+          },
+          "client_word_count_ignored": 19,
+          "completeness_length_ratio": null,
+          "completeness_multiplier": null,
+          "concept_coverage": 0.1393,
+          "concepts": {
+            "concept_index_status": "explicit_bundle",
+            "concept_match_trace": [
+              {
+                "concept": "await_yield",
+                "matched": false,
+                "method": "uncertain",
+                "model_revision": "<hash>",
+                "order": 0,
+                "similarity": null,
+                "source": "bundle_v2",
+                "status": "uncertain",
+                "status_reason": "bundle_uncertain",
+                "threshold": null
+              },
+              {
+                "concept": "coroutine",
+                "matched": true,
+                "method": "exact",
+                "model_revision": "<hash>",
+                "order": 3,
+                "similarity": null,
+                "source": "ideal_keywords",
+                "status": "uncertain",
+                "status_reason": "legacy_hit_without_token_evidence",
+                "threshold": 0.72
+              },
+              {
+                "concept": "cooperative",
+                "matched": true,
+                "method": "exact",
+                "model_revision": "<hash>",
+                "order": 4,
+                "similarity": null,
+                "source": "ideal_keywords",
+                "status": "uncertain",
+                "status_reason": "legacy_hit_without_token_evidence",
+                "threshold": 0.72
+              }
+            ],
+            "concept_source": "bundle_v2",
+            "concept_status_cutoffs": {
+              "calibration_status": "in_sample_manual_review",
+              "match_at_least": 0.72,
+              "miss_below": 0.3
+            },
+            "concept_status_version": "concept_status_v1_in_sample",
+            "concept_statuses": {
+              "matched": [],
+              "missed": [],
+              "uncertain": [
+                "await_yield",
+                "coroutine",
+                "cooperative"
+              ]
+            },
+            "covered": [
+              "OOP",
+              "await",
+              "coroutine",
+              "event_loop",
+              "thread",
+              "yield"
+            ],
+            "matched_concepts": [
+              "coroutine",
+              "cooperative"
+            ],
+            "missed_concepts": [
+              "await_yield"
+            ],
+            "missing": [
+              "GIL",
+              "generator",
+              "asyncio"
+            ],
+            "question_concepts_excluded": [
+              "asyncio",
+              "event loop"
+            ]
+          },
+          "covered_concepts": [
+            "OOP",
+            "await",
+            "coroutine",
+            "event_loop",
+            "thread",
+            "yield"
+          ],
+          "depth_score": 0.3833,
+          "difficulty_bonus": 0.05,
+          "feedback": {
+            "content": [
+              "Your response was very brief. Technical answers usually require more elaboration.",
+              "Your answer lacked specific technical keywords associated with this topic."
+            ],
+            "next_step": "Try incorporating precise industry terminology.",
+            "strengths": [
+              "High Relevance"
+            ],
+            "weakness": []
+          },
+          "final_score": 74.17,
+          "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+          "formula_breakdown": {
+            "base_score": 74.17,
+            "brevity_penalty": 0.0,
+            "classifier_term": 18.75,
+            "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+            "keyword_term": 16.0,
+            "kg_bonus": 0.0,
+            "ner_bonus": 0.0,
+            "scoring_schema_version": "rubric_v1",
+            "semantic_term": 35.12,
+            "tfidf_term": 4.3
+          },
+          "guard": {
+            "applied": false,
+            "guards_fired": [],
+            "raw_reason": null,
+            "reason": null,
+            "score_cap": null,
+            "score_caps": [],
+            "softened": false
+          },
+          "guard_applied": null,
+          "guard_caps": [],
+          "guard_reason": null,
+          "guard_softened": false,
+          "guards_fired": [],
+          "keyword_coverage": 0.8,
+          "keyword_coverage_details": {
+            "matches": [
+              {
+                "alias": false,
+                "covered": false,
+                "exact": false,
+                "keyword": "asyncio",
+                "method": "not_matched",
+                "semantic_similarity": 0.2998,
+                "similarity": 0.2998,
+                "token_overlap": 0.0
+              },
+              {
+                "alias": false,
+                "covered": true,
+                "exact": true,
+                "keyword": "event loop",
+                "method": "exact",
+                "semantic_similarity": null,
+                "similarity": null,
+                "token_overlap": 1.0
+              },
+              {
+                "alias": false,
+                "covered": true,
+                "exact": true,
+                "keyword": "coroutine",
+                "method": "exact",
+                "semantic_similarity": null,
+                "similarity": null,
+                "token_overlap": 0.0
+              },
+              {
+                "alias": false,
+                "covered": true,
+                "exact": true,
+                "keyword": "await",
+                "method": "exact",
+                "semantic_similarity": null,
+                "similarity": null,
+                "token_overlap": 1.0
+              },
+              {
+                "alias": false,
+                "covered": true,
+                "exact": true,
+                "keyword": "cooperative",
+                "method": "exact",
+                "semantic_similarity": null,
+                "similarity": null,
+                "token_overlap": 0.0
+              }
+            ],
+            "score": 0.8,
+            "semantic_threshold": 0.72
+          },
+          "kg_label": "Minimal",
+          "kg_payload": {
+            "covered_edges": [],
+            "found_nodes": [
+              "OOP",
+              "await",
+              "coroutine",
+              "event_loop",
+              "thread",
+              "yield"
+            ],
+            "kg_label": "Minimal",
+            "missing_key": [
+              "GIL",
+              "generator",
+              "asyncio"
+            ],
+            "score": 0.0
+          },
+          "kg_score": 0.0,
+          "layer1_score": 54.71,
+          "layer2_score": 43.63,
+          "layer3_score": 50.0,
+          "length_ratio_multiplier_enabled": false,
+          "missing_concepts": [
+            "GIL",
+            "generator",
+            "asyncio"
+          ],
+          "ner_score": 0.0,
+          "nlp_score": 53.55,
+          "rubric": {
+            "clarity": 6.04,
+            "correctness": 7.71,
+            "coverage": 4.09,
+            "depth": 2.68,
+            "guard_capped": false,
+            "scale": "0-10",
+            "version": "rubric_v1",
+            "weighted_score": 5.46,
+            "weights": {
+              "clarity": 0.2,
+              "correctness": 0.35,
+              "coverage": 0.25,
+              "depth": 0.2
+            }
+          },
+          "score_explanation": {
+            "guard_reason": null,
+            "semantic_available": true,
+            "strengths": [
+              "strong semantic match",
+              "covered event loop, coroutine"
+            ],
+            "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+            "weaknesses": [
+              "missed asyncio"
+            ]
+          },
+          "scoring_schema_version": "rubric_v1",
+          "semantic": 0.7804,
+          "semantic_component_source": "semantic",
+          "semantic_fallback_reason": null,
+          "semantic_score": 0.7804,
+          "semantic_scoring_available": true,
+          "server_word_count": 19,
+          "structure_score": 0.12,
+          "svm_label": "Good",
+          "tfidf": 0.4297,
+          "tfidf_score": 0.4297
+        },
+        "scoring_mode": "full",
+        "scoring_mode_label": "full",
+        "scoring_schema_version": "rubric_v1",
+        "semantic_fallback_reason": null,
+        "semantic_scoring_available": true,
+        "session_complete": true,
+        "session_status": "completed",
+        "svm_label": "Good",
+        "total_rounds": 1
+      }
+    ],
+    [
+      "session",
+      200,
+      {
+        "active_round": {
+          "answer_text": "Coroutines yield control at await points so the single-threaded event loop can schedule non-blocking I/O cooperatively.",
+          "artifact_json": {},
+          "assessment_eligibility": "eligible",
+          "assistance_kinds": [],
+          "assisted": false,
+          "block_category": "interview",
+          "block_id": "<uuid>",
+          "block_index": 1,
+          "block_position": 1,
+          "block_total": 1,
+          "config_json": {
+            "attempt_policy": "single_submission_final",
+            "review_policy": "none"
+          },
+          "covered_concepts": [
+            "OOP",
+            "await",
+            "coroutine",
+            "event_loop",
+            "thread",
+            "yield"
+          ],
+          "difficulty": "medium",
+          "difficulty_change": "same",
+          "eligibility_exclusion_reasons": [],
+          "eligibility_exposure_ids": [],
+          "eligibility_policy_version": "assistance_v1",
+          "elo_after": 1218.9,
+          "elo_before": 1200.0,
+          "engagement_confidence": null,
+          "engagement_delta": null,
+          "engagement_label": null,
+          "evaluation_mode": null,
+          "evidence_kind": "measured",
+          "feedback": {
+            "content": [
+              "Your response was very brief. Technical answers usually require more elaboration.",
+              "Your answer lacked specific technical keywords associated with this topic."
+            ],
+            "next_step": "Try incorporating precise industry terminology.",
+            "strengths": [
+              "High Relevance"
+            ],
+            "weakness": []
+          },
+          "final_score": 74.17,
+          "follow_up_identity": null,
+          "follow_up_parent_round": null,
+          "guard_applied": null,
+          "is_follow_up": false,
+          "kg_label": "Minimal",
+          "kg_score": 0.0,
+          "missing_concepts": [
+            "GIL",
+            "generator",
+            "asyncio"
+          ],
+          "ner_entities": [],
+          "nlp_score": 53.55,
+          "question": "Explain how Python asyncio event loop schedules coroutines.",
+          "question_context": {
+            "adaptive_selected": false,
+            "bundle_id": "test.py.reviewed.<id>",
+            "company": "",
+            "content_hash": "<hash>",
+            "difficulty": "medium",
+            "question": "Explain how Python asyncio event loop schedules coroutines.",
+            "question_type": "conceptual",
+            "role": "",
+            "skill": "Python",
+            "source": "reviewed_bundle",
+            "sub_domain": "general",
+            "target_concepts": [],
+            "topic": "Concurrency",
+            "version": 1
+          },
+          "round": 1,
+          "round_type": "technical_short_answer",
+          "score_explanation": {
+            "guard_reason": null,
+            "semantic_available": true,
+            "strengths": [
+              "strong semantic match",
+              "covered event loop, coroutine"
+            ],
+            "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+            "weaknesses": [
+              "missed asyncio"
+            ]
+          },
+          "scoring_breakdown": {
+            "accuracy_score": 0.4,
+            "advanced_bonus": 0.0,
+            "assessment_eligibility": {
+              "decision": "eligible",
+              "exclusion_reasons": [],
+              "exposure_ids": [],
+              "legacy": false,
+              "policy_version": "assistance_v1"
+            },
+            "assessment_eligibility_decision": "eligible",
+            "clarity_score": 1.0,
+            "classifier_component": 0.75,
+            "classifier_confidence": 0.798,
+            "classifier_label": "Good",
+            "classifier_model_type": "LogisticRegression",
+            "classifier_probabilities": {
+              "Average": 0.2019,
+              "Good": 0.798,
+              "Poor": 0.0001
+            },
+            "client_word_count_ignored": 19,
+            "completeness_length_ratio": null,
+            "completeness_multiplier": null,
+            "concept_coverage": 0.1393,
+            "concepts": {
+              "concept_index_status": "explicit_bundle",
+              "concept_match_trace": [
+                {
+                  "concept": "await_yield",
+                  "matched": false,
+                  "method": "uncertain",
+                  "model_revision": "<hash>",
+                  "order": 0,
+                  "similarity": null,
+                  "source": "bundle_v2",
+                  "status": "uncertain",
+                  "status_reason": "bundle_uncertain",
+                  "threshold": null
+                },
+                {
+                  "concept": "coroutine",
+                  "matched": true,
+                  "method": "exact",
+                  "model_revision": "<hash>",
+                  "order": 3,
+                  "similarity": null,
+                  "source": "ideal_keywords",
+                  "status": "uncertain",
+                  "status_reason": "legacy_hit_without_token_evidence",
+                  "threshold": 0.72
+                },
+                {
+                  "concept": "cooperative",
+                  "matched": true,
+                  "method": "exact",
+                  "model_revision": "<hash>",
+                  "order": 4,
+                  "similarity": null,
+                  "source": "ideal_keywords",
+                  "status": "uncertain",
+                  "status_reason": "legacy_hit_without_token_evidence",
+                  "threshold": 0.72
+                }
+              ],
+              "concept_source": "bundle_v2",
+              "concept_status_cutoffs": {
+                "calibration_status": "in_sample_manual_review",
+                "match_at_least": 0.72,
+                "miss_below": 0.3
+              },
+              "concept_status_version": "concept_status_v1_in_sample",
+              "concept_statuses": {
+                "matched": [],
+                "missed": [],
+                "uncertain": [
+                  "await_yield",
+                  "coroutine",
+                  "cooperative"
+                ]
+              },
+              "covered": [
+                "OOP",
+                "await",
+                "coroutine",
+                "event_loop",
+                "thread",
+                "yield"
+              ],
+              "matched_concepts": [
+                "coroutine",
+                "cooperative"
+              ],
+              "missed_concepts": [
+                "await_yield"
+              ],
+              "missing": [
+                "GIL",
+                "generator",
+                "asyncio"
+              ],
+              "question_concepts_excluded": [
+                "asyncio",
+                "event loop"
+              ]
+            },
+            "covered_concepts": [
+              "OOP",
+              "await",
+              "coroutine",
+              "event_loop",
+              "thread",
+              "yield"
+            ],
+            "depth_score": 0.3833,
+            "difficulty_bonus": 0.05,
+            "eligibility_exclusion_reasons": [],
+            "eligibility_exposure_ids": [],
+            "eligibility_policy_version": "assistance_v1",
+            "evidence_kind": "measured",
+            "feedback": {
+              "content": [
+                "Your response was very brief. Technical answers usually require more elaboration.",
+                "Your answer lacked specific technical keywords associated with this topic."
+              ],
+              "next_step": "Try incorporating precise industry terminology.",
+              "strengths": [
+                "High Relevance"
+              ],
+              "weakness": []
+            },
+            "final_score": 74.17,
+            "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+            "formula_breakdown": {
+              "base_score": 74.17,
+              "brevity_penalty": 0.0,
+              "classifier_term": 18.75,
+              "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+              "keyword_term": 16.0,
+              "kg_bonus": 0.0,
+              "ner_bonus": 0.0,
+              "scoring_schema_version": "rubric_v1",
+              "semantic_term": 35.12,
+              "tfidf_term": 4.3
+            },
+            "guard": {
+              "applied": false,
+              "guards_fired": [],
+              "raw_reason": null,
+              "reason": null,
+              "score_cap": null,
+              "score_caps": [],
+              "softened": false
+            },
+            "guard_applied": null,
+            "guard_caps": [],
+            "guard_reason": null,
+            "guard_softened": false,
+            "guards_fired": [],
+            "keyword_coverage": 0.8,
+            "keyword_coverage_details": {
+              "matches": [
+                {
+                  "alias": false,
+                  "covered": false,
+                  "exact": false,
+                  "keyword": "asyncio",
+                  "method": "not_matched",
+                  "semantic_similarity": 0.2998,
+                  "similarity": 0.2998,
+                  "token_overlap": 0.0
+                },
+                {
+                  "alias": false,
+                  "covered": true,
+                  "exact": true,
+                  "keyword": "event loop",
+                  "method": "exact",
+                  "semantic_similarity": null,
+                  "similarity": null,
+                  "token_overlap": 1.0
+                },
+                {
+                  "alias": false,
+                  "covered": true,
+                  "exact": true,
+                  "keyword": "coroutine",
+                  "method": "exact",
+                  "semantic_similarity": null,
+                  "similarity": null,
+                  "token_overlap": 0.0
+                },
+                {
+                  "alias": false,
+                  "covered": true,
+                  "exact": true,
+                  "keyword": "await",
+                  "method": "exact",
+                  "semantic_similarity": null,
+                  "similarity": null,
+                  "token_overlap": 1.0
+                },
+                {
+                  "alias": false,
+                  "covered": true,
+                  "exact": true,
+                  "keyword": "cooperative",
+                  "method": "exact",
+                  "semantic_similarity": null,
+                  "similarity": null,
+                  "token_overlap": 0.0
+                }
+              ],
+              "score": 0.8,
+              "semantic_threshold": 0.72
+            },
+            "kg_label": "Minimal",
+            "kg_payload": {
+              "covered_edges": [],
+              "found_nodes": [
+                "OOP",
+                "await",
+                "coroutine",
+                "event_loop",
+                "thread",
+                "yield"
+              ],
+              "kg_label": "Minimal",
+              "missing_key": [
+                "GIL",
+                "generator",
+                "asyncio"
+              ],
+              "score": 0.0
+            },
+            "kg_score": 0.0,
+            "layer1_score": 54.71,
+            "layer2_score": 43.63,
+            "layer3_score": 50.0,
+            "length_ratio_multiplier_enabled": false,
+            "missing_concepts": [
+              "GIL",
+              "generator",
+              "asyncio"
+            ],
+            "ner_score": 0.0,
+            "nlp_score": 53.55,
+            "rubric": {
+              "clarity": 6.04,
+              "correctness": 7.71,
+              "coverage": 4.09,
+              "depth": 2.68,
+              "guard_capped": false,
+              "scale": "0-10",
+              "version": "rubric_v1",
+              "weighted_score": 5.46,
+              "weights": {
+                "clarity": 0.2,
+                "correctness": 0.35,
+                "coverage": 0.25,
+                "depth": 0.2
+              }
+            },
+            "score_explanation": {
+              "guard_reason": null,
+              "semantic_available": true,
+              "strengths": [
+                "strong semantic match",
+                "covered event loop, coroutine"
+              ],
+              "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+              "weaknesses": [
+                "missed asyncio"
+              ]
+            },
+            "scorer_version": "v3",
+            "scoring_mode": "full",
+            "scoring_schema_version": "rubric_v1",
+            "semantic": 0.7804,
+            "semantic_component_source": "semantic",
+            "semantic_fallback_reason": null,
+            "semantic_score": 0.7804,
+            "semantic_scoring_available": true,
+            "server_word_count": 19,
+            "structure_score": 0.12,
+            "svm_label": "Good",
+            "tfidf": 0.4297,
+            "tfidf_score": 0.4297
+          },
+          "scoring_mode": "full",
+          "skill": "Python",
+          "status": "submitted",
+          "svm_label": "Good"
+        },
+        "block_plan": [
+          {
+            "allow_optional_follow_ups": false,
+            "category": "interview",
+            "count": 1,
+            "difficulty": null,
+            "duration_minutes": null,
+            "id": "<uuid>",
+            "language": null,
+            "max_follow_ups": null,
+            "negative_marking": 0.0,
+            "position": 1,
+            "problem_ids": [],
+            "question_ids": [],
+            "review_policy": "none",
+            "round_type": "technical_short_answer",
+            "skills": [
+              "Python"
+            ],
+            "stage": null,
+            "topic": null
+          }
+        ],
+        "candidate_id": "<uuid>",
+        "current_difficulty": "medium",
+        "current_skill": "Python",
+        "last_round": 1,
+        "pending_round": null,
+        "progression_blocked_reason": null,
+        "review_round": 1,
+        "round_history": [
+          {
+            "answer_text": "Coroutines yield control at await points so the single-threaded event loop can schedule non-blocking I/O cooperatively.",
+            "artifact_json": {},
+            "assessment_eligibility": "eligible",
+            "assistance_kinds": [],
+            "assisted": false,
+            "block_category": "interview",
+            "block_id": "<uuid>",
+            "block_index": 1,
+            "block_position": 1,
+            "block_total": 1,
+            "config_json": {
+              "attempt_policy": "single_submission_final",
+              "review_policy": "none"
+            },
+            "covered_concepts": [
+              "OOP",
+              "await",
+              "coroutine",
+              "event_loop",
+              "thread",
+              "yield"
+            ],
+            "difficulty": "medium",
+            "difficulty_change": "same",
+            "eligibility_exclusion_reasons": [],
+            "eligibility_exposure_ids": [],
+            "eligibility_policy_version": "assistance_v1",
+            "elo_after": 1218.9,
+            "elo_before": 1200.0,
+            "engagement_confidence": null,
+            "engagement_delta": null,
+            "engagement_label": null,
+            "evaluation_mode": null,
+            "evidence_kind": "measured",
+            "feedback": {
+              "content": [
+                "Your response was very brief. Technical answers usually require more elaboration.",
+                "Your answer lacked specific technical keywords associated with this topic."
+              ],
+              "next_step": "Try incorporating precise industry terminology.",
+              "strengths": [
+                "High Relevance"
+              ],
+              "weakness": []
+            },
+            "final_score": 74.17,
+            "follow_up_identity": null,
+            "follow_up_parent_round": null,
+            "guard_applied": null,
+            "is_follow_up": false,
+            "kg_label": "Minimal",
+            "kg_score": 0.0,
+            "missing_concepts": [
+              "GIL",
+              "generator",
+              "asyncio"
+            ],
+            "ner_entities": [],
+            "nlp_score": 53.55,
+            "question": "Explain how Python asyncio event loop schedules coroutines.",
+            "question_context": {
+              "adaptive_selected": false,
+              "bundle_id": "test.py.reviewed.<id>",
+              "company": "",
+              "content_hash": "<hash>",
+              "difficulty": "medium",
+              "question": "Explain how Python asyncio event loop schedules coroutines.",
+              "question_type": "conceptual",
+              "role": "",
+              "skill": "Python",
+              "source": "reviewed_bundle",
+              "sub_domain": "general",
+              "target_concepts": [],
+              "topic": "Concurrency",
+              "version": 1
+            },
+            "round": 1,
+            "round_type": "technical_short_answer",
+            "score_explanation": {
+              "guard_reason": null,
+              "semantic_available": true,
+              "strengths": [
+                "strong semantic match",
+                "covered event loop, coroutine"
+              ],
+              "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+              "weaknesses": [
+                "missed asyncio"
+              ]
+            },
+            "scoring_breakdown": {
+              "accuracy_score": 0.4,
+              "advanced_bonus": 0.0,
+              "assessment_eligibility": {
+                "decision": "eligible",
+                "exclusion_reasons": [],
+                "exposure_ids": [],
+                "legacy": false,
+                "policy_version": "assistance_v1"
+              },
+              "assessment_eligibility_decision": "eligible",
+              "clarity_score": 1.0,
+              "classifier_component": 0.75,
+              "classifier_confidence": 0.798,
+              "classifier_label": "Good",
+              "classifier_model_type": "LogisticRegression",
+              "classifier_probabilities": {
+                "Average": 0.2019,
+                "Good": 0.798,
+                "Poor": 0.0001
+              },
+              "client_word_count_ignored": 19,
+              "completeness_length_ratio": null,
+              "completeness_multiplier": null,
+              "concept_coverage": 0.1393,
+              "concepts": {
+                "concept_index_status": "explicit_bundle",
+                "concept_match_trace": [
+                  {
+                    "concept": "await_yield",
+                    "matched": false,
+                    "method": "uncertain",
+                    "model_revision": "<hash>",
+                    "order": 0,
+                    "similarity": null,
+                    "source": "bundle_v2",
+                    "status": "uncertain",
+                    "status_reason": "bundle_uncertain",
+                    "threshold": null
+                  },
+                  {
+                    "concept": "coroutine",
+                    "matched": true,
+                    "method": "exact",
+                    "model_revision": "<hash>",
+                    "order": 3,
+                    "similarity": null,
+                    "source": "ideal_keywords",
+                    "status": "uncertain",
+                    "status_reason": "legacy_hit_without_token_evidence",
+                    "threshold": 0.72
+                  },
+                  {
+                    "concept": "cooperative",
+                    "matched": true,
+                    "method": "exact",
+                    "model_revision": "<hash>",
+                    "order": 4,
+                    "similarity": null,
+                    "source": "ideal_keywords",
+                    "status": "uncertain",
+                    "status_reason": "legacy_hit_without_token_evidence",
+                    "threshold": 0.72
+                  }
+                ],
+                "concept_source": "bundle_v2",
+                "concept_status_cutoffs": {
+                  "calibration_status": "in_sample_manual_review",
+                  "match_at_least": 0.72,
+                  "miss_below": 0.3
+                },
+                "concept_status_version": "concept_status_v1_in_sample",
+                "concept_statuses": {
+                  "matched": [],
+                  "missed": [],
+                  "uncertain": [
+                    "await_yield",
+                    "coroutine",
+                    "cooperative"
+                  ]
+                },
+                "covered": [
+                  "OOP",
+                  "await",
+                  "coroutine",
+                  "event_loop",
+                  "thread",
+                  "yield"
+                ],
+                "matched_concepts": [
+                  "coroutine",
+                  "cooperative"
+                ],
+                "missed_concepts": [
+                  "await_yield"
+                ],
+                "missing": [
+                  "GIL",
+                  "generator",
+                  "asyncio"
+                ],
+                "question_concepts_excluded": [
+                  "asyncio",
+                  "event loop"
+                ]
+              },
+              "covered_concepts": [
+                "OOP",
+                "await",
+                "coroutine",
+                "event_loop",
+                "thread",
+                "yield"
+              ],
+              "depth_score": 0.3833,
+              "difficulty_bonus": 0.05,
+              "eligibility_exclusion_reasons": [],
+              "eligibility_exposure_ids": [],
+              "eligibility_policy_version": "assistance_v1",
+              "evidence_kind": "measured",
+              "feedback": {
+                "content": [
+                  "Your response was very brief. Technical answers usually require more elaboration.",
+                  "Your answer lacked specific technical keywords associated with this topic."
+                ],
+                "next_step": "Try incorporating precise industry terminology.",
+                "strengths": [
+                  "High Relevance"
+                ],
+                "weakness": []
+              },
+              "final_score": 74.17,
+              "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+              "formula_breakdown": {
+                "base_score": 74.17,
+                "brevity_penalty": 0.0,
+                "classifier_term": 18.75,
+                "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+                "keyword_term": 16.0,
+                "kg_bonus": 0.0,
+                "ner_bonus": 0.0,
+                "scoring_schema_version": "rubric_v1",
+                "semantic_term": 35.12,
+                "tfidf_term": 4.3
+              },
+              "guard": {
+                "applied": false,
+                "guards_fired": [],
+                "raw_reason": null,
+                "reason": null,
+                "score_cap": null,
+                "score_caps": [],
+                "softened": false
+              },
+              "guard_applied": null,
+              "guard_caps": [],
+              "guard_reason": null,
+              "guard_softened": false,
+              "guards_fired": [],
+              "keyword_coverage": 0.8,
+              "keyword_coverage_details": {
+                "matches": [
+                  {
+                    "alias": false,
+                    "covered": false,
+                    "exact": false,
+                    "keyword": "asyncio",
+                    "method": "not_matched",
+                    "semantic_similarity": 0.2998,
+                    "similarity": 0.2998,
+                    "token_overlap": 0.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "event loop",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 1.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "coroutine",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 0.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "await",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 1.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "cooperative",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 0.0
+                  }
+                ],
+                "score": 0.8,
+                "semantic_threshold": 0.72
+              },
+              "kg_label": "Minimal",
+              "kg_payload": {
+                "covered_edges": [],
+                "found_nodes": [
+                  "OOP",
+                  "await",
+                  "coroutine",
+                  "event_loop",
+                  "thread",
+                  "yield"
+                ],
+                "kg_label": "Minimal",
+                "missing_key": [
+                  "GIL",
+                  "generator",
+                  "asyncio"
+                ],
+                "score": 0.0
+              },
+              "kg_score": 0.0,
+              "layer1_score": 54.71,
+              "layer2_score": 43.63,
+              "layer3_score": 50.0,
+              "length_ratio_multiplier_enabled": false,
+              "missing_concepts": [
+                "GIL",
+                "generator",
+                "asyncio"
+              ],
+              "ner_score": 0.0,
+              "nlp_score": 53.55,
+              "rubric": {
+                "clarity": 6.04,
+                "correctness": 7.71,
+                "coverage": 4.09,
+                "depth": 2.68,
+                "guard_capped": false,
+                "scale": "0-10",
+                "version": "rubric_v1",
+                "weighted_score": 5.46,
+                "weights": {
+                  "clarity": 0.2,
+                  "correctness": 0.35,
+                  "coverage": 0.25,
+                  "depth": 0.2
+                }
+              },
+              "score_explanation": {
+                "guard_reason": null,
+                "semantic_available": true,
+                "strengths": [
+                  "strong semantic match",
+                  "covered event loop, coroutine"
+                ],
+                "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+                "weaknesses": [
+                  "missed asyncio"
+                ]
+              },
+              "scorer_version": "v3",
+              "scoring_mode": "full",
+              "scoring_schema_version": "rubric_v1",
+              "semantic": 0.7804,
+              "semantic_component_source": "semantic",
+              "semantic_fallback_reason": null,
+              "semantic_score": 0.7804,
+              "semantic_scoring_available": true,
+              "server_word_count": 19,
+              "structure_score": 0.12,
+              "svm_label": "Good",
+              "tfidf": 0.4297,
+              "tfidf_score": 0.4297
+            },
+            "scoring_mode": "full",
+            "skill": "Python",
+            "status": "submitted",
+            "svm_label": "Good"
+          }
+        ],
+        "round_plan": [
+          "technical_short_answer"
+        ],
+        "session_id": "<uuid>",
+        "skills": [
+          "Python"
+        ],
+        "status": "completed",
+        "total_rounds": 1,
+        "user_id": "user-<id>"
+      }
+    ],
+    [
+      "feedback",
+      200,
+      {
+        "assessment_completed": true,
+        "assessment_eligibility": "eligible",
+        "eligibility_exclusion_reasons": [],
+        "feedback": {
+          "content": [
+            "Your response was very brief. Technical answers usually require more elaboration.",
+            "Your answer lacked specific technical keywords associated with this topic."
+          ],
+          "next_step": "Try incorporating precise industry terminology.",
+          "strengths": [
+            "High Relevance"
+          ],
+          "weakness": []
+        },
+        "final_score": 74.17,
+        "narration": {
+          "details": {
+            "schema_version": 1,
+            "snapshot_digest": "<hash>",
+            "validation": "generation_disabled"
+          },
+          "label": "Rules feedback",
+          "script": "Round 1 (Python): scored 74.17 out of 100. Your response was very brief. Technical answers usually require more elaboration. Your answer lacked specific technical keywords associated with this topic. Strengths: High Relevance. Next step: Try incorporating precise industry terminology.",
+          "source": "rules_feedback",
+          "status": "skipped"
+        },
+        "round": 1,
+        "session_id": "<uuid>",
+        "session_status": "completed"
+      }
+    ],
+    [
+      "report",
+      200,
+      {
+        "allow_optional_follow_ups": false,
+        "allow_unknown_topic_fallback": true,
+        "averages": {
+          "final_score": 74.17,
+          "kg_score": 0.0,
+          "nlp_score": 53.55,
+          "population": "assessment_eligible"
+        },
+        "block_plan": [
+          {
+            "allow_optional_follow_ups": false,
+            "category": "interview",
+            "count": 1,
+            "difficulty": null,
+            "duration_minutes": null,
+            "id": "<uuid>",
+            "language": null,
+            "max_follow_ups": null,
+            "negative_marking": 0.0,
+            "position": 1,
+            "problem_ids": [],
+            "question_ids": [],
+            "review_policy": "none",
+            "round_type": "technical_short_answer",
+            "skills": [
+              "Python"
+            ],
+            "stage": null,
+            "topic": null
+          }
+        ],
+        "block_results": [
+          {
+            "assessment_eligible_rounds": 1,
+            "assisted_practice_rounds": 0,
+            "assisted_rounds": 0,
+            "attempted_rounds": 1,
+            "average_score": 74.17,
+            "average_score_population": "assessment_eligible",
+            "block_category": "interview",
+            "block_id": "<uuid>",
+            "block_position": 1,
+            "insufficient_assessment_evidence": false,
+            "measured_rounds": 1,
+            "round_types": [
+              "technical_short_answer"
+            ],
+            "rounds": 1,
+            "scored_rounds": 1,
+            "scoring_modes": [
+              "full"
+            ],
+            "self_reported_average": null,
+            "self_reported_rounds": 0,
+            "skills": [
+              "Python"
+            ],
+            "suggestion": null,
+            "unscored_rounds": 0
+          }
+        ],
+        "breakdown": {
+          "Average": 1,
+          "Good": 0,
+          "Poor": 0
+        },
+        "candidate_id": "<uuid>",
+        "coverage": {
+          "note": "Averages cover scored rounds only. All rounds scored.",
+          "scored_rounds": 1,
+          "unscored_rounds": []
+        },
+        "current_difficulty": "medium",
+        "current_skill": "Python",
+        "difficulty_progression": [
+          "medium"
+        ],
+        "elo_progression": [
+          1218.9
+        ],
+        "expanded_plan": [
+          {
+            "block_id": "<uuid>",
+            "block_index": 1,
+            "block_position": 1,
+            "block_total": 1,
+            "category": "interview",
+            "count": 1,
+            "difficulty": null,
+            "duration_minutes": null,
+            "language": null,
+            "negative_marking": 0.0,
+            "problem_ids": [],
+            "question_ids": [],
+            "review_policy": "none",
+            "round": 1,
+            "round_type": "technical_short_answer",
+            "skills": [
+              "Python"
+            ],
+            "stage": null,
+            "topic": null
+          }
+        ],
+        "id": "<uuid>",
+        "last_round": 1,
+        "next_step": "Try incorporating precise industry terminology.",
+        "overall_readiness_score": 74.17,
+        "practice_mode": "assessment",
+        "progression_blocked_reason": null,
+        "revision": 1,
+        "round_config": {},
+        "round_plan": [
+          "technical_short_answer"
+        ],
+        "rounds": [
+          {
+            "answer_text": "Coroutines yield control at await points so the single-threaded event loop can schedule non-blocking I/O cooperatively.",
+            "artifact_json": {},
+            "assessment_eligibility": "eligible",
+            "assistance_kinds": [],
+            "assisted": false,
+            "block_category": "interview",
+            "block_id": "<uuid>",
+            "block_index": 1,
+            "block_position": 1,
+            "block_total": 1,
+            "company": "",
+            "confidence_band": 2.78,
+            "config_json": {},
+            "covered_concepts": [
+              "OOP",
+              "await",
+              "coroutine",
+              "event_loop",
+              "thread",
+              "yield"
+            ],
+            "difficulty": "medium",
+            "difficulty_change": "same",
+            "eligibility_exclusion_reasons": [],
+            "eligibility_exposure_ids": [],
+            "eligibility_policy_version": "assistance_v1",
+            "elo_after": 1218.9,
+            "elo_before": 1200.0,
+            "engagement_confidence": null,
+            "engagement_delta": null,
+            "engagement_label": null,
+            "evaluation_mode": null,
+            "evidence_kind": "measured",
+            "feedback": {
+              "content": [
+                "Your response was very brief. Technical answers usually require more elaboration.",
+                "Your answer lacked specific technical keywords associated with this topic."
+              ],
+              "next_step": "Try incorporating precise industry terminology.",
+              "strengths": [
+                "High Relevance"
+              ],
+              "weakness": []
+            },
+            "final_score": 74.17,
+            "follow_up_identity": null,
+            "follow_up_parent_round": null,
+            "followups": [],
+            "guard_applied": null,
+            "ideal_answer": "An asyncio event loop runs single-threaded cooperative multitasking, switching tasks whenever a coroutine awaits non-blocking I/O.",
+            "ideal_keywords": "asyncio, event loop, coroutine, await, cooperative",
+            "is_follow_up": false,
+            "kg_label": "Minimal",
+            "kg_score": 0.0,
+            "missing_concepts": [
+              "GIL",
+              "generator",
+              "asyncio"
+            ],
+            "ner_entities": [],
+            "nlp_score": 53.55,
+            "performance_band": "Average",
+            "question": "Explain how Python asyncio event loop schedules coroutines.",
+            "question_type": "conceptual",
+            "role": "",
+            "round": 1,
+            "round_type": "technical_short_answer",
+            "score_explanation": {
+              "guard_reason": null,
+              "semantic_available": true,
+              "strengths": [
+                "strong semantic match",
+                "covered event loop, coroutine"
+              ],
+              "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+              "weaknesses": [
+                "missed asyncio"
+              ]
+            },
+            "scoring_breakdown": {
+              "accuracy_score": 0.4,
+              "advanced_bonus": 0.0,
+              "assessment_eligibility": {
+                "decision": "eligible",
+                "exclusion_reasons": [],
+                "exposure_ids": [],
+                "legacy": false,
+                "policy_version": "assistance_v1"
+              },
+              "assessment_eligibility_decision": "eligible",
+              "clarity_score": 1.0,
+              "classifier_component": 0.75,
+              "classifier_confidence": 0.798,
+              "classifier_label": "Good",
+              "classifier_model_type": "LogisticRegression",
+              "classifier_probabilities": {
+                "Average": 0.2019,
+                "Good": 0.798,
+                "Poor": 0.0001
+              },
+              "client_word_count_ignored": 19,
+              "completeness_length_ratio": null,
+              "completeness_multiplier": null,
+              "concept_coverage": 0.1393,
+              "concepts": {
+                "concept_index_status": "explicit_bundle",
+                "concept_match_trace": [
+                  {
+                    "concept": "await_yield",
+                    "matched": false,
+                    "method": "uncertain",
+                    "model_revision": "<hash>",
+                    "order": 0,
+                    "similarity": null,
+                    "source": "bundle_v2",
+                    "status": "uncertain",
+                    "status_reason": "bundle_uncertain",
+                    "threshold": null
+                  },
+                  {
+                    "concept": "coroutine",
+                    "matched": true,
+                    "method": "exact",
+                    "model_revision": "<hash>",
+                    "order": 3,
+                    "similarity": null,
+                    "source": "ideal_keywords",
+                    "status": "uncertain",
+                    "status_reason": "legacy_hit_without_token_evidence",
+                    "threshold": 0.72
+                  },
+                  {
+                    "concept": "cooperative",
+                    "matched": true,
+                    "method": "exact",
+                    "model_revision": "<hash>",
+                    "order": 4,
+                    "similarity": null,
+                    "source": "ideal_keywords",
+                    "status": "uncertain",
+                    "status_reason": "legacy_hit_without_token_evidence",
+                    "threshold": 0.72
+                  }
+                ],
+                "concept_source": "bundle_v2",
+                "concept_status_cutoffs": {
+                  "calibration_status": "in_sample_manual_review",
+                  "match_at_least": 0.72,
+                  "miss_below": 0.3
+                },
+                "concept_status_version": "concept_status_v1_in_sample",
+                "concept_statuses": {
+                  "matched": [],
+                  "missed": [],
+                  "uncertain": [
+                    "await_yield",
+                    "coroutine",
+                    "cooperative"
+                  ]
+                },
+                "covered": [
+                  "OOP",
+                  "await",
+                  "coroutine",
+                  "event_loop",
+                  "thread",
+                  "yield"
+                ],
+                "matched_concepts": [
+                  "coroutine",
+                  "cooperative"
+                ],
+                "missed_concepts": [
+                  "await_yield"
+                ],
+                "missing": [
+                  "GIL",
+                  "generator",
+                  "asyncio"
+                ],
+                "question_concepts_excluded": [
+                  "asyncio",
+                  "event loop"
+                ]
+              },
+              "covered_concepts": [
+                "OOP",
+                "await",
+                "coroutine",
+                "event_loop",
+                "thread",
+                "yield"
+              ],
+              "depth_score": 0.3833,
+              "difficulty_bonus": 0.05,
+              "eligibility_exclusion_reasons": [],
+              "eligibility_exposure_ids": [],
+              "eligibility_policy_version": "assistance_v1",
+              "evidence_kind": "measured",
+              "feedback": {
+                "content": [
+                  "Your response was very brief. Technical answers usually require more elaboration.",
+                  "Your answer lacked specific technical keywords associated with this topic."
+                ],
+                "next_step": "Try incorporating precise industry terminology.",
+                "strengths": [
+                  "High Relevance"
+                ],
+                "weakness": []
+              },
+              "final_score": 74.17,
+              "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+              "formula_breakdown": {
+                "base_score": 74.17,
+                "brevity_penalty": 0.0,
+                "classifier_term": 18.75,
+                "formula": "100*(0.45*semantic_or_lexical + 0.25*classifier + 0.20*keyword + 0.10*tfidf) + kg_bonus + ner_bonus - penalties",
+                "keyword_term": 16.0,
+                "kg_bonus": 0.0,
+                "ner_bonus": 0.0,
+                "scoring_schema_version": "rubric_v1",
+                "semantic_term": 35.12,
+                "tfidf_term": 4.3
+              },
+              "guard": {
+                "applied": false,
+                "guards_fired": [],
+                "raw_reason": null,
+                "reason": null,
+                "score_cap": null,
+                "score_caps": [],
+                "softened": false
+              },
+              "guard_applied": null,
+              "guard_caps": [],
+              "guard_reason": null,
+              "guard_softened": false,
+              "guards_fired": [],
+              "keyword_coverage": 0.8,
+              "keyword_coverage_details": {
+                "matches": [
+                  {
+                    "alias": false,
+                    "covered": false,
+                    "exact": false,
+                    "keyword": "asyncio",
+                    "method": "not_matched",
+                    "semantic_similarity": 0.2998,
+                    "similarity": 0.2998,
+                    "token_overlap": 0.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "event loop",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 1.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "coroutine",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 0.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "await",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 1.0
+                  },
+                  {
+                    "alias": false,
+                    "covered": true,
+                    "exact": true,
+                    "keyword": "cooperative",
+                    "method": "exact",
+                    "semantic_similarity": null,
+                    "similarity": null,
+                    "token_overlap": 0.0
+                  }
+                ],
+                "score": 0.8,
+                "semantic_threshold": 0.72
+              },
+              "kg_label": "Minimal",
+              "kg_payload": {
+                "covered_edges": [],
+                "found_nodes": [
+                  "OOP",
+                  "await",
+                  "coroutine",
+                  "event_loop",
+                  "thread",
+                  "yield"
+                ],
+                "kg_label": "Minimal",
+                "missing_key": [
+                  "GIL",
+                  "generator",
+                  "asyncio"
+                ],
+                "score": 0.0
+              },
+              "kg_score": 0.0,
+              "layer1_score": 54.71,
+              "layer2_score": 43.63,
+              "layer3_score": 50.0,
+              "length_ratio_multiplier_enabled": false,
+              "missing_concepts": [
+                "GIL",
+                "generator",
+                "asyncio"
+              ],
+              "ner_score": 0.0,
+              "nlp_score": 53.55,
+              "rubric": {
+                "clarity": 6.04,
+                "correctness": 7.71,
+                "coverage": 4.09,
+                "depth": 2.68,
+                "guard_capped": false,
+                "scale": "0-10",
+                "version": "rubric_v1",
+                "weighted_score": 5.46,
+                "weights": {
+                  "clarity": 0.2,
+                  "correctness": 0.35,
+                  "coverage": 0.25,
+                  "depth": 0.2
+                }
+              },
+              "score_explanation": {
+                "guard_reason": null,
+                "semantic_available": true,
+                "strengths": [
+                  "strong semantic match",
+                  "covered event loop, coroutine"
+                ],
+                "summary": "Partially correct answer; improve by covering the missing expected concepts.",
+                "weaknesses": [
+                  "missed asyncio"
+                ]
+              },
+              "scorer_version": "v3",
+              "scoring_mode": "full",
+              "scoring_schema_version": "rubric_v1",
+              "semantic": 0.7804,
+              "semantic_component_source": "semantic",
+              "semantic_fallback_reason": null,
+              "semantic_score": 0.7804,
+              "semantic_scoring_available": true,
+              "server_word_count": 19,
+              "structure_score": 0.12,
+              "svm_label": "Good",
+              "tfidf": 0.4297,
+              "tfidf_score": 0.4297
+            },
+            "scoring_mode": "full",
+            "scoring_mode_label": "Full semantic scoring",
+            "skill": "Python",
+            "status": "submitted",
+            "sub_domain": "general",
+            "svm_label": "Good",
+            "topic": "Concurrency"
+          }
+        ],
+        "rounds_per_skill": 1,
+        "self_reported_average": null,
+        "session_id": "<uuid>",
+        "skill": "Python",
+        "skills": [
+          "Python"
+        ],
+        "status": "completed",
+        "sub_domain": "general",
+        "target_company_id": null,
+        "target_role_id": null,
+        "template_id": null,
+        "topic_scores": {
+          "Concurrency": 74.17
+        },
+        "total_rounds": 1,
+        "user_id": "user-<id>"
+      }
+    ]
+  ]
+}
