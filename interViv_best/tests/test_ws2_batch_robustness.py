@@ -949,6 +949,33 @@ def test_step_e_uses_concept_evaluator_v3_and_records_version(batch_env: Path) -
 # ─── Item A: Calibration length clamp removed + usable flag ───────────────────
 
 
+def test_prompt_b_requires_concept_specific_propositions() -> None:
+    prompt_b = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_prompt_b_messages(
+            skill="Python", topic="GIL", difficulty="medium"
+        )
+    )
+    regen = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_regeneration_messages(
+            skill="Python",
+            topic="GIL",
+            difficulty="medium",
+            previous_content={},
+            blind_answer="short",
+            eval_res={},
+            audit_diagnosis={},
+        )
+    )
+    for text in (prompt_b, regen):
+        assert "at least one term specific to its own concept" in text
+        assert "vague or off-topic answer would not contain it" in text
+        assert 'No proposition may consist only of generic words (for example "the code", "an error occurs", "returns true")' in text
+        assert "No proposition may repeat across concepts" in text
+        assert "<= 35" in text and ">= 90" in text
+
+
 def test_normalize_calibration_examples_preserves_text_and_length_bias() -> None:
     assert not hasattr(bundle_generator, "_POOR_CALIBRATION_PADDING")
 

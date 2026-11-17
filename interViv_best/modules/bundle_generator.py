@@ -1010,7 +1010,11 @@ def _build_prompt_b_messages(
         "that any strong expert answer naturally states using standard domain terminology "
         "(e.g. 'parse json', 'request body', 'validate schema', 'status codes', 'segment customers'), "
         "avoid rare one-off function names in propositions unless required by the question, "
-        "and NEVER include negation words (not, no, never, without, cannot) in expected_propositions.\n"
+        "and NEVER include negation words (not, no, never, without, cannot) in expected_propositions. "
+        "Every expected_proposition must contain at least one term specific to its own concept, "
+        "such that a vague or off-topic answer would not contain it. "
+        "No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). "
+        "No proposition may repeat across concepts.\n"
         "7. misconceptions (1-2 items): each has id (snake_case), description "
         "(phrased directly as the FALSE claim itself so a correct answer will not hit "
         "its tokens), and candidate_patterns (2-3 specific verbatim false-claim phrases "
@@ -1152,7 +1156,7 @@ def _build_regeneration_messages(
         "misconception_hits": hit_misc,
         "audit_diagnosis": audit_diagnosis,
         "repair_rules": [
-            "Keep expected_propositions short (2-4 content words each) and include synonymous variants matching how a strong engineer writes.",
+            "Keep expected_propositions short (2-4 content words each) and include synonymous variants matching how a strong engineer writes. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
             "Ensure the question explicitly asks for every required concept so a knowledgeable engineer does not omit one.",
             "Ensure misconception descriptions and candidate_patterns represent genuinely FALSE statements absent from a correct answer.",
             "Keep calibration_examples targets: author_level=3 expected_band='Good' (at most 35 words, <= 35 words) and author_level=0 expected_band='Poor' (at least 90 words, >= 90 words).",
