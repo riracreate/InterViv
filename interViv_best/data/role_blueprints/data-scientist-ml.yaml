@@ -23,6 +23,8 @@ level_expectations:
   mid: Designs temporal/grouped cross-validation, compares against simple deterministic
     baselines, handles feature drift/label delay in production, optimizes inference
     latency/cost, and aligns offline metrics with business KPIs.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: machine-learning-fundamentals-evaluation
   name: Machine Learning Fundamentals & Evaluation
@@ -97,15 +99,15 @@ provenance:
     title: 15-2051.00 Data Scientists
     url: https://www.onetonline.org/link/summary/15-2051.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-2051.00 - Data Scientists
+    note: ''
   esco:
     code: '2511.3'
     title: data scientist (ISCO 2511.3)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F258e46f9-0075-4a2e-adae-1ff0477e0f30&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: data scientist
+    note: ''
   source: docs/research/role_catalog_research.md

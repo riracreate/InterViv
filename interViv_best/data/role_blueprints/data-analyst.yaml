@@ -23,6 +23,8 @@ level_expectations:
   mid: Uses CTEs and window functions (`ROW_NUMBER`, `LAG`, rolling windows), defines
     unambiguous product/finance metrics, detects Simpson's paradox and selection bias,
     and resolves cross-team metric discrepancies.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: sql-analytical-querying
   name: SQL & Analytical Querying
@@ -106,15 +108,15 @@ provenance:
     title: 15-2051.01 Business Intelligence Analysts
     url: https://www.onetonline.org/link/summary/15-2051.01
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-2051.01 - Business Intelligence Analysts
+    note: ''
   esco:
     code: '2511.2'
     title: data analyst (ISCO 2511.2)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fd3edb8f8-3a06-47a0-8fb9-9b212c006aa2&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: data analyst
+    note: ''
   source: docs/research/role_catalog_research.md

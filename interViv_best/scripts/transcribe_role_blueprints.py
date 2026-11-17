@@ -1,6 +1,7 @@
 """One-shot transcription of the 12 starter roles. No model calls."""
 from __future__ import annotations
 
+import certifi
 import json
 import re
 import ssl
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from modules.role_blueprints import MAPPING_DECISIONS, RESEARCH_PATH, ROOT
+from modules.role_blueprints import RESEARCH_PATH, ROOT
 
 OUT = ROOT / "data" / "role_blueprints"
 ACCESS = "2026-11-17"
@@ -46,7 +47,8 @@ def slug(text: str) -> str:
 def fetch(url: str) -> tuple[str, str]:
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "interviv-blueprint-check"})
-        with urllib.request.urlopen(request, timeout=12, context=ssl.create_default_context()) as response:
+        context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=20, context=context) as response:
             body = response.read(250_000).decode("utf-8", "replace")
             final = response.geturl()
     except Exception as exc:
@@ -138,21 +140,40 @@ def provenance(section: str, role_id: str) -> dict:
     links = re.findall(r"\[([^\]]+)\]\((https?://[^)]+)\)", section.split("**Representative")[0])
     onet = next(((label, url) for label, url in links if "onetonline.org" in url), ("", ""))
     esco = next(((label, url) for label, url in links if "esco" in url), ("", ""))
-    decision = MAPPING_DECISIONS.get(role_id, "")
+    if role_id == "devops-cloud-engineer":
+        onet = (
+            "15-1299.08 Computer Systems Engineers/Architects",
+            "https://www.onetonline.org/link/summary/15-1299.08",
+        )
+    if role_id == "associate-product-manager":
+        onet = ("", "")
     records = {}
+    if role_id == "associate-product-manager":
+        records["onet"] = {
+            "code": "",
+            "title": "",
+            "url": "",
+            "accessed": ACCESS,
+            "status": "none",
+            "page_title": "",
+            "note": "Owner decision: no O*NET product-manager occupation. ESCO ICT product manager is the primary mapping.",
+        }
     for key, (label, url) in (("onet", onet), ("esco", esco)):
+        if key in records:
+            continue
         if not url:
-            records[key] = {"code": "", "title": label, "url": "", "accessed": ACCESS, "status": "unverified", "note": "no url in the research file"}
+            records[key] = {"code": "", "title": label, "url": "", "accessed": ACCESS, "status": "unverified", "page_title": "", "note": "no url in the research file"}
             continue
         status, detail = fetch(url)
-        if decision:
-            status = "needs_owner_decision"
-        code = ""
         code_match = re.search(r"(\d{2}-\d{4}\.\d{2})", label) or re.search(r"(\d{2}-\d{4}\.\d{2})", url)
         if key == "esco":
-            code_match = re.search(r"(\d{4}\.\d+)", label)
-        if code_match:
-            code = code_match.group(1)
+            code_match = re.search(r"(\d{4}\.\d+(?:\.\d+)?)", label)
+        code = code_match.group(1) if code_match else ""
+        note = "" if status == "verified" else detail
+        if role_id == "devops-cloud-engineer" and key == "onet":
+            note = "Owner decision: use Computer Systems Engineers/Architects instead of the network-administrator mapping. " + note
+        if role_id == "devops-cloud-engineer" and key == "esco":
+            note = "Page was read. Owner did not replace this ESCO code; it remains ICT system administrator, a weak fit for DevOps. " + note
         records[key] = {
             "code": code,
             "title": label,
@@ -160,7 +181,7 @@ def provenance(section: str, role_id: str) -> dict:
             "accessed": ACCESS,
             "status": status,
             "page_title": detail if status == "verified" else "",
-            "note": decision or ("" if status == "verified" else detail),
+            "note": note,
         }
     records["source"] = "docs/research/role_catalog_research.md"
     return records
@@ -191,6 +212,7 @@ def main() -> None:
             "status": "draft",
             "version": 1,
             "level_expectations": expectations(body),
+            "level_expectation_review": {"junior": "needs owner edit"},
             "competencies": competencies(body),
             "draft_seeds": questions(body),
             "provenance": provenance(body, role_id),

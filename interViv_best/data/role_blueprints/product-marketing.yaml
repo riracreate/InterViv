@@ -23,6 +23,8 @@ level_expectations:
   mid: Designs tiered Go-To-Market (GTM) launches (Tier 1 vs. Tier 3), equips sales/support
     teams with battlecards, runs win/loss and pricing research, and attributes pipeline/adoption
     impact accurately.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: positioning-messaging-architecture
   name: Positioning & Messaging Architecture
@@ -99,15 +101,15 @@ provenance:
     title: 13-1161.00 Market Research Analysts and Marketing Specialists
     url: https://www.onetonline.org/link/summary/13-1161.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 13-1161.00 - Market Research Analysts and Marketing Specialists
+    note: ''
   esco:
-    code: '1221.3'
+    code: 1221.3.2
     title: marketing manager (ISCO 1221.3.2)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F6fcf4638-e7c7-4978-9302-9a7b63a3d57c&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: marketing manager
+    note: ''
   source: docs/research/role_catalog_research.md

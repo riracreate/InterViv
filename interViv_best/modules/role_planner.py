@@ -1,10 +1,22 @@
 """Deterministic role interview plans. No model calls."""
 from __future__ import annotations
 
+import csv
 from dataclasses import asdict, dataclass
+from functools import lru_cache
+from pathlib import Path
 
 SCENARIO_IN_QUICK = frozenset({"business", "product", "design"})
 PRACTICE_FAMILIES = SCENARIO_IN_QUICK
+_BANK = Path(__file__).resolve().parents[1] / "data" / "interview_dataset_v6.csv"
+_BANK_ALIASES = {
+    "operating systems": "os",
+    "computer networks": "cn",
+    "machine learning": "ml",
+    "os": "os",
+    "cn": "cn",
+    "ml": "ml",
+}
 
 
 class PlanError(ValueError):
@@ -20,6 +32,7 @@ class PlanSlot:
     difficulty: str
     reason: str
     practice_only: bool
+    scored: bool = True
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -95,20 +108,63 @@ def _core_slot(item: dict, how: str, level: str) -> PlanSlot:
     return PlanSlot("core", item["id"], item["name"], skill, difficulty, reason, False)
 
 
+def _easy_bank_keys() -> set[str]:
+    keys = set()
+    if not _BANK.exists():
+        return keys
+    with _BANK.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if (row.get("difficulty") or "").strip().lower() != "easy":
+                continue
+            skill = " ".join((row.get("skill") or "").split()).casefold()
+            if skill:
+                keys.add(skill)
+    return keys
+
+
+@lru_cache(maxsize=1)
+def easy_bank_skills() -> frozenset[str]:
+    return frozenset(_easy_bank_keys())
+
+
+def _has_easy_bank(skill: str, extra: set[str]) -> bool:
+    key = " ".join(str(skill or "").split()).casefold()
+    if not key:
+        return False
+    if key in extra or key in easy_bank_skills():
+        return True
+    alias = _BANK_ALIASES.get(key)
+    return bool(alias and alias in easy_bank_skills())
+
+
+def _warm_up(blueprint: dict, technical: list[dict], extra_easy: set[str]) -> PlanSlot:
+    ranked = _by_weight(technical)
+    for item in ranked:
+        for skill in item.get("skills") or []:
+            if _has_easy_bank(skill, extra_easy):
+                return PlanSlot(
+                    "opener", item["id"], "Warm-up", str(skill), "easy",
+                    f"{skill}: easy bank warm-up", False, True,
+                )
+    title = str(blueprint.get("title") or "this")
+    text = f"Tell me a little about yourself and what draws you to the {title} role."
+    return PlanSlot("opener", "", "Role opener", title, "easy", text, False, False)
+
+
 def plan_role(blueprint: dict, *, level: str, length: str, resume: dict | None = None,
-              jd_skills: list[str] | None = None) -> list[PlanSlot]:
+              jd_skills: list[str] | None = None, extra_easy_skills: set[str] | None = None) -> list[PlanSlot]:
     if length not in {"quick", "full"}:
         raise PlanError("length must be quick or full")
     technical = [item for item in blueprint["competencies"] if item["type"] == "technical"]
     scenarios = _by_weight([item for item in blueprint["competencies"] if item["type"] == "role_scenario"])
     behavioural = _by_weight([item for item in blueprint["competencies"] if item["type"] == "behavioural"])
     family = blueprint["family"]
+    extra = {str(skill).casefold() for skill in (extra_easy_skills or set())}
     if resume and resume.get("projects"):
         project = str(resume["projects"][0])
-        opener = PlanSlot("opener", "", "Resume opener", project, "easy", f"{project}: resume opener", False)
+        opener = PlanSlot("opener", "", "Resume opener", project, "easy", f"{project}: resume opener", False, True)
     else:
-        skill = _skill_of(_by_weight(technical)[0]) if technical else blueprint["title"]
-        opener = PlanSlot("opener", "", "Warm-up", skill, "easy", f"{skill}: easy warm-up", False)
+        opener = _warm_up(blueprint, technical, extra)
     slots = [opener]
     scenario_in_quick = family in SCENARIO_IN_QUICK and bool(scenarios)
     if length == "quick":

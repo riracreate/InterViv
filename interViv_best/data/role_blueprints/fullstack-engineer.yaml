@@ -23,6 +23,8 @@ level_expectations:
   mid: Designs end-to-end data contracts, prevents XSS/CSRF/IDOR vulnerabilities,
     manages optimistic UI updates with server rollback, and debugs cross-boundary
     latency from browser network tab to DB query plan.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: javascript-frontend-state
   name: JavaScript & Frontend State
@@ -98,15 +100,15 @@ provenance:
     title: 15-1252.00 Software Developers
     url: https://www.onetonline.org/link/summary/15-1252.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-1252.00 - Software Developers
+    note: ''
   esco:
     code: '2513.5'
     title: web developer (ISCO 2513.5)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fc40a2919-48a9-40ea-b506-1f34f693496d&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: web developer
+    note: ''
   source: docs/research/role_catalog_research.md

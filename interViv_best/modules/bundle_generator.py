@@ -53,6 +53,7 @@ from modules.question_bundles import (
     safe_slug,
     validate_generated_bundle_doc,
 )
+from modules.role_blueprints import question_speech_issues
 
 log = logging.getLogger("interviv.bundle_generator")
 
@@ -948,7 +949,7 @@ def _call_bundle_llm(
 
 
 _BUNDLE_JSON_SKELETON = """{
-  "question": "1-3 interview sentences",
+  "question": "at most 40 words and two sentences",
   "reference_answer": "80-160 word expert answer covering every required concept",
   "acceptable_variants": ["short paraphrase"],
   "keywords": ["term", "term", "term", "term"],
@@ -991,7 +992,7 @@ def _build_prompt_b_messages(
         "calibration_examples items must use the key \"answer\" (never \"text\"). "
         "Each followups.targets_concept must be copied from a required_concepts id, never an optional concept id.\n"
         + _BUNDLE_JSON_SKELETON + "\n"
-        "2. question: 1-3 crisp, unambiguous interview sentences testing applied "
+        "2. question: at most 40 words and two sentences. Crisp and unambiguous, testing applied "
         "understanding of the skill/topic/difficulty (never trivial yes/no or generic "
         "benchmark wording).\n"
         "3. reference_answer: accurate, self-contained expert answer (80-160 words) "
@@ -1368,6 +1369,9 @@ def _assemble_and_validate_doc(
 
     # Step E.1: schema validation
     validate_generated_bundle_doc(doc)
+    spoken = question_speech_issues(doc["question"])
+    if spoken:
+        raise BundleContentError("spoken question exceeds 40 words or two sentences: " + ", ".join(spoken))
 
     # Step E.1: evaluation overlap guard
     overlap = check_overlap(doc["question"])

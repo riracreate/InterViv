@@ -38,6 +38,7 @@ from backend.routes.problems import router as problems_router
 from backend.routes.target_context import router as target_context_router
 from backend.routes.resume import router as resume_router
 from backend.routes.resources import router as resources_router
+from backend.routes.role_practice import router as role_practice_router
 from backend.routes.session import router as session_router
 from backend.routes.feedback import router as feedback_router
 from backend.routes.follow_ups import router as follow_ups_router
@@ -172,6 +173,7 @@ app.include_router(practice_router)
 app.include_router(problems_router)
 app.include_router(target_context_router)
 app.include_router(resources_router)
+app.include_router(role_practice_router)
 app.include_router(ats_router)
 app.include_router(jobs_router)
 app.include_router(coach_router)

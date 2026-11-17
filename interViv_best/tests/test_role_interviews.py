@@ -7,8 +7,9 @@ import pytest
 
 from modules import interview_llm as routing
 from modules.role_blueprints import (
-    MAPPING_DECISIONS, blueprint_summary, clear_draft_cache, draft_unknown_blueprint,
-    load_blueprints, question_speech_issues, taxonomy_skill, validate_blueprint,
+    blueprint_summary, clear_draft_cache, draft_unknown_blueprint,
+    load_blueprints, question_speech_issues, register_unresolved_skills, taxonomy_skill,
+    validate_blueprint,
 )
 from modules.role_planner import plan_role
 from tests.test_ai_interview_routing import catalog
@@ -26,7 +27,8 @@ def test_twelve_starter_blueprints_are_drafts_with_unit_weights():
         assert doc["status"] == "draft"
         assert abs(sum(float(item["weight"]) for item in doc["competencies"]) - 1) <= 0.001
         assert doc["level_expectations"]["intern"]
-        assert doc["level_expectations"]["mid"]
+        assert doc["level_expectations"]["intern"] == doc["level_expectations"]["junior"]
+        assert doc["level_expectation_review"]["junior"] == "needs owner edit"
         report = validate_blueprint(doc)
         assert isinstance(report["unresolved_skills"], list)
 
@@ -39,10 +41,8 @@ def test_taxonomy_resolution_reports_unknown_skills_and_keeps_known_ones():
     by_id = {row["id"]: row for row in summary}
     assert "Python" in by_id["backend-engineer"]["resolved_skills"]
     assert "Product Metrics" in by_id["associate-product-manager"]["unresolved_skills"]
-    assert "SQL" not in by_id["data-analyst"]["skills_without_bundles"]
-    assert by_id["data-analyst"]["long_seeds"]
-    assert by_id["devops-cloud-engineer"]["provenance"]["onet"]["status"] == "needs_owner_decision"
-    assert "Computer Systems Engineers" in MAPPING_DECISIONS["devops-cloud-engineer"]
+    assert by_id["associate-product-manager"]["provenance"]["onet"]["status"] == "none"
+    assert "15-1299.08" in by_id["devops-cloud-engineer"]["provenance"]["onet"]["url"]
 
 
 def test_long_questions_are_flagged_and_existing_text_is_not_rejected():
@@ -103,7 +103,12 @@ def test_plans_for_three_roles(role, length, with_resume, capsys):
         else:
             assert any("one level harder" in slot.reason or "fundamentals" in slot.reason for slot in cores)
     else:
-        assert "easy warm-up" in slots[0].reason
+        if role == "backend-engineer":
+            assert slots[0].reason == "Python: easy bank warm-up"
+            assert slots[0].scored is True
+        else:
+            assert slots[0].scored is False
+            assert slots[0].reason.startswith("Tell me a little about yourself")
     if doc["family"] in {"business", "product", "design"}:
         assert all(slot.practice_only for slot in slots if slot.kind == "scenario")
     else:
@@ -111,10 +116,58 @@ def test_plans_for_three_roles(role, length, with_resume, capsys):
     _show(f"{role} {length} resume={with_resume}", slots)
 
 
+def test_unresolved_skills_register_through_the_audit_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("NEW_CANONICAL_SKILLS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
+    from modules import role_skills
+    role_skills.reset_role_skill_cache()
+    registered = register_unresolved_skills(load_blueprints())
+    assert "Statistics" in registered
+    assert "Data Visualisation" in registered
+    assert "Product Metrics" in registered
+    assert "Prioritisation" in registered
+    audit = (tmp_path / "audit.jsonl").read_text()
+    assert "Statistics" in audit
+    role_skills.reset_role_skill_cache()
+
+
+def test_scripted_opener_when_no_easy_bank_question():
+    docs = _docs()
+    for role, title in (
+        ("associate-product-manager", "Associate Product Manager"),
+        ("ui-ux-designer", "UI/UX Designer"),
+    ):
+        slots = plan_role(docs[role], level="junior", length="quick")
+        assert slots[0].reason == f"Tell me a little about yourself and what draws you to the {title} role."
+        assert slots[0].scored is False
+        assert "What is" not in slots[0].reason
+
+
 def test_mid_level_uses_the_harder_band():
     doc = _docs()["backend-engineer"]
     slots = plan_role(doc, level="mid", length="quick")
     assert {slot.difficulty for slot in slots if slot.kind == "core"} == {"hard"}
+
+
+def test_role_practice_is_off_until_the_flag_is_set(monkeypatch):
+    monkeypatch.delenv("ROLE_PRACTICE_ENABLED", raising=False)
+    from fastapi import HTTPException
+    from backend.routes.role_practice import PlanRequest, catalog, plan
+    with pytest.raises(HTTPException) as off:
+        catalog()
+    assert off.value.status_code == 404
+    monkeypatch.setenv("ROLE_PRACTICE_ENABLED", "1")
+    assert any(role["id"] == "data-analyst" for role in catalog()["roles"])
+    without = plan(PlanRequest(role_id="data-analyst", level="junior", length="quick"))
+    assert without["estimated_minutes"] == 15
+    assert without["slots"][0]["scored"] is False
+    with_resume = plan(PlanRequest(
+        role_id="data-analyst", level="junior", length="quick",
+        resume={"projects": ["churn study"], "skills": {"SQL": "claimed_with_evidence", "Statistics": "missing"}},
+    ))
+    assert with_resume["slots"][0]["reason"] == "churn study: resume opener"
+    assert with_resume["estimated_minutes"] == 15
+    full = plan(PlanRequest(role_id="data-analyst", level="junior", length="full"))
+    assert full["estimated_minutes"] == 48
 
 
 def test_unknown_role_draft_uses_override_and_caches(monkeypatch, tmp_path):

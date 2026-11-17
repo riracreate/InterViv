@@ -23,6 +23,8 @@ level_expectations:
   mid: Structures design tokens and scalable component systems, balances user friction
     against business/technical constraints, synthesizes mixed qualitative + quantitative
     funnel evidence, and hands off developer-ready specs.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: user-research-synthesis
   name: User Research & Synthesis
@@ -99,15 +101,15 @@ provenance:
     title: 15-1255.00 Web and Digital Interface Designers
     url: https://www.onetonline.org/link/summary/15-1255.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-1255.00 - Web and Digital Interface Designers
+    note: ''
   esco:
     code: '2513.3'
     title: user interface designer (ISCO 2513.3)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F96e20037-0a25-4bf6-a25e-808d1605d890&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: user interface designer
+    note: ''
   source: docs/research/role_catalog_research.md

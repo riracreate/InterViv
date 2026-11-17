@@ -22,24 +22,23 @@ TRACKS = frozenset({"coding", "sql", "none"})
 SPOKEN_WORD_LIMIT = 40
 SPOKEN_SENTENCE_LIMIT = 2
 
-# Mappings the research file uses that the owner still has to accept or replace.
+# Owner decisions, 2026-11-17. Data Engineer and Cybersecurity stay deferred.
 MAPPING_DECISIONS = {
     "associate-product-manager": (
-        "O*NET 15-1299.09 IT Project Managers is project delivery, not product management. "
-        "ESCO ICT product manager is closer. Owner decides which code, if any, to keep."
+        "No O*NET product-manager occupation. Primary mapping is ESCO 1330.6 ICT product manager, "
+        "verified 2026-11-17."
     ),
     "devops-cloud-engineer": (
-        "O*NET 15-1244.00 and 15-1241.00 are network administration and network architecture. "
-        "ESCO ICT system administrator is the same mismatch. "
-        "A closer O*NET candidate is 15-1299.08 Computer Systems Engineers/Architects. Owner decides."
+        "O*NET 15-1299.08 Computer Systems Engineers/Architects, verified 2026-11-17. "
+        "ESCO stays ICT system administrator; the owner did not replace that weak fit."
     ),
     "data-engineer": (
-        "Not a starter blueprint. ESCO maps this title onto data scientist (2511.3). "
-        "O*NET 15-1243.00 Database Architects is the closer of the two. Owner decides."
+        "Deferred. Not a starter blueprint. ESCO maps this title onto data scientist (2511.3). "
+        "O*NET 15-1243.00 Database Architects is the closer of the two."
     ),
     "cybersecurity-analyst": (
-        "Not a starter blueprint. ESCO ICT system administrator does not describe security analysis. "
-        "O*NET 15-1212.00 Information Security Analysts is the closer code. Owner decides."
+        "Deferred. Not a starter blueprint. ESCO ICT system administrator does not describe security analysis. "
+        "O*NET 15-1212.00 Information Security Analysts is the closer code."
     ),
 }
 
@@ -220,6 +219,28 @@ def draft_unknown_blueprint(title: str, *, router, override) -> dict:
     payload["title"] = payload.get("title") or " ".join(str(title).split())
     _DRAFT_CACHE[key] = payload
     return payload
+
+
+def register_unresolved_skills(docs: list[dict]) -> list[str]:
+    """Register blueprint skills that are not already in the static taxonomy.
+
+    Uses the existing new-canonical path, which appends an audit record.
+    Similarity is set to 1 so a nearby embedding cannot merge the skill away.
+    """
+    from modules.role_skills import resolve_skill_identity
+
+    registered = []
+    seen = set()
+    for doc in docs:
+        for skill in validate_blueprint(doc)["unresolved_skills"]:
+            key = skill.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            canonical, match = resolve_skill_identity(skill, register=True, similarity_threshold=1.0)
+            if match == "new_canonical":
+                registered.append(canonical)
+    return registered
 
 
 def clear_draft_cache() -> None:

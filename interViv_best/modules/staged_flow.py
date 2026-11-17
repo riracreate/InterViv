@@ -61,6 +61,14 @@ _PRESET_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
+
+def estimate_minutes(preset: str, *, include_practical: bool = True) -> int:
+    """Minutes shown for Quick and Full. Same numbers the staged flow uses."""
+    spec = _PRESET_SPECS[preset]
+    if preset == "full" and not include_practical:
+        return int(spec["estimated_minutes_without_practical"])
+    return int(spec["estimated_minutes"])
+
 _CODING_SKILL_KEYS = frozenset({
     "dsa",
     "coding",

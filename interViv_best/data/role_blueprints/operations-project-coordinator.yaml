@@ -21,6 +21,8 @@ level_expectations:
   mid: Manages critical-path trade-offs (scope, schedule, resources), maintains RAID
     logs (Risks, Assumptions, Issues, Dependencies), standardizes repeatable SOPs,
     and resolves cross-team bottlenecks calmly.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: project-planning-dependency-mapping
   name: Project Planning & Dependency Mapping
@@ -97,15 +99,15 @@ provenance:
     title: 13-1082.00 Project Management Specialists
     url: https://www.onetonline.org/link/summary/13-1082.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 13-1082.00 - Project Management Specialists
+    note: ''
   esco:
     code: '1219.6'
     title: project manager / project coordinator (ISCO 1219.6)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fbea99fea-0383-4c63-b944-70d4799de2c5&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: project manager
+    note: ''
   source: docs/research/role_catalog_research.md

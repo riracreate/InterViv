@@ -22,6 +22,8 @@ level_expectations:
     understands process vs. thread fundamentals.
   mid: Designs pagination, caching invalidation, database transaction isolation levels,
     connection pooling, asynchronous queues, and observability under load.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: backend-programming-python-java
   name: Backend Programming (Python / Java)
@@ -108,15 +110,15 @@ provenance:
     title: 15-1252.00 Software Developers
     url: https://www.onetonline.org/link/summary/15-1252.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-1252.00 - Software Developers
+    note: ''
   esco:
     code: '2512.3'
     title: software developer (ISCO 2512.3)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Ff2b15a0e-e65a-438a-affb-29b9d50b77d1&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: software developer
+    note: ''
   source: docs/research/role_catalog_research.md

@@ -22,6 +22,8 @@ level_expectations:
   mid: Eliminates flaky E2E tests, designs contract and database-state assertions,
     builds risk-based regression suites inside CI pipelines, and evaluates release
     readiness under time pressure.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: test-design-quality-methodology
   name: Test Design & Quality Methodology
@@ -97,15 +99,15 @@ provenance:
     title: 15-1253.00 Software Quality Assurance Analysts and Testers
     url: https://www.onetonline.org/link/summary/15-1253.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-1253.00 - Software Quality Assurance Analysts and Testers
+    note: ''
   esco:
     code: '2519.6'
     title: software tester (ISCO 2519.6)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F106f79e4-6264-45f1-9e7a-297435cd684b&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: software tester
+    note: ''
   source: docs/research/role_catalog_research.md

@@ -22,6 +22,8 @@ level_expectations:
   mid: Diagnoses unnecessary re-renders, bundle bloat, Core Web Vitals (LCP, INP,
     CLS), race conditions in async data fetching, keyboard/ARIA accessibility, and
     client caching.
+level_expectation_review:
+  junior: needs owner edit
 competencies:
 - id: javascript-typescript-core
   name: JavaScript & TypeScript Core
@@ -99,15 +101,15 @@ provenance:
     title: 15-1254.00 Web Developers
     url: https://www.onetonline.org/link/summary/15-1254.00
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: 15-1254.00 - Web Developers
+    note: ''
   esco:
     code: '2512.4'
     title: user interface developer (ISCO 2512.4)
     url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F866c7813-2c03-47d7-9bdc-192cfbace57c&language=en
     accessed: '2026-11-17'
-    status: unverified
-    page_title: ''
-    note: URLError
+    status: verified
+    page_title: user interface developer
+    note: ''
   source: docs/research/role_catalog_research.md

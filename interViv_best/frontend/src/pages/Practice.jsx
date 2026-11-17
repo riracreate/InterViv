@@ -23,6 +23,8 @@ import SkillChipInput from '../components/SkillChipInput';
 import PlannedScope from '../components/PlannedScope';
 import InterviewResumePanel from '../components/InterviewResumePanel';
 import StagedInterviewLauncher from '../components/staged/StagedInterviewLauncher';
+import RolePracticeCard from '../components/staged/RolePracticeCard';
+import { ROLE_PRACTICE_ENABLED } from '../lib/rolePractice';
 import { readScoped, writeScoped } from '../lib/accountStorage';
 import {
   WIZARD_STORAGE_NAME,
@@ -760,6 +762,8 @@ export default function Practice() {
           </div>
         )}
 
+        {ROLE_PRACTICE_ENABLED && <div className="mt-6"><RolePracticeCard /></div>}
+
         <div className="mt-6 grid gap-4 sm:grid-cols-2" data-testid="staged-launchers">
           <StagedInterviewLauncher userId={userId}
             onStarted={started => navigate(`/interview/${encodeURIComponent(started.session_id)}`)} />
@@ -827,7 +831,7 @@ export default function Practice() {
           />
         )}
 
-        {(mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
+        {ROLE_PRACTICE_ENABLED ? null : (mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target role & skills
@@ -859,7 +863,7 @@ export default function Practice() {
           </section>
         )}
 
-        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
+        {ROLE_PRACTICE_ENABLED ? null : (mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)
