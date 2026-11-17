@@ -380,6 +380,8 @@ def _dial_http_llm(
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if expect_json:
+            body["response_format"] = {"type": "json_object"}
         raw = _post_json(url, body=body, headers=headers, timeout_s=timeout_s, retry_transient=True)
         data = json.loads(raw)
         usage = _extract_usage_counts(data)
@@ -409,6 +411,8 @@ def _dial_http_llm(
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if expect_json:
+            body["response_format"] = {"type": "json_object"}
         raw = _post_json(url, body=body, headers=headers, timeout_s=timeout_s, retry_transient=True)
         data = json.loads(raw)
         usage = _extract_usage_counts(data)
@@ -943,6 +947,33 @@ def _call_bundle_llm(
 # ─── Prompt builders ──────────────────────────────────────────────────────────
 
 
+_BUNDLE_JSON_SKELETON = """{
+  "question": "1-3 interview sentences",
+  "reference_answer": "80-160 word expert answer covering every required concept",
+  "acceptable_variants": ["short paraphrase"],
+  "keywords": ["term", "term", "term", "term"],
+  "required_concepts": [
+    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["two words", "two words", "two words"]}
+  ],
+  "optional_concepts": [
+    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["two words", "two words", "two words"]}
+  ],
+  "misconceptions": [
+    {"id": "snake_case_id", "description": "the false claim itself", "candidate_patterns": ["false phrase one", "false phrase two"]}
+  ],
+  "depth_markers": ["deeper phrase", "deeper phrase", "deeper phrase"],
+  "rubric_descriptors": {"coverage": "what must be covered", "accuracy": "what must be correct", "depth": "what shows depth", "clarity": "what is clear"},
+  "followups": [
+    {"prompt": "question about one required concept", "targets_concept": "required_concepts id"},
+    {"prompt": "question about another required concept", "targets_concept": "required_concepts id"}
+  ],
+  "calibration_examples": [
+    {"author_level": 3, "expected_band": "Good", "answer": "concise correct answer"},
+    {"author_level": 0, "expected_band": "Poor", "answer": "long incorrect answer"}
+  ]
+}"""
+
+
 def _build_prompt_b_messages(
     *,
     skill: str,
@@ -956,7 +987,10 @@ def _build_prompt_b_messages(
         "You are an expert technical interviewer and rubric author designing a "
         "concept-assessed technical short-answer question bundle in strict JSON.\n"
         "Follow EVERY rule carefully:\n"
-        "1. Output ONLY valid JSON matching the schema below — no markdown fences, no commentary.\n"
+        "1. Output ONLY valid JSON — no markdown fences, no commentary — using exactly the keys in this skeleton. "
+        "calibration_examples items must use the key \"answer\" (never \"text\"). "
+        "Each followups.targets_concept must be copied from a required_concepts id, never an optional concept id.\n"
+        + _BUNDLE_JSON_SKELETON + "\n"
         "2. question: 1-3 crisp, unambiguous interview sentences testing applied "
         "understanding of the skill/topic/difficulty (never trivial yes/no or generic "
         "benchmark wording).\n"
@@ -983,8 +1017,10 @@ def _build_prompt_b_messages(
         "a confused candidate writes, never appearing in a correct answer).\n"
         "8. depth_markers: 3-4 concise phrases showing deeper architectural/edge knowledge.\n"
         "9. rubric_descriptors: object with string keys 'coverage', 'accuracy', 'depth', 'clarity'.\n"
-        "10. followups: EXACTLY 2 objects, each {'prompt': '...', 'targets_concept': '<id from required_concepts>'}.\n"
-        "11. calibration_examples: EXACTLY 2 objects:\n"
+        "10. followups: EXACTLY 2 objects, each {'prompt': '...', 'targets_concept': '<id copied from required_concepts>'}. "
+        "targets_concept must be one of the required_concepts ids.\n"
+        "11. calibration_examples: EXACTLY 2 objects with keys author_level, expected_band, and answer "
+        "(the example text is the \"answer\" field, never \"text\"):\n"
         "   - Item 0 (Strong concise answer): author_level=3, expected_band='Good', "
         "at most 35 words (<= 35 words), accurately covering the core point.\n"
         "   - Item 1 (Verbose wrong/fluff answer): author_level=0, expected_band='Poor', "
@@ -997,10 +1033,8 @@ def _build_prompt_b_messages(
         f"- topic: {topic}",
         f"- difficulty: {difficulty}",
         "",
-        "Required top-level JSON keys:",
-        "question, reference_answer, acceptable_variants, keywords, "
-        "required_concepts, optional_concepts, misconceptions, depth_markers, "
-        "rubric_descriptors, followups, calibration_examples",
+        "Required JSON skeleton (every key, including calibration answer and followup targets_concept):",
+        _BUNDLE_JSON_SKELETON,
     ]
     if validation_feedback:
         user_lines.extend(

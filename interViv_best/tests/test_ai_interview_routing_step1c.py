@@ -803,7 +803,14 @@ def test_checker_candidates_share_eligibility_skip_warnings_reasoning_and_privac
     assert sent_bodies[0]["reasoning"] == {"effort": "low", "exclude": True}
     assert sent_bodies[0]["max_tokens"] == 380 + 1024 and "response_format" not in sent_bodies[0]
     assert sent_bodies[1]["reasoning"] == {"effort": "low", "exclude": True}
-    assert sent_bodies[1]["max_tokens"] == 400 + 1024 and sent_bodies[1]["response_format"] == {"type": "json_object"}
+    assert sent_bodies[1]["max_tokens"] == 400 + 1024
+    audit_fmt = sent_bodies[1]["response_format"]
+    assert audit_fmt["type"] == "json_schema"
+    assert audit_fmt["json_schema"]["strict"] is True
+    assert audit_fmt["json_schema"]["name"] == "bundle_check_audit"
+    assert set(audit_fmt["json_schema"]["schema"]["required"]) == {
+        "root_cause", "issue_type", "missed_concepts", "fixes",
+    }
     warnings = [(r.requested_model, r.reason) for r in caplog.records
                 if r.name == routing.LOGGER.name and r.levelname == "WARNING"]
     # Two dispatches -> three ineligible entries skipped each time with fixed reason codes.
@@ -826,3 +833,121 @@ def test_checker_candidates_share_eligibility_skip_warnings_reasoning_and_privac
     with routing.interview_scope("check-none", 2), pytest.raises(routing.RoutingError):
         none_left.dispatch(purpose="bundle_blind_answer", messages=[{"role": "user", "content": "generic"}], expect_json=False)
     assert not none_state.exists()
+
+
+def test_routed_generation_schema_rejects_text_calibration_and_passes_answer(env, monkeypatch):
+    from modules import bundle_generator
+    from tests.test_ws2_content_generation import _sample_v2_payload
+
+    router, clock = env
+    router.settings = replace(router.settings, content_models=(FREE_A,))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    sent = []
+    use_text_key = {"on": True}
+
+    def urlopen(request, **kwargs):
+        clock.advance(5)
+        body = json.loads(request.data.decode())
+        sent.append(body)
+        payload = _sample_v2_payload()
+        if use_text_key["on"]:
+            for example in payload["calibration_examples"]:
+                example["text"] = example.pop("answer")
+        return Response(json.dumps({
+            "model": FREE_A,
+            "choices": [{"message": {"content": json.dumps(payload)}, "finish_reason": "stop"}],
+            "usage": BILLED,
+        }).encode())
+
+    monkeypatch.setattr(routing.urllib.request, "urlopen", urlopen)
+    kwargs = dict(
+        bundle_id="python.context-managers-medium", version=1, canonical_skill="Python",
+        canonical_topic="context_managers", difficulty="medium", gen_provider="openrouter",
+        gen_model=FREE_A, role=None, allow_live=True,
+    )
+    with routing.batch_scope("schema-reject", max_requests=4), pytest.raises(
+        bundle_generator.BundleGenerationError, match="answer must be non-empty",
+    ):
+        bundle_generator._generate_validated_doc(**kwargs)
+    assert len(sent) == 2
+    for body in sent:
+        fmt = body["response_format"]
+        assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
+        assert fmt["json_schema"]["name"] == "bundle_generation"
+        assert "answer" in fmt["json_schema"]["schema"]["properties"]["calibration_examples"]["items"]["required"]
+
+    use_text_key["on"] = False
+    sent.clear()
+    with routing.batch_scope("schema-pass", max_requests=2):
+        doc, _hits = bundle_generator._generate_validated_doc(**kwargs)
+    assert doc["calibration_examples"][0]["answer"]
+    assert len(sent) == 1 and sent[0]["response_format"]["json_schema"]["name"] == "bundle_generation"
+    sent.clear()
+    with routing.interview_scope("schema-regen", 2):
+        router.dispatch(purpose="bundle_regeneration", messages=[{"role": "user", "content": "generic"}])
+    assert sent[0]["response_format"]["type"] == "json_schema"
+    assert sent[0]["response_format"]["json_schema"]["strict"] is True
+    assert sent[0]["response_format"]["json_schema"]["name"] == "bundle_regeneration"
+    assert sent[0]["response_format"]["json_schema"]["schema"]["required"] == list(routing.GENERATED_BUNDLE_KEYS)
+    prompt = "\n".join(m["content"] for m in bundle_generator._build_prompt_b_messages(
+        skill="Python", topic="context_managers", difficulty="medium",
+    ))
+    assert '"answer"' in prompt and "targets_concept" in prompt and "matching the schema below" not in prompt
+
+
+def test_conversation_and_flag_off_generation_send_json_object(env, monkeypatch):
+    from modules import bundle_generator
+
+    router, _clock = env
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    calls = []
+
+    def routed_open(request, **kwargs):
+        calls.append(json.loads(request.data.decode()))
+        return Response(json.dumps({
+            "model": routing.PAID_CONVERSATION_MODEL,
+            "choices": [{"message": {"content": "skills"}, "finish_reason": "stop"}],
+            "usage": BILLED,
+        }).encode())
+
+    monkeypatch.setattr(routing.urllib.request, "urlopen", routed_open)
+    with routing.interview_scope("json-object-conv", 2):
+        router.dispatch(purpose="role_skill_extraction", messages=[{"role": "user", "content": "generic"}])
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+    monkeypatch.setenv("AI_INTERVIEW_ROUTING_ENABLED", "0")
+    legacy = []
+
+    class LegacyResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return self.body
+
+    def legacy_open(request, timeout=0, context=None):
+        legacy.append(json.loads(request.data.decode()))
+        return LegacyResponse(json.dumps({
+            "model": "anthropic/claude-haiku-4.5",
+            "choices": [{"message": {"content": "{\"ok\": true}"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }).encode())
+
+    monkeypatch.setattr(bundle_generator.urllib.request, "urlopen", legacy_open)
+    text = bundle_generator._call_bundle_llm(
+        purpose="bundle_generation",
+        provider="openrouter",
+        model="anthropic/claude-haiku-4.5",
+        messages=[{"role": "user", "content": "generic"}],
+        expect_json=True,
+        allow_live=True,
+    )
+    assert text == "{\"ok\": true}"
+    assert legacy[0]["response_format"] == {"type": "json_object"}
+    assert "json_schema" not in legacy[0]

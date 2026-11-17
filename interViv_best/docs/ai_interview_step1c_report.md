@@ -295,3 +295,61 @@ Against accepted `fc1c15d`:
 | `modules/bundle_generator.py` | 8 | 1 |
 | `modules/interview_llm.py` | 110 | 14 |
 | `tests/test_ai_interview_routing_step1c.py` | 262 | 0 |
+
+## Step 1h — Strict content-lane JSON schema (offline)
+
+Accepted base: `a1d90d7`. The one-bundle live run rejected both generations at Step E.1 because calibration examples used `text` instead of `answer`. The prompt said "matching the schema below" and never included a schema or named the `answer` field.
+
+### What changed
+
+1. **Strict `json_schema` on the routed content lane.** `modules/interview_llm.py:75`, `:131`, `:149`, `:733`. `bundle_generation` and `bundle_regeneration` send `response_format.type=json_schema` with `strict: true` and the generation keys (`question` through `calibration_examples`). Calibration items require `author_level`, `expected_band`, `answer`. Follow-ups require `prompt`, `targets_concept`. Counts: required concepts 3–4, optional 1–2, misconceptions 1–2, follow-ups and calibration exactly 2. `bundle_check_audit` sends the same strict form with `root_cause`, `issue_type`, `missed_concepts`, `fixes`. `bundle_blind_answer` stays prose and sends no `response_format`. There is no fallback to `json_object` if a provider rejects the schema.
+
+2. **Prompt skeleton.** `modules/bundle_generator.py:950` replaces "matching the schema below" with an explicit JSON skeleton naming every key, including calibration `answer` and follow-up `targets_concept` (must be a required-concept id). The same skeleton is on the regeneration prompt. `<= 35` and `>= 90` are unchanged, so `tests/test_ws2_batch_robustness.py:961` and `:975` stay true.
+
+3. **`json_object` kept off the content schema.** Conversation `role_skill_extraction` under routing, and `bundle_generation` with routing off (legacy OpenRouter/OpenAI path), still send `{"type": "json_object"}`.
+
+### Approved existing expectation changes
+
+| Test | Old | New |
+|---|---|---|
+| `test_real_content_dispatch_accepts_pinned_order_or_explicit_discovery` | `tests/test_ai_interview_routing_review.py:107` at `a1d90d7`: `response_format == {"type": "json_object"}` | `:107`: `json_schema`, `strict` true, name `bundle_generation`, generation keys plus calibration `answer` and follow-up `targets_concept` |
+| `test_checker_candidates_share_eligibility_skip_warnings_reasoning_and_privacy_rules` | `tests/test_ai_interview_routing_step1c.py:806` at `a1d90d7`: audit `response_format == {"type": "json_object"}` | `:806` keeps `max_tokens == 400 + 1024`; audit format is `json_schema`, `strict` true, name `bundle_check_audit`, keys `root_cause`, `issue_type`, `missed_concepts`, `fixes` |
+
+AST comparison against `a1d90d7` confirms no other pre-existing test function changed. Two appended tests (`:838`, `:898`) cover E.1 rejection of a `text` calibration key, E.1 acceptance of `answer`, regeneration schema, and `json_object` on the conversation lane and the flag-off generation path.
+
+### Step 1h verification
+
+| Step 1h run | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---|
+| Focused routing | 243 | 0 | 0 | 7.46 s; exit 0 |
+| Full backend | 1,476 | 6 | 0 | 149.35 s; exit 0 |
+| Full frontend | 243 | 0 | 0 | 10.63 s; exit 0 |
+
+```text
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest tests/test_ai_interview_routing.py tests/test_ai_interview_routing_review.py tests/test_ai_interview_routing_step1c.py -q --tb=line --junitxml=/private/tmp/interviv-step1h/focused.xml
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest -q -ra --junitxml=/private/tmp/interviv-step1h/backend.xml
+cd frontend && npm test -- --run
+```
+
+Failing node IDs in all three runs: **none**. The six skips and 124 warnings have the same causes as Steps 1c–1g. Python compilation and `git diff --check` passed. Logs/XML: `/private/tmp/interviv-step1h/`.
+
+Protected real DB SHA256 before/after this slice:
+
+```text
+before  93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+after   93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+```
+
+Flag-off fixture SHA256 remains `c7bd7382554fd751b3c8b83986b18fa2ba73250629d4d5e33538e4ff1d6ead1f` (byte-identical).
+
+### Step 1h diffstat
+
+Against accepted `a1d90d7`:
+
+| File (under `interViv_best/`) | Added | Removed |
+|---|---:|---:|
+| `docs/ai_interview_step1c_report.md` | 51 | 0 |
+| `modules/bundle_generator.py` | 41 | 7 |
+| `modules/interview_llm.py` | 143 | 4 |
+| `tests/test_ai_interview_routing_review.py` | 12 | 1 |
+| `tests/test_ai_interview_routing_step1c.py` | 126 | 1 |

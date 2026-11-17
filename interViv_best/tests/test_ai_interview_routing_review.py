@@ -104,7 +104,18 @@ def test_real_content_dispatch_accepts_pinned_order_or_explicit_discovery(env, m
         result = router.dispatch(purpose="bundle_generation", messages=[])
     assert result.model == FREE_A
     assert len(calls) == 1
-    assert calls[0]["response_format"] == {"type": "json_object"}
+    fmt = calls[0]["response_format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["json_schema"]["name"] == "bundle_generation"
+    assert fmt["json_schema"]["strict"] is True
+    schema = fmt["json_schema"]["schema"]
+    assert schema["required"] == list(routing.GENERATED_BUNDLE_KEYS)
+    assert schema["properties"]["calibration_examples"]["items"]["required"] == [
+        "author_level", "expected_band", "answer",
+    ]
+    assert schema["properties"]["followups"]["items"]["required"] == ["prompt", "targets_concept"]
+    assert schema["properties"]["required_concepts"]["minItems"] == 3
+    assert schema["properties"]["required_concepts"]["maxItems"] == 4
 
 
 def test_discovery_is_default_off_and_env_can_explicitly_enable_it(monkeypatch):

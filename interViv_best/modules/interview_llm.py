@@ -35,6 +35,140 @@ GENERATION_PURPOSES = frozenset({"bundle_generation", "bundle_regeneration"})
 CHECK_PURPOSES = frozenset({"bundle_blind_answer", "bundle_check_audit"})
 CONTENT_PURPOSES = GENERATION_PURPOSES | CHECK_PURPOSES
 PERSONAL_PURPOSES = frozenset({"role_skill_extraction", "resume_extraction", "interviewer_turn", "debrief"})
+GENERATED_BUNDLE_KEYS = (
+    "question", "reference_answer", "acceptable_variants", "keywords",
+    "required_concepts", "optional_concepts", "misconceptions", "depth_markers",
+    "rubric_descriptors", "followups", "calibration_examples",
+)
+_RUBRIC_KEYS = ("coverage", "accuracy", "depth", "clarity")
+
+
+def _string_list() -> dict:
+    return {"type": "array", "items": {"type": "string"}}
+
+
+def _object_schema(required: tuple[str, ...], properties: dict) -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(required),
+        "properties": properties,
+    }
+
+
+def _concept_schema() -> dict:
+    return _object_schema(
+        ("id", "descriptor", "aliases", "expected_propositions"),
+        {
+            "id": {"type": "string"},
+            "descriptor": {"type": "string"},
+            "aliases": _string_list(),
+            "expected_propositions": _string_list(),
+        },
+    )
+
+
+def _bounded_array(items: dict, minimum: int, maximum: int) -> dict:
+    return {"type": "array", "items": items, "minItems": minimum, "maxItems": maximum}
+
+
+def generated_bundle_schema() -> dict:
+    """Strict payload for bundle_generation and bundle_regeneration.
+
+    Keys and nested fields match what ``validate_generated_bundle_doc`` reads
+    after assembly. Counts follow the Prompt B rules that are tighter than the
+    validator floors: 3-4 required concepts, 1-2 optional, 1-2 misconceptions,
+    exactly 2 follow-ups and exactly 2 calibration examples.
+    """
+    concept = _concept_schema()
+    return _object_schema(
+        GENERATED_BUNDLE_KEYS,
+        {
+            "question": {"type": "string"},
+            "reference_answer": {"type": "string"},
+            "acceptable_variants": _string_list(),
+            "keywords": _string_list(),
+            "required_concepts": _bounded_array(concept, 3, 4),
+            "optional_concepts": _bounded_array(concept, 1, 2),
+            "misconceptions": _bounded_array(
+                _object_schema(
+                    ("id", "description", "candidate_patterns"),
+                    {
+                        "id": {"type": "string"},
+                        "description": {"type": "string"},
+                        "candidate_patterns": _string_list(),
+                    },
+                ),
+                1, 2,
+            ),
+            "depth_markers": _string_list(),
+            "rubric_descriptors": _object_schema(
+                _RUBRIC_KEYS,
+                {key: {"type": "string"} for key in _RUBRIC_KEYS},
+            ),
+            "followups": _bounded_array(
+                _object_schema(
+                    ("prompt", "targets_concept"),
+                    {"prompt": {"type": "string"}, "targets_concept": {"type": "string"}},
+                ),
+                2, 2,
+            ),
+            "calibration_examples": _bounded_array(
+                _object_schema(
+                    ("author_level", "expected_band", "answer"),
+                    {
+                        "author_level": {"type": "integer"},
+                        "expected_band": {"type": "string"},
+                        "answer": {"type": "string"},
+                    },
+                ),
+                2, 2,
+            ),
+        },
+    )
+
+
+def check_audit_schema() -> dict:
+    return _object_schema(
+        ("root_cause", "issue_type", "missed_concepts", "fixes"),
+        {
+            "root_cause": {"type": "string"},
+            "issue_type": {
+                "type": "string",
+                "enum": [
+                    "propositions", "question", "misconceptions",
+                    "reference", "over_specific_concept",
+                ],
+            },
+            "missed_concepts": _string_list(),
+            "fixes": _string_list(),
+        },
+    )
+
+
+def response_format_for(purpose: str, lane: str, expect_json: bool) -> dict | None:
+    """Routed content JSON uses strict json_schema. Everything else stays json_object."""
+    if not expect_json:
+        return None
+    if lane == "content" and purpose in GENERATION_PURPOSES:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": purpose,
+                "strict": True,
+                "schema": generated_bundle_schema(),
+            },
+        }
+    if lane == "content" and purpose == "bundle_check_audit":
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "bundle_check_audit",
+                "strict": True,
+                "schema": check_audit_schema(),
+            },
+        }
+    return {"type": "json_object"}
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MIN_CONTENT_CONTEXT = 16384
@@ -594,8 +728,10 @@ class InterviewRouter:
                         text, usage = result
                         returned_model = choice
                 else:
-                    result = self._chat_once(choice, messages, request_max_tokens, temperature,
-                                             timeout_s, expect_json, reasoning_cfg)
+                    result = self._chat_once(
+                        choice, messages, request_max_tokens, temperature, timeout_s, expect_json,
+                        reasoning_cfg, response_format_for(purpose, lane, expect_json),
+                    )
                     text, usage, returned_model = result.text, result.usage, result.model
                     reasoning_tokens = result.reasoning_tokens
                 if not same_model_family(choice, returned_model, canonical_slug=models[choice].get("canonical_slug")):
@@ -651,12 +787,15 @@ class InterviewRouter:
         raise DispatchDeferred("content_models_unavailable")
 
     @staticmethod
-    def _chat_once(model, messages, max_tokens, temperature, timeout_s, expect_json, reasoning=None):
+    def _chat_once(model, messages, max_tokens, temperature, timeout_s, expect_json, reasoning=None,
+                   response_format=None):
         key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not key:
             raise RoutingError("OPENROUTER_API_KEY is missing.")
         body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
-        if expect_json:
+        if response_format is not None:
+            body["response_format"] = response_format
+        elif expect_json:
             body["response_format"] = {"type": "json_object"}
         if reasoning is not None:
             body["reasoning"] = reasoning
