@@ -151,13 +151,15 @@ export default function AppNav({ brandTo = '/home', userId = null, roleId = null
 
   return <div className="iv-nav-root" data-testid="app-primary-nav">
     <div className="iv-mobile-bar">
-      <Link className="iv-brand" to={brandTo}><span className="iv-brand-mark">i</span><span>inter<span>Viv</span></span></Link>
-      <div className="iv-mobile-actions">{trailing}
-        <button type="button" className="iv-icon-button" onClick={() => setSearchOpen(true)} aria-label="Search pages"><Search size={19} /></button>
+      <div className="iv-mobile-leading">
         <button ref={menuButtonRef} type="button" className="iv-icon-button" onClick={() => setMenuOpen(value => !value)}
           aria-expanded={menuOpen} aria-controls="iv-sidebar" aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="app-nav-menu-button">
           {menuOpen ? <X size={21} /> : <Menu size={21} />}
         </button>
+        <Link className="iv-brand" to={brandTo}><span className="iv-brand-mark">i</span><span>inter<span>Viv</span></span></Link>
+      </div>
+      <div className="iv-mobile-actions">{trailing}
+        <button type="button" className="iv-icon-button" onClick={() => setSearchOpen(true)} aria-label="Search pages"><Search size={19} /></button>
       </div>
     </div>
     {menuOpen && <button className="iv-nav-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}

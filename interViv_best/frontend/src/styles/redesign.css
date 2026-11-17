@@ -60,7 +60,7 @@
 button, a { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 850px) {
   .iv-mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; margin: -20px -22px 24px; padding: 0 22px; border-bottom: 1px solid var(--color-border); background: var(--color-card); }
-  .iv-mobile-actions { display: flex; align-items: center; gap: 8px; }
+  .iv-mobile-leading, .iv-mobile-actions { display: flex; align-items: center; gap: 8px; }
   .iv-sidebar { width: min(290px, 86vw); transform: translateX(-105%); visibility: hidden; transition: transform .2s ease, visibility .2s; box-shadow: 12px 0 40px rgba(18, 36, 23, .1); }
   .iv-sidebar.is-open { transform: translateX(0); visibility: visible; }
   .iv-sidebar-close { display: inline-grid; }
