@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const apiTarget = process.env.VITE_DEV_API || "http://localhost:8000";
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -21,14 +23,14 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: apiTarget,
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api/, ""),
       },
-      "/resume": "http://localhost:8000",
-      "/session": "http://localhost:8000",
-      "/health": "http://localhost:8000",
-      "/transcribe": "http://localhost:8000",
+      "/resume": apiTarget,
+      "/session": apiTarget,
+      "/health": apiTarget,
+      "/transcribe": apiTarget,
     },
   },
 });
