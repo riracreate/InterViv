@@ -1,0 +1,111 @@
+id: associate-product-manager
+title: Associate Product Manager
+aliases:
+- APM
+- Product Analyst
+- Junior Product Manager
+- Digital PM Trainee
+family: product
+levels:
+- intern
+- junior
+- mid
+practical_track: none
+status: draft
+version: 1
+level_expectations:
+  intern: Segments users clearly, identifies real user pain points before jumping
+    to UI features, defines a North Star plus guardrail metric, and writes structured
+    PRDs/user stories.
+  junior: Segments users clearly, identifies real user pain points before jumping
+    to UI features, defines a North Star plus guardrail metric, and writes structured
+    PRDs/user stories.
+  mid: Weighs engineering effort, strategic moat, unit economics, and cannibalization
+    risks; diagnoses funnel drops methodically; runs disciplined experiments and sprint
+    trade-offs.
+competencies:
+- id: product-metrics-funnel-diagnostics
+  name: Product Metrics & Funnel Diagnostics
+  type: technical
+  weight: 0.2
+  skills:
+  - Product Metrics
+  scenario_topics: []
+- id: prioritisation-trade-off-frameworks
+  name: Prioritisation & Trade-Off Frameworks
+  type: technical
+  weight: 0.15
+  skills:
+  - Prioritisation
+  scenario_topics: []
+- id: agile-execution-prd-clarity
+  name: Agile Execution & PRD Clarity
+  type: technical
+  weight: 0.1
+  skills:
+  - Agile
+  scenario_topics: []
+- id: feature-trade-offs-product-strategy
+  name: Feature Trade-Offs & Product Strategy
+  type: role_scenario
+  weight: 0.3
+  skills: []
+  scenario_topics:
+  - Choosing between two competing features under constrained engineering capacity;
+    diagnosing sudden retention drops
+- id: influence-without-authority
+  name: Influence Without Authority
+  type: behavioural
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Aligning engineers, designers, and business leads without direct management authority
+- id: customer-curiosity-ownership
+  name: Customer Curiosity & Ownership
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Grounding decisions in user research and data rather than personal preference
+draft_seeds:
+- kind: opener
+  text: Pick a product or project you built or analyzed on your resume. Who was the
+    exact target user, what feature did you intentionally leave out of version 1,
+    and what metric would prove version 1 actually worked?
+- kind: fundamentals
+  text: You are launching a 'Quick Reorder' button in a campus food-delivery app.
+    Define one primary success metric, two guardrail (counter) metrics, and explain
+    why measuring 'total clicks on Quick Reorder' alone could mislead the team.
+- kind: tradeoff
+  text: Where does a formulaic RICE score break down when prioritizing a technical-debt
+    refactor or trust-and-safety fix against a shiny growth feature, and how do you
+    structure prioritization across buckets instead?
+- kind: scenario
+  text: You are the APM for an online test-prep platform with 3 engineers for the
+    next 6-week cycle. Option A is an AI doubt-solver requested in 40% of support
+    tickets; Option B is fixing the day-1 onboarding flow where 55% of new sign-ups
+    drop off before taking their first diagnostic quiz. How do you evaluate both options
+    and make a recommendation?
+- kind: behavioural
+  text: Tell me about a time an engineer or teammate pushed back strongly against
+    an idea or scope you proposed. How did you respond, and what shipped in the end?
+provenance:
+  onet:
+    code: 15-1299.09
+    title: 15-1299.09 Information Technology Project Managers
+    url: https://www.onetonline.org/link/summary/15-1299.09
+    accessed: '2026-11-17'
+    status: needs_owner_decision
+    page_title: ''
+    note: O*NET 15-1299.09 IT Project Managers is project delivery, not product management.
+      ESCO ICT product manager is closer. Owner decides which code, if any, to keep.
+  esco:
+    code: '1330.6'
+    title: ICT product manager (ISCO 1330.6)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fa79170ad-0b7b-4697-864f-1748359aa10a&language=en
+    accessed: '2026-11-17'
+    status: needs_owner_decision
+    page_title: ''
+    note: O*NET 15-1299.09 IT Project Managers is project delivery, not product management.
+      ESCO ICT product manager is closer. Owner decides which code, if any, to keep.
+  source: docs/research/role_catalog_research.md

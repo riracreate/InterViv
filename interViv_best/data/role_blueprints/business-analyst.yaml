@@ -1,0 +1,111 @@
+id: business-analyst
+title: Business Analyst
+aliases:
+- IT Business Analyst
+- Systems Analyst
+- Strategy/Management Analyst Trainee
+family: business
+levels:
+- intern
+- junior
+- mid
+practical_track: sql
+status: draft
+version: 1
+level_expectations:
+  intern: Writes clear user stories with testable acceptance criteria (Given/When/Then),
+    maps current-state ("as-is") vs. future-state ("to-be") workflows, and writes
+    clean SQL aggregations/joins to size business problems.
+  junior: Writes clear user stories with testable acceptance criteria (Given/When/Then),
+    maps current-state ("as-is") vs. future-state ("to-be") workflows, and writes
+    clean SQL aggregations/joins to size business problems.
+  mid: Uncovers hidden non-functional and regulatory constraints, quantifies ROI/cost-benefit
+    trade-offs, mediates conflicting departmental requirements, and designs UAT sign-off
+    plans.
+competencies:
+- id: requirements-engineering-acceptance-criteria
+  name: Requirements Engineering & Acceptance Criteria
+  type: technical
+  weight: 0.15
+  skills:
+  - Requirements Engineering
+  scenario_topics: []
+- id: sql-quantitative-sizing
+  name: SQL & Quantitative Sizing
+  type: technical
+  weight: 0.15
+  skills:
+  - SQL
+  scenario_topics: []
+- id: process-modelling-root-cause-analysis
+  name: Process Modelling & Root-Cause Analysis
+  type: technical
+  weight: 0.15
+  skills:
+  - Process Modelling
+  scenario_topics: []
+- id: resolving-conflicting-stakeholder-requirements
+  name: Resolving Conflicting Stakeholder Requirements
+  type: role_scenario
+  weight: 0.3
+  skills: []
+  scenario_topics:
+  - Aligning Sales, Operations, and Finance when requirements contradict; scoping
+    MVP vs. Phase 2
+- id: stakeholder-empathy-active-listening
+  name: Stakeholder Empathy & Active Listening
+  type: behavioural
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Probing beneath surface feature requests to uncover the underlying operational
+    problem
+- id: adaptability-change-management
+  name: Adaptability & Change Management
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Guiding non-technical teams through workflow changes and UAT adoption
+draft_seeds:
+- kind: opener
+  text: Tell me about a project or internship where a stakeholder asked for a specific
+    report, dashboard, or feature, and once you dug into their workflow you realized
+    they actually needed something different. How did you uncover that?
+- kind: fundamentals
+  text: What is the difference between a functional requirement, a non-functional
+    requirement, and an acceptance criterion? Rewrite the vague request 'Make customer
+    refund approvals faster' into one crisp user story, two measurable non-functional
+    requirements, and three Given/When/Then acceptance criteria including an exception
+    path.
+- kind: tradeoff
+  text: When mapping an 'as-is' order-to-cash workflow across CRM, ERP, and Support
+    tools, how do you distinguish an automation problem from a broken policy/handoff
+    problem—and why can automating an unstandardized process make error rates worse?
+- kind: scenario
+  text: Sales wants one-click instant onboarding with only a phone number to boost
+    sign-ups, while Compliance/Finance insists on mandatory PAN/GST verification and
+    manual approval before any account is created. Engineering has capacity for one
+    unified flow this quarter. How do you facilitate alignment and propose a solution?
+- kind: behavioural
+  text: Describe a situation where two stakeholders gave you contradictory instructions
+    or priorities on the same deliverable. How did you get them to agree without simply
+    escalating everything?
+provenance:
+  onet:
+    code: 15-1211.00
+    title: 15-1211.00 Computer Systems Analysts
+    url: https://www.onetonline.org/link/summary/15-1211.00
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '2511.8'
+    title: ICT business analyst (ISCO 2511.8)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Ffe0fa514-b48d-4a53-9757-a283c0baacf0&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md

@@ -1,0 +1,113 @@
+id: frontend-engineer
+title: Frontend Engineer
+aliases:
+- UI Engineer
+- SDE-1 (Frontend)
+- React/Web Developer
+family: engineering
+levels:
+- intern
+- junior
+- mid
+practical_track: coding
+status: draft
+version: 1
+level_expectations:
+  intern: Understands closures, the event loop, promises, semantic HTML, CSS flexbox/grid,
+    controlled vs. uncontrolled React components, and basic API state handling (loading,
+    error, empty).
+  junior: Understands closures, the event loop, promises, semantic HTML, CSS flexbox/grid,
+    controlled vs. uncontrolled React components, and basic API state handling (loading,
+    error, empty).
+  mid: Diagnoses unnecessary re-renders, bundle bloat, Core Web Vitals (LCP, INP,
+    CLS), race conditions in async data fetching, keyboard/ARIA accessibility, and
+    client caching.
+competencies:
+- id: javascript-typescript-core
+  name: JavaScript & TypeScript Core
+  type: technical
+  weight: 0.25
+  skills:
+  - JavaScript
+  scenario_topics: []
+- id: react-component-architecture
+  name: React & Component Architecture
+  type: technical
+  weight: 0.2
+  skills:
+  - React
+  scenario_topics: []
+- id: web-performance-browser-mechanics
+  name: Web Performance & Browser Mechanics
+  type: technical
+  weight: 0.15
+  skills:
+  - Web Performance
+  - HTML/CSS
+  scenario_topics: []
+- id: diagnosing-degraded-client-ux
+  name: Diagnosing Degraded Client UX
+  type: role_scenario
+  weight: 0.2
+  skills: []
+  scenario_topics:
+  - Slow/janky pages reported by users, stale async search results, broken mobile/keyboard
+    flows
+- id: attention-to-craft-accessibility
+  name: Attention to Craft & Accessibility
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Catching UX edge cases, empty/error states, and usability gaps proactively
+- id: designer-backend-collaboration
+  name: Designer–Backend Collaboration
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Negotiating feasible UI scope with designers and API shapes with backend engineers
+draft_seeds:
+- kind: opener
+  text: In your dashboard project built with React, you managed filter and table state
+    across multiple charts. Where did that state live, why did you choose that approach
+    over URL query parameters or a global store, and what happened if the user refreshed
+    the page?
+- kind: fundamentals
+  text: Explain how the JavaScript event loop schedules synchronous code, microtasks
+    (Promise callbacks), and macrotasks (setTimeout). If a click handler queues both
+    a Promise.then and a setTimeout(..., 0), in what order do they run relative to
+    browser repaint?
+- kind: tradeoff
+  text: A React search input fires a fetch request on every keystroke. When a user
+    types 'react' quickly, the response for 're' arrives after the response for 'react'
+    and overwrites the UI with stale results. Compare debouncing alone versus AbortController
+    / request-ID guards, and explain why debouncing by itself does not eliminate the
+    race condition.
+- kind: scenario
+  text: Users in Tier-2 cities on mid-range Android phones report that your product
+    listing page takes 8 seconds to become interactive and freezes when scrolling
+    through 500 items, even though it feels fast on your laptop. How do you reproduce,
+    measure, and fix this systematically?
+- kind: behavioural
+  text: Describe a time when a design mockup or product requirement looked straightforward
+    at first, but turned out to have tricky edge cases once you started building the
+    UI. How did you handle it with the designer or PM?
+provenance:
+  onet:
+    code: 15-1254.00
+    title: 15-1254.00 Web Developers
+    url: https://www.onetonline.org/link/summary/15-1254.00
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '2512.4'
+    title: user interface developer (ISCO 2512.4)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F866c7813-2c03-47d7-9bdc-192cfbace57c&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md

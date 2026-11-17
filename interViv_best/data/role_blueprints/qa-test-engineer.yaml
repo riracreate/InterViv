@@ -1,0 +1,111 @@
+id: qa-test-engineer
+title: QA / Test Engineer
+aliases:
+- SDET
+- Automation Test Engineer
+- Quality Assurance Analyst
+family: engineering
+levels:
+- intern
+- junior
+- mid
+practical_track: coding
+status: draft
+version: 1
+level_expectations:
+  intern: Applies equivalence partitioning and boundary-value analysis, distinguishes
+    unit/integration/E2E tests, writes reproducible bug reports, and scripts clean
+    API or UI assertions in Python/JS.
+  junior: Applies equivalence partitioning and boundary-value analysis, distinguishes
+    unit/integration/E2E tests, writes reproducible bug reports, and scripts clean
+    API or UI assertions in Python/JS.
+  mid: Eliminates flaky E2E tests, designs contract and database-state assertions,
+    builds risk-based regression suites inside CI pipelines, and evaluates release
+    readiness under time pressure.
+competencies:
+- id: test-design-quality-methodology
+  name: Test Design & Quality Methodology
+  type: technical
+  weight: 0.2
+  skills:
+  - Test Design
+  scenario_topics: []
+- id: test-automation-frameworks
+  name: Test Automation & Frameworks
+  type: technical
+  weight: 0.2
+  skills:
+  - Test Automation
+  scenario_topics: []
+- id: python-scripting-for-qa
+  name: Python / Scripting for QA
+  type: technical
+  weight: 0.15
+  skills:
+  - Python
+  scenario_topics: []
+- id: release-triage-risk-prioritisation
+  name: Release Triage & Risk Prioritisation
+  type: role_scenario
+  weight: 0.25
+  skills: []
+  scenario_topics:
+  - Deciding what to test when time is cut before a release; diagnosing intermittent/flaky
+    bugs
+- id: attention-to-detail-scepticism
+  name: Attention to Detail & Scepticism
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Questioning happy-path assumptions and uncovering subtle data-corruption edge
+    cases
+- id: constructive-defect-advocacy
+  name: Constructive Defect Advocacy
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Pushing back on risky releases diplomatically with clear evidence rather than
+    opinion
+draft_seeds:
+- kind: opener
+  text: In your automated test suite, what was the flakiest test you encountered—one
+    that sometimes passed and sometimes failed without code changes—and how did you
+    diagnose and fix it?
+- kind: fundamentals
+  text: A coupon input accepts discount percentages between 5% and 50% (integers only)
+    for cart totals above INR 500, up to 3 uses per customer. Using equivalence partitioning
+    and boundary-value analysis, list the minimal high-signal test cases you would
+    design, including negative cases.
+- kind: tradeoff
+  text: Why does sprinkling `time.sleep(5)` throughout UI automation tests both slow
+    down CI and still leave tests flaky under load, and what combination of explicit
+    condition waits, test-data isolation, and API-level setup should replace it?
+- kind: scenario
+  text: A hotfix touching checkout tax calculation and promo codes must ship in 2
+    hours, but your full regression suite takes 90 minutes and 4 E2E tests are currently
+    failing on an unrelated staging environment issue. What do you test, what do you
+    skip, and what exact go/no-go evidence do you hand the release lead?
+- kind: behavioural
+  text: Tell me about a time a developer or manager wanted to close a bug as 'minor'
+    or 'works on my machine,' and you believed it would hurt real users. How did you
+    make your case?
+provenance:
+  onet:
+    code: 15-1253.00
+    title: 15-1253.00 Software Quality Assurance Analysts and Testers
+    url: https://www.onetonline.org/link/summary/15-1253.00
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '2519.6'
+    title: software tester (ISCO 2519.6)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F106f79e4-6264-45f1-9e7a-297435cd684b&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md

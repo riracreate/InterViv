@@ -1,0 +1,112 @@
+id: fullstack-engineer
+title: Full-Stack Engineer
+aliases:
+- SDE-1
+- Full-Stack Web Developer
+- Software Engineer Trainee
+- GET (Software)
+family: engineering
+levels:
+- intern
+- junior
+- mid
+practical_track: coding
+status: draft
+version: 1
+level_expectations:
+  intern: Connects a React/JS frontend to a REST backend and relational DB, validates
+    inputs on both client and server, handles authentication cookies/tokens safely,
+    and writes basic SQL joins.
+  junior: Connects a React/JS frontend to a REST backend and relational DB, validates
+    inputs on both client and server, handles authentication cookies/tokens safely,
+    and writes basic SQL joins.
+  mid: Designs end-to-end data contracts, prevents XSS/CSRF/IDOR vulnerabilities,
+    manages optimistic UI updates with server rollback, and debugs cross-boundary
+    latency from browser network tab to DB query plan.
+competencies:
+- id: javascript-frontend-state
+  name: JavaScript & Frontend State
+  type: technical
+  weight: 0.2
+  skills:
+  - JavaScript
+  - React
+  scenario_topics: []
+- id: rest-apis-auth-contracts
+  name: REST APIs & Auth Contracts
+  type: technical
+  weight: 0.2
+  skills:
+  - REST APIs
+  scenario_topics: []
+- id: database-query-design
+  name: Database & Query Design
+  type: technical
+  weight: 0.2
+  skills:
+  - DBMS
+  - SQL
+  scenario_topics: []
+- id: end-to-end-feature-delivery-triage
+  name: End-to-End Feature Delivery & Triage
+  type: role_scenario
+  weight: 0.2
+  skills: []
+  scenario_topics:
+  - Shipping a feature across UI, API, and DB safely; diagnosing bugs that cross frontend/backend
+    boundaries
+- id: end-to-end-ownership
+  name: End-to-End Ownership
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Delivering complete slices without dropping edge cases between frontend and backend
+- id: adaptability-learning-agility
+  name: Adaptability & Learning Agility
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Context-switching across stack layers and picking up unfamiliar libraries quickly
+draft_seeds:
+- kind: opener
+  text: Walk me through a single user action in your full-stack project—from clicking
+    Submit in the browser to committing the row in the database and updating the screen.
+    Where could that flow fail halfway, and how does your app handle it?
+- kind: fundamentals
+  text: Why is client-side form validation never sufficient on its own, and what is
+    the difference between stored XSS, CSRF, and an Insecure Direct Object Reference
+    (IDOR) in a web app?
+- kind: tradeoff
+  text: Compare cursor-based pagination against LIMIT/OFFSET pagination for an infinite-scroll
+    activity feed backed by PostgreSQL. What happens to both UI consistency and database
+    query cost when new items are inserted at the top while the user scrolls to page
+    50?
+- kind: scenario
+  text: 'You need to ship a collaborative ''Invite Teammate by Email'' feature end-to-end
+    by Friday: UI modal, API endpoint, invitation token table, and email dispatch.
+    How do you design the schema, API contract, failure handling if the email provider
+    times out, and rollout steps?'
+- kind: behavioural
+  text: Tell me about a time you had to jump into an unfamiliar part of the stack—frontend,
+    backend, or deployment—under a tight deadline. How did you get unblocked without
+    breaking existing behaviour?
+provenance:
+  onet:
+    code: 15-1252.00
+    title: 15-1252.00 Software Developers
+    url: https://www.onetonline.org/link/summary/15-1252.00
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '2513.5'
+    title: web developer (ISCO 2513.5)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fc40a2919-48a9-40ea-b506-1f34f693496d&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md

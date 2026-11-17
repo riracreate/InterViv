@@ -1,0 +1,111 @@
+id: operations-project-coordinator
+title: Operations / Project Coordinator
+aliases:
+- Project Coordinator
+- Program Associate
+- PMO Analyst
+- Business Operations Associate
+family: business
+levels:
+- intern
+- junior
+- mid
+practical_track: none
+status: draft
+version: 1
+level_expectations:
+  intern: Maintains accurate action trackers with single-threaded owners and due dates,
+    maps task dependencies, flags blockers early, and writes crisp status updates.
+  junior: Maintains accurate action trackers with single-threaded owners and due dates,
+    maps task dependencies, flags blockers early, and writes crisp status updates.
+  mid: Manages critical-path trade-offs (scope, schedule, resources), maintains RAID
+    logs (Risks, Assumptions, Issues, Dependencies), standardizes repeatable SOPs,
+    and resolves cross-team bottlenecks calmly.
+competencies:
+- id: project-planning-dependency-mapping
+  name: Project Planning & Dependency Mapping
+  type: technical
+  weight: 0.15
+  skills:
+  - Project Planning
+  scenario_topics: []
+- id: agile-operational-cadence
+  name: Agile & Operational Cadence
+  type: technical
+  weight: 0.15
+  skills:
+  - Agile
+  scenario_topics: []
+- id: risk-tracking-sla-management
+  name: Risk Tracking & SLA Management
+  type: technical
+  weight: 0.15
+  skills:
+  - Risk Tracking
+  scenario_topics: []
+- id: recovering-a-slipping-deadline
+  name: Recovering a Slipping Deadline
+  type: role_scenario
+  weight: 0.3
+  skills: []
+  scenario_topics:
+  - Triaging a cross-functional launch or client deliverable that is 5 days behind
+    schedule with a blocked dependency
+- id: dependability-calm-under-pressure
+  name: Dependability & Calm Under Pressure
+  type: behavioural
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Keeping commitments organized and composed when multiple urgent requests collide
+    ([O\NET 13-1082.00](https://www.onetonline.org/link/summary/13-1082.00
+- id: conflict-resolution-follow-through
+  name: Conflict Resolution & Follow-Through
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Holding peers accountable for overdue deliverables respectfully without nagging
+    or blame
+draft_seeds:
+- kind: opener
+  text: Tell me about a multi-person project, campus fest, or internship workflow
+    you coordinated where deliverables depended on people who did not report to you.
+    How did you track progress and prevent last-minute surprises?
+- kind: fundamentals
+  text: Explain the critical path in a project schedule and the RACI framework. Why
+    does assigning two people as 'Accountable' for the same milestone almost always
+    cause delays, and what is the difference between a Risk and an Issue in a RAID
+    log?
+- kind: tradeoff
+  text: An operational onboarding team processes 120 client requests a week, but average
+    turnaround time has crept from 2 days to 7 days even though headcount stayed constant.
+    How do you diagnose whether this is capacity overload, WIP thrashing, or upstream
+    input defects?
+- kind: scenario
+  text: A client-facing product rollout is scheduled in 10 business days. Today, the
+    QA lead tells you testing hasn't started because Backend is 4 days late on an
+    integration, while Marketing has already scheduled customer webinars for launch
+    day. Walk through your exact next 24 hours.
+- kind: behavioural
+  text: Describe a time when an important deliverable you were coordinating fell behind
+    because a teammate or external partner missed their deadline. How did you handle
+    the conversation and recover the timeline?
+provenance:
+  onet:
+    code: 13-1082.00
+    title: 13-1082.00 Project Management Specialists
+    url: https://www.onetonline.org/link/summary/13-1082.00
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '1219.6'
+    title: project manager / project coordinator (ISCO 1219.6)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fbea99fea-0383-4c63-b944-70d4799de2c5&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md

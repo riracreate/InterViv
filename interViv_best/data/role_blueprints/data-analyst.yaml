@@ -1,0 +1,120 @@
+id: data-analyst
+title: Data Analyst
+aliases:
+- BI Analyst
+- Business Data Analyst
+- Product/Decision Analyst
+- Analytics Associate
+family: data
+levels:
+- intern
+- junior
+- mid
+practical_track: sql
+status: draft
+version: 1
+level_expectations:
+  intern: Writes accurate `LEFT JOIN`, `GROUP BY`, `HAVING`, and `CASE` queries without
+    fan-out bugs, distinguishes mean vs. median and correlation vs. causation, and
+    picks clear chart types.
+  junior: Writes accurate `LEFT JOIN`, `GROUP BY`, `HAVING`, and `CASE` queries without
+    fan-out bugs, distinguishes mean vs. median and correlation vs. causation, and
+    picks clear chart types.
+  mid: Uses CTEs and window functions (`ROW_NUMBER`, `LAG`, rolling windows), defines
+    unambiguous product/finance metrics, detects Simpson's paradox and selection bias,
+    and resolves cross-team metric discrepancies.
+competencies:
+- id: sql-analytical-querying
+  name: SQL & Analytical Querying
+  type: technical
+  weight: 0.25
+  skills:
+  - SQL
+  scenario_topics: []
+- id: applied-statistics-experimentation
+  name: Applied Statistics & Experimentation
+  type: technical
+  weight: 0.15
+  skills:
+  - Statistics
+  scenario_topics: []
+- id: data-visualisation-metric-design
+  name: Data Visualisation & Metric Design
+  type: technical
+  weight: 0.15
+  skills:
+  - Data Visualisation
+  scenario_topics: []
+- id: stakeholder-communication-disputed-metrics
+  name: Stakeholder Communication & Disputed Metrics
+  type: role_scenario
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Reconciling conflicting dashboard numbers across Marketing and Finance; framing
+    actionable recommendations
+- id: data-quality-source-tracing
+  name: Data Quality & Source Tracing
+  type: role_scenario
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Investigating sudden metric drops/spikes, duplicate events, missing tracking,
+    timezone/late-arriving rows
+- id: ownership-analytical-integrity
+  name: Ownership & Analytical Integrity
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Flagging caveats honestly when data does not support a stakeholder's preferred
+    conclusion
+- id: structured-collaboration
+  name: Structured Collaboration
+  type: behavioural
+  weight: 0.05
+  skills: []
+  scenario_topics:
+  - Clarifying vague business questions before writing queries
+draft_seeds:
+- kind: opener
+  text: In your sales or customer-churn analytics project, which single metric or
+    chart changed your conclusion the most once you cleaned the raw dataset, and what
+    was broken in the raw data before you cleaned it?
+- kind: fundamentals
+  text: You join an `orders` table (1,000 rows totaling INR 10,00,000) to an `order_items`
+    table and an `order_discounts` table, and your `SUM(orders.total_amount)` suddenly
+    jumps to INR 28,00,000. Why did this happen, and how do you fix the query without
+    losing item-level or discount-level filters?
+- kind: tradeoff
+  text: Overall conversion rate on your checkout flow dropped from 5.2% last month
+    to 4.7% this month, yet conversion rate actually increased slightly on both Desktop
+    and Mobile when viewed separately. How is this mathematically possible, and what
+    follow-up cuts would you run before telling leadership checkout is broken?
+- kind: scenario
+  text: Thirty minutes before a quarterly review, the VP of Marketing says her campaign
+    dashboard shows 14,200 new sign-ups last month, while Finance's revenue report
+    shows only 11,600. Both teams claim their query is right. Walk through how you
+    audit and reconcile the gap.
+- kind: behavioural
+  text: Tell me about a time you spotted an error in an analysis, report, or dataset—especially
+    if someone had already seen the earlier numbers. How did you handle communicating
+    the correction?
+provenance:
+  onet:
+    code: 15-2051.01
+    title: 15-2051.01 Business Intelligence Analysts
+    url: https://www.onetonline.org/link/summary/15-2051.01
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  esco:
+    code: '2511.2'
+    title: data analyst (ISCO 2511.2)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fd3edb8f8-3a06-47a0-8fb9-9b212c006aa2&language=en
+    accessed: '2026-11-17'
+    status: unverified
+    page_title: ''
+    note: URLError
+  source: docs/research/role_catalog_research.md
