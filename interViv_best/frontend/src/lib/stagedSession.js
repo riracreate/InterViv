@@ -32,7 +32,7 @@ export async function startQuickInterview(form, api = transport) {
   if (availability?.available === false) {
     const reasons = (availability.blocks || []).filter(b => b.available === false)
       .map(b => b.reason || 'The requested content is unavailable.');
-    const error = new Error(reasons.join(' ') || 'The requested content is unavailable.');
+    const error = new Error(reasons.join(' ') || availability.reason || 'The requested content is unavailable.');
     error.status = 422;
     throw error;
   }

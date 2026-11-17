@@ -2,11 +2,11 @@
 
 ## State
 - **Branch**: `ws2-pre-pilot-checkpoint` (local only; no upstream tracking branch; `origin` is `https://github.com/riracreate/InterViv.git`)
-- **Latest implementation**: Slice 3a Quick launcher and separate resumable staged screen (this task commit), after S2b `1dff9e6` and approved plan D3 `afd384e`. Use `git log -1` for HEAD. Stop before 3b–3e; they require further approval.
+- **Latest committed implementation**: Slice 3a `10b81fa`, after S2b `1dff9e6` and approved plan D3 `afd384e`. B1 top-level Quick launcher is implemented but UNCOMMITTED: validation stopped on the out-of-rule journey-test failure below. B2 and B3 have not started. Use `git log -1` for HEAD; do not start 3b–3e.
 - **Database**: `local-data/interviv-local.sqlite3` intact (`sha256: 93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`); `DATABASE_URL` is not defined in `.env`. Neither `.env`, `local-data/`, `interviv.db`, nor `data/interViv — Answer Rating (Responses).xlsx` is tracked by git. `scripts/pregenerate_bundles.py` refuses all runs (`--dry-run`, `--estimate`, non-live, `--live`) when `DATABASE_URL` resolves to or `os.path.samefile` matches `local-data/interviv-local.sqlite3`.
 - **Parked guard proposal**: The previous working-tree draft is parked at `docs/parked/guard_short_cap_v4_1.patch` (with rationale and `pos=35` note in `docs/parked/README.md`). Working tree `modules/answer_guard_v4.py` (`sha256: 90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae`) and `tests/test_scorer_v4.py` are restored to `2bcd3d7`.
 - **Default flags**: `v3` remains default (`SCORER_VERSION=v4` OFF); `REVIEWED_BUNDLES_ONLY=false` (`backend/config.py:138`); `STAGED_INLINE_FOLLOW_UPS=false` (`backend/config.py:43`); `LLM_LIVE_FETCH=0`.
-- **Tests**: Owner/reference expected with S2b: `1181 passed, 6 skipped` (owner run pending). Latest sandbox full suite after 3a: `1175 passed, 6 skipped, 6 environmental failures`, satisfying the revised cause-based rule below. Frontend: `216 passed, 0 failed`; build exit `0`.
+- **Tests**: Owner/reference expected with S2b: `1181 passed, 6 skipped` (owner run pending). Latest B1 resume full suite: `1174 passed, 6 skipped, 7 failed`; six meet the cause-based rule, while the repeated `tests/test_full_journey.py::test_complete_candidate_journey` sysctl failure awaits the exact exception decision below. Frontend: `227 passed, 0 failed`; build exit `0`.
 
 ## Decisions & Known Limitations
 - **Scorer feature work stopped**: `word_count` alone achieves `0.89` on `n=50-dev` (partials `0.33–0.40`; Mohler tune gain over semantic alone `+0.013`). No further features, no `v4` changes.
@@ -155,10 +155,46 @@ cd "/Users/praneetsharma/Downloads/mega 2 copy/interViv_best/frontend"
 NODE_OPTIONS=--dns-result-order=ipv4first npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Click path: open `http://127.0.0.1:5173`, sign in to the copied account, then **Practice → AI mock interview → Full interview** (existing settings page). Select **Python**, choose **Coached practice**, enable **Allow optional follow-ups**, then click the new **Start Quick interview** button. Submit/Continue through Warm-up, Core and any scheduled follow-ups; refresh the same `/interview/{id}` URL to resume. Completion offers **View dashboard**. Behavioural is skipped while its compiled bank is absent; Quick has no Practical stage.
+Click path after B1: open `http://127.0.0.1:5173`, sign in to the copied account, then **Practice → Quick interview** at the top level. Select **Python** in the card's **Skills** selector and click **Start Quick interview**. Coached practice and optional follow-ups are fixed for this launcher; no legacy settings are needed. Submit/Continue through Warm-up, Core and any scheduled follow-ups; refresh the same `/interview/{id}` URL to resume. Completion offers **View dashboard**. Behavioural is skipped while its compiled bank is absent; Quick has no Practical stage.
+
+## B1 — Top-Level Quick Launcher (2026-11-16)
+
+- **Reported before editing**: At `10b81fa`, the exact visibility condition was `mode === 'full'` (`frontend/src/pages/Practice.jsx:813`), with `mode` from the URL query (`Practice.jsx:106`). The staged screen's Back to practice link (`frontend/src/pages/StagedInterview.jsx:101`) returns to `/practice` with no mode query. There was no completion, candidate-history or one-use check hiding the button. Bundle duplicate suppression uses only the supplied current-session question/identity list (`modules/bundle_selector.py:50-59`; `backend/routes/answer.py:1591`; new starts use `asked=[]` at `backend/routes/session.py:1795`), so previously answered eligible demo bundles may be served again in a later session. No repeat-selection or eligibility policy changed.
+- **Delivered**: Unconditional launcher row above the existing four practice-option groups (`frontend/src/pages/Practice.jsx:676`), removed from Full settings. Exact text: **Quick interview**, **Skills**, **Start Quick interview** (`frontend/src/components/staged/StagedLauncherCard.jsx:9-18`). The card owns its selector, loading/error/busy state and launch path. Defaults to the latest used technical skills from owned history or the last successful launcher choice, else the first listed skill (DSA); storage is account-scoped. Late history cannot overwrite an explicit selection (`frontend/src/lib/stagedLauncher.js:12-19,35-52`).
+- **Launch contract**: `{flow_version:'staged_v1', preset:'quick', skills, target_role_id:null, target_company_id:null, practice_mode:'coached_practice', allow_optional_follow_ups:true}`; no blocks, round plan or candidate ID. Coached mode and optional follow-ups are fixed, with the existing server flag/caps unchanged. Legacy settings, start handlers and mapper payloads remain unchanged. Availability and start errors stay on the card; failure never hides the card or leaves Start disabled. Empty selection gives an actionable error. `Interview.jsx` is unchanged.
+- **Tests**: 11 new cases in `frontend/tests/stagedLauncher.test.js` cover top-level placement without mode/history gates, first load, post-completion return, refresh, account isolation, skill defaults, async races, the exact coached payload, unavailable/start reasons and duplicate/late requests. All existing assertions are retained; changed test expectations: none. Full `npm test`: `227 passed, 0 failed, 0 skipped` (`11.38s`); `npm run build`: exit `0` (`1m 11s` Vite phase; existing chunk/Browserslist notices).
+- **Validation STOP — not committed**: Full `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m pytest -q -rs` -> `1172 passed, 6 skipped, 9 failed`, exit `1`, `181.27s`. All nine show the sysctl PermissionError through `backend/local_runner.py:172`; however, `tests/test_full_journey.py::test_complete_candidate_journey` fails the rule's permitted-file condition. Its POST at `tests/test_full_journey.py:208` reaches `backend/routes/answer.py:853` and then the runner. It and all backend/runner files are unchanged by B1; the required runner/test diff from `e76d29f` is empty. This is an out-of-rule mismatch requiring reviewer classification, not an automatically accepted environmental failure. No isolated tests, outside-sandbox pytest, commit or sandbox bypass was attempted.
+- **Integrity/logs**: Real DB SHA256 before/after: `93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`; v4 hashes `8/8` match. No migrations, dependencies, protected code, stash or other worktree changed. Complete logs: `/private/tmp/interviv-b1-check.352ZAa/{pytest,frontend,build}.log`. All failing node IDs:
+
+```text
+tests/test_full_journey.py::test_complete_candidate_journey
+tests/test_local_runner.py::test_worker_enforces_limits[while True:\n    pass\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[import time\ntime.sleep(30)\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[x = []\nwhile True:\n    x.append(bytearray(8_000_000))\n-memory]
+tests/test_local_runner.py::test_candidate_failures_are_scored_outcomes[def two_sum(nums, target):\n    while True:\n        pass\n-timeout]
+tests/test_ml_execution.py::test_reference_scores_100_through_the_worker[minmax_normalize.v1]
+tests/test_ml_execution.py::test_buggy_variants_through_the_worker[softmax_stable.v1:batch_loop]
+tests/test_ml_execution.py::test_candidate_errors_score_zero_with_a_kind[import numpy as np\ndef softmax(logits):\n    while True:\n        pass\n-timeout]
+tests/test_ml_execution.py::test_candidate_errors_score_zero_with_a_kind[import numpy as np\nraise RuntimeError('top level')\n-load]
+```
+
+## B1 Resume Verification (2026-11-16)
+
+- User requested resuming project implementation and setting aside agent setup. The full pytest suite was rerun alone in the sandbox, without parallel frontend jobs, to check the previously unresolved failure. Result: `1174 passed, 6 skipped, 7 failed`, `109.32s`, exit `1`; command unchanged. The journey failure recurred with the same sysctl PermissionError through `backend/local_runner.py:172`; it is still outside the two-file allowance. An explicit decision on this exact node was requested before committing or starting B2. No exception has been assumed.
+- Six failures satisfy the existing cause-based rule. The required diff from `e76d29f` remains empty; the journey test and backend answer route are unchanged from `10b81fa`. Frontend source is unchanged since the passing 227-test/full-build checks. Real DB SHA256 remains `93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801`; all 8 v4 hashes match. New log: `/private/tmp/interviv-b1-resume.7nLW2J/pytest.log`. Exact failures:
+
+```text
+tests/test_full_journey.py::test_complete_candidate_journey
+tests/test_local_runner.py::test_worker_enforces_limits[while True:\n    pass\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[import time\ntime.sleep(30)\n-timeout]
+tests/test_local_runner.py::test_worker_enforces_limits[x = []\nwhile True:\n    x.append(bytearray(8_000_000))\n-memory]
+tests/test_local_runner.py::test_candidate_failures_are_scored_outcomes[def two_sum(nums, target):\n    while True:\n        pass\n-timeout]
+tests/test_ml_execution.py::test_buggy_variants_through_the_worker[minmax_normalize.v1:unguarded_divide]
+tests/test_ml_execution.py::test_candidate_errors_score_zero_with_a_kind[import numpy as np\ndef softmax(logits):\n    while True:\n        pass\n-timeout]
+```
 
 ## Next
-- **Stop after completed 3a**. Do not start 3b–3e without approval. Owner full pytest result remains pending (reference expected `1181 passed, 6 skipped`). Behavioural stays skipped while its reviewed bank is absent. Preserve the real DB, v4 hashes, stash and other worktrees. Do not run the pilot.
+- **Stopped during B1 validation**: Await review of the out-of-rule `test_complete_candidate_journey` sysctl failure. B1 code/tests/docs remain uncommitted. After authorization, finish/commit B1, then continue approved B2 and read-only B3, and stop. Do not start 3b–3e. Owner full pytest result remains pending (reference expected `1181 passed, 6 skipped` before B2 tests). Behavioural stays skipped while its reviewed bank is absent. Preserve the real DB, v4 hashes, stash and other worktrees. Do not run the pilot.
 - **Later (when API credits are added)**: Run the 30-bundle live pilot (`30` bundles + second per-(bundle, concept) human-labeling CSV).
 - **Backlog — offline template inventory check**: Reviewer accepts template fallback for Slice 3; no inventory work is authorized now. In a separate future workstream, review whether Core needs an explicit offline inventory check in start/availability to distinguish available bundles/CSV content from generic template fallback (`backend/routes/session.py:1483-1516,2030-2034`). Keep scorer, evaluator, guard, assistance-policy, eligibility and local-runner code unchanged.
 - **Backlog — SQL Run sample fallback**: `backend/routes/session.py:2237-2241` prefers a visible sample but falls back to `cases[0]` when none is tagged visible. Review this separately; no SQL Run fallback fix is authorized in D3/S2b/3a.
