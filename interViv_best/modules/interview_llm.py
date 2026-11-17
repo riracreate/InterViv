@@ -24,6 +24,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
+import certifi
+
 from modules import llm_outbound_gate
 from modules.interview_llm_budget import DispatchDeferred, RequestBudget
 from modules.llm_http_policy import LimitDecision, classify_http_error
@@ -35,6 +37,7 @@ CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MIN_CONTENT_CONTEXT = 16384
 LOGGER = logging.getLogger("interviv.interview_llm")
+_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 
 class RoutingError(RuntimeError):
@@ -186,7 +189,7 @@ def _fetch_catalog() -> dict:
     # Single GET only; a non-empty links.next fails closed, never silently truncates.
     # Only called after the live gate; overrides require an injected catalog.
     request = urllib.request.Request(CATALOG_URL, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=20, context=ssl.create_default_context()) as response:
+    with urllib.request.urlopen(request, timeout=20, context=_SSL_CTX) as response:
         payload = json.loads(response.read())
     catalog_rows(payload)
     return payload
@@ -445,7 +448,7 @@ class InterviewRouter:
             body["response_format"] = {"type": "json_object"}
         request = urllib.request.Request(CHAT_URL, data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout_s, context=ssl.create_default_context()) as response:
+        with urllib.request.urlopen(request, timeout=timeout_s, context=_SSL_CTX) as response:
             raw = response.read()
             headers = getattr(response, "headers", {})
         try:

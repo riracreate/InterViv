@@ -145,3 +145,47 @@ Against accepted `fe7f1a0`:
 | `modules/interview_llm.py` | 2 | 2 |
 | `scripts/list_interview_content_models.py` | 6 | 0 |
 | `tests/test_ai_interview_routing_step1c.py` | 26 | 2 |
+
+## Step 1e — certifi TLS context and URLError diagnostics, 17 November 2026
+
+Base: accepted `3f60f25`. The framework Python 3.12 build backing `.venv` starts with an empty default CA store (`x509_ca=0`), while `certifi` (`requirements.txt:18`) provides 120 root CAs. No dependency, migration, existing test assertion, launcher, protected-source file or session route changed; completion calls remain unauthorized until the owner confirms positive credits.
+
+1. **Shared certifi SSL context.** `modules/interview_llm.py:40` constructs one module-level `_SSL_CTX = ssl.create_default_context(cafile=certifi.where())` and passes it to `urllib.request.urlopen` in both `_fetch_catalog` (`:192`) and `_chat_once` (`:451`), matching `bundle_generator.py`, `question_bank.py`, `question_runtime.py` and `role_skills.py`.
+2. **Safe `URLError` reason reporting.** `scripts/list_interview_content_models.py:19`, `:54` formats `urllib.error.URLError` with the underlying reason's exception class, integer `errno`, uppercase ASCII OpenSSL `reason` mnemonic and integer `verify_code` (or integer HTTP status for `HTTPError`). Non-exception string reasons, headers, keys, URLs and bodies are never read or printed.
+3. **Offline regressions.** Two appended functions in `tests/test_ai_interview_routing_step1c.py` add six cases (`:290` `test_routed_boundary_uses_shared_certifi_ssl_context`; `:318` `test_catalog_script_prints_urlerror_reason_and_codes_without_secrets`). AST comparison against `3f60f25` confirms zero pre-existing test functions or assertions changed.
+
+### Step 1e verification
+
+| Step 1e run | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---|
+| Focused routing | 220 | 0 | 0 | 16.15 s; exit 0 |
+| Full backend | 1,453 | 6 | 0 | 301.64 s; exit 0 |
+| Full frontend | 243 | 0 | 0 | 16.60 s; exit 0 |
+
+Failing node IDs in all three runs: **none**. The six skips and 124 warnings have the same causes as Steps 1c–1d. Backend ran offline with all outbound calls mocked/blocked; Python compilation and `git diff --check` passed. Logs/XML: `/private/tmp/interviv-step1e.71GMTa/`.
+
+Full backend command (frontend: `npm test` from `frontend/`):
+
+```bash
+DATABASE_URL='' INTERVIV_DISABLE_DOTENV=1 AI_INTERVIEW_ROUTING_ENABLED=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LLM_LIVE_FETCH=0 JOBS_LIVE_FETCH=0 .venv/bin/python -m pytest -q -ra --junitxml=/private/tmp/interviv-step1e.71GMTa/backend.xml
+```
+
+Protected real DB SHA256 before/after this slice:
+
+```text
+before  93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+after   93dfc4b9dd11ae4e974faa069eedd2f877f6f045c1c66cae90a2d61d108f2801
+```
+
+Flag-off fixture SHA256 remains `c7bd7382554fd751b3c8b83986b18fa2ba73250629d4d5e33538e4ff1d6ead1f` (byte-identical).
+
+### Step 1e diffstat
+
+Against accepted `3f60f25`:
+
+| File (under `interViv_best/`) | Added | Removed |
+|---|---:|---:|
+| `docs/ai_interview_step1c_report.md` | 44 | 0 |
+| `modules/interview_llm.py` | 5 | 2 |
+| `scripts/list_interview_content_models.py` | 22 | 0 |
+| `tests/test_ai_interview_routing_step1c.py` | 59 | 0 |

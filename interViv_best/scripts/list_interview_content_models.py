@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
+import ssl
 import sys
+import urllib.error
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +14,24 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from modules import interview_llm, llm_outbound_gate  # noqa: E402
+
+
+def _urlerror_summary(exc: urllib.error.URLError) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTPError (status={exc.code})" if type(exc.code) is int else "HTTPError"
+    reason = exc.reason
+    parts = [type(reason).__name__ if isinstance(reason, BaseException) else "non_exception_reason"]
+    err_no = getattr(reason, "errno", None) if isinstance(reason, BaseException) else None
+    if type(err_no) is int:
+        parts.append(f"errno={err_no}")
+    ssl_reason = getattr(reason, "reason", None) if isinstance(reason, ssl.SSLError) else None
+    if (isinstance(ssl_reason, str) and ssl_reason.isascii() and ssl_reason.isupper()
+            and ssl_reason.replace("_", "").isalnum() and len(ssl_reason) <= 64):
+        parts.append(f"ssl_reason={ssl_reason}")
+    verify_code = getattr(reason, "verify_code", None) if isinstance(reason, ssl.SSLCertVerificationError) else None
+    if type(verify_code) is int:
+        parts.append(f"verify_code={verify_code}")
+    return f"URLError ({', '.join(parts)})"
 
 
 def main(argv=None, *, catalog_source=None) -> int:
@@ -30,6 +50,8 @@ def main(argv=None, *, catalog_source=None) -> int:
         rows = interview_llm.catalog_rows(payload)
     except interview_llm.RoutingError as exc:
         parser.exit(1, f"Catalog unavailable: {exc}\n")
+    except urllib.error.URLError as exc:
+        parser.exit(1, f"Catalog unavailable: {_urlerror_summary(exc)}\n")
     except (KeyError, TypeError, ValueError, OSError, http.client.HTTPException) as exc:
         parser.exit(1, f"Catalog unavailable: {type(exc).__name__}\n")
     if args.diagnostics:

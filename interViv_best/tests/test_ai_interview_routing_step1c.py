@@ -285,3 +285,62 @@ def test_catalog_diagnostics_report_link_presence_and_values(env, capsys, links_
     assert f"links_next_present\t{str(next_present).lower()}" in output
     assert f"links_next_value\t{json.dumps(next_value)}" in output
     assert not env[0].settings.state_path.exists()
+
+
+def test_routed_boundary_uses_shared_certifi_ssl_context(env, monkeypatch):
+    assert isinstance(routing._SSL_CTX, ssl.SSLContext)
+    assert routing._SSL_CTX.cert_store_stats()["x509_ca"] > 0
+    monkeypatch.setattr(routing.ssl, "create_default_context",
+                        lambda *a, **kw: pytest.fail("must reuse module certifi context"))
+    contexts = []
+    def fake_urlopen(request, **kwargs):
+        contexts.append((request.full_url, kwargs.get("context")))
+        payload = catalog() if request.full_url == routing.CATALOG_URL else completion_body(model=PAID)
+        return Response(json.dumps(payload).encode())
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-fixture-only")
+    monkeypatch.setattr(routing.urllib.request, "urlopen", fake_urlopen)
+    router = routing.InterviewRouter(env[0].settings, clock=env[1])
+    with routing.interview_scope("ssl-ctx", 2):
+        result = router.dispatch(purpose="role_skill_extraction", messages=[])
+    assert result.model == PAID
+    assert contexts == [(routing.CATALOG_URL, routing._SSL_CTX),
+                        (routing.CHAT_URL, routing._SSL_CTX)]
+
+
+@pytest.mark.parametrize("kind,expected", [
+    ("ssl_verify", ("URLError", "SSLCertVerificationError", "errno=1",
+                    "ssl_reason=CERTIFICATE_VERIFY_FAILED", "verify_code=20")),
+    ("dns", ("URLError", "gaierror", "errno=8")),
+    ("timeout", ("URLError", "TimeoutError")),
+    ("string_reason", ("URLError", "non_exception_reason")),
+    ("http_error", ("HTTPError", "status=403")),
+])
+def test_catalog_script_prints_urlerror_reason_and_codes_without_secrets(env, monkeypatch, capsys, kind, expected):
+    import io
+    import socket
+    from urllib.error import HTTPError, URLError
+
+    if kind == "ssl_verify":
+        reason = ssl.SSLCertVerificationError(1, "PRIVATE_KEY_MARKER")
+        reason.reason = "CERTIFICATE_VERIFY_FAILED"
+        reason.verify_code = 20
+        raised = URLError(reason)
+    elif kind == "dns":
+        raised = URLError(socket.gaierror(8, "PRIVATE_HOST_MARKER"))
+    elif kind == "timeout":
+        raised = URLError(TimeoutError("PRIVATE_KEY_MARKER"))
+    elif kind == "string_reason":
+        raised = URLError("Authorization: Bearer PRIVATE_KEY_MARKER")
+    else:
+        raised = HTTPError(routing.CATALOG_URL, 403, "Forbidden PRIVATE_KEY_MARKER",
+                           {"Authorization": "Bearer PRIVATE_KEY_MARKER"}, io.BytesIO(b"PRIVATE_BODY_MARKER"))
+    monkeypatch.setattr(routing.urllib.request, "urlopen", lambda *a, **kw: (_ for _ in ()).throw(raised))
+    with pytest.raises(SystemExit) as error:
+        list_interview_content_models.main(["--diagnostics"])
+    captured = capsys.readouterr()
+    assert error.value.code == 1 and captured.out == ""
+    for token in expected:
+        assert token in captured.err
+    for marker in ("PRIVATE_KEY_MARKER", "PRIVATE_HOST_MARKER", "PRIVATE_BODY_MARKER", "Authorization"):
+        assert marker not in captured.err
+    assert not env[0].settings.state_path.exists()
