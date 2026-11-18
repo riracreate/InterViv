@@ -13,6 +13,8 @@ import {
   stepFromSearch,
 } from '../lib/uploadWizard';
 import CompanySelector from '../components/CompanySelector';
+import RoleSelector from '../components/RoleSelector';
+import { ROLE_ONLY_TARGETS } from '../lib/roleTargets';
 import AccountMenu from '../components/AccountMenu';
 import { MAX_RESUME_LABEL, resumeFileError } from '../lib/resumeUpload';
 
@@ -184,7 +186,8 @@ export default function Upload() {
         const target = saved.targetSelection.companyId && saved.targetSelection.roleId
           ? saved.targetSelection
           : { companyId: u.target_company_id || '', roleId: u.target_role_id || '' };
-        setTargetSelection(target);
+        // Role-only targets never carry a company into this session.
+        setTargetSelection(ROLE_ONLY_TARGETS ? { companyId: '', roleId: '' } : target);
       })
       .catch(() => { if (!cancelled) setIsAuthenticated(false); })
       .finally(() => { if (!cancelled) setRestored(true); });
@@ -589,14 +592,22 @@ export default function Upload() {
             )}
 
             <div className="mb-6">
-              <CompanySelector
-                isAuthenticated={isAuthenticated}
-                onSelectionChange={setTargetSelection}
-                // The selector unmounts on Review; when it remounts it must
-                // start from the live selection, not a page-load snapshot.
-                initialCompanyId={targetSelection.companyId}
-                initialRoleId={targetSelection.roleId}
-              />
+              {ROLE_ONLY_TARGETS ? (
+                <RoleSelector
+                  isAuthenticated={isAuthenticated}
+                  candidateId={candidateId}
+                  onStarted={(started) => navigate(`/interview/${encodeURIComponent(started.session_id)}`)}
+                />
+              ) : (
+                <CompanySelector
+                  isAuthenticated={isAuthenticated}
+                  onSelectionChange={setTargetSelection}
+                  // The selector unmounts on Review; when it remounts it must
+                  // start from the live selection, not a page-load snapshot.
+                  initialCompanyId={targetSelection.companyId}
+                  initialRoleId={targetSelection.roleId}
+                />
+              )}
             </div>
 
             <button type="button" onClick={() => goToStep('domains')} disabled={selectedSkills.length === 0}

@@ -4,8 +4,9 @@ import AppNav from '../components/AppNav';
 import VoiceInterview from '../components/staged/VoiceInterview';
 import { createStagedSessionController, stagedSessionState } from '../lib/stagedSession';
 import { isVoiceInterview } from '../lib/speech/voiceSession';
+import { levelLabel, stagedTurnNote } from '../lib/roleTargets';
 
-const STAGE_LABELS = { warm_up: 'Warm-up', core: 'Core', follow_up: 'Follow-up', behavioural: 'Behavioural' };
+const STAGE_LABELS = { warm_up: 'Warm-up', core: 'Core', follow_up: 'Follow-up', behavioural: 'Behavioural', practice: 'Practice' };
 
 export default function StagedInterview({ session }) {
   if (isVoiceInterview(session?.session_id)) return <VoiceInterview session={session} />;
@@ -58,12 +59,15 @@ function ClassicStagedInterview({ session }) {
   const supported = view.active?.type === 'technical_short_answer';
   const locked = view.busy || view.needsRefresh || !draftReady;
   const stageLabel = STAGE_LABELS[view.active?.stage || view.stage] || 'Interview';
+  // Role interviews (ROLE_ONLY_TARGETS) name the role and label unscored turns.
+  const role = session?.role_interview || null;
+  const turnNote = role ? stagedTurnNote(view.active?.stage) : '';
   return <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-ink)]">
     <div className="app-container">
       <AppNav />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12" data-testid="staged-interview">
         <header className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">{view.preset === 'full' ? 'Full' : 'Quick'} interview</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">{role?.title ? `${role.title}${role.level ? ` · ${levelLabel(role.level)}` : ''} · ` : ''}{view.preset === 'full' ? 'Full' : 'Quick'} interview</p>
           <h1 className="mt-2 text-3xl font-semibold">{view.phase === 'completed' ? 'Interview complete' : stageLabel}</h1>
           <p className="mt-3 text-sm text-[var(--color-ink-muted)]">{view.answeredCount} of {view.totalRounds} answers saved</p>
         </header>
@@ -90,6 +94,7 @@ function ClassicStagedInterview({ session }) {
             <span>Question {round} of {view.totalRounds}</span>
             {view.active.skill && <span>{view.active.skill}</span>}
             {view.active.isFollowUp && <span>Follow-up{view.active.parentRound ? ` to question ${view.active.parentRound}` : ''}</span>}
+            {turnNote && <span data-testid="staged-turn-note">{turnNote}</span>}
           </div>
           <h2 className="mt-4 text-xl font-medium leading-8">{view.active.question}</h2>
           {view.active.expiresAt && <p className="mt-3 text-xs text-[var(--color-ink-muted)]">Round ends at <time dateTime={view.active.expiresAt}>{new Date(view.active.expiresAt).toLocaleTimeString()}</time>.</p>}

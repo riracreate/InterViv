@@ -24,7 +24,9 @@ import PlannedScope from '../components/PlannedScope';
 import InterviewResumePanel from '../components/InterviewResumePanel';
 import StagedInterviewLauncher from '../components/staged/StagedInterviewLauncher';
 import RolePracticeCard from '../components/staged/RolePracticeCard';
+import RoleSelector from '../components/RoleSelector';
 import { ROLE_PRACTICE_ENABLED } from '../lib/rolePractice';
+import { ROLE_ONLY_TARGETS } from '../lib/roleTargets';
 import { readScoped, writeScoped } from '../lib/accountStorage';
 import {
   WIZARD_STORAGE_NAME,
@@ -208,7 +210,8 @@ export default function Practice() {
         if (data.target.resume_ref) {
           setResumeState((prev) => (prev.candidateId ? prev : { ...prev, candidateId: data.target.resume_ref }));
         }
-        if (data.target.company_id && data.target.role_id) {
+        // Role-only targets replace the company target entirely.
+        if (!ROLE_ONLY_TARGETS && data.target.company_id && data.target.role_id) {
           // The saved target is a default only: a target passed by the
           // Gap/Roadmap hop (or picked already) wins.
           setTarget((prev) => (prev.companyId && prev.roleId ? prev : {
@@ -379,7 +382,7 @@ export default function Practice() {
     // Adopt the hop's target only when no target is set yet.
     const hopCompany = location.state?.targetCompanyId || '';
     const hopRole = location.state?.targetRoleId || '';
-    if (hopCompany && hopRole && !target.companyId && !target.roleId) {
+    if (!ROLE_ONLY_TARGETS && hopCompany && hopRole && !target.companyId && !target.roleId) {
       setTarget({ companyId: hopCompany, roleId: hopRole });
     }
     return undefined;
@@ -762,7 +765,15 @@ export default function Practice() {
           </div>
         )}
 
-        {ROLE_PRACTICE_ENABLED && <div className="mt-6"><RolePracticeCard /></div>}
+        {ROLE_ONLY_TARGETS ? (
+          <div className="mt-6">
+            <RoleSelector
+              isAuthenticated={Boolean(user)}
+              candidateId={resumeState.candidateId}
+              onStarted={started => navigate(`/interview/${encodeURIComponent(started.session_id)}`)}
+            />
+          </div>
+        ) : ROLE_PRACTICE_ENABLED && <div className="mt-6"><RolePracticeCard /></div>}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2" data-testid="staged-launchers">
           <StagedInterviewLauncher userId={userId}
@@ -831,19 +842,21 @@ export default function Practice() {
           />
         )}
 
-        {ROLE_PRACTICE_ENABLED ? null : (mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
+        {ROLE_PRACTICE_ENABLED && !ROLE_ONLY_TARGETS ? null : (mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
-              Target role & skills
+              {ROLE_ONLY_TARGETS ? 'Skills' : 'Target role & skills'}
             </h3>
-            <div className="mt-3">
-              <CompanySelector
-                isAuthenticated={Boolean(user)}
-                initialCompanyId={target.companyId}
-                initialRoleId={target.roleId}
-                onSelectionChange={setTarget}
-              />
-            </div>
+            {ROLE_ONLY_TARGETS ? null : (
+              <div className="mt-3">
+                <CompanySelector
+                  isAuthenticated={Boolean(user)}
+                  initialCompanyId={target.companyId}
+                  initialRoleId={target.roleId}
+                  onSelectionChange={setTarget}
+                />
+              </div>
+            )}
             <div className="mt-4">
               <SkillChipInput
                 label="Skills"
@@ -863,7 +876,7 @@ export default function Practice() {
           </section>
         )}
 
-        {ROLE_PRACTICE_ENABLED ? null : (mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
+        {ROLE_PRACTICE_ENABLED || ROLE_ONLY_TARGETS ? null : (mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)

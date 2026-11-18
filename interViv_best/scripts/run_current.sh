@@ -167,6 +167,8 @@ stop_ours 8000
     export JOBS_LIVE_FETCH=0
   fi
   export ROLE_PRACTICE_ENABLED=1
+  # Role-only targets and role interviews; off in code.
+  export ROLE_ONLY_TARGETS=1
   detach "$RUN/backend.pid" "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 \
     >>"$RUN/backend.log" 2>&1
 )
@@ -177,6 +179,7 @@ stop_ours 5173
 (
   cd "$APP/frontend"
   export VITE_ROLE_PRACTICE=1
+  export VITE_ROLE_ONLY_TARGETS=1
   detach "$RUN/frontend.pid" npm run dev -- --host 127.0.0.1 --port 5173 \
     >>"$RUN/frontend.log" 2>&1
 )

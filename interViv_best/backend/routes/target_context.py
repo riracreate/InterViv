@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import get_settings
 from backend.db import DatabaseConnectionError, get_database, is_database_exception
@@ -31,6 +31,13 @@ from backend.routes.auth import require_authenticated, require_user
 from modules.company_graph import get_company_graph
 from modules.guidance_coach import MAX_INPUT_CHARS
 from modules.jobs_explorer import get_job
+from modules.role_interview import (
+    RoleInterviewError,
+    decode_role_target,
+    encode_role_target,
+    role_only_targets_enabled,
+    role_target_view,
+)
 
 router = APIRouter(
     prefix="/target-context",
@@ -63,9 +70,18 @@ def _stored_target_id(slug: str | None, kind: str) -> Any:
     return resolved
 
 
+class RoleTargetIn(BaseModel):
+    """One of the starter role blueprints plus a level (ROLE_ONLY_TARGETS)."""
+
+    role_id: str = Field(min_length=1, max_length=64)
+    level: str = "junior"
+
+
 class TargetContextUpdate(BaseModel):
     company_id: str | None = None
     role_id: str | None = None
+    # Role-only target; null clears it. Rejected unless ROLE_ONLY_TARGETS is on.
+    role_target: RoleTargetIn | None = None
     job_id: str | None = None
     jd_source: str | None = None
     jd_text: str | None = None
@@ -91,9 +107,10 @@ def _resolve_context(context: dict[str, Any] | None, db: Any) -> dict[str, Any]:
     ):
         return {"target": None}
     graph = get_company_graph()
+    role_target = role_target_view(context.get("role_id"))
     company = graph.get_company(context.get("company_id") or "") if context.get("company_id") else None
     role = None
-    if company and context.get("role_id"):
+    if company and context.get("role_id") and role_target is None:
         role = graph.get_role(company.id, context["role_id"])
     required_skills = [r.skill for r in (role.skill_requirements if role else [])]
     job = get_job(context["job_id"]) if context.get("job_id") else None
@@ -106,8 +123,10 @@ def _resolve_context(context: dict[str, Any] | None, db: Any) -> dict[str, Any]:
         "target": {
             "company_id": context.get("company_id"),
             "company_name": company.name if company else None,
-            "role_id": context.get("role_id"),
+            # A role-only target is never exposed as a company role.
+            "role_id": None if role_target else context.get("role_id"),
             "role_title": role.title if role else None,
+            **({"role_target": role_target} if role_target and role_only_targets_enabled() else {}),
             "required_skills": required_skills,
             "job_id": context.get("job_id"),
             "job_title": job.get("title") if job else None,
@@ -154,10 +173,36 @@ def put_my_target_context(
     # graph-validated, db ids mirrored onto the users row.
     company_slug = payload.get("company_id", _UNSET)
     role_slug = payload.get("role_id", _UNSET)
+    if "role_target" in payload:
+        if not role_only_targets_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Role targets are off.",
+            )
+        if company_slug is not _UNSET or role_slug is not _UNSET:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Send role_target or company_id/role_id, not both.",
+            )
+        wanted = payload["role_target"]
+        company_slug = None
+        if wanted is None:
+            role_slug = None if decode_role_target(current.get("role_id")) else current.get("role_id")
+            company_slug = current.get("company_id") if role_slug is not None else None
+        else:
+            try:
+                role_slug = encode_role_target(wanted["role_id"], wanted.get("level") or "junior")
+            except RoleInterviewError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+                ) from exc
     if company_slug is _UNSET:
         company_slug = current.get("company_id")
     if role_slug is _UNSET:
         role_slug = current.get("role_id")
+    role_only = decode_role_target(role_slug) is not None
+    if role_only:
+        company_slug = None
     if company_slug is not None:
         company = graph.get_company(company_slug)
         if company is None:
@@ -170,7 +215,7 @@ def put_my_target_context(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Role '{role_slug}' not found for company '{company_slug}'.",
             )
-    elif role_slug is not None:
+    elif role_slug is not None and not role_only:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="role_id requires company_id.",
@@ -241,7 +286,8 @@ def put_my_target_context(
                 {
                     "$set": {
                         "target_company_id": _stored_target_id(company_slug, "company"),
-                        "target_role_id": _stored_target_id(role_slug, "role"),
+                        # A role-only target has no company role row.
+                        "target_role_id": None if role_only else _stored_target_id(role_slug, "role"),
                         "last_active_at": datetime.now(timezone.utc),
                     }
                 },
