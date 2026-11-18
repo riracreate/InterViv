@@ -38,6 +38,7 @@ __pycache__/
 htmlcov/
 dist/
 build/
+.venv
 .venv/
 venv/
 

@@ -194,3 +194,45 @@ def test_unknown_role_draft_uses_override_and_caches(monkeypatch, tmp_path):
     assert second == first
     clear_draft_cache()
     get_settings.cache_clear()
+
+
+def test_data_scientist_rename_and_legacy_alias(monkeypatch):
+    docs = _docs()
+    assert "data-scientist" in docs
+    assert "data-scientist-ml" not in docs
+    ds = docs["data-scientist"]
+    assert ds["title"] == "Data Scientist"
+    assert "data-scientist-ml" in ds["aliases"]
+    tech_skills = [skill for item in ds["competencies"] if item["type"] == "technical" for skill in item["skills"]]
+    assert tech_skills == ["Statistics", "Machine Learning", "Python", "SQL"]
+
+    from modules.role_blueprints import get_blueprint, resolve_blueprint_id
+    assert resolve_blueprint_id("data-scientist-ml") == "data-scientist"
+    assert get_blueprint("data-scientist-ml")["id"] == "data-scientist"
+
+    monkeypatch.setenv("ROLE_PRACTICE_ENABLED", "1")
+    from backend.routes.role_practice import PlanRequest, plan
+    planned = plan(PlanRequest(role_id="data-scientist-ml", level="junior", length="quick"))
+    assert planned["role_id"] == "data-scientist"
+    assert planned["title"] == "Data Scientist"
+
+
+def test_bundle_generator_prompt_enforces_reference_numbers_and_primary_sources():
+    from modules.bundle_generator import _build_prompt_b_messages, _build_regeneration_messages
+
+    prompt_b = "\n".join(m["content"] for m in _build_prompt_b_messages(
+        skill="RAG & Vector Databases", topic="Hybrid search", difficulty="medium",
+    ))
+    regen = "\n".join(m["content"] for m in _build_regeneration_messages(
+        skill="RAG & Vector Databases",
+        topic="Hybrid search",
+        difficulty="medium",
+        previous_content={},
+        blind_answer="answer",
+        eval_res={},
+        audit_diagnosis={},
+    ))
+    for text in (prompt_b, regen):
+        assert "never in required_concepts" in text
+        assert "cite primary sources" in text
+        assert "not blogs" in text

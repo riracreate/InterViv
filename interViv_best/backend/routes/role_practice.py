@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.routes.auth import require_authenticated
-from modules.role_blueprints import load_blueprints
+from modules.role_blueprints import get_blueprint, load_blueprints
 from modules.role_planner import plan_role
 from modules.staged_flow import estimate_minutes
 
@@ -54,7 +54,7 @@ def catalog() -> dict:
 @router.post("/plan")
 def plan(body: PlanRequest) -> dict:
     _require_enabled()
-    doc = next((item for item in load_blueprints() if item["id"] == body.role_id), None)
+    doc = get_blueprint(body.role_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Role blueprint not found.")
     slots = plan_role(

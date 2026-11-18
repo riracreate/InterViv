@@ -47,6 +47,10 @@ for _alias, _canonical in TECH_SKILLS:
     _ALIAS_TO_CANONICAL[_alias.lower()] = _canonical
     _ALIAS_TO_CANONICAL.setdefault(_canonical.lower(), _canonical)
 
+BLUEPRINT_ALIASES: dict[str, str] = {
+    "data-scientist-ml": "data-scientist",
+}
+
 _DRAFT_CACHE: dict[str, dict] = {}
 
 
@@ -152,6 +156,23 @@ def load_blueprints(directory: Path = BLUEPRINT_DIR) -> list[dict]:
         seen.add(doc["id"])
         docs.append(doc)
     return docs
+
+
+def resolve_blueprint_id(role_id: str) -> str:
+    """Resolve a blueprint ID or legacy role slug alias to the canonical blueprint ID."""
+    key = " ".join(str(role_id or "").strip().lower().split())
+    return BLUEPRINT_ALIASES.get(key, key)
+
+
+def get_blueprint(role_id: str, directory: Path = BLUEPRINT_DIR) -> dict | None:
+    """Return a loaded blueprint by canonical ID or alias, or None if not found."""
+    target = resolve_blueprint_id(role_id)
+    if not target:
+        return None
+    for doc in load_blueprints(directory):
+        if doc["id"] == target:
+            return doc
+    return None
 
 
 def blueprint_summary(docs: list[dict], *, bundle_skills: set[str] | None = None) -> list[dict]:

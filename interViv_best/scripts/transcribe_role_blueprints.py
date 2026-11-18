@@ -21,7 +21,7 @@ FAMILIES = {
     "devops-cloud-engineer": "engineering",
     "qa-test-engineer": "engineering",
     "data-analyst": "data",
-    "data-scientist-ml": "data",
+    "data-scientist": "data",
     "business-analyst": "business",
     "associate-product-manager": "product",
     "product-marketing": "business",

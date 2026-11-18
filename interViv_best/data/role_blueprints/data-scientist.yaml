@@ -1,0 +1,118 @@
+id: data-scientist
+title: Data Scientist
+aliases:
+- Junior Data Scientist
+- Decision Scientist
+- Stat Modeler
+- data-scientist-ml
+family: data
+levels:
+- intern
+- junior
+- mid
+practical_track: coding
+status: draft
+version: 1
+level_expectations:
+  intern: Prevents train/test leakage, selects appropriate metrics for skewed outcomes
+    (PR-AUC, RMSE vs. MAE, log-loss), computes sample sizes and p-values accurately,
+    and writes clean Python/SQL exploratory pipelines.
+  junior: Prevents train/test leakage, selects appropriate metrics for skewed outcomes
+    (PR-AUC, RMSE vs. MAE, log-loss), computes sample sizes and p-values accurately,
+    and writes clean Python/SQL exploratory pipelines.
+  mid: Designs randomized controlled experiments with variance reduction (CUPED/stratification),
+    handles novelty/network interference and observational causal pitfalls, calibrates
+    predicted probabilities for decision thresholds, and translates uncertainty to
+    executives.
+level_expectation_review:
+  junior: needs owner edit
+competencies:
+- id: probability-statistics-experimentation
+  name: Probability, Statistics & Experimentation
+  type: technical
+  weight: 0.25
+  skills:
+  - Statistics
+  scenario_topics: []
+- id: predictive-modeling-validation
+  name: Predictive Modeling & Validation
+  type: technical
+  weight: 0.2
+  skills:
+  - Machine Learning
+  scenario_topics: []
+- id: python-analytical-sql
+  name: Python & Analytical SQL
+  type: technical
+  weight: 0.15
+  skills:
+  - Python
+  - SQL
+  scenario_topics: []
+- id: flawed-experiment-metric-diagnosis
+  name: Flawed Experiment & Metric Diagnosis
+  type: role_scenario
+  weight: 0.2
+  skills: []
+  scenario_topics:
+  - Diagnosing sample-ratio mismatch (SRM), peeking bias, survivorship bias, or conflicting
+    A/B outcomes
+- id: intellectual-rigor-baseline-honesty
+  name: Intellectual Rigor & Baseline Honesty
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Reporting null or negative experimental findings transparently against stakeholder
+    pressure
+- id: executive-storytelling-with-uncertainty
+  name: Executive Storytelling With Uncertainty
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Communicating confidence intervals, expected value, and business trade-offs without
+    jargon
+draft_seeds:
+- kind: opener
+  text: In the predictive or analytical project on your resume, what specific business
+    decision did your model or statistical analysis change, what simple heuristic baseline
+    did you compare it against, and how did you validate it was not overfitting?
+- kind: fundamentals
+  text: Product runs an A/B test on checkout button copy and checks the p-value every
+    morning, stopping the test on Day 4 as soon as p = 0.038. Explain why peeking inflates
+    false positives, how you calculate required sample size upfront, and what Sample
+    Ratio Mismatch (SRM) indicates.
+- kind: tradeoff
+  text: Marketing wants to measure whether sending a 15% discount push notification
+    reduces 30-day churn, but legal/ops refused a holdout group last quarter, so you
+    only have historical observational logs showing recipients churned 4% less than
+    non-recipients. Why is that 4% estimate likely biased, and how would propensity
+    weighting or difference-in-differences address or fail to address it?
+- kind: scenario
+  text: An A/B test of an algorithmic course-recommendation carousel increases click-through
+    rate by 18% (p < 0.001), leaves 7-day course completion flat, and slightly increases
+    48-hour unsubscribes by 0.4% (p = 0.09). Leadership wants to ship immediately based
+    on the 18% CTR win. How do you advise them?
+- kind: behavioural
+  text: Tell me about a time your data or experiment disproved a hypothesis that a senior
+    stakeholder or teammate was excited about. How did you validate your numbers and
+    deliver the message?
+provenance:
+  onet:
+    code: 15-2051.00
+    title: 15-2051.00 Data Scientists
+    url: https://www.onetonline.org/link/summary/15-2051.00
+    accessed: '2026-11-17'
+    status: verified
+    page_title: 15-2051.00 - Data Scientists
+    note: ''
+  esco:
+    code: '2511.3'
+    title: data scientist (ISCO 2511.3)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F258e46f9-0075-4a2e-adae-1ff0477e0f30&language=en
+    accessed: '2026-11-17'
+    status: verified
+    page_title: data scientist
+    note: ''
+  source: docs/research/role_catalog_research.md
