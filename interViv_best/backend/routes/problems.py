@@ -35,6 +35,7 @@ class CodingCoachHintRequest(BaseModel):
     round: int = Field(ge=1)
     level: int = Field(default=1, ge=1, le=3)
     source: str | None = None
+    language: str | None = None
     last_error: str | None = None
 
 
@@ -120,6 +121,7 @@ def coding_coach_hint(
         level=body.level,
         source=body.source,
         last_error=body.last_error,
+        language=body.language,
         prefer_ai=True,
     )
     try:

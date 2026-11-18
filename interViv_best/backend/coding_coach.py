@@ -84,6 +84,7 @@ def _ollama_hint(
     level: int,
     source: str | None,
     last_error: str | None,
+    language: str | None = None,
 ) -> str | None:
     base = coach_endpoint()
     if not _localhost_only(base):
@@ -95,6 +96,7 @@ def _ollama_hint(
         "Rules: no complete solution, no full code dump, no hidden-test content, under 80 words.\n"
         f"Title: {problem.get('title')}\n"
         f"Function: {problem.get('function')}\n"
+        f"Language: {str(language or 'unspecified').strip()[:40]}\n"
         f"Topics: {', '.join(problem.get('topics') or [])}\n"
         f"Statement:\n{statement}\n"
     )
@@ -150,12 +152,19 @@ def build_hint(
     level: int,
     source: str | None = None,
     last_error: str | None = None,
+    language: str | None = None,
     prefer_ai: bool = True,
 ) -> dict[str, Any]:
     level = max(1, min(3, int(level)))
     withheld = False
     if prefer_ai:
-        ai = _ollama_hint(problem=problem, level=level, source=source, last_error=last_error)
+        ai = _ollama_hint(
+            problem=problem,
+            level=level,
+            source=source,
+            last_error=last_error,
+            language=language,
+        )
         if ai and leaks_solution(ai):
             withheld = True
         elif ai:

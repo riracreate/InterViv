@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Send, Check, X, Clock3, RotateCcw, Code2, BookOpen, Lightbulb, Terminal } from 'lucide-react';
 import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft, fetchCodingExecutionStatus, fetchCodingCoach } from '../lib/api';
+import { codingHintPayload } from '../lib/codingHint';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 import CodeEditor from './CodeEditor';
 import './coding-workspace.css';
@@ -79,8 +80,18 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
     if (!running && !isScoring && !closed && !expired && !executionDown && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
   const requestHint = async () => {
+    const payload = codingHintPayload({
+      sessionId,
+      round,
+      level: Math.min((coach?.level || 0) + 1, 3),
+      source,
+      language,
+      runnerError: error,
+      visible: result?.visible,
+      tests,
+    });
     setCoachBusy(true); setError('');
-    try { setCoach(await fetchCodingCoach({ session_id: sessionId, round, level: Math.min((coach?.level || 0) + 1, 3) })); }
+    try { setCoach(await fetchCodingCoach(payload)); }
     catch (err) { setError(err.message); }
     finally { setCoachBusy(false); }
   };
