@@ -60,6 +60,33 @@ TECH_SKILLS = [
     ("jira", "Jira"),
 ]
 
+# Starter-blueprint skills registered via role_skills/audit, kept outside TECH_SKILLS
+# so static taxonomy_skill() and MiniLM hard-pair baselines remain unchanged.
+REGISTERED_BLUEPRINT_SKILLS = [
+    ("data visualisation", "Data Visualisation"),
+    ("data visualization", "Data Visualisation"),
+    ("design systems", "Design Systems"),
+    ("design system", "Design Systems"),
+    ("html/css", "HTML/CSS"),
+    ("market research", "Market Research"),
+    ("marketing metrics", "Marketing Metrics"),
+    ("positioning", "Positioning"),
+    ("prioritisation", "Prioritisation"),
+    ("prioritization", "Prioritisation"),
+    ("process modelling", "Process Modelling"),
+    ("process modeling", "Process Modelling"),
+    ("product metrics", "Product Metrics"),
+    ("project planning", "Project Planning"),
+    ("requirements engineering", "Requirements Engineering"),
+    ("risk tracking", "Risk Tracking"),
+    ("statistics", "Statistics"),
+    ("test automation", "Test Automation"),
+    ("test design", "Test Design"),
+    ("usability", "Usability"),
+    ("user research", "User Research"),
+    ("web performance", "Web Performance"),
+]
+
 SECTION_PATTERNS = {
     "contact": re.compile(
         r"(?im)^(?:contact|email|phone|linkedin|github)\b|(?:[\w.+-]+@[\w.-]+\.\w{2,})"
@@ -252,7 +279,7 @@ def _find_skills(text):
     text_lower = text.lower()
     skills = []
 
-    for skill, canonical in TECH_SKILLS:
+    for skill, canonical in (*TECH_SKILLS, *REGISTERED_BLUEPRINT_SKILLS):
         alias = skill.lower()
         if len(alias) <= 2 or alias in _HYPHEN_SENSITIVE_ALIASES:
             # Avoid false positives on hyphenated/underscored words like "go-to-market" or "go-live".

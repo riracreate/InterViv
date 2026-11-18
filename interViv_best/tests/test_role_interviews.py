@@ -253,3 +253,29 @@ def test_every_scripted_or_resume_opener_slot_is_unscored():
             assert without_resume[0].kind == "opener"
             if without_resume[0].name == "Role opener":
                 assert without_resume[0].scored is False
+
+
+def test_resume_parsing_recognises_registered_blueprint_skills_and_plans_statistics_as_claimed():
+    from modules.resume_parser import REGISTERED_BLUEPRINT_SKILLS, analyze_resume_text
+
+    analysis = analyze_resume_text(
+        "EXPERIENCE\n"
+        "- Built churn models using Statistics and Data Visualisation\n"
+        "SKILLS\n"
+        "Statistics, Data Visualisation, Product Metrics"
+    )
+    assert "Statistics" in analysis["skills"]
+    assert "Data Visualisation" in analysis["skills"]
+    assert "Product Metrics" in analysis["skills"]
+    assert "Statistics" in (analysis["evidence_skills"] or [])
+
+    expected_canonicals = {canonical for _, canonical in REGISTERED_BLUEPRINT_SKILLS}
+    assert len(expected_canonicals) == 18
+    all_detected = analyze_resume_text(", ".join(sorted(expected_canonicals)))["skills"]
+    assert expected_canonicals.issubset(set(all_detected))
+
+    planned = plan_role(_docs()["data-analyst"], level="junior", length="quick", resume=analysis)
+    stat_slots = [slot for slot in planned if slot.kind == "core" and slot.skill == "Statistics"]
+    assert len(stat_slots) == 1
+    assert stat_slots[0].difficulty == "hard"
+    assert "Statistics: on your resume, asked one level harder" in stat_slots[0].reason

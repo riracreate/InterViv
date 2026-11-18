@@ -59,15 +59,24 @@ def _status_for(item: dict, resume: dict | None) -> str:
     if not resume:
         return ""
     wanted = {str(skill).casefold() for skill in item.get("skills") or []}
-    found = []
-    for name, status in (resume.get("skills") or {}).items():
-        if str(name).casefold() in wanted:
-            found.append(status)
-    if "claimed_with_evidence" in found:
-        return "claimed_with_evidence"
-    if "listed_only" in found:
-        return "listed_only"
-    if "missing" in found:
+    raw_skills = resume.get("skills")
+    if isinstance(raw_skills, dict):
+        found = [
+            status
+            for name, status in raw_skills.items()
+            if str(name).casefold() in wanted
+        ]
+        if "claimed_with_evidence" in found:
+            return "claimed_with_evidence"
+        if "listed_only" in found:
+            return "listed_only"
+        if "missing" in found:
+            return "missing"
+        return ""
+    if isinstance(raw_skills, (list, tuple, set)):
+        present = {str(name).casefold() for name in raw_skills if str(name).strip()}
+        if wanted & present:
+            return "claimed_with_evidence"
         return "missing"
     return ""
 
