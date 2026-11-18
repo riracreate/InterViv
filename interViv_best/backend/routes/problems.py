@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.coding_coach import build_hint, coach_status
@@ -35,7 +36,9 @@ class CodingCoachHintRequest(BaseModel):
     round: int = Field(ge=1)
     level: int = Field(default=1, ge=1, le=3)
     source: str | None = None
+    language: str | None = None
     last_error: str | None = None
+    confirm_assessment_help: bool = False
 
 
 @router.get("")
@@ -83,8 +86,44 @@ def coding_coach_hint(
     """Progressive coding hint. Records assistance; never changes scores."""
     user = require_user(authorization)
     user_id = str(user["id"])
+    from backend.routes.answer import _submit_locked
+    from backend.routes.feedback import _round_submitted
+    from backend.round_lifecycle import OPEN_STATUSES
+
     try:
         db = get_database()
+    except Exception as exc:
+        if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        raise
+
+    with _submit_locked(body.session_id):
+        return _coding_hint_locked(
+            db,
+            body,
+            user_id=user_id,
+            round_submitted=_round_submitted,
+            open_statuses=OPEN_STATUSES,
+        )
+
+
+def _coding_hint_block_reason(session: dict, round_doc: dict, *, round_submitted, open_statuses) -> str | None:
+    """Reject hints once the round is submitted or the round/session is closed."""
+    status_value = str(round_doc.get("status") or "").lower()
+    session_status = str(session.get("status") or "").lower()
+    if status_value == "submitted" or round_doc.get("submitted_at"):
+        return "Hints are not available on a submitted round."
+    if session_status in {"completed", "closed", "expired"} or status_value not in open_statuses:
+        return "Hints are not available on a closed round."
+    if round_submitted(round_doc):
+        return "Hints are not available on a submitted round."
+    return None
+
+
+def _coding_hint_locked(db, body: CodingCoachHintRequest, *, user_id: str, round_submitted, open_statuses) -> dict[str, Any]:
+    try:
         session = db["sessions"].find_one({"session_id": body.session_id})
     except Exception as exc:
         if isinstance(exc, DatabaseConnectionError) or is_database_exception(exc):
@@ -106,6 +145,16 @@ def coding_coach_hint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Coach hints are only available on an active coding round.",
         )
+    blocked = _coding_hint_block_reason(
+        session, target, round_submitted=round_submitted, open_statuses=open_statuses,
+    )
+    if blocked:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=blocked)
+    # Assessment mode is stored on the session. A refresh can lose the client
+    # copy, so the server asks before any hint or exposure is produced.
+    mode = str(session.get("practice_mode") or "").strip().lower()
+    if mode == "assessment" and not body.confirm_assessment_help:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"code": "confirm_required"})
     problem_id = str(
         (target.get("config_json") or {}).get("problem_id")
         or target.get("problem_id")
@@ -120,6 +169,7 @@ def coding_coach_hint(
         level=body.level,
         source=body.source,
         last_error=body.last_error,
+        language=body.language,
         prefer_ai=True,
     )
     try:

@@ -48,9 +48,29 @@ class CoachPlanRequest(BaseModel):
         return self
 
 
+_PRACTICE_MODES = {"coached_practice", "assessment"}
+_FLOW_PRESETS = {"legacy", "quick", "full"}
+
+
 class CoachStartPracticeRequest(BaseModel):
     skills: list[str] = Field(default_factory=list)
     round_plan: list[str] | None = None
+    practice_mode: str | None = None
+    flow_preset: str | None = None
+
+    @model_validator(mode="after")
+    def check_launch(self) -> "CoachStartPracticeRequest":
+        if self.practice_mode is not None:
+            mode = self.practice_mode.strip().lower()
+            if mode not in _PRACTICE_MODES:
+                raise ValueError("practice_mode must be coached_practice or assessment.")
+            self.practice_mode = mode
+        if self.flow_preset is not None:
+            preset = self.flow_preset.strip().lower()
+            if preset not in _FLOW_PRESETS:
+                raise ValueError("flow_preset must be legacy, quick, or full.")
+            self.flow_preset = preset
+        return self
 
 
 class ConversationGoalsRequest(BaseModel):
@@ -127,18 +147,21 @@ def coach_start_practice(
     candidate_id = str(candidate["candidate_id"]) if candidate else ""
 
     start_body = build_practice_start_payload(skills=skills, candidate_id=candidate_id or None)
-    # Do not silently fill DSA when the caller provided skills that mapped empty —
-    # build_practice_start_payload may still default; refuse if skills were intended.
-    if not skills:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported skill selection — refusing silent substitution.",
-        )
-    if body.round_plan:
-        cleaned = [r for r in body.round_plan if r in {"technical_short_answer", "mcq", "sql"}]
-        if cleaned:
-            start_body["round_plan"] = cleaned[:8]
-            start_body["round_type"] = cleaned[0]
+    preset = body.flow_preset or "legacy"
+    if preset == "legacy":
+        if body.round_plan:
+            cleaned = [r for r in body.round_plan if r in {"technical_short_answer", "mcq", "sql"}]
+            if cleaned:
+                start_body["round_plan"] = cleaned[:8]
+                start_body["round_type"] = cleaned[0]
+    else:
+        # Staged Quick/Full cannot carry a legacy round_plan.
+        start_body.pop("round_plan", None)
+        start_body.pop("round_type", None)
+        start_body["preset"] = preset
+        start_body["flow_version"] = "staged_v1"
+    if body.practice_mode:
+        start_body["practice_mode"] = body.practice_mode
 
     request = StartSessionRequest(**start_body)
     session = start_session(request, authorization=authorization)

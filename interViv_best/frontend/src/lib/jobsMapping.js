@@ -50,6 +50,43 @@ export function jobStartState({ draft, skillsText, previewKey, previewBusy = fal
  * was previewed, never text typed after it. The server refuses blocks that
  * do not belong to those skills.
  */
+/**
+ * Goals saved by "Continue in Coach". Uses the skills and role the candidate
+ * edited, and the job id on the draft. Never a separate selected-job variable.
+ */
+export function jobCoachHandoff({ prepare, draftSkills, draftRole, draftCompany, fullJd } = {}) {
+  const skills = jobSkillList(draftSkills);
+  const jobId = prepare?.job_id || null;
+  const role = String(draftRole || '').trim()
+    || prepare?.role
+    || prepare?.role_title
+    || prepare?.title
+    || '';
+  const company = String(draftCompany || '').trim() || prepare?.company || '';
+  const jd = String(fullJd || '').trim();
+  return {
+    target: {
+      role_id: prepare?.role_id || null,
+      job_id: jobId,
+      jd_source: jd ? 'paste' : 'job',
+      jd_text: jd || null,
+    },
+    goals: {
+      confirmed_goal: role || 'Target role from Jobs',
+      role_id: prepare?.role_id || null,
+      planning_context_skills: skills,
+      adzuna_context: {
+        job_id: jobId,
+        role_title: role,
+        company,
+        snippet_is_incomplete: true,
+        confirmed_skills: skills,
+        full_jd_provided: Boolean(jd),
+      },
+    },
+  };
+}
+
 export function jobPracticeBody(draft, { company, role, fullJd } = {}) {
   return {
     confirm: true,

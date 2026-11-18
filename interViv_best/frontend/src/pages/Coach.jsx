@@ -5,6 +5,7 @@ import {
   fetchMe,
   fetchCoachPlan,
   fetchCoachStartPractice,
+  fetchStudyPlan,
   saveInterviewState,
   fetchTargetContext,
   saveTargetContext,
@@ -62,10 +63,23 @@ export default function Coach() {
       .catch(() => {});
     createCoachConversation()
       .then((data) => {
-        if (cancelled) return;
-        const convo = data.conversation;
+        if (cancelled) return null;
+        const convo = data.conversation || {};
+        const goals = convo.goals || {};
         setConversationId(convo.conversation_id);
         setMessages(convo.messages || []);
+        if (goals.role_id) setRoleId((prev) => prev || goals.role_id);
+        if (goals.hours_per_week) setHoursPerWeek(goals.hours_per_week);
+        if (goals.confirmed_goal) {
+          setText((prev) => (String(prev || '').trim() ? prev : goals.confirmed_goal));
+        }
+        return fetchStudyPlan({
+          roleId: goals.role_id || undefined,
+          confirmedGoal: goals.confirmed_goal || undefined,
+        });
+      })
+      .then((planResp) => {
+        if (!cancelled && planResp?.plan) setStudyPlan(planResp.plan);
       })
       .catch(() => {});
     return () => {
@@ -82,7 +96,8 @@ export default function Coach() {
           ? { jd_text: text, goal_text: '', include_dashboard: true, role_id: roleId || null }
           : { goal_text: text, jd_text: '', include_dashboard: true, role_id: roleId || null };
       const data = await fetchCoachPlan(body);
-      setPlan(mapCoachPlan(data));
+      const mapped = mapCoachPlan(data);
+      setPlan(mapped);
       if (mode === 'jd' && text.trim()) {
         saveTargetContext({ jd_text: text.trim(), jd_source: 'paste' }).catch(() => {});
       }
@@ -91,6 +106,7 @@ export default function Coach() {
           confirmed_goal: text.trim() || null,
           role_id: roleId || null,
           hours_per_week: hoursPerWeek,
+          planning_context_skills: mapped.recognizedSkills,
         });
         const turn = await postCoachMessage(conversationId, {
           text: text.trim() || 'Build my starter plan',
@@ -155,11 +171,15 @@ export default function Coach() {
       }
       setBusy(true);
       try {
-        const data = await fetchCoachStartPractice({ skills });
+        const data = await fetchCoachStartPractice({
+          skills,
+          ...(action.type === 'assess_independently' ? { practice_mode: 'assessment' } : {}),
+        });
         const sessionId = data.session_id;
         if (!sessionId) throw new Error('Practice start did not return a session.');
         const state = {
           candidateId: data.candidate_id,
+          practice_mode: action.type === 'assess_independently' ? 'assessment' : 'coached_practice',
           skill: skills[0],
           allSkills: skills,
           sessionId,

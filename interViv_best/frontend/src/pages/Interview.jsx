@@ -121,6 +121,7 @@ export default function Interview({ sessionState = null }) {
   const [avState, setAvState] = useState(AV_STATES.PERMISSION_NOT_REQUESTED);
   const [avDetail, setAvDetail] = useState('');
   const [transcriptionAvailable, setTranscriptionAvailable] = useState(null);
+  const [practiceMode, setPracticeMode] = useState(initState.practice_mode || initState.practiceMode || '');
   const [currentSkill, setCurrentSkill] = useState(initState.skill || '');
   const [allSkills] = useState(initState.allSkills || [initState.skill || 'General']);
   const [round, setRound] = useState(initState.round || 1);
@@ -1157,6 +1158,7 @@ export default function Interview({ sessionState = null }) {
     currentArtifact,
     currentFeedback,
     submitted: showingResult,
+    practiceMode,
     nextBusy: phase === PHASES.ACTIVATING,
     onSubmit: (payload) => submitAnswer(payload),
     onNextRound: phase === PHASES.BLOCKED ? handleContinueBlocked : handleNext,

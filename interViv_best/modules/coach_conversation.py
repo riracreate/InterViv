@@ -32,6 +32,12 @@ CONVERSATION_SCHEMA = "coach_conversation_v1"
 MAX_MESSAGES = 40
 MAX_MESSAGE_CHARS = 2000
 PLANNING_TASK = "plan_explanation_v1"
+_PLAN_REQUEST = re.compile(
+    r"\b(?:make|create|build|update)\s+"
+    r"(?:me\s+|my\s+|a\s+|the\s+|our\s+)*(?:study\s+|starter\s+)?plan\b",
+    re.IGNORECASE,
+)
+_EXPLANATION_QUESTION = re.compile(r"^\s*(why|explain|how)\b", re.IGNORECASE)
 
 _MEMORY_CONVOS: dict[str, dict[str, Any]] = {}  # conversation_id -> doc
 _MEMORY_BY_OWNER: dict[str, str] = {}  # owner_key -> conversation_id
@@ -86,6 +92,18 @@ def owner_key(user_id: str | None, guest_session_id: str | None = None) -> str:
 
 def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
     return sanitize_user_text(text)[:limit]
+
+
+def is_explanation_question(text: str | None) -> bool:
+    """Questions that ask for an explanation must not create a plan or change the goal."""
+    return bool(_EXPLANATION_QUESTION.match(text or ""))
+
+
+def is_clear_plan_request(text: str | None) -> bool:
+    """A direct request to make, create, build, or update a plan."""
+    if is_explanation_question(text):
+        return False
+    return bool(_PLAN_REQUEST.search(text or ""))
 
 
 def classify_action_kind(action: str | None, *, delivers_help: bool = False) -> str:
@@ -426,12 +444,14 @@ def post_message(
     goals = dict(doc.get("goals") or {})
     payload = action_payload or {}
     user_text = _clip(text)
+    question = is_explanation_question(user_text)
 
     # Explicit validated application actions (not LLM tools).
     plan = None
-    if action == "create_plan" or (
-        not action and user_text and ("plan" in user_text.lower() or "roadmap" in user_text.lower())
-    ):
+    wants_plan = (
+        action == "create_plan" or (not action and is_clear_plan_request(user_text))
+    ) and not question
+    if wants_plan:
         plan = ensure_plan(
             user_id,
             role_id=goals.get("role_id") or doc.get("role_id"),
@@ -466,7 +486,7 @@ def post_message(
             confirmed_goal=goals.get("confirmed_goal"),
             completed=True,
         )
-    elif action == "update_goal":
+    elif action == "update_goal" and not question:
         goals["confirmed_goal"] = _clip(str(payload.get("confirmed_goal") or user_text), 500)
         doc["goals"] = goals
         plan = ensure_plan(
