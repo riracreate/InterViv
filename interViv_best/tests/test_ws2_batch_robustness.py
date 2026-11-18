@@ -100,6 +100,15 @@ def _http_error(url: str, code: int, body: dict[str, Any] | str) -> urllib.error
     return urllib.error.HTTPError(url, code, f"HTTP {code}", {}, io.BytesIO(raw))
 
 
+# Step E.1 requires 2-3 positive_examples per required concept. These neutral
+# fillers satisfy the shape rules without being semantically close to any
+# blind answer, so they do not change which concepts the evaluator matches.
+FIXTURE_POSITIVE_EXAMPLES = (
+    "Neutral fixture sentence one satisfies the example length rule.",
+    "A second filler line keeps this wording clearly distinct here.",
+)
+
+
 def _valid_bundle_payload(
     *,
     topic: str = "Rate Limiting",
@@ -156,7 +165,9 @@ def _valid_bundle_payload(
         ),
         "acceptable_variants": ["Enforce token bucket counters and emit 429 with Retry-After."],
         "keywords": ["rate limiting", "token bucket", "429", "retry-after", "redis"],
-        "required_concepts": req,
+        "required_concepts": [
+            {**c, "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES)} for c in req
+        ],
         "optional_concepts": [
             {
                 "id": "sliding_window_log",
@@ -1217,18 +1228,21 @@ def test_pregenerate_pilot_metrics_and_export_bundles_review_csv(
                 "descriptor": "Token bucket controls burst and average rate",
                 "aliases": ["token bucket"],
                 "expected_propositions": ["token bucket refill rate"],
+                "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
             {
                 "id": "http_429_headers",
                 "descriptor": "Return HTTP 429 with Retry-After header",
                 "aliases": ["retry after"],
                 "expected_propositions": ["nonexistent hyperloop signal"],
+                "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
             {
                 "id": "burst_smoothing",
                 "descriptor": "Burst traffic is smoothed by refilling capacity gradually over time.",
                 "aliases": ["zyx_unused_alias"],
                 "expected_propositions": ["zyx nonexistent prop"],
+                "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
         ]
         return payload

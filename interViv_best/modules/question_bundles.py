@@ -305,6 +305,102 @@ def alias_question_overlap(content: dict[str, Any]) -> list[tuple[str, str]]:
     return hits
 
 
+POSITIVE_EXAMPLES_MIN = 2
+POSITIVE_EXAMPLES_MAX = 3
+POSITIVE_EXAMPLE_MIN_WORDS = 6
+POSITIVE_EXAMPLE_MAX_WORDS = 25
+# Two texts are near copies when their word sets overlap this much (Jaccard),
+# or when almost every word of the shorter one appears in the longer one.
+NEAR_COPY_JACCARD = 0.7
+NEAR_COPY_CONTAINMENT = 0.85
+_INNER_SENTENCE_RE = re.compile(r"[.!?]\s+\S")
+
+
+def _word_set(text: str) -> set[str]:
+    return {m.group(0).casefold() for m in _TERM_TOKEN_RE.finditer(text or "")}
+
+
+def _near_copy(a: str, b: str) -> bool:
+    wa, wb = _word_set(a), _word_set(b)
+    if not wa or not wb:
+        return False
+    inter = len(wa & wb)
+    if inter / len(wa | wb) >= NEAR_COPY_JACCARD:
+        return True
+    return inter / min(len(wa), len(wb)) >= NEAR_COPY_CONTAINMENT
+
+
+def near_copy_source(text: str, sources: list[str]) -> str | None:
+    """Return the first source sentence that ``text`` nearly copies, if any."""
+    for source in sources:
+        for sentence in _SENTENCE_SPLIT_RE.split(str(source or "")):
+            if sentence.strip() and _near_copy(text, sentence):
+                return sentence.strip()
+    return None
+
+
+def positive_example_copies(
+    content: dict[str, Any], sources: list[str]
+) -> list[tuple[str, str, str]]:
+    """``(concept_id, example, source_sentence)`` for required-concept examples
+    that nearly copy a sentence from ``sources``."""
+    hits: list[tuple[str, str, str]] = []
+    for concept in content.get("required_concepts") or []:
+        if not isinstance(concept, dict):
+            continue
+        cid = str(concept.get("id") or "").strip()
+        for example in concept.get("positive_examples") or []:
+            source = near_copy_source(str(example), sources)
+            if source is not None:
+                hits.append((cid, str(example), source))
+    return hits
+
+
+def _validate_positive_examples(content: dict[str, Any]) -> None:
+    """Each required concept carries 2-3 natural one-sentence correct answers.
+
+    Examples are 6-25 words, one sentence, worded differently from each other,
+    and not copied from the reference answer. They feed the evaluator's
+    semantic tier, so a copied or duplicated example would make the check
+    easier without adding evidence.
+    """
+    reference = str(content.get("reference_answer") or "")
+    for idx, concept in enumerate(content.get("required_concepts") or []):
+        cid = str(concept.get("id") or f"required_concepts[{idx}]").strip()
+        label = f"required_concepts[{idx}].positive_examples"
+        examples = _non_empty_str_list(
+            concept.get("positive_examples"),
+            label,
+            min_len=POSITIVE_EXAMPLES_MIN,
+            max_len=POSITIVE_EXAMPLES_MAX,
+        )
+        for example in examples:
+            words = len(example.split())
+            if not POSITIVE_EXAMPLE_MIN_WORDS <= words <= POSITIVE_EXAMPLE_MAX_WORDS:
+                raise BundleContentError(
+                    f"positive example for concept {cid!r} must be "
+                    f"{POSITIVE_EXAMPLE_MIN_WORDS}-{POSITIVE_EXAMPLE_MAX_WORDS} words "
+                    f"({words} words): {example!r}"
+                )
+            if "\n" in example or _INNER_SENTENCE_RE.search(example):
+                raise BundleContentError(
+                    f"positive example for concept {cid!r} must be one sentence: {example!r}"
+                )
+            copied = near_copy_source(example, [reference])
+            if copied is not None:
+                raise BundleContentError(
+                    f"positive example for concept {cid!r} is copied from the reference "
+                    f"answer: {example!r} ~ {copied!r}"
+                )
+        for i in range(len(examples)):
+            for j in range(i + 1, len(examples)):
+                if _near_copy(examples[i], examples[j]):
+                    raise BundleContentError(
+                        f"positive examples for concept {cid!r} must use different wording: "
+                        f"{examples[i]!r} ~ {examples[j]!r}"
+                    )
+
+
 def validate_generated_bundle_text_quality(content: dict[str, Any]) -> None:
     """Reject brittle propositions, instruction leakage, and repeated sentences in Step E.1."""
     question_text = str(content.get("question") or "")
@@ -408,6 +504,7 @@ def validate_generated_bundle_doc(doc: dict[str, Any]) -> dict[str, Any]:
     required_ids = set(
         _validate_concept_entries(content["required_concepts"], "required_concepts", min_len=2, max_len=5)
     )
+    _validate_positive_examples(content)
     _validate_concept_entries(content["optional_concepts"], "optional_concepts", min_len=1)
     _non_empty_str_list(content["keywords"], "keywords", min_len=3, max_len=10)
 

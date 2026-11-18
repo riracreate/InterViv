@@ -74,6 +74,20 @@ def _bounded_array(items: dict, minimum: int, maximum: int) -> dict:
     return {"type": "array", "items": items, "minItems": minimum, "maxItems": maximum}
 
 
+def _required_concept_schema() -> dict:
+    """Required concepts also carry 2-3 one-sentence positive_examples."""
+    return _object_schema(
+        ("id", "descriptor", "aliases", "expected_propositions", "positive_examples"),
+        {
+            "id": {"type": "string"},
+            "descriptor": {"type": "string"},
+            "aliases": _string_list(),
+            "expected_propositions": _string_list(),
+            "positive_examples": _bounded_array({"type": "string"}, 2, 3),
+        },
+    )
+
+
 def generated_bundle_schema() -> dict:
     """Strict payload for bundle_generation and bundle_regeneration.
 
@@ -90,7 +104,7 @@ def generated_bundle_schema() -> dict:
             "reference_answer": {"type": "string"},
             "acceptable_variants": _string_list(),
             "keywords": _string_list(),
-            "required_concepts": _bounded_array(concept, 3, 4),
+            "required_concepts": _bounded_array(_required_concept_schema(), 3, 4),
             "optional_concepts": _bounded_array(concept, 1, 2),
             "misconceptions": _bounded_array(
                 _object_schema(

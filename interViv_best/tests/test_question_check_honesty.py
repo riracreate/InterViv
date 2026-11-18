@@ -356,3 +356,152 @@ def test_prompts_state_the_alias_rule() -> None:
     )
     assert "into aliases so the automated matcher" not in regen
     assert "Aliases never count as support" in regen
+
+
+# ─── 0.A.3: positive_examples on every required concept ──────────────────────
+
+
+def test_positive_examples_are_kept_in_stored_content(memory_store) -> None:
+    doc = _assemble(_payload())
+    for concept in doc["required_concepts"]:
+        assert 2 <= len(concept["positive_examples"]) <= 3
+    assert "positive_examples" not in doc["optional_concepts"][0]
+
+
+def _with_examples(index: int, examples) -> dict:
+    payload = _payload()
+    payload["required_concepts"][index]["positive_examples"] = examples
+    return payload
+
+
+@pytest.mark.parametrize(
+    "examples, message",
+    [
+        (None, "positive_examples must be a list"),
+        (["The mean gets inflated because a few huge values pull it upward."], "at least 2"),
+        (
+            [
+                "The mean gets inflated because a few huge values pull it upward.",
+                "A handful of very large salaries drags the average far above most pay.",
+                "Big outliers make the arithmetic average overstate what people earn.",
+                "One enormous salary is enough to move the average a lot.",
+            ],
+            "at most 3",
+        ),
+        (
+            ["Outliers inflate the average.", "A few huge salaries drag the average far upward."],
+            "6-25 words",
+        ),
+        (
+            [
+                "The mean gets inflated because a few huge values pull it upward, and this "
+                "happens every single time a company reports its pay data to anyone at all.",
+                "A handful of very large salaries drags the average far above most pay.",
+            ],
+            "6-25 words",
+        ),
+        (
+            [
+                "The mean is inflated. A few huge values pull it upward every time.",
+                "A handful of very large salaries drags the average far above most pay.",
+            ],
+            "one sentence",
+        ),
+        (
+            [
+                "A small number of very large salaries drag the arithmetic mean upward.",
+                "A handful of very large salaries drags the average far above most pay.",
+            ],
+            "copied from the reference answer",
+        ),
+        (
+            [
+                "A handful of very large salaries drags the average far above most pay.",
+                "A handful of very large salaries drags the average far above typical pay.",
+            ],
+            "different wording",
+        ),
+    ],
+)
+def test_validator_rejects_bad_positive_examples(memory_store, examples, message) -> None:
+    from modules.question_bundles import BundleContentError
+
+    with pytest.raises(BundleContentError, match=message):
+        _assemble(_with_examples(0, examples))
+
+
+def test_strict_schema_requires_two_to_three_examples_on_required_concepts_only() -> None:
+    from modules import interview_llm
+
+    schema = interview_llm.generated_bundle_schema()
+    required_item = schema["properties"]["required_concepts"]["items"]
+    optional_item = schema["properties"]["optional_concepts"]["items"]
+    assert "positive_examples" in required_item["required"]
+    examples = required_item["properties"]["positive_examples"]
+    assert (examples["minItems"], examples["maxItems"]) == (2, 3)
+    assert "positive_examples" not in optional_item["properties"]
+
+
+def test_prompts_ask_for_fresh_positive_examples() -> None:
+    prompt_b = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_prompt_b_messages(
+            skill="Statistics", topic="mean vs median", difficulty="easy"
+        )
+    )
+    assert "positive_examples (required_concepts only): 2-3 natural one-sentence answers" in prompt_b
+    assert "never copied or lightly edited from reference_answer" in prompt_b
+    regen = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_regeneration_messages(
+            skill="Statistics",
+            topic="mean vs median",
+            difficulty="easy",
+            previous_content=_payload(),
+            blind_answer=ALIAS_ONLY_ANSWER,
+            eval_res={"concepts": [], "misconceptions": []},
+            audit_diagnosis={},
+        )
+    )
+    assert "never copy or lightly edit sentences from blind_answer_excerpt" in regen
+
+
+def test_regeneration_examples_copied_from_blind_answer_are_rejected(memory_store) -> None:
+    blind = {"n": 0}
+    regen_prompts: list[str] = []
+
+    def _fake(purpose: str, model: str, messages: list[dict], **kwargs):
+        if purpose == "bundle_generation":
+            return {"content": json.dumps(_payload()), "usage": {"total_tokens": 100}}
+        if purpose == "bundle_blind_answer":
+            blind["n"] += 1
+            text = ALIAS_ONLY_ANSWER if blind["n"] == 1 else PROPOSITION_ANSWER
+            return {"content": text, "usage": {"total_tokens": 40}}
+        if purpose == "bundle_check_audit":
+            return {
+                "content": json.dumps(
+                    {"root_cause": "x", "issue_type": "propositions", "missed_concepts": [], "fixes": []}
+                ),
+                "usage": {"total_tokens": 20},
+            }
+        if purpose == "bundle_regeneration":
+            regen_prompts.append(messages[1]["content"])
+            payload = _payload()
+            payload["question"] = payload["question"].replace("A salary", "An HR salary")
+            if len(regen_prompts) == 1:
+                payload["required_concepts"][0]["positive_examples"][0] = (
+                    "I would talk about the arithmetic average, the middle value, and right skew."
+                )
+            return {"content": json.dumps(payload), "usage": {"total_tokens": 100}}
+        raise AssertionError(purpose)
+
+    bundle_generator.set_bundle_llm_override(_fake)
+    res = bundle_generator.generate_and_check_bundle(
+        skill="Statistics", topic="mean vs median", difficulty="easy"
+    )
+    assert res["status"] == "auto_checked"
+    assert res["retried"] is True
+    assert len(regen_prompts) == 2
+    assert "copied from the blind answer" in regen_prompts[1]
+    stored = res["bundle"]["content_json"]["required_concepts"][0]["positive_examples"]
+    assert all("I would talk about" not in ex for ex in stored)

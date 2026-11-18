@@ -79,12 +79,20 @@ def _counting_overrides(calls: dict[str, int]) -> None:
                     "descriptor": "Token bucket controls burst and average rate",
                     "aliases": ["token bucket"],
                     "expected_propositions": ["token bucket refill rate"],
+                    "positive_examples": [
+                        "Neutral fixture sentence one satisfies the example length rule.",
+                        "A second filler line keeps this wording clearly distinct here.",
+                    ],
                 },
                 {
                     "id": "http_429_headers",
                     "descriptor": "Return HTTP 429 with Retry-After header",
                     "aliases": ["retry after"],
                     "expected_propositions": ["status 429 retry after"],
+                    "positive_examples": [
+                        "Neutral fixture sentence one satisfies the example length rule.",
+                        "A second filler line keeps this wording clearly distinct here.",
+                    ],
                 },
             ],
             "optional_concepts": [

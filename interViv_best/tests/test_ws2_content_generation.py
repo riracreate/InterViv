@@ -79,6 +79,15 @@ def ws2_memory(monkeypatch, tmp_path: Path):
     _clear_all_caches()
 
 
+# Step E.1 requires 2-3 positive_examples per required concept. These neutral
+# fillers satisfy the shape rules without being semantically close to any
+# blind answer, so they do not change which concepts the evaluator matches.
+FIXTURE_POSITIVE_EXAMPLES = (
+    "Neutral fixture sentence one satisfies the example length rule.",
+    "A second filler line keeps this wording clearly distinct here.",
+)
+
+
 def _sample_v2_payload(
     *,
     topic: str = "Interpreter Mutex",
@@ -111,12 +120,14 @@ def _sample_v2_payload(
                 "descriptor": "Only one thread runs bytecode under the mutex",
                 "aliases": ["bytecode lock", "single thread bytecode"],
                 "expected_propositions": props_first,
+                "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
             {
                 "id": "io_release",
                 "descriptor": "Blocking I/O releases the lock for other threads",
                 "aliases": ["releases lock during io", "blocking syscalls"],
                 "expected_propositions": ["syscalls release lock", "blocking releases lock"],
+                "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
         ],
         "optional_concepts": [

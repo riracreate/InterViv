@@ -50,6 +50,7 @@ from modules.question_bundles import (
     MAX_BUNDLE_ID_LEN,
     BundleContentError,
     evaluate_calibration_length_bias,
+    positive_example_copies,
     safe_slug,
     validate_generated_bundle_doc,
 )
@@ -962,7 +963,7 @@ _BUNDLE_JSON_SKELETON = """{
   "acceptable_variants": ["short paraphrase"],
   "keywords": ["term", "term", "term", "term"],
   "required_concepts": [
-    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["short four to ten word claim with verb", "alternate wording with verb in plural or passive", "third distinct claim with verb"]}
+    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["short four to ten word claim with verb", "alternate wording with verb in plural or passive", "third distinct claim with verb"], "positive_examples": ["one natural sentence a strong candidate says that shows this concept", "a second correct sentence in different words"]}
   ],
   "optional_concepts": [
     {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["short four to ten word claim with verb", "alternate wording with verb in plural or passive", "third distinct claim with verb"]}
@@ -1033,6 +1034,9 @@ def _build_prompt_b_messages(
         "Every expected_proposition must contain at least one term specific to its own concept, "
         "such that a vague or off-topic answer would not contain it. "
         "No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\").\n"
+        "   - positive_examples (required_concepts only): 2-3 natural one-sentence answers that a strong candidate might say "
+        "and that correctly demonstrate this concept, each 6-25 words, each worded differently from the others, "
+        "written fresh (never copied or lightly edited from reference_answer), and never a bare label or alias list\n"
         "7. misconceptions (1-2 items): each has id (snake_case), description "
         "(phrased directly as the FALSE claim itself so a correct answer will not hit "
         "its tokens), and candidate_patterns (2-3 specific verbatim false-claim phrases "
@@ -1176,6 +1180,7 @@ def _build_regeneration_messages(
         "repair_rules": [
             "Write 3-5 expected_propositions per concept as short complete affirmative claims of 4-10 words with a verb (e.g. \"an outlier pulls the mean toward it\"), using varied singular/plural and active/passive wordings matching how a strong engineer writes. Use 4-6 high-frequency words from blind_answer_excerpt in each 4-10 word proposition (with a verb). Aliases never count as support and must not be words from the question. No proposition may be under 3 words or restate only words from the question. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
             "Ensure the question explicitly asks for every required concept in STRICTLY 1 or 2 sentences (never 3 sentences, and at most 40 words) so a knowledgeable engineer does not omit one, without leaking prompt instructions or word limits.",
+            "Give every required concept 2-3 positive_examples: natural one-sentence correct answers of 6-25 words in different wordings. Write them fresh: never copy or lightly edit sentences from blind_answer_excerpt or reference_answer.",
             "Ensure misconception descriptions and candidate_patterns represent genuinely FALSE statements absent from a correct answer.",
             "Keep calibration_examples targets: author_level=3 expected_band='Good' (at most 35 words, <= 35 words) and author_level=0 expected_band='Poor' (at least 90 words, >= 90 words).",
         ],
@@ -1207,7 +1212,7 @@ def _clean_proposition(raw_prop: str) -> str:
     return cleaned
 
 
-def _normalize_concepts(raw_list: Any) -> list[dict[str, Any]]:
+def _normalize_concepts(raw_list: Any, *, with_examples: bool = False) -> list[dict[str, Any]]:
     if not isinstance(raw_list, list):
         return []
     out: list[dict[str, Any]] = []
@@ -1232,14 +1237,20 @@ def _normalize_concepts(raw_list: Any) -> list[dict[str, Any]]:
             if candidate and candidate.lower() not in seen_props:
                 seen_props.add(candidate.lower())
                 props.append(candidate)
-        out.append(
-            {
-                "id": cid,
-                "descriptor": desc,
-                "aliases": aliases,
-                "expected_propositions": props,
-            }
-        )
+        concept: dict[str, Any] = {
+            "id": cid,
+            "descriptor": desc,
+            "aliases": aliases,
+            "expected_propositions": props,
+        }
+        if with_examples:
+            raw_examples = item.get("positive_examples")
+            concept["positive_examples"] = (
+                [" ".join(str(e).split()) for e in raw_examples if str(e).strip()]
+                if isinstance(raw_examples, list)
+                else raw_examples
+            )
+        out.append(concept)
     return out
 
 
@@ -1326,7 +1337,7 @@ def _assemble_and_validate_doc(
     extra_attribution: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Construct full YAML-v2 dict and run Step E.1 schema + overlap checks."""
-    req_concepts = _normalize_concepts(raw_payload.get("required_concepts"))
+    req_concepts = _normalize_concepts(raw_payload.get("required_concepts"), with_examples=True)
     req_ids = [c["id"] for c in req_concepts]
     rubric = raw_payload.get("rubric_descriptors")
     rubric_clean = (
@@ -1469,7 +1480,8 @@ def _generate_validated_doc(
                 f"Previous question was: {prev_q!r}\n"
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, no parenthetical length notes); "
                 "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
-                "(3) no concept id or alias may be a word or phrase from the question."
+                "(3) no concept id or alias may be a word or phrase from the question; "
+                "(4) every required concept has 2-3 positive_examples, each one fresh 6-25 word sentence."
             )
     raise BundleGenerationError(
         f"Bundle failed Step E.1 validation after retry: {last_err}"
@@ -2075,6 +2087,16 @@ def _run_step_e_for_version(
                 role=role,
                 extra_attribution={"retried_from_version": version},
             )
+            # The retry is re-checked by a fresh blind answer; examples copied
+            # from the first blind answer would make that check circular.
+            copied = positive_example_copies(regen_doc, [blind_answer])
+            if copied:
+                cid, example, source = copied[0]
+                regen_doc = None
+                raise BundleContentError(
+                    f"positive example for concept {cid!r} is copied from the blind answer: "
+                    f"{example!r} ~ {source!r}"
+                )
             break
         except (BundleContentError, BundleGenerationError) as exc:
             last_regen_err = exc
@@ -2084,7 +2106,8 @@ def _run_step_e_for_version(
                 f"Previous question was: {prev_q!r}\n"
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, never put parenthetical length limits like max/words in question or followups); "
                 "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
-                "(3) no concept id or alias may be a word or phrase from the question."
+                "(3) no concept id or alias may be a word or phrase from the question; "
+                "(4) every required concept has 2-3 positive_examples, each one fresh 6-25 word sentence."
             )
     if regen_doc is None:
         raise BundleGenerationError(
