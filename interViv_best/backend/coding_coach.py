@@ -56,6 +56,41 @@ def _localhost_only(url: str) -> bool:
     )
 
 
+_TOPIC_ALIASES = {
+    "hash map": "hashing",
+    "hashmap": "hashing",
+    "hash table": "hashing",
+    "hashtable": "hashing",
+    "two pointers": "two-pointers",
+    "sliding window": "sliding-window",
+    "dynamic programming": "dp",
+}
+
+
+def _coding_topic_hint(raw: str, catalog: dict[str, str]) -> str | None:
+    text = str(raw or "").strip().lower().replace("_", " ")
+    if not text:
+        return None
+    candidates = [text, text.replace(" ", "-"), _TOPIC_ALIASES.get(text)]
+    for key in candidates:
+        if key and key in catalog:
+            return catalog[key]
+    return None
+
+
+def level_two_topic_hints(problem: dict[str, Any]) -> list[str]:
+    """Level-2 lines from hint_templates.json, chosen by the problem's topics."""
+    from backend.learning_hints import templates
+
+    catalog = templates().get("coding_topics") or {}
+    lines: list[str] = []
+    for raw in problem.get("topics") or []:
+        hint = _coding_topic_hint(str(raw), catalog)
+        if hint and hint not in lines:
+            lines.append(hint)
+    return lines
+
+
 def curated_hint(problem: dict[str, Any], level: int) -> str:
     title = problem.get("title") or "this problem"
     topics = ", ".join(problem.get("topics") or []) or "the stated constraints"
@@ -66,11 +101,12 @@ def curated_hint(problem: dict[str, Any], level: int) -> str:
             f"return for each input before writing code. Topics to keep in mind: {topics}."
         )
     if level == 2:
-        return (
-            f"Look for a pattern that avoids checking every pair or every order blindly. "
-            f"A single linear pass with memory (hash map / set / running state) often fits "
-            f"{topics}. Name the invariant you will maintain."
-        )
+        lines = level_two_topic_hints(problem)
+        if lines:
+            return " ".join(lines)
+        from backend.learning_hints import templates
+
+        return str(templates().get("coding_general") or "").strip()
     return (
         f"Walk one visible example line by line: after each input element, what must your "
         f"data structure contain so the answer for that prefix is correct? Implement that "
