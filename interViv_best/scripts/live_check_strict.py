@@ -73,7 +73,7 @@ def concept_rows(eval_res: dict[str, Any] | None) -> list[dict[str, Any]]:
 def shadow_doc(version_doc: dict[str, Any]) -> dict[str, Any]:
     content = copy.deepcopy(version_doc["content_json"])
     original = f"{version_doc['bundle_id']}@{version_doc['version']}"
-    content["bundle_id"] = f"{version_doc['bundle_id']}{SHADOW_SUFFIX}"
+    content["bundle_id"] = f"{version_doc['bundle_id']}{SHADOW_SUFFIX}{version_doc['version']}"
     attribution = dict(version_doc.get("attribution_json") or {})
     for key in ("auto_check", "auto_check_ran"):
         attribution.pop(key, None)
@@ -214,20 +214,26 @@ def run(
         ]
         fp = "PASS" if item.get("passed_first_pass") else ("retry-PASS" if item.get("passed_after_retry") else item["status"])
         print(f"{group} {label}: {fp} first={item.get('first_pass_coverage')} final={item.get('final_coverage')} {item['elapsed_s']}s", flush=True)
+        if item.get("error"):
+            print(f"  error: {item['error'][:600]}", flush=True)
         return item
 
     def recheck_existing(version_doc: dict[str, Any]):
         content = version_doc["content_json"]
-        stored = bundle_store.import_bundle(
-            shadow_doc(version_doc),
-            actor_id="strict_recheck",
-            initial_status="generated",
-            audit_reason=f"Phase 0.A.4 strict re-check of {version_doc['bundle_id']}@{version_doc['version']}",
-        )["version"]
+
+        def _run():
+            stored = bundle_store.import_bundle(
+                shadow_doc(version_doc),
+                actor_id="strict_recheck",
+                initial_status="generated",
+                audit_reason=f"Phase 0.A.4 strict re-check of {version_doc['bundle_id']}@{version_doc['version']}",
+            )["version"]
+            return _step_e(stored)
+
         canonical_skill, _ = role_skills.resolve_skill_identity(str(content["skill"]), register=True)
         gen_provider, gen_model = bundle_generator.resolve_generation_provider_and_model()
         check_provider, check_model = bundle_generator.resolve_checker_provider_and_model()
-        return lambda: bundle_generator._run_step_e_for_version(
+        _step_e = lambda stored: bundle_generator._run_step_e_for_version(
             stored_version=stored,
             canonical_skill=canonical_skill,
             canonical_topic=str(content.get("topic") or canonical_skill),
@@ -242,6 +248,7 @@ def run(
             rejected_audit_path=rejected_audit,
             demoted_audit_path=demoted_audit,
         )
+        return _run
 
     results: dict[str, list[dict[str, Any]]] = {"part_a": [], "part_b": [], "part_c": []}
 
@@ -270,7 +277,7 @@ def run(
     if not only or "c" in only:
         latest: dict[str, dict[str, Any]] = {}
         for v in bundle_store.list_versions(status="auto_checked"):
-            if v["bundle_id"].endswith(SHADOW_SUFFIX):
+            if SHADOW_SUFFIX in v["bundle_id"]:
                 continue
             if v["bundle_id"] not in latest or v["version"] > latest[v["bundle_id"]]["version"]:
                 latest[v["bundle_id"]] = v

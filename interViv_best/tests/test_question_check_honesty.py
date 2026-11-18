@@ -582,7 +582,7 @@ def test_live_check_strict_reports_match_type_per_concept_and_shadows_existing()
         "author_id": "phase1b-dev", "attribution_json": {"note": "x", "auto_check": {"to_status": "auto_checked"}},
         "content_json": {"bundle_id": "python.gil", "question": "Q?"},
     })
-    assert doc["bundle_id"] == "python.gil" + SHADOW_SUFFIX and doc["version"] == 1
+    assert doc["bundle_id"] == "python.gil" + SHADOW_SUFFIX + "2" and doc["version"] == 1
     assert doc["attribution"] == {"note": "x", "strict_recheck_of": "python.gil@2"}
     with pytest.raises(RuntimeError):
         assert_safe_tmp_db_path(Path.home() / "interviv-demo" / "interviv-demo.sqlite3")
