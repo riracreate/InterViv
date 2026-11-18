@@ -94,6 +94,7 @@ def run(
     tmp_journal: Path,
     results_path: Path,
     only: set[str] | None = None,
+    labels: list[str] | None = None,
 ) -> dict[str, Any]:
     import shutil
 
@@ -165,7 +166,9 @@ def run(
     router_budget = interview_llm.get_router().budget
     run_tag = str(int(time.time()))
 
-    def run_item(group: str, label: str, fn) -> dict[str, Any]:
+    def run_item(group: str, label: str, fn) -> dict[str, Any] | None:
+        if labels and not any(part in label for part in labels):
+            return None
         with router_budget._state() as (account_state, _):
             account_state["models"].clear()
         ev_start, eval_start = len(capture.events), len(evals)
@@ -251,6 +254,8 @@ def run(
         return _run
 
     results: dict[str, list[dict[str, Any]]] = {"part_a": [], "part_b": [], "part_c": []}
+    # Snapshot before Part A adds new auto_checked bundles to the /tmp copy.
+    source_auto_checked = list(bundle_store.list_versions(status="auto_checked"))
 
     if not only or "a" in only:
         for skill, diff, topic in PART_A_TARGETS:
@@ -276,7 +281,7 @@ def run(
 
     if not only or "c" in only:
         latest: dict[str, dict[str, Any]] = {}
-        for v in bundle_store.list_versions(status="auto_checked"):
+        for v in source_auto_checked:
             if SHADOW_SUFFIX in v["bundle_id"]:
                 continue
             if v["bundle_id"] not in latest or v["version"] > latest[v["bundle_id"]]["version"]:
@@ -285,6 +290,7 @@ def run(
             v = latest[bid]
             results["part_c"].append(run_item("C", f"{bid}@v{v['version']}", recheck_existing(v)))
 
+    results = {k: [i for i in v if i is not None] for k, v in results.items()}
     bundle_generator._score_with_concept_evaluator = original_score
     after_sha, after_mtime = _sha256(src), src.stat().st_mtime_ns
     if (before_sha, before_mtime) != (after_sha, after_mtime):
@@ -320,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tmp-journal", type=Path, default=DEFAULT_TMP_JOURNAL)
     parser.add_argument("--out", type=Path, default=DEFAULT_RESULTS_PATH)
     parser.add_argument("--only", default="", help="subset of a,b,c")
+    parser.add_argument("--labels", default="", help="comma-separated label substrings to run")
     args = parser.parse_args(argv)
     run(
         source_db=args.source_db,
@@ -327,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         tmp_journal=args.tmp_journal,
         results_path=args.out,
         only={p.strip() for p in args.only.split(",") if p.strip()} or None,
+        labels=[p.strip() for p in args.labels.split(",") if p.strip()] or None,
     )
     return 0
 
