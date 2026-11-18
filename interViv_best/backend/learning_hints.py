@@ -86,6 +86,17 @@ def schema_summary(schema_ddl: str | None) -> dict[str, Any]:
     return {"tables": tables, "relationships": relationships}
 
 
+def schema_construct_keys(summary: dict[str, Any]) -> list[str]:
+    """Constructs a hint may name from the public schema summary alone.
+
+    The reference query is not an input. A relationship the candidate can
+    already see is the only technique the hint may mention.
+    """
+    if summary.get("relationships"):
+        return ["join"]
+    return []
+
+
 def sql_constructs(query: str | None) -> list[str]:
     """Construct keys a solution needs (technique only, never the query)."""
     q = re.sub(r"\s+", " ", (query or "").lower())
@@ -133,7 +144,7 @@ def item_hint(item_type: str, item: dict[str, Any], skill: str) -> dict[str, Any
         summary = schema_summary(item.get("schema_ddl"))
         constructs = [
             {"construct": key, "hint": t["sql_constructs"][key]}
-            for key in sql_constructs(item.get("reference_query"))
+            for key in schema_construct_keys(summary)
             if key in t["sql_constructs"]
         ]
         return {
