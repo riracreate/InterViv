@@ -64,7 +64,7 @@ _AUDIT_FILE_LOCK = threading.Lock()
 
 DEFAULT_GENERATION_TIMEOUT_S = 45
 DEFAULT_BLIND_CHECK_TIMEOUT_S = 30
-DEFAULT_GENERATION_MAX_TOKENS = 2200
+DEFAULT_GENERATION_MAX_TOKENS = 2800
 DEFAULT_BLIND_CHECK_MAX_TOKENS = 380
 DEFAULT_AUDIT_MAX_TOKENS = 400
 DEFAULT_PROMPT_A_MAX_TOKENS = 700
@@ -955,15 +955,15 @@ def _call_bundle_llm(
 
 
 _BUNDLE_JSON_SKELETON = """{
-  "question": "at most 40 words and two sentences",
+  "question": "clean candidate question with no word-limit instructions or schema keys",
   "reference_answer": "80-160 word expert answer covering every required concept",
   "acceptable_variants": ["short paraphrase"],
   "keywords": ["term", "term", "term", "term"],
   "required_concepts": [
-    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["two words", "two words", "two words"]}
+    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["short four to ten word claim with verb", "alternate wording with verb in plural or passive", "third distinct claim with verb"]}
   ],
   "optional_concepts": [
-    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["two words", "two words", "two words"]}
+    {"id": "snake_case_id", "descriptor": "four to ten words", "aliases": ["alias one", "alias two"], "expected_propositions": ["short four to ten word claim with verb", "alternate wording with verb in plural or passive", "third distinct claim with verb"]}
   ],
   "misconceptions": [
     {"id": "snake_case_id", "description": "the false claim itself", "candidate_patterns": ["false phrase one", "false phrase two"]}
@@ -998,9 +998,11 @@ def _build_prompt_b_messages(
         "calibration_examples items must use the key \"answer\" (never \"text\"). "
         "Each followups.targets_concept must be copied from a required_concepts id, never an optional concept id.\n"
         + _BUNDLE_JSON_SKELETON + "\n"
-        "2. question: at most 40 words and two sentences. Crisp and unambiguous, testing applied "
+        "2. question: write 1 or 2 concise sentences totaling 15-30 words (hard maximum: 40 words and two sentences; NEVER write 3 sentences — combine sub-questions with 'and'). Crisp and unambiguous, testing applied "
         "understanding of the skill/topic/difficulty (never trivial yes/no or generic "
-        "benchmark wording).\n"
+        "benchmark wording). Never include meta-instructions, parenthetical word or length limits, "
+        "or schema key names such as \"reference_answer\" in learner-facing fields "
+        "(question or followups), and never repeat sentences.\n"
         "3. reference_answer: accurate, self-contained expert answer (80-160 words) "
         "that explicitly supports every required_concept. "
         "Keep exact numbers, thresholds, and rules of thumb in reference_answer, never in required_concepts. "
@@ -1010,21 +1012,23 @@ def _build_prompt_b_messages(
         "6. required_concepts (3-4 items) and optional_concepts (1-2 items): "
         "never put exact numbers or rules of thumb in required_concepts (put them in reference_answer instead). Each has:\n"
         "   - id: short snake_case identifier (e.g. 'mutex_ownership')\n"
-        "   - descriptor: clear 4-10 word description\n"
-        "   - aliases: 2-4 synonymous surface terms\n"
+        "   - descriptor: clear 6-10 word factual sentence stating the concept using standard technical terms\n"
+        "   - aliases: 2-4 concise 1-3 word synonymous surface terms or noun phrases a candidate literally writes in an answer (never full clauses)\n"
         "   - expected_propositions: CRITICAL RULE FOR AUTOMATED CONCEPT SCORING: "
-        "the evaluator extracts every token with length > 2 from each proposition and "
-        "requires 100% of those words to co-occur inside a 25-token window, AND marks an "
-        "answer contradicted if any negation word appears in the proposition match. "
-        "Therefore, write 3-5 AFFIRMATIVE **2-word** key-term propositions per concept "
-        "that any strong expert answer naturally states using standard domain terminology "
-        "(e.g. 'parse json', 'request body', 'validate schema', 'status codes', 'segment customers'), "
-        "avoid rare one-off function names in propositions unless required by the question, "
-        "and NEVER include negation words (not, no, never, without, cannot) in expected_propositions. "
+        "each expected_proposition MUST be a short complete affirmative claim of 4-10 words containing a verb "
+        "(for example \"an outlier pulls the mean toward it\", \"extreme outliers shift the arithmetic average\", "
+        "\"the arithmetic mean is pulled toward outliers\"), never a 1-2 word label. "
+        "Write 3-5 propositions per concept in different natural wordings (varying singular/plural and active/passive voice) "
+        "and keep each proposition to 4-6 high-frequency domain words plus a simple verb (for example \"outliers pull the arithmetic mean\", \"the median resists extreme outliers\", \"the mean shifts toward extreme outliers\"), avoiding literary prepositions/adverbs (like \"despite\", \"away\", \"drastically\", \"merely\") "
+        "because the automated matcher requires 100% of words with length > 2 in a proposition to co-occur within a 25-token window of the candidate's answer. "
+        "NEVER include negation words (not, no, never, without, cannot) in expected_propositions. "
+        "No proposition may consist only of words that already appear in the question — every proposition must add substantive explanation terms. "
+        "Every proposition MUST include at least 2 domain words that do NOT appear anywhere in the question (never write a proposition using only words from the question). "
+        "Concepts must NOT overlap: no proposition may be shared (even differing only in case) between any two concepts. No proposition may repeat across concepts. "
+        "Avoid rare one-off function names in propositions unless required by the question. "
         "Every expected_proposition must contain at least one term specific to its own concept, "
         "such that a vague or off-topic answer would not contain it. "
-        "No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). "
-        "No proposition may repeat across concepts.\n"
+        "No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\").\n"
         "7. misconceptions (1-2 items): each has id (snake_case), description "
         "(phrased directly as the FALSE claim itself so a correct answer will not hit "
         "its tokens), and candidate_patterns (2-3 specific verbatim false-claim phrases "
@@ -1166,8 +1170,8 @@ def _build_regeneration_messages(
         "misconception_hits": hit_misc,
         "audit_diagnosis": audit_diagnosis,
         "repair_rules": [
-            "Keep expected_propositions short (2-4 content words each) and include synonymous variants matching how a strong engineer writes. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
-            "Ensure the question explicitly asks for every required concept so a knowledgeable engineer does not omit one.",
+            "Write 3-5 expected_propositions per concept as short complete affirmative claims of 4-10 words with a verb (e.g. \"an outlier pulls the mean toward it\"), using varied singular/plural and active/passive wordings matching how a strong engineer writes. Use 4-6 high-frequency words from blind_answer_excerpt in each 4-10 word proposition (with a verb) and put 1-3 word surface phrases from blind_answer_excerpt into aliases so the automated matcher recognizes the concept. No proposition may be under 3 words or restate only words from the question. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
+            "Ensure the question explicitly asks for every required concept in STRICTLY 1 or 2 sentences (never 3 sentences, and at most 40 words) so a knowledgeable engineer does not omit one, without leaking prompt instructions or word limits.",
             "Ensure misconception descriptions and candidate_patterns represent genuinely FALSE statements absent from a correct answer.",
             "Keep calibration_examples targets: author_level=3 expected_band='Good' (at most 35 words, <= 35 words) and author_level=0 expected_band='Poor' (at least 90 words, >= 90 words).",
         ],
@@ -1194,11 +1198,8 @@ def _clean_proposition(raw_prop: str) -> str:
     if not cleaned:
         return ""
     words = cleaned.split()
-    content_words = [w for w in words if len(re.sub(r"[^A-Za-z0-9_]", "", w)) > 2]
-    if 2 <= len(content_words) <= 4:
-        return " ".join(content_words)
-    if len(content_words) > 4:
-        return " ".join(content_words[:4])
+    if len(words) > 10:
+        return " ".join(words[:10])
     return cleaned
 
 
@@ -1376,11 +1377,17 @@ def _assemble_and_validate_doc(
         "attribution": attribution,
     }
 
-    # Step E.1: schema validation
+    # Step E.1: schema + text-quality validation
     validate_generated_bundle_doc(doc)
     spoken = question_speech_issues(doc["question"])
     if spoken:
-        raise BundleContentError("spoken question exceeds 40 words or two sentences: " + ", ".join(spoken))
+        q_clean = " ".join(str(doc["question"] or "").split())
+        q_words = len(q_clean.split())
+        q_sents = len([part for part in re.split(r"[.!?]+", q_clean) if part.strip()])
+        raise BundleContentError(
+            f"spoken question exceeds 40 words or two sentences: {', '.join(spoken)} "
+            f"(word_count={q_words}, sentence_count={q_sents}, offending_question={q_clean!r})"
+        )
 
     # Step E.1: evaluation overlap guard
     overlap = check_overlap(doc["question"])
@@ -1430,12 +1437,13 @@ def _generate_validated_doc(
             model=gen_model,
             messages=messages,
             expect_json=True,
-            max_tokens=2200,
+            max_tokens=DEFAULT_GENERATION_MAX_TOKENS,
             temperature=0.25 if attempt == 0 else 0.15,
             bundle_id=bundle_id,
             role=role,
             allow_live=allow_live,
         )
+        raw_payload: dict[str, Any] = {}
         try:
             raw_payload = _parse_json_object(raw_text)
             return _assemble_and_validate_doc(
@@ -1451,7 +1459,13 @@ def _generate_validated_doc(
             )
         except (BundleContentError, BundleGenerationError) as exc:
             last_err = exc
-            feedback = str(exc)
+            prev_q = raw_payload.get("question") if isinstance(raw_payload, dict) else None
+            feedback = (
+                f"{exc}\n"
+                f"Previous question was: {prev_q!r}\n"
+                "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, no parenthetical length notes); "
+                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question."
+            )
     raise BundleGenerationError(
         f"Bundle failed Step E.1 validation after retry: {last_err}"
     )
@@ -2001,11 +2015,13 @@ def _run_step_e_for_version(
         audit_diag=audit_diag,
     )
 
-    regen_raw = _call_bundle_llm(
-        purpose="bundle_regeneration",
-        provider=gen_provider,
-        model=gen_model,
-        messages=_build_regeneration_messages(
+    existing_all = bundle_store.list_versions(bundle_id=bundle_id)
+    next_version = max((int(v["version"]) for v in existing_all), default=version) + 1
+    regen_feedback: str | None = None
+    last_regen_err: Exception | None = None
+    regen_doc: dict[str, Any] | None = None
+    for regen_attempt in range(2):
+        regen_messages = _build_regeneration_messages(
             skill=canonical_skill,
             topic=canonical_topic,
             difficulty=difficulty,
@@ -2014,34 +2030,53 @@ def _run_step_e_for_version(
             eval_res=eval_res,
             audit_diagnosis=audit_diag,
             role=role,
-        ),
-        expect_json=True,
-        max_tokens=DEFAULT_GENERATION_MAX_TOKENS,
-        temperature=0.2,
-        bundle_id=bundle_id,
-        role=role,
-        allow_live=allow_live,
-    )
-    existing_all = bundle_store.list_versions(bundle_id=bundle_id)
-    next_version = max((int(v["version"]) for v in existing_all), default=version) + 1
-    try:
-        regen_payload = _parse_json_object(regen_raw)
-        regen_doc, _ = _assemble_and_validate_doc(
-            raw_payload=regen_payload,
-            bundle_id=bundle_id,
-            version=next_version,
-            canonical_skill=canonical_skill,
-            canonical_topic=canonical_topic,
-            difficulty=difficulty,
-            model=interview_llm.actual_model("bundle_regeneration", gen_model),
-            provider=interview_llm.actual_provider("bundle_regeneration", gen_provider),
-            role=role,
-            extra_attribution={"retried_from_version": version},
         )
-    except (BundleContentError, BundleGenerationError) as exc:
+        if regen_feedback:
+            regen_messages[1]["content"] += (
+                "\n\nIMPORTANT — fix this Step E.1 validation failure from your previous regeneration:\n"
+                + regen_feedback
+            )
+        regen_raw = _call_bundle_llm(
+            purpose="bundle_regeneration",
+            provider=gen_provider,
+            model=gen_model,
+            messages=regen_messages,
+            expect_json=True,
+            max_tokens=DEFAULT_GENERATION_MAX_TOKENS,
+            temperature=0.2 if regen_attempt == 0 else 0.15,
+            bundle_id=bundle_id,
+            role=role,
+            allow_live=allow_live,
+        )
+        regen_payload: dict[str, Any] = {}
+        try:
+            regen_payload = _parse_json_object(regen_raw)
+            regen_doc, _ = _assemble_and_validate_doc(
+                raw_payload=regen_payload,
+                bundle_id=bundle_id,
+                version=next_version,
+                canonical_skill=canonical_skill,
+                canonical_topic=canonical_topic,
+                difficulty=difficulty,
+                model=interview_llm.actual_model("bundle_regeneration", gen_model),
+                provider=interview_llm.actual_provider("bundle_regeneration", gen_provider),
+                role=role,
+                extra_attribution={"retried_from_version": version},
+            )
+            break
+        except (BundleContentError, BundleGenerationError) as exc:
+            last_regen_err = exc
+            prev_q = regen_payload.get("question") if isinstance(regen_payload, dict) else None
+            regen_feedback = (
+                f"{exc}\n"
+                f"Previous question was: {prev_q!r}\n"
+                "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, never put parenthetical length limits like max/words in question or followups); "
+                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question."
+            )
+    if regen_doc is None:
         raise BundleGenerationError(
-            f"Regenerated bundle {bundle_id} v{next_version} failed Step E.1: {exc}"
-        ) from exc
+            f"Regenerated bundle {bundle_id} v{next_version} failed Step E.1: {last_regen_err}"
+        ) from last_regen_err
 
     try:
         stored_retry = bundle_store.import_bundle(

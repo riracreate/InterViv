@@ -17,6 +17,7 @@ import Resources from './pages/Resources.jsx';
 import CareerProfile from './pages/CareerProfile.jsx';
 import Home from './pages/Home.jsx';
 import Progress from './pages/Progress.jsx';
+import BundleReview from './pages/BundleReview.jsx';
 import InterviewRoute from './components/InterviewRoute.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
 import ScrollManager from './components/ScrollManager.jsx';
@@ -47,6 +48,7 @@ export default function App() {
       <Route path="/dashboard" element={guarded(<Progress />)} />
       <Route path="/gap-analysis/:userId/:roleId" element={guarded(<GapAnalysis />)} />
       <Route path="/roadmap/:userId/:roleId" element={guarded(<Roadmap />)} />
+      <Route path="/admin/bundles" element={guarded(<BundleReview />)} />
     </Routes></>
   );
 }

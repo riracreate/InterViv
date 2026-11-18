@@ -679,3 +679,123 @@ def test_bundle_jobs_followups_and_pregenerate_cli(ws2_memory, tmp_path: Path) -
         assert "content_hash" not in raw_doc
         assert validate_bundle_doc(raw_doc)["content"]["bundle_id"]
         assert validate_generated_bundle_doc(raw_doc)["content"]["bundle_id"]
+
+
+def test_prompt_b_proposition_style_and_step_e1_text_quality_validator(ws2_memory) -> None:
+    msgs = bundle_generator._build_prompt_b_messages(
+        skill="Statistics", topic="Outliers", difficulty="easy"
+    )
+    sys_msg = msgs[0]["content"]
+    assert "4-10 words" in sys_msg
+    assert "3-5 propositions per concept" in sys_msg
+    assert "singular/plural" in sys_msg and "active/passive" in sys_msg
+    assert "already appear in the question" in sys_msg
+    assert "shared" in sys_msg and "concepts must not overlap" in sys_msg.lower()
+
+    regen_msgs = bundle_generator._build_regeneration_messages(
+        skill="Statistics",
+        topic="Outliers",
+        difficulty="easy",
+        previous_content=_sample_v2_payload(),
+        blind_answer="sample blind answer",
+        eval_res={"concepts": [], "misconceptions": [], "coverage": {}},
+        audit_diagnosis={"issue_type": "propositions"},
+    )
+    assert "4-10 words with a verb" in regen_msgs[1]["content"]
+
+    base_doc = {
+        "schema_version": 2,
+        "bundle_id": "python.gil-medium",
+        "version": 1,
+        "category": "technical_short_answer",
+        "skill": "Python",
+        "topic": "GIL",
+        "difficulty": "medium",
+        "source": "llm_draft",
+        "author": "llm:test",
+        **_sample_v2_payload(),
+    }
+
+    # 1. Rejects proposition under 3 words
+    short_prop_doc = json.loads(json.dumps(base_doc))
+    short_prop_doc["required_concepts"][0]["expected_propositions"] = ["mutex lock"]
+    with pytest.raises(BundleContentError, match="under 3 words"):
+        validate_generated_bundle_doc(short_prop_doc)
+
+    # 2. Rejects proposition made only of words appearing in the question
+    q_only_doc = json.loads(json.dumps(base_doc))
+    q_only_doc["question"] = "Explain how an extreme outlier pulls the mean toward a skewed tail."
+    q_only_doc["required_concepts"][0]["expected_propositions"] = ["outlier pulls the mean"]
+    with pytest.raises(BundleContentError, match="only restates words from the question"):
+        validate_generated_bundle_doc(q_only_doc)
+
+    # 3. Rejects same proposition (case-insensitive) under two concepts
+    dup_prop_doc = json.loads(json.dumps(base_doc))
+    dup_prop_doc["required_concepts"][1]["expected_propositions"] = ["Mutex Limits Bytecode"]
+    with pytest.raises(BundleContentError, match="duplicate proposition"):
+        validate_generated_bundle_doc(dup_prop_doc)
+
+    # 4. Rejects instruction leakage in learner-facing fields
+    for leak_q in (
+        "Explain how mutex locks protect bytecode cleanly (40 words max).",
+        "Answer in 40 words how mutex locks protect bytecode cleanly.",
+        "Explain how mutex locks work per reference_answer details.",
+    ):
+        leak_doc = json.loads(json.dumps(base_doc))
+        leak_doc["question"] = leak_q
+        with pytest.raises(BundleContentError, match="instruction leakage"):
+            validate_generated_bundle_doc(leak_doc)
+
+    leak_fu_doc = json.loads(json.dumps(base_doc))
+    leak_fu_doc["followups"][0]["prompt"] = "What happens in required_concepts when I/O blocks?"
+    with pytest.raises(BundleContentError, match="instruction leakage"):
+        validate_generated_bundle_doc(leak_fu_doc)
+
+    # 5. Rejects repeated sentences
+    repeat_doc = json.loads(json.dumps(base_doc))
+    repeat_doc["question"] = "Explain how mutex locks work in Python. Explain how mutex locks work in Python."
+    with pytest.raises(BundleContentError, match="repeated sentence"):
+        validate_generated_bundle_doc(repeat_doc)
+
+    repeat_ref_doc = json.loads(json.dumps(base_doc))
+    repeat_ref_doc["reference_answer"] = (
+        "One thread executes bytecode at a time. One thread executes bytecode at a time. "
+        "Blocking syscalls release the interpreter lock cleanly."
+    )
+    with pytest.raises(BundleContentError, match="repeated sentence"):
+        validate_generated_bundle_doc(repeat_ref_doc)
+
+    # 6. Retry once on Step E.1 text-quality failure and include offending question/counts on speech retry
+    seen_prompts: list[str] = []
+    attempts = {"n": 0}
+
+    def retry_speech_then_pass(purpose: str, model: str, messages: list[dict], **kwargs):
+        seen_prompts.append("\n".join(m["content"] for m in messages))
+        if purpose == "bundle_generation":
+            attempts["n"] += 1
+            payload = _sample_v2_payload(topic="Outliers")
+            if attempts["n"] == 1:
+                payload["question"] = (
+                    "Sentence one introduces outliers clearly. "
+                    "Sentence two asks about means carefully. "
+                    "Sentence three violates the limit."
+                )
+            return {"content": json.dumps(payload), "usage": {"total_tokens": 90}}
+        if purpose == "bundle_blind_answer":
+            return {
+                "content": (
+                    "In CPython, a mutex limits bytecode so one thread executes bytecode at a time "
+                    "while blocking syscalls release lock for other threads."
+                ),
+                "usage": {"total_tokens": 45},
+            }
+        raise AssertionError(purpose)
+
+    bundle_generator.set_bundle_llm_override(retry_speech_then_pass)
+    res = bundle_generator.generate_and_check_bundle(
+        skill="Python", topic="Outliers", difficulty="easy"
+    )
+    assert res["status"] == "auto_checked"
+    assert attempts["n"] == 2
+    assert "Sentence three violates the limit." in seen_prompts[1]
+    assert "word_count=" in seen_prompts[1] and "sentence_count=3" in seen_prompts[1]

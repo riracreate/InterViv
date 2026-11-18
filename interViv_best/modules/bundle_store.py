@@ -451,8 +451,11 @@ def submit_for_review(bundle_id: str, version: int, *, actor_id: str, reason: st
     be = _backend()
     with be.lock:
         v = get_version(bundle_id, version)
-        if v["status"] != "draft":
-            raise BundleStoreError("conflict", f"only draft versions can enter review (status {v['status']})")
+        if v["status"] not in ("draft", "auto_checked"):
+            raise BundleStoreError(
+                "conflict",
+                f"only draft or auto_checked versions can enter review (status {v['status']})",
+            )
         return _transition(be, v, "in_review", actor_id, reason or "submitted for review", _now())
 
 

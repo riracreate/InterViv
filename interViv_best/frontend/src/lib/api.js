@@ -671,3 +671,28 @@ export function clearInterviewState() {
 export function fetchMLAttempts() {
   return request("/ml-primitives/attempts");
 }
+
+export function fetchAdminBundles(skill = "") {
+  const qs = skill ? `?skill=${encodeURIComponent(skill)}` : "";
+  return request(`/admin/bundles${qs}`);
+}
+
+export function fetchAdminBundleVersion(bundleId, version) {
+  return request(`/admin/bundles/${encodeURIComponent(bundleId)}/versions/${encodeURIComponent(version)}`);
+}
+
+export function submitAdminBundleForReview(bundleId, version, reason = "") {
+  return request(`/admin/bundles/${encodeURIComponent(bundleId)}/versions/${encodeURIComponent(version)}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function postAdminBundleDecision(bundleId, version, payload) {
+  return request(`/admin/bundles/${encodeURIComponent(bundleId)}/versions/${encodeURIComponent(version)}/decisions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

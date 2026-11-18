@@ -78,13 +78,13 @@ def _counting_overrides(calls: dict[str, int]) -> None:
                     "id": "token_bucket",
                     "descriptor": "Token bucket controls burst and average rate",
                     "aliases": ["token bucket"],
-                    "expected_propositions": ["token bucket", "refill rate"],
+                    "expected_propositions": ["token bucket refill rate"],
                 },
                 {
                     "id": "http_429_headers",
                     "descriptor": "Return HTTP 429 with Retry-After header",
                     "aliases": ["retry after"],
-                    "expected_propositions": ["status 429", "retry after"],
+                    "expected_propositions": ["status 429 retry after"],
                 },
             ],
             "optional_concepts": [
@@ -92,7 +92,7 @@ def _counting_overrides(calls: dict[str, int]) -> None:
                     "id": "burst_smoothing",
                     "descriptor": "Burst traffic is smoothed by refilling capacity gradually over time",
                     "aliases": ["burst"],
-                    "expected_propositions": ["burst"],
+                    "expected_propositions": ["smooths burst traffic gradually"],
                 }
             ],
             "misconceptions": [

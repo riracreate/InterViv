@@ -234,6 +234,99 @@ def evaluate_calibration_length_bias(
     return words, None, None
 
 
+_LEAK_PAREN_RE = re.compile(
+    r"\([^)]*\b(?:words?|max(?:imum)?|min(?:imum)?|limit|sentences?|chars?|characters?)\b[^)]*\)",
+    re.IGNORECASE,
+)
+_LEAK_LIMIT_RE = re.compile(
+    r"\b(?:40\s+words?\b|\d+\s+words?\s+(?:max|limit)|(?:at\s+most|max|maximum|under)\s+\d+\s+(?:words?|sentences?)|two\s+sentences?\s+(?:max|limit))\b",
+    re.IGNORECASE,
+)
+_LEAK_SCHEMA_KEY_RE = re.compile(
+    r"\b(?:reference_answer|acceptable_variants|required_concepts|optional_concepts|"
+    r"depth_markers|rubric_descriptors|calibration_examples|targets_concept|"
+    r"expected_propositions|candidate_patterns|author_level|expected_band)\b",
+    re.IGNORECASE,
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def validate_generated_bundle_text_quality(content: dict[str, Any]) -> None:
+    """Reject brittle propositions, instruction leakage, and repeated sentences in Step E.1."""
+    question_text = str(content.get("question") or "")
+    q_words = set(re.findall(r"[a-z0-9_]+", question_text.casefold()))
+
+    seen_props: dict[str, str] = {}
+    for field_name in ("required_concepts", "optional_concepts"):
+        for idx, concept in enumerate(content.get(field_name) or []):
+            cid = str(concept.get("id") or f"{field_name}[{idx}]").strip()
+            for prop in concept.get("expected_propositions") or []:
+                prop_str = str(prop or "").strip()
+                p_words = re.findall(r"[A-Za-z0-9_]+", prop_str)
+                if len(p_words) < 3:
+                    raise BundleContentError(
+                        f"proposition in concept {cid!r} has under 3 words ({len(p_words)} words): {prop_str!r}"
+                    )
+                p_lower = {w.casefold() for w in p_words}
+                if q_words and p_lower.issubset(q_words):
+                    raise BundleContentError(
+                        f"proposition in concept {cid!r} only restates words from the question: {prop_str!r}"
+                    )
+                norm_prop = " ".join(w.casefold() for w in p_words)
+                if norm_prop in seen_props and seen_props[norm_prop] != cid:
+                    raise BundleContentError(
+                        f"duplicate proposition {prop_str!r} shared between concepts "
+                        f"{seen_props[norm_prop]!r} and {cid!r}"
+                    )
+                seen_props[norm_prop] = cid
+
+    learner_fields: list[tuple[str, str]] = [("question", question_text)]
+    for idx, fu in enumerate(content.get("followups") or []):
+        learner_fields.append((f"followups[{idx}].prompt", str((fu or {}).get("prompt") or "")))
+    for field_name, text in learner_fields:
+        for pattern in (_LEAK_PAREN_RE, _LEAK_LIMIT_RE, _LEAK_SCHEMA_KEY_RE):
+            m = pattern.search(text)
+            if m is not None:
+                raise BundleContentError(
+                    f"instruction leakage in {field_name}: {m.group(0)!r}"
+                )
+
+    text_fields: list[tuple[str, str]] = [
+        ("question", question_text),
+        ("reference_answer", str(content.get("reference_answer") or "")),
+    ]
+    for idx, fu in enumerate(content.get("followups") or []):
+        text_fields.append((f"followups[{idx}].prompt", str((fu or {}).get("prompt") or "")))
+    for idx, ex in enumerate(content.get("calibration_examples") or []):
+        text_fields.append((f"calibration_examples[{idx}].answer", str((ex or {}).get("answer") or "")))
+
+    q_norm_sentences = {
+        " ".join(re.findall(r"[a-z0-9_]+", s.casefold()))
+        for s in _SENTENCE_SPLIT_RE.split(question_text)
+        if s.strip()
+    }
+    q_norm_sentences = {ns for ns in q_norm_sentences if len(ns.split()) >= 3}
+
+    for field_name, text in text_fields:
+        seen_sentences: set[str] = set()
+        for sent in _SENTENCE_SPLIT_RE.split(text):
+            clean_sent = sent.strip()
+            if not clean_sent:
+                continue
+            norm_s = " ".join(re.findall(r"[a-z0-9_]+", clean_sent.casefold()))
+            if len(norm_s.split()) < 3:
+                continue
+            if norm_s in seen_sentences:
+                raise BundleContentError(
+                    f"repeated sentence in {field_name}: {clean_sent!r}"
+                )
+            if field_name.startswith("followups[") and norm_s in q_norm_sentences:
+                raise BundleContentError(
+                    f"repeated sentence in {field_name} matching question: {clean_sent!r}"
+                )
+            seen_sentences.add(norm_s)
+
+
 def validate_generated_bundle_doc(doc: dict[str, Any]) -> dict[str, Any]:
     """Validate a newly generated WS2 bundle document (strict Step E.1 structural checks)."""
     parsed = validate_bundle_doc(doc)
@@ -326,6 +419,8 @@ def validate_generated_bundle_doc(doc: dict[str, Any]) -> dict[str, Any]:
         raise BundleContentError(
             "calibration_examples must include a Poor example (author_level=0, expected_band='Poor')"
         )
+
+    validate_generated_bundle_text_quality(content)
 
     parsed["content_hash"] = content_hash(content)
     return parsed

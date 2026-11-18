@@ -464,3 +464,52 @@ def test_admin_router_not_mounted_by_default():
     if settings.enable_admin_endpoints:
         pytest.skip("ENABLE_ADMIN_ENDPOINTS is on in this environment")
     assert not any(getattr(r, "path", "").startswith("/admin") for r in app.routes)
+
+
+def test_auto_checked_can_be_submitted_for_review_and_reviewed(admin_client):
+    client, users, _student = admin_client
+    (author_id, _author), (_, rev_a), (_, rev_b), (_, rev_c) = users
+
+    doc = make_doc(bundle_id="python.test-auto-checked-submit", author=author_id)
+    bundle_store.import_bundle(doc, actor_id="cli", initial_status="generated")
+    bundle_store.transition_automated_check(
+        "python.test-auto-checked-submit",
+        1,
+        to_status="auto_checked",
+        reason="Passed blind answer check.",
+        check_meta={"check_provider": "groq", "check_model": "openai/gpt-oss-120b"},
+    )
+    assert bundle_store.get_version("python.test-auto-checked-submit", 1)["status"] == "auto_checked"
+
+    r_sub = client.post(
+        "/admin/bundles/python.test-auto-checked-submit/versions/1/submit",
+        json={"reason": "Auto check passed; submitting for two-reviewer signoff."},
+        headers=rev_a,
+    )
+    assert r_sub.status_code == 200
+    assert r_sub.json()["status"] == "in_review"
+
+    view = client.get("/admin/bundles/python.test-auto-checked-submit/versions/1", headers=rev_a).json()
+    decision_body = {
+        "content_hash": view["content_hash"],
+        "decision": "approve",
+        "checklist": CHECK_OK,
+        "reasons": REASON,
+        "calibration": CALIB,
+    }
+    url = "/admin/bundles/python.test-auto-checked-submit/versions/1/decisions"
+    assert client.post(url, json=decision_body, headers=rev_b).json()["version"]["status"] == "in_review"
+    assert client.post(url, json=decision_body, headers=rev_c).json()["version"]["status"] == "reviewed"
+
+    history = bundle_store.review_history("python.test-auto-checked-submit", 1)
+    assert [a["to_status"] for a in history["audit"]] == ["generated", "auto_checked", "in_review", "reviewed"]
+
+    # Non-draft/non-auto_checked statuses (generated, rejected, reviewed, retired) still refuse submit_for_review.
+    doc2 = make_doc(
+        bundle_id="python.test-generated-blocked",
+        question="Name the Python built-in function that lazily transforms items using an iterable.",
+        author=author_id,
+    )
+    bundle_store.import_bundle(doc2, actor_id="cli", initial_status="generated")
+    with pytest.raises(BundleStoreError, match="draft or auto_checked"):
+        bundle_store.submit_for_review("python.test-generated-blocked", 1, actor_id="admin-1")

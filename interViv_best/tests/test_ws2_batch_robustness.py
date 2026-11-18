@@ -113,7 +113,7 @@ def _valid_bundle_payload(
             "descriptor": "Token bucket controls burst and average rate",
             "aliases": ["token bucket", "refill tokens"],
             "expected_propositions": (
-                ["nonexistent quantum crystal latch"] if all_tight else ["token bucket", "refill rate"]
+                ["nonexistent quantum crystal latch"] if all_tight else ["token bucket refill rate"]
             ),
         },
         {
@@ -121,7 +121,7 @@ def _valid_bundle_payload(
             "descriptor": "Return HTTP 429 with Retry-After header",
             "aliases": ["429", "retry after"],
             "expected_propositions": (
-                ["nonexistent hyperloop signal"] if all_tight else ["status 429", "retry after"]
+                ["nonexistent hyperloop signal"] if all_tight else ["status 429 retry after"]
             ),
         },
     ]
@@ -138,7 +138,7 @@ def _valid_bundle_payload(
                 "expected_propositions": (
                     ["ephemeral consensus quorum latch"]
                     if (tight_third or all_tight)
-                    else ["lua atomic", "redis script"]
+                    else ["atomic redis lua script"]
                 ),
             }
         )
@@ -162,7 +162,7 @@ def _valid_bundle_payload(
                 "id": "sliding_window_log",
                 "descriptor": "Sliding window log avoids boundary spikes",
                 "aliases": ["sliding window", "window log"],
-                "expected_propositions": ["sliding window"],
+                "expected_propositions": ["sliding window boundary spikes"],
             }
         ],
         "misconceptions": [
@@ -1216,7 +1216,7 @@ def test_pregenerate_pilot_metrics_and_export_bundles_review_csv(
                 "id": "token_bucket",
                 "descriptor": "Token bucket controls burst and average rate",
                 "aliases": ["token bucket"],
-                "expected_propositions": ["token bucket", "refill rate"],
+                "expected_propositions": ["token bucket refill rate"],
             },
             {
                 "id": "http_429_headers",

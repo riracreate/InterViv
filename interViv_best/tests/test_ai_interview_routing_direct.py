@@ -512,3 +512,18 @@ def test_privacy_lock_allowlist_and_env_example(monkeypatch, tmp_path, provider,
     env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
     assert "# INTERVIEW_ALLOW_SELF_CHECK=false" in env_example
     assert "\nINTERVIEW_ALLOW_SELF_CHECK=" not in env_example
+
+
+def test_live_check_script_refuses_real_or_demo_db_paths(tmp_path):
+    from pathlib import Path
+    from scripts.live_check_direct_providers import DEFAULT_SOURCE_DB, assert_safe_tmp_db_path
+
+    assert assert_safe_tmp_db_path("/tmp/interviv-demo-live-check.sqlite3")
+    for forbidden in (
+        DEFAULT_SOURCE_DB,
+        Path.home() / "interviv-demo" / "interviv-demo.sqlite3",
+        tmp_path / "interviv-demo" / "copy.sqlite3",
+        Path.cwd() / "local.sqlite3",
+    ):
+        with pytest.raises(RuntimeError, match="Refusing|must be inside /tmp"):
+            assert_safe_tmp_db_path(forbidden)
