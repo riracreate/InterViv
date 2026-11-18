@@ -82,7 +82,8 @@ export default function Coach() {
           ? { jd_text: text, goal_text: '', include_dashboard: true, role_id: roleId || null }
           : { goal_text: text, jd_text: '', include_dashboard: true, role_id: roleId || null };
       const data = await fetchCoachPlan(body);
-      setPlan(mapCoachPlan(data));
+      const mapped = mapCoachPlan(data);
+      setPlan(mapped);
       if (mode === 'jd' && text.trim()) {
         saveTargetContext({ jd_text: text.trim(), jd_source: 'paste' }).catch(() => {});
       }
@@ -91,6 +92,7 @@ export default function Coach() {
           confirmed_goal: text.trim() || null,
           role_id: roleId || null,
           hours_per_week: hoursPerWeek,
+          planning_context_skills: mapped.recognizedSkills,
         });
         const turn = await postCoachMessage(conversationId, {
           text: text.trim() || 'Build my starter plan',
