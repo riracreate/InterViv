@@ -559,3 +559,30 @@ def test_lists_vs_tuples_v3_under_strict_mode(monkeypatch) -> None:
     assert {c["match_type"] for c in res["concepts"]} == {"proposition"}
     res = concept_evaluator_v3.evaluate_answer(answer_text=echo, bundle_content=v3, strict=True)
     assert res["coverage"]["k_supported"] == 0
+
+
+# ─── 0.A.4: strict live re-run helpers (offline) ─────────────────────────────
+
+
+def test_live_check_strict_reports_match_type_per_concept_and_shadows_existing() -> None:
+    from scripts.live_check_strict import SHADOW_SUFFIX, concept_rows, shadow_doc
+    from scripts.live_check_direct_providers import assert_safe_tmp_db_path
+
+    rows = concept_rows({"concepts": [
+        {"concept_id": "a", "state": "supported", "match_type": "proposition"},
+        {"concept_id": "b", "state": "supported", "match_type": "semantic", "semantic_score": 0.7},
+        {"concept_id": "c", "state": "mentioned", "match_type": "alias"},
+        {"concept_id": "d", "state": "not_demonstrated", "match_type": None},
+    ]})
+    assert [r["match"] for r in rows] == [
+        "proposition", "semantic", "alias-mentioned", "none (not_demonstrated)",
+    ]
+    doc = shadow_doc({
+        "bundle_id": "python.gil", "version": 2, "source": "human_authored",
+        "author_id": "phase1b-dev", "attribution_json": {"note": "x", "auto_check": {"to_status": "auto_checked"}},
+        "content_json": {"bundle_id": "python.gil", "question": "Q?"},
+    })
+    assert doc["bundle_id"] == "python.gil" + SHADOW_SUFFIX and doc["version"] == 1
+    assert doc["attribution"] == {"note": "x", "strict_recheck_of": "python.gil@2"}
+    with pytest.raises(RuntimeError):
+        assert_safe_tmp_db_path(Path.home() / "interviv-demo" / "interviv-demo.sqlite3")
