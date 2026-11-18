@@ -73,7 +73,7 @@ class RequestBudget:
                     "all_until": 0, "credit_block": False, "models": {},
                     "operator_block": None, "batches": {}, "closed_interviews": {},
                     "nvidia_starts": [], "nvidia_until": 0, "groq_until": 0,
-                    "groq_limits": {}, "direct_counts": {}, "cost_usd": 0.0,
+                    "groq_limits": {}, "direct_counts": {}, "served_models": {}, "cost_usd": 0.0,
                 })
                 # Backward-compatible metadata additions; no counter is reset.
                 account.setdefault("operator_block", None)
@@ -84,6 +84,7 @@ class RequestBudget:
                 account.setdefault("groq_until", 0)
                 account.setdefault("groq_limits", {})
                 account.setdefault("direct_counts", {})
+                account.setdefault("served_models", {})
                 account.setdefault("cost_usd", 0.0)
                 # Validate persisted counters, never silently recreate a corrupt account.
                 for key in ("day", "free_count", "total_count"):
@@ -92,7 +93,7 @@ class RequestBudget:
                 for key in ("last_seen", "next_content_at", "free_until", "all_until", "nvidia_until", "groq_until", "cost_usd"):
                     if not math.isfinite(account[key]) or account[key] < 0:
                         raise ValueError("invalid time")
-                for key in ("leases", "interviews", "models", "batches", "closed_interviews", "groq_limits", "direct_counts"):
+                for key in ("leases", "interviews", "models", "batches", "closed_interviews", "groq_limits", "direct_counts", "served_models"):
                     if not isinstance(account[key], dict):
                         raise ValueError("invalid map")
                 if type(account["credit_block"]) is not bool:
@@ -261,6 +262,16 @@ class RequestBudget:
             if (parsed.get("remaining_requests") == 0 or parsed.get("remaining_tokens") == 0) and parsed.get("reset_at"):
                 state["groq_until"] = max(state["groq_until"], float(parsed["reset_at"]))
             return parsed
+
+    def record_served_model(self, requested_model: str, served_model: str | None, *, provider: str = "openrouter") -> None:
+        if not requested_model or not served_model:
+            return
+        with self._state() as (state, _):
+            state["served_models"][str(requested_model)] = {
+                "requested_model": str(requested_model),
+                "served_model": str(served_model),
+                "provider": str(provider),
+            }
 
     def record_failure(self, model: str, decision: LimitDecision, *, free: bool,
                        provider: str = "openrouter") -> None:

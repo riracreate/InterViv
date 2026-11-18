@@ -72,59 +72,104 @@ def test_direct_provider_settings_default_off_and_per_lane_routing(monkeypatch, 
     for key in (
         "INTERVIEW_DIRECT_PROVIDERS_ENABLED", "INTERVIEW_CONTENT_PROVIDER",
         "INTERVIEW_CHECK_PROVIDER", "NVIDIA_CONTENT_MODEL", "GROQ_CHECK_MODEL",
+        "GROQ_CONTENT_BACKUP_MODEL", "INTERVIEW_ALLOW_SELF_CHECK",
     ):
         monkeypatch.delenv(key, raising=False)
-    assert routing.RoutingSettings.from_env() == routing.RoutingSettings()
-    assert routing.RoutingSettings.from_env().direct_providers_enabled is False
+    defaults = routing.RoutingSettings.from_env()
+    assert defaults == routing.RoutingSettings()
+    assert defaults.direct_providers_enabled is False
+    assert defaults.allow_self_check is False
+    assert defaults.nvidia_content_model == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert defaults.groq_content_backup_model == "qwen/qwen3.8-27b"
+    assert defaults.groq_check_model == "openai/gpt-oss-120b"
 
     router, clock = _direct_env(monkeypatch, tmp_path)
-    sent: list[tuple[str, dict]] = []
+    sent: list[tuple[str, dict, dict]] = []
 
     def fake_urlopen(req, **kwargs):
         body = json.loads(req.data.decode("utf-8"))
-        sent.append((req.full_url, body))
+        hdrs = {k.lower(): v for k, v in req.header_items()}
+        sent.append((req.full_url, body, hdrs))
         if req.full_url == routing.NVIDIA_CHAT_URL:
             return _FakeHTTPResponse({
-                "model": body["model"],
+                "model": "private/nvidia/nemotron-3.5-super-120b-a12b",
                 "choices": [{"message": {"content": "<think>internal</think>{\"ok\": true}"}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
             })
         assert req.full_url == routing.GROQ_CHAT_URL
+        content = "Candidate answer text." if body.get("response_format") is None else "{\"root_cause\": \"ok\"}"
         return _FakeHTTPResponse({
             "model": body["model"],
-            "choices": [{"message": {"content": "{\"root_cause\": \"ok\"}"}, "finish_reason": "stop"}],
+            "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16},
         }, headers={"x-ratelimit-remaining-requests": "99", "x-ratelimit-remaining-tokens": "9000"})
 
     monkeypatch.setattr(routing.urllib.request, "urlopen", fake_urlopen)
     with routing.interview_scope("per-lane", 2) as scope:
         assert bundle_generator.resolve_generation_provider_and_model() == (
-            "nvidia", routing.DEFAULT_NVIDIA_CONTENT_MODEL,
+            "nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b",
         )
         assert bundle_generator.resolve_checker_provider_and_model() == (
-            "groq", routing.DEFAULT_GROQ_CHECK_MODEL,
+            "groq", "openai/gpt-oss-120b",
         )
         gen = router.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "Write bundle"}])
         clock.advance(4)
-        chk = router.dispatch(purpose="bundle_check_audit", messages=[{"role": "user", "content": "Audit bundle"}])
+        blind = router.dispatch(
+            purpose="bundle_blind_answer",
+            messages=[{"role": "user", "content": "Answer question"}],
+            max_tokens=380,
+            expect_json=False,
+        )
+        clock.advance(4)
+        chk = router.dispatch(
+            purpose="bundle_check_audit",
+            messages=[{"role": "user", "content": "Audit bundle"}],
+            max_tokens=400,
+        )
 
     assert gen.provider == "nvidia"
-    assert gen.model == routing.DEFAULT_NVIDIA_CONTENT_MODEL
-    assert gen.text == '{"ok": true}'  # thinking tags stripped
+    assert gen.requested_model == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert gen.model == "private/nvidia/nemotron-3.5-super-120b-a12b"
+    assert gen.text == '{"ok": true}'  # thinking tags safety-net stripped
     assert scope.providers["bundle_generation"] == "nvidia"
+    assert scope.models["bundle_generation"] == "private/nvidia/nemotron-3.5-super-120b-a12b"
 
+    assert blind.provider == "groq"
     assert chk.provider == "groq"
-    assert chk.model == routing.DEFAULT_GROQ_CHECK_MODEL
+    assert chk.model == "openai/gpt-oss-120b"
     assert scope.providers["bundle_check_audit"] == "groq"
 
+    # NVIDIA writer: strict json_schema, chat_template_kwargs, no system prompt switch, User-Agent
     assert sent[0][0] == routing.NVIDIA_CHAT_URL
-    assert sent[0][1]["messages"][0] == {"role": "system", "content": "detailed thinking off"}
-    assert sent[0][1]["response_format"] == {"type": "json_object"}
+    assert sent[0][1]["messages"] == [{"role": "user", "content": "Write bundle"}]
+    assert sent[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert sent[0][1]["response_format"]["type"] == "json_schema"
+    assert sent[0][1]["response_format"]["json_schema"]["strict"] is True
+    assert sent[0][2]["user-agent"] == routing.DIRECT_PROVIDER_USER_AGENT
 
+    # Groq checker blind answer: reasoning_effort low, max_tokens sized above answer budget, User-Agent
     assert sent[1][0] == routing.GROQ_CHAT_URL
     assert sent[1][1]["reasoning_effort"] == "low"
-    assert sent[1][1]["response_format"]["type"] == "json_schema"
-    assert sent[1][1]["response_format"]["json_schema"]["strict"] is True
+    assert sent[1][1]["max_tokens"] == 380 + routing.DEFAULT_CONTENT_REASONING_MAX_TOKENS
+    assert "response_format" not in sent[1][1]
+    assert sent[1][2]["user-agent"] == routing.DIRECT_PROVIDER_USER_AGENT
+
+    # Groq checker audit: strict json_schema, reasoning_effort low, max_tokens sized, User-Agent
+    assert sent[2][0] == routing.GROQ_CHAT_URL
+    assert sent[2][1]["reasoning_effort"] == "low"
+    assert sent[2][1]["max_tokens"] == 400 + routing.DEFAULT_CONTENT_REASONING_MAX_TOKENS
+    assert sent[2][1]["response_format"]["type"] == "json_schema"
+    assert sent[2][1]["response_format"]["json_schema"]["strict"] is True
+    assert sent[2][2]["user-agent"] == routing.DIRECT_PROVIDER_USER_AGENT
+
+    # Budget journal records served model name next to requested ID
+    journal_state = router.budget.snapshot()
+    served = journal_state["served_models"]["nvidia/nemotron-3.5-super-vl-120b-a12b"]
+    assert served == {
+        "requested_model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "served_model": "private/nvidia/nemotron-3.5-super-120b-a12b",
+        "provider": "nvidia",
+    }
 
 
 def test_conversation_lane_stays_locked_to_openrouter_haiku(monkeypatch, tmp_path):
@@ -163,14 +208,40 @@ def test_static_capability_table_and_nvidia_json_schema_probe(monkeypatch, tmp_p
     with routing.interview_scope("unknown-direct", 2), pytest.raises(routing.RoutingError, match="DIRECT_PROVIDER_CAPABILITIES"):
         router.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "x"}])
 
+    # Writer without strict json_schema support is refused
+    router_no_schema, _ = _direct_env(
+        monkeypatch, tmp_path / "noschema", nvidia_model="nvidia/llama-3.3-nemotron-super-49b-v1.5"
+    )
+    with routing.interview_scope("no-schema", 2), pytest.raises(routing.RoutingError, match="json_schema"):
+        router_no_schema.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "x"}])
+
+    # Content lane never emits json_object
+    for purpose in ("bundle_generation", "bundle_regeneration", "bundle_check_audit"):
+        fmt = routing.response_format_for(purpose, "content", True)
+        assert fmt is not None and fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
+    assert routing.response_format_for("bundle_blind_answer", "content", True) is None
+    with pytest.raises(routing.RoutingError, match="json_object"):
+        routing.response_format_for("unexpected_json_purpose", "content", True)
+    with pytest.raises(routing.RoutingError, match="json_object"):
+        routing.InterviewRouter._chat_direct_once(
+            "nvidia", routing.DEFAULT_NVIDIA_CONTENT_MODEL, [{"role": "user", "content": "x"}],
+            100, 0.1, 10, True, response_format={"type": "json_object"},
+        )
+
     monkeypatch.setenv("LLM_LIVE_FETCH", "0")
     with pytest.raises(routing.RoutingError, match="LLM_LIVE_FETCH=1"):
         routing.check_nvidia_json_schema_support()
 
-    ok_probe = routing.check_nvidia_json_schema_support(
-        opener=lambda req: _FakeHTTPResponse({"choices": [{"message": {"content": '{"ok": true}'}}]}),
-    )
+    probe_requests = []
+
+    def ok_opener(req):
+        probe_requests.append((json.loads(req.data.decode("utf-8")), {k.lower(): v for k, v in req.header_items()}))
+        return _FakeHTTPResponse({"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+    ok_probe = routing.check_nvidia_json_schema_support(opener=ok_opener)
     assert ok_probe["json_schema_supported"] is True
+    assert probe_requests[0][0]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert probe_requests[0][1]["user-agent"] == routing.DIRECT_PROVIDER_USER_AGENT
 
     def fail_opener(req):
         raise HTTPError(routing.NVIDIA_CHAT_URL, 400, "Bad Request", {}, io.BytesIO(b'{"error": "unsupported"}'))
@@ -201,8 +272,10 @@ def test_direct_provider_401_402_403_abort_without_retry_or_openrouter_fallback(
     assert calls == [routing.NVIDIA_CHAT_URL]  # Single attempt; no retry, no OpenRouter fallback
 
 
-def test_direct_provider_429_retries_once_and_falls_back_to_openrouter_free_not_paid(monkeypatch, tmp_path):
-    # Case 1: 429 on first attempt, retry succeeds on NVIDIA
+def test_direct_provider_429_retries_once_and_falls_back_through_qwen_then_openrouter_free_not_paid(
+    monkeypatch, tmp_path, caplog
+):
+    # Case 1: 429 on first attempt, retry succeeds on NVIDIA (backup Qwen is NOT called)
     router, clock = _direct_env(monkeypatch, tmp_path, content_models=(FREE_A,), allow_paid=True)
     calls: list[str] = []
 
@@ -211,7 +284,7 @@ def test_direct_provider_429_retries_once_and_falls_back_to_openrouter_free_not_
         if len(calls) == 1:
             raise HTTPError(req.full_url, 429, "rate limit", {"Retry-After": "1"}, io.BytesIO(b'{"error":"rpm"}'))
         return _FakeHTTPResponse({
-            "model": routing.DEFAULT_NVIDIA_CONTENT_MODEL,
+            "model": "private/nvidia/nemotron-3.5-super-120b-a12b",
             "choices": [{"message": {"content": '{"ok": 1}'}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
         })
@@ -222,14 +295,44 @@ def test_direct_provider_429_retries_once_and_falls_back_to_openrouter_free_not_
     assert res.provider == "nvidia"
     assert calls == [routing.NVIDIA_CHAT_URL, routing.NVIDIA_CHAT_URL]
 
-    # Case 2: NVIDIA fails twice -> OpenRouter :free succeeds -> never paid Claude
+    # Case 2: NVIDIA fails (503 model_unavailable) -> logs fallback and uses Groq qwen/qwen3.8-27b backup writer with effort=none
+    router_qwen, _ = _direct_env(monkeypatch, tmp_path / "qwen_backup", content_models=(FREE_A,), allow_paid=True)
+    qwen_calls: list[tuple[str, dict, dict]] = []
+
+    def nvidia_fails_qwen_ok(req, **kwargs):
+        body = json.loads(req.data.decode("utf-8"))
+        hdrs = {k.lower(): v for k, v in req.header_items()}
+        qwen_calls.append((req.full_url, body, hdrs))
+        if req.full_url == routing.NVIDIA_CHAT_URL:
+            raise HTTPError(req.full_url, 503, "unavailable", {}, io.BytesIO(b'{"error":"upstream"}'))
+        return _FakeHTTPResponse({
+            "model": "qwen/qwen3.8-27b",
+            "choices": [{"message": {"content": '{"ok": "qwen"}'}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10},
+        })
+
+    monkeypatch.setattr(routing.urllib.request, "urlopen", nvidia_fails_qwen_ok)
+    import logging
+    with caplog.at_level(logging.WARNING, logger=routing.LOGGER.name), routing.interview_scope("nv-to-qwen", 2) as scope:
+        res_q = router_qwen.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "hi"}])
+    assert res_q.provider == "groq"
+    assert res_q.model == "qwen/qwen3.8-27b"
+    assert scope.providers["bundle_generation"] == "groq"
+    assert [u for u, _, _ in qwen_calls] == [routing.NVIDIA_CHAT_URL, routing.GROQ_CHAT_URL]
+    assert qwen_calls[1][1]["model"] == "qwen/qwen3.8-27b"
+    assert qwen_calls[1][1]["reasoning_effort"] == "none"
+    assert qwen_calls[1][1]["response_format"]["type"] == "json_schema"
+    assert qwen_calls[1][2]["user-agent"] == routing.DIRECT_PROVIDER_USER_AGENT
+    assert any("interview_llm_writer_fallback" in r.message and "qwen/qwen3.8-27b" in r.message for r in caplog.records)
+
+    # Case 3: NVIDIA and Groq backup fail -> OpenRouter :free succeeds -> never paid Claude
     router2, _ = _direct_env(monkeypatch, tmp_path / "sub", content_models=(FREE_A,), allow_paid=True)
     fallback_urls: list[tuple[str, str]] = []
 
-    def nvidia_down_or_free_ok(req, **kwargs):
+    def direct_down_free_ok(req, **kwargs):
         body = json.loads(req.data.decode("utf-8"))
         fallback_urls.append((req.full_url, body["model"]))
-        if req.full_url == routing.NVIDIA_CHAT_URL:
+        if req.full_url in {routing.NVIDIA_CHAT_URL, routing.GROQ_CHAT_URL}:
             raise HTTPError(req.full_url, 429, "rate limit", {"Retry-After": "1"}, io.BytesIO(b'{"error":"rpm"}'))
         return _FakeHTTPResponse({
             "model": FREE_A,
@@ -237,16 +340,20 @@ def test_direct_provider_429_retries_once_and_falls_back_to_openrouter_free_not_
             "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
         })
 
-    monkeypatch.setattr(routing.urllib.request, "urlopen", nvidia_down_or_free_ok)
+    monkeypatch.setattr(routing.urllib.request, "urlopen", direct_down_free_ok)
     with routing.interview_scope("fallback-free", 2) as scope:
         res2 = router2.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "hi"}])
     assert res2.provider == "openrouter"
     assert res2.model == FREE_A
     assert scope.providers["bundle_generation"] == "openrouter"
-    assert [u for u, _ in fallback_urls] == [routing.NVIDIA_CHAT_URL, routing.NVIDIA_CHAT_URL, routing.CHAT_URL]
+    assert [u for u, _ in fallback_urls] == [
+        routing.NVIDIA_CHAT_URL, routing.NVIDIA_CHAT_URL,
+        routing.GROQ_CHAT_URL, routing.GROQ_CHAT_URL,
+        routing.CHAT_URL,
+    ]
     assert all(m != PAID for _, m in fallback_urls)
 
-    # Case 3: No OpenRouter :free works + allow_paid=True -> stops (never uses paid Claude for content)
+    # Case 4: No OpenRouter :free works + allow_paid=True -> stops (never uses paid Claude for content)
     router3, _ = _direct_env(monkeypatch, tmp_path / "sub2", content_models=(FREE_A,), allow_paid=True)
     tried_models: list[str] = []
 
@@ -259,7 +366,7 @@ def test_direct_provider_429_retries_once_and_falls_back_to_openrouter_free_not_
     with routing.interview_scope("stop-no-paid", 4), pytest.raises(DispatchDeferred):
         router3.dispatch(purpose="bundle_generation", messages=[{"role": "user", "content": "hi"}])
     assert PAID not in tried_models
-    assert tried_models == [routing.DEFAULT_NVIDIA_CONTENT_MODEL, FREE_A]
+    assert tried_models == [routing.DEFAULT_NVIDIA_CONTENT_MODEL, routing.DEFAULT_GROQ_CONTENT_BACKUP_MODEL, FREE_A]
 
 
 def test_nvidia_40_per_minute_groq_headers_and_zero_cost_journal(monkeypatch, tmp_path):
@@ -359,3 +466,49 @@ def test_cross_family_writer_and_checker_enforced(monkeypatch, tmp_path):
     )
     with routing.interview_scope("same-family", 2), pytest.raises(routing.RoutingError, match="matches generator"):
         router_same.check_candidates_with_providers()
+
+    # Served private/nvidia/... identifier still counts as nvidia/nemotron family
+    assert routing._same_writer_family(
+        "openrouter", "nvidia/nemotron-checker:free", "nvidia", "private/nvidia/nemotron-3.5-super-120b-a12b"
+    ) is True
+
+    # Qwen backup writer and gpt-oss checker are different families (allowed even on same Groq provider)
+    assert routing.model_family("qwen/qwen3.8-27b", "groq") == "qwen"
+    assert routing.model_family("openai/gpt-oss-120b", "groq") == "gpt-oss"
+    assert routing._same_writer_family("groq", "openai/gpt-oss-120b", "groq", "qwen/qwen3.8-27b") is False
+    assert router_ok.check_candidates_with_providers(
+        generator_provider="groq", generator_model="qwen/qwen3.8-27b",
+    ) == (("groq", "openai/gpt-oss-120b"),)
+
+
+@pytest.mark.parametrize("provider,model", [
+    ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
+    ("groq", "openai/gpt-oss-120b"),
+    ("openrouter", FREE_A),
+])
+def test_privacy_lock_allowlist_and_env_example(monkeypatch, tmp_path, provider, model):
+    assert routing.ALLOWED_BUNDLE_PURPOSES == frozenset({
+        "bundle_generation", "bundle_regeneration", "bundle_blind_answer", "bundle_check_audit",
+    })
+    for allowed_purpose in sorted(routing.ALLOWED_BUNDLE_PURPOSES):
+        routing.enforce_outbound_policy(purpose=allowed_purpose, model=model, personal_text=False, provider=provider)
+        with pytest.raises(routing.PrivacyViolation):
+            routing.enforce_outbound_policy(purpose=allowed_purpose, model=model, personal_text=True, provider=provider)
+
+    for forbidden in ("unknown_future_task", "custom_summary", "raw_resume_chat", *sorted(routing.PERSONAL_PURPOSES)):
+        with pytest.raises(routing.PrivacyViolation):
+            routing.enforce_outbound_policy(purpose=forbidden, model=model, personal_text=False, provider=provider)
+
+    router, _ = _direct_env(
+        monkeypatch, tmp_path,
+        content_provider="groq" if provider == "groq" else "nvidia",
+        content_models=(FREE_A,) if provider == "openrouter" else (),
+        nvidia_model="nvidia/nemotron-3.5-super-vl-120b-a12b",
+    )
+    with routing.interview_scope("unknown-allowlist", 2), pytest.raises(routing.PrivacyViolation):
+        router.dispatch(purpose="unknown_future_task", messages=[{"role": "user", "content": "hi"}], provider=provider, model=model)
+
+    from pathlib import Path
+    env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+    assert "# INTERVIEW_ALLOW_SELF_CHECK=false" in env_example
+    assert "\nINTERVIEW_ALLOW_SELF_CHECK=" not in env_example

@@ -33,8 +33,10 @@ from modules.llm_http_policy import LimitDecision, classify_http_error
 PAID_CONVERSATION_MODEL = "anthropic/claude-haiku-4.5"
 GENERATION_PURPOSES = frozenset({"bundle_generation", "bundle_regeneration"})
 CHECK_PURPOSES = frozenset({"bundle_blind_answer", "bundle_check_audit"})
-CONTENT_PURPOSES = GENERATION_PURPOSES | CHECK_PURPOSES
+ALLOWED_BUNDLE_PURPOSES = GENERATION_PURPOSES | CHECK_PURPOSES
+CONTENT_PURPOSES = ALLOWED_BUNDLE_PURPOSES
 PERSONAL_PURPOSES = frozenset({"role_skill_extraction", "resume_extraction", "interviewer_turn", "debrief"})
+DIRECT_PROVIDER_USER_AGENT = "InterViv/1.0"
 GENERATED_BUNDLE_KEYS = (
     "question", "reference_answer", "acceptable_variants", "keywords",
     "required_concepts", "optional_concepts", "misconceptions", "depth_markers",
@@ -147,8 +149,8 @@ def check_audit_schema() -> dict:
 
 
 def response_format_for(purpose: str, lane: str, expect_json: bool) -> dict | None:
-    """Routed content JSON uses strict json_schema. Everything else stays json_object."""
-    if not expect_json:
+    """Content lane JSON always uses strict json_schema and never json_object."""
+    if not expect_json or (lane == "content" and purpose == "bundle_blind_answer"):
         return None
     if lane == "content" and purpose in GENERATION_PURPOSES:
         return {
@@ -168,15 +170,30 @@ def response_format_for(purpose: str, lane: str, expect_json: bool) -> dict | No
                 "schema": check_audit_schema(),
             },
         }
+    if lane == "content":
+        raise RoutingError(f"Content lane never sends json_object; unsupported JSON purpose {purpose!r}.")
     return {"type": "json_object"}
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_NVIDIA_CONTENT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+DEFAULT_NVIDIA_CONTENT_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 DEFAULT_GROQ_CHECK_MODEL = "openai/gpt-oss-120b"
+DEFAULT_GROQ_CONTENT_BACKUP_MODEL = "qwen/qwen3.8-27b"
 VALID_CONTENT_PROVIDERS = frozenset({"openrouter", "nvidia", "groq"})
 DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
+    ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"): {
+        "provider": "nvidia",
+        "id": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "canonical_slug": "private/nvidia/nemotron-3.5-super-120b-a12b",
+        "family": "nemotron",
+        "context_length": 262144,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": True,
+        "supports_json_object": True,
+        "reasoning_control": "chat_template_thinking_off",
+        "cost": 0,
+    },
     ("nvidia", "nvidia/llama-3.3-nemotron-super-49b-v1.5"): {
         "provider": "nvidia",
         "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
@@ -185,7 +202,7 @@ DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
         "max_completion_tokens": 32768,
         "supports_json_schema": False,
         "supports_json_object": True,
-        "reasoning_control": "system_thinking_off",
+        "reasoning_control": "chat_template_thinking_off",
         "cost": 0,
     },
     ("nvidia", "nvidia/llama-3.3-nemotron-super-49b-v1"): {
@@ -196,7 +213,7 @@ DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
         "max_completion_tokens": 32768,
         "supports_json_schema": False,
         "supports_json_object": True,
-        "reasoning_control": "system_thinking_off",
+        "reasoning_control": "chat_template_thinking_off",
         "cost": 0,
     },
     ("nvidia", "nvidia/llama-3.1-nemotron-ultra-253b-v1"): {
@@ -207,7 +224,7 @@ DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
         "max_completion_tokens": 32768,
         "supports_json_schema": False,
         "supports_json_object": True,
-        "reasoning_control": "system_thinking_off",
+        "reasoning_control": "chat_template_thinking_off",
         "cost": 0,
     },
     ("nvidia", "nvidia/llama-3.1-nemotron-70b-instruct"): {
@@ -219,6 +236,17 @@ DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
         "supports_json_schema": False,
         "supports_json_object": True,
         "reasoning_control": None,
+        "cost": 0,
+    },
+    ("groq", "qwen/qwen3.8-27b"): {
+        "provider": "groq",
+        "id": "qwen/qwen3.8-27b",
+        "family": "qwen",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": True,
+        "supports_json_object": True,
+        "reasoning_control": "effort_none",
         "cost": 0,
     },
     ("groq", "openai/gpt-oss-120b"): {
@@ -316,6 +344,7 @@ class RoutingSettings:
     check_provider: str = "openrouter"
     nvidia_content_model: str = DEFAULT_NVIDIA_CONTENT_MODEL
     groq_check_model: str = DEFAULT_GROQ_CHECK_MODEL
+    groq_content_backup_model: str = DEFAULT_GROQ_CONTENT_BACKUP_MODEL
 
     @classmethod
     def from_env(cls):
@@ -338,6 +367,9 @@ class RoutingSettings:
             check_provider=(os.getenv("INTERVIEW_CHECK_PROVIDER") or "openrouter").strip().lower(),
             nvidia_content_model=(os.getenv("NVIDIA_CONTENT_MODEL") or DEFAULT_NVIDIA_CONTENT_MODEL).strip(),
             groq_check_model=(os.getenv("GROQ_CHECK_MODEL") or DEFAULT_GROQ_CHECK_MODEL).strip(),
+            groq_content_backup_model=(
+                os.getenv("GROQ_CONTENT_BACKUP_MODEL", DEFAULT_GROQ_CONTENT_BACKUP_MODEL).strip()
+            ),
         )
 
 
@@ -397,11 +429,11 @@ def actual_provider(purpose: str, default: str = "openrouter") -> str:
 
 
 def lane_for(purpose: str) -> str:
-    if purpose in CONTENT_PURPOSES:
+    if purpose in ALLOWED_BUNDLE_PURPOSES:
         return "content"
     if purpose in PERSONAL_PURPOSES:
         return "conversation"
-    raise RoutingError("Unclassified purpose; no dispatch permitted.")
+    raise PrivacyViolation("Unclassified purpose; no dispatch permitted.")
 
 
 def consumer_for(purpose: str) -> str:
@@ -411,14 +443,18 @@ def consumer_for(purpose: str) -> str:
 
 def enforce_outbound_policy(*, purpose: str, model: str, personal_text: bool = False,
                             provider: str = "openrouter") -> None:
-    lane = lane_for(purpose)
-    personal = personal_text or purpose in PERSONAL_PURPOSES
     if provider not in VALID_CONTENT_PROVIDERS:
         raise PrivacyViolation(f"Unsupported outbound provider {provider!r}.")
-    if provider != "openrouter" and (lane == "conversation" or personal):
-        raise PrivacyViolation("Direct providers are restricted to non-personal content writing/checking.")
-    if personal and model.casefold().endswith(":free"):
-        raise PrivacyViolation("Personal text cannot be sent to a :free model.")
+    is_free_model = isinstance(model, str) and model.casefold().endswith(":free")
+    if provider != "openrouter" or is_free_model:
+        if purpose not in ALLOWED_BUNDLE_PURPOSES:
+            raise PrivacyViolation(
+                f"Direct providers and :free models accept only {sorted(ALLOWED_BUNDLE_PURPOSES)}; refused {purpose!r}."
+            )
+        if personal_text:
+            raise PrivacyViolation("Personal text cannot be sent to a direct provider or :free model.")
+    lane = lane_for(purpose)
+    personal = personal_text or purpose in PERSONAL_PURPOSES
     if lane == "conversation" and (model != PAID_CONVERSATION_MODEL or provider != "openrouter"):
         raise PrivacyViolation("Conversation text requires the paid Claude Haiku 4.5 allowlist.")
     if lane == "content" and personal:
@@ -509,9 +545,12 @@ def _content_ineligible_reason(entry: dict | None, min_context: int = MIN_CONTEN
 
 
 def _vendor_prefix(model: str | None) -> str:
-    if not isinstance(model, str) or "/" not in model:
+    if not isinstance(model, str):
         return ""
-    return model.split("/", 1)[0].strip().casefold()
+    cleaned = model.strip().casefold().removeprefix("private/")
+    if "/" not in cleaned:
+        return ""
+    return cleaned.split("/", 1)[0].strip()
 
 
 def _free_structured(entry: dict, min_context: int = MIN_CONTENT_CONTEXT) -> bool:
@@ -613,13 +652,15 @@ def model_family(model: str | None, provider: str = "openrouter") -> str:
     """Resolve model family across providers for writer/checker separation."""
     if model and (provider, model) in DIRECT_PROVIDER_CAPABILITIES:
         return str(DIRECT_PROVIDER_CAPABILITIES[(provider, model)]["family"])
-    low = (model or "").strip().casefold()
+    low = (model or "").strip().casefold().removeprefix("private/")
     if not low:
         return ""
     if "nemotron" in low:
         return "nemotron"
     if "gpt-oss" in low:
         return "gpt-oss"
+    if "qwen" in low:
+        return "qwen"
     if low.startswith(("meta-llama/", "llama-", "llama3", "llama4")):
         return "llama"
     return _vendor_prefix(model)
@@ -652,32 +693,36 @@ def _prepare_direct_request(
     messages: list[dict[str, str]],
     max_tokens: int,
     expect_json: bool,
-) -> tuple[list[dict[str, str]], int, dict | None, str | None]:
+    reasoning_cap: int = DEFAULT_CONTENT_REASONING_MAX_TOKENS,
+) -> tuple[list[dict[str, str]], int, dict | None, str | None, dict | None]:
     cap = DIRECT_PROVIDER_CAPABILITIES.get((provider, model))
     prepared = [dict(msg) for msg in messages]
     reasoning_control = cap.get("reasoning_control") if cap else None
     reasoning_effort: str | None = None
-    if reasoning_control == "system_thinking_off":
-        if prepared and prepared[0].get("role") == "system":
-            sys_text = str(prepared[0].get("content") or "")
-            if not sys_text.lstrip().lower().startswith("detailed thinking off"):
-                prepared[0]["content"] = f"detailed thinking off\n{sys_text}".strip()
-        else:
-            prepared.insert(0, {"role": "system", "content": "detailed thinking off"})
+    chat_template_kwargs: dict | None = None
+    if reasoning_control == "chat_template_thinking_off":
+        chat_template_kwargs = {"enable_thinking": False}
+    elif reasoning_control == "effort_none":
+        reasoning_effort = "none"
     elif reasoning_control == "effort_low":
         reasoning_effort = "low"
 
-    req_max = max_tokens
+    req_max = max_tokens + reasoning_cap if reasoning_control == "effort_low" else max_tokens
     if cap and type(cap.get("max_completion_tokens")) is int and cap["max_completion_tokens"] > 0:
-        req_max = min(max_tokens, cap["max_completion_tokens"])
+        req_max = min(req_max, cap["max_completion_tokens"])
 
     resp_format: dict | None = None
     if expect_json:
-        if cap and cap.get("supports_json_schema"):
-            resp_format = response_format_for(purpose, lane, True)
-        else:
-            resp_format = {"type": "json_object"}
-    return prepared, req_max, resp_format, reasoning_effort
+        if not (cap and cap.get("supports_json_schema")):
+            raise RoutingError(
+                f"Direct model {(provider, model)!r} lacks strict json_schema support."
+            )
+        resp_format = response_format_for(purpose, lane, True)
+        if resp_format is None or resp_format.get("type") != "json_schema":
+            raise RoutingError(
+                f"Content lane never sends json_object; unsupported format for {purpose!r}."
+            )
+    return prepared, req_max, resp_format, reasoning_effort, chat_template_kwargs
 
 
 def check_nvidia_json_schema_support(
@@ -698,11 +743,11 @@ def check_nvidia_json_schema_support(
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "detailed thinking off"},
             {"role": "user", "content": "Return {\"ok\": true}."},
         ],
         "max_tokens": 32,
         "temperature": 0.0,
+        "chat_template_kwargs": {"enable_thinking": False},
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -716,7 +761,11 @@ def check_nvidia_json_schema_support(
         NVIDIA_CHAT_URL,
         data=json.dumps(body).encode(),
         method="POST",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "User-Agent": DIRECT_PROVIDER_USER_AGENT,
+        },
     )
     do_open = opener or (lambda r: urllib.request.urlopen(r, timeout=timeout_s, context=_SSL_CTX))
     try:
@@ -836,11 +885,17 @@ class InterviewRouter:
         return tuple(sorted(model for model, row in models.items()
                             if _free_structured(row, self.settings.min_content_context)))
 
-    def _direct_model_for(self, provider: str, *, is_check: bool) -> str:
-        if provider == "nvidia":
+    def _direct_model_for(self, provider: str, *, is_check: bool, model_override: str | None = None) -> str:
+        if model_override:
+            model = model_override
+        elif provider == "nvidia":
             model = self.settings.nvidia_content_model or DEFAULT_NVIDIA_CONTENT_MODEL
         elif provider == "groq":
-            model = self.settings.groq_check_model or DEFAULT_GROQ_CHECK_MODEL
+            model = (
+                (self.settings.groq_check_model or DEFAULT_GROQ_CHECK_MODEL)
+                if is_check
+                else (self.settings.groq_content_backup_model or DEFAULT_GROQ_CONTENT_BACKUP_MODEL)
+            )
         else:
             raise RoutingError(f"Unsupported direct provider {provider!r}.")
         cap = DIRECT_PROVIDER_CAPABILITIES.get((provider, model))
@@ -854,7 +909,17 @@ class InterviewRouter:
             )
         if int(cap.get("cost") or 0) != 0:
             raise RoutingError(f"Direct model {model!r} is not zero-cost.")
+        if not cap.get("supports_json_schema"):
+            raise RoutingError(
+                f"Direct model {model!r} on {provider!r} lacks strict json_schema support."
+            )
         return model
+
+    def _groq_backup_writer_available(self, *, offline_override: bool) -> bool:
+        return bool(
+            self.settings.groq_content_backup_model
+            and (offline_override or os.getenv("GROQ_API_KEY", "").strip())
+        )
 
     def _openrouter_fallback_available(self, *, offline_override: bool, is_check: bool) -> bool:
         configured = self.settings.check_models if is_check else self.settings.content_models
@@ -871,6 +936,18 @@ class InterviewRouter:
         if self.settings.direct_providers_enabled and self.settings.content_provider in {"nvidia", "groq"}:
             direct = (self.settings.content_provider, self._direct_model_for(self.settings.content_provider, is_check=False))
             candidates: list[tuple[str, str]] = [direct]
+            if (
+                self.settings.content_provider == "nvidia"
+                and self._groq_backup_writer_available(offline_override=offline_override)
+            ):
+                backup = (
+                    "groq",
+                    self._direct_model_for(
+                        "groq", is_check=False, model_override=self.settings.groq_content_backup_model
+                    ),
+                )
+                if backup != direct:
+                    candidates.append(backup)
             if self._openrouter_fallback_available(offline_override=offline_override, is_check=False):
                 models = self._models("questions", offline_override)
                 raw = self._select_free_candidates(self.settings.content_models, "INTERVIEW_CONTENT_MODELS", models)
@@ -1041,6 +1118,7 @@ class InterviewRouter:
                  override: Callable[[str], tuple[str, tuple[int, int, int]]] | None = None,
                  provider: str | None = None) -> Completion:
         lane, consumer = lane_for(purpose), consumer_for(purpose)
+        expect_json = bool(expect_json and purpose != "bundle_blind_answer")
         is_check = purpose in CHECK_PURPOSES
         requested_provider = provider or ("openrouter" if lane == "conversation" else None)
         # Classify by purpose, not an optional caller-supplied privacy boolean.
@@ -1083,6 +1161,17 @@ class InterviewRouter:
                 raise RoutingError("Requested model is not a validated lane candidate.")
             choices = matched
 
+        def log_fallback(idx_from: int, from_prov: str, from_mod: str, reason: str) -> None:
+            next_prov, next_mod = choices[idx_from + 1]
+            LOGGER.warning(
+                "interview_llm_writer_fallback purpose=%s from_provider=%s from_model=%s to_provider=%s to_model=%s reason=%s",
+                purpose, from_prov, from_mod, next_prov, next_mod, reason,
+                extra={
+                    "purpose": purpose, "from_provider": from_prov, "from_model": from_mod,
+                    "to_provider": next_prov, "to_model": next_mod, "reason": reason,
+                },
+            )
+
         for idx, (choice_provider, choice) in enumerate(choices):
             has_fallback = idx + 1 < len(choices)
             is_direct = choice_provider in {"nvidia", "groq"}
@@ -1092,14 +1181,22 @@ class InterviewRouter:
             entry = models.get(choice, {}) if choice_provider == "openrouter" else {}
             free = (not is_direct) and _free_structured(entry, self.settings.min_content_context)
             if is_direct:
-                send_messages, request_max_tokens, direct_resp_fmt, direct_effort = _prepare_direct_request(
-                    choice_provider, choice, purpose, lane, messages, max_tokens, expect_json
+                (
+                    send_messages,
+                    request_max_tokens,
+                    direct_resp_fmt,
+                    direct_effort,
+                    direct_chat_template_kwargs,
+                ) = _prepare_direct_request(
+                    choice_provider, choice, purpose, lane, messages, max_tokens, expect_json,
+                    reasoning_cap=self.settings.content_reasoning_max_tokens,
                 )
                 reasoning_cfg = None
             else:
                 send_messages = messages
                 direct_resp_fmt = response_format_for(purpose, lane, expect_json)
                 direct_effort = None
+                direct_chat_template_kwargs = None
                 reasoning_cfg, request_max_tokens = (
                     _content_reasoning_config(entry, max_tokens, self.settings.content_reasoning_max_tokens, messages)
                     if lane == "content" else (None, max_tokens)
@@ -1125,6 +1222,7 @@ class InterviewRouter:
                         exc.reason in {"model_backoff", "nvidia_backoff", "nvidia_minute", "groq_rate_limit"}
                         and model is None and lane == "content" and has_fallback
                     ):
+                        log_fallback(idx, choice_provider, choice, exc.reason)
                         break
                     if (
                         exc.reason == "free_daily"
@@ -1163,6 +1261,7 @@ class InterviewRouter:
                         result = self._chat_direct_once(
                             choice_provider, choice, send_messages, request_max_tokens,
                             temperature, timeout_s, expect_json, direct_resp_fmt, direct_effort,
+                            direct_chat_template_kwargs,
                         )
                         text, usage, returned_model = result.text, result.usage, result.model
                         reasoning_tokens = result.reasoning_tokens
@@ -1184,6 +1283,7 @@ class InterviewRouter:
                     )
                     if not same_model_family(choice, returned_model, canonical_slug=canonical_slug):
                         raise PrivacyViolation("Provider model identifier is missing or outside the requested family.")
+                    self.budget.record_served_model(choice, returned_model, provider=choice_provider)
                     scope.models[purpose] = returned_model
                     scope.providers[purpose] = choice_provider
                     if isinstance(result, Completion) and result.truncated:
@@ -1210,6 +1310,7 @@ class InterviewRouter:
                         continue
                     self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
                     if is_direct and has_fallback:
+                        log_fallback(idx, choice_provider, choice, error_kind)
                         break
                     raise DispatchDeferred(decision.kind, decision.retry_at) from exc
                 except ProviderResponseDeferred as exc:
@@ -1227,6 +1328,7 @@ class InterviewRouter:
                         raise DispatchDeferred(decision.kind, decision.retry_at,
                                                reasoning_tokens=reasoning_tokens) from exc
                     if is_direct and has_fallback:
+                        log_fallback(idx, choice_provider, choice, error_kind)
                         break
                     raise DispatchDeferred(decision.kind, decision.retry_at,
                                            reasoning_tokens=reasoning_tokens) from exc
@@ -1237,6 +1339,7 @@ class InterviewRouter:
                     decision = LimitDecision(error_kind, self.clock() + 4)
                     self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
                     if is_direct and has_fallback:
+                        log_fallback(idx, choice_provider, choice, error_kind)
                         break
                     raise DispatchDeferred(error_kind, decision.retry_at) from exc
                 except Exception as exc:
@@ -1268,9 +1371,12 @@ class InterviewRouter:
     @staticmethod
     def _chat_http_post(url: str, key: str, body: dict, model: str, timeout_s: float, *,
                         provider: str = "openrouter", strip_think: bool = False) -> Completion:
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if provider in {"nvidia", "groq"}:
+            headers["User-Agent"] = DIRECT_PROVIDER_USER_AGENT
         request = urllib.request.Request(
             url, data=json.dumps(body).encode(), method="POST",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            headers=headers,
         )
         with urllib.request.urlopen(request, timeout=timeout_s, context=_SSL_CTX) as response:
             raw = response.read()
@@ -1339,7 +1445,8 @@ class InterviewRouter:
 
     @classmethod
     def _chat_direct_once(cls, provider, model, messages, max_tokens, temperature, timeout_s,
-                          expect_json, response_format=None, reasoning_effort=None):
+                          expect_json, response_format=None, reasoning_effort=None,
+                          chat_template_kwargs=None):
         if provider == "nvidia":
             url, env_name = NVIDIA_CHAT_URL, "NVIDIA_API_KEY"
         elif provider == "groq":
@@ -1350,12 +1457,16 @@ class InterviewRouter:
         if not key:
             raise RoutingError(f"{env_name} is missing.")
         body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
-        if response_format is not None:
+        if expect_json:
+            if response_format is None or response_format.get("type") != "json_schema":
+                raise RoutingError("Direct content/check lane requires strict json_schema, never json_object.")
             body["response_format"] = response_format
-        elif expect_json:
-            body["response_format"] = {"type": "json_object"}
+        elif response_format is not None:
+            body["response_format"] = response_format
         if reasoning_effort is not None:
             body["reasoning_effort"] = reasoning_effort
+        if chat_template_kwargs is not None:
+            body["chat_template_kwargs"] = chat_template_kwargs
         return cls._chat_http_post(url, key, body, model, timeout_s, provider=provider, strip_think=True)
 
 
