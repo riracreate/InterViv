@@ -234,8 +234,9 @@ def test_bundle_generator_prompt_enforces_reference_numbers_and_primary_sources(
     ))
     for text in (prompt_b, regen):
         assert "never in required_concepts" in text
-        assert "cite primary sources" in text
-        assert "not blogs" in text
+        assert "no URLs, citations, or paper titles in any generated field" in text
+        assert "a standard may be named in reference_answer only when the topic is that standard" in text
+        assert "cite primary sources" not in text
 
 
 def test_every_scripted_or_resume_opener_slot_is_unscored():

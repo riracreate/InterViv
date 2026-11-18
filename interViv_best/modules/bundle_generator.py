@@ -998,7 +998,7 @@ def _build_prompt_b_messages(
         "3. reference_answer: accurate, self-contained expert answer (80-160 words) "
         "that explicitly supports every required_concept. "
         "Keep exact numbers, thresholds, and rules of thumb in reference_answer, never in required_concepts. "
-        "For AI topics, cite primary sources (peer-reviewed papers, OWASP, NIST, or official documentation), not blogs.\n"
+        "Include no URLs, citations, or paper titles in any generated field; a standard may be named in reference_answer only when the topic is that standard (e.g. OWASP Top 10, NIST AI RMF).\n"
         "4. acceptable_variants: 1-2 short valid paraphrases.\n"
         "5. keywords: 4-7 concise technical domain terms.\n"
         "6. required_concepts (3-4 items) and optional_concepts (1-2 items): "
