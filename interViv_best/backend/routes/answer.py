@@ -1600,6 +1600,7 @@ def submit_answer(
                                 stage=next_spec_stage,
                                 skill=rotation_skill,
                                 asked=asked,
+                                spec=expanded_spec,
                             )
                             if non_core is not None:
                                 question_payload, next_skill, next_round_difficulty = non_core

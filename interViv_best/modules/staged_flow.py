@@ -34,6 +34,8 @@ STAGE_CORE = "core"
 STAGE_FOLLOW_UP = "follow_up"
 STAGE_PRACTICAL = "practical"
 STAGE_BEHAVIOURAL = "behavioural"
+# Role interviews (ROLE_ONLY_TARGETS): scripted, unscored practice-only turns.
+STAGE_PRACTICE = "practice"
 
 STAGE_NAMES = (
     STAGE_WARM_UP,
@@ -41,9 +43,12 @@ STAGE_NAMES = (
     STAGE_FOLLOW_UP,
     STAGE_PRACTICAL,
     STAGE_BEHAVIOURAL,
+    STAGE_PRACTICE,
 )
 
-UNSCORED_STAGES = frozenset({STAGE_WARM_UP, STAGE_BEHAVIOURAL})
+UNSCORED_STAGES = frozenset({STAGE_WARM_UP, STAGE_BEHAVIOURAL, STAGE_PRACTICE})
+# Stages whose question may be scripted on the expanded plan entry.
+SCRIPTABLE_STAGES = frozenset({STAGE_WARM_UP, STAGE_BEHAVIOURAL, STAGE_PRACTICE})
 
 _PRESET_SPECS: dict[str, dict[str, Any]] = {
     "quick": {
@@ -435,17 +440,66 @@ def select_behavioural_question_payload(
     }
 
 
+def scripted_question_payload(
+    *,
+    stage: str,
+    text: str,
+    skill: str,
+    difficulty: str = "easy",
+) -> dict[str, Any]:
+    """Unscored question whose text was scripted when the plan was built.
+
+    Question text only: no reference answer, keywords, or follow-ups.
+    """
+    return {
+        "question": _clean_text(text),
+        "skill": _clean_text(skill) or "Interview",
+        "sub_domain": "role_interview",
+        "difficulty": difficulty,
+        "ideal_answer": "",
+        "ideal_keywords": "",
+        "followups": [],
+        "source": "role_script",
+        "stage": stage,
+        "unscored": True,
+        "question_text_only": True,
+    }
+
+
+def scripted_spec_question(
+    spec: dict[str, Any] | None,
+    *,
+    skill: str,
+) -> tuple[dict[str, Any], str, str] | None:
+    """Scripted question carried on an expanded plan entry, if any."""
+    if not isinstance(spec, dict):
+        return None
+    text = _clean_text(spec.get("scripted_question"))
+    stage = _clean_text(spec.get("stage")).lower()
+    if not text or stage not in SCRIPTABLE_STAGES:
+        return None
+    difficulty = "easy" if stage == STAGE_WARM_UP else (_clean_text(spec.get("difficulty")).lower() or "medium")
+    chosen_skill = "HR" if stage == STAGE_BEHAVIOURAL else (_clean_text(skill) or "Interview")
+    payload = scripted_question_payload(stage=stage, text=text, skill=chosen_skill, difficulty=difficulty)
+    return payload, chosen_skill, difficulty
+
+
 def select_non_core_stage_question(
     *,
     stage: str | None,
     skill: str,
     asked: list[str] | None = None,
+    spec: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, str] | None:
     """Resolve question payload, skill, and difficulty for Warm-up / Behavioural.
 
-    Returns ``None`` for Core or unstaged interview rounds so normal adaptive
-    selection runs unchanged.
+    A scripted question on ``spec`` (role interviews) wins for the unscored
+    stages. Returns ``None`` for Core or unstaged interview rounds so normal
+    adaptive selection runs unchanged.
     """
+    scripted = scripted_spec_question(spec, skill=skill)
+    if scripted is not None:
+        return scripted
     clean_stage = _clean_text(stage).lower()
     if clean_stage == STAGE_WARM_UP:
         chosen_skill = _clean_text(skill) or "System Design"
@@ -457,6 +511,15 @@ def select_non_core_stage_question(
     if clean_stage == STAGE_BEHAVIOURAL:
         payload = select_behavioural_question_payload(asked=asked)
         return payload, "HR", str(payload.get("difficulty") or "medium")
+    if clean_stage == STAGE_PRACTICE:
+        chosen_skill = _clean_text(skill) or "Interview"
+        payload = scripted_question_payload(
+            stage=STAGE_PRACTICE,
+            text=f"Practice scenario on {chosen_skill}. How would you approach a realistic case, step by step?",
+            skill=chosen_skill,
+            difficulty="medium",
+        )
+        return payload, chosen_skill, "medium"
     return None
 
 

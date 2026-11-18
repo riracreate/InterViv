@@ -76,6 +76,17 @@ ALLOWED_ROUND_TYPES = (
 )
 
 
+class RoleInterviewStart(BaseModel):
+    """A staged interview built from a role blueprint (ROLE_ONLY_TARGETS)."""
+
+    role_id: str = Field(min_length=1, max_length=64)
+    level: str = "junior"
+    # Plan with the candidate's stored resume skills (``candidate_id``).
+    use_resume: bool = False
+    # Swapped core slots, in order; validated against the blueprint.
+    core_competencies: list[str] | None = Field(default=None, max_length=6)
+
+
 class StartSessionRequest(BaseModel):
     candidate_id: str = ""
     # Legacy single-skill field — still accepted
@@ -101,11 +112,15 @@ class StartSessionRequest(BaseModel):
     # Slice 2: optional staged_v1 flow + preset (Quick / Full).
     preset: str | None = None
     flow_version: str | None = None
+    # Role interview (ROLE_ONLY_TARGETS); needs preset quick or full.
+    role_interview: RoleInterviewStart | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _ensure_at_least_one(cls, data):  # noqa: N805
         if isinstance(data, dict):
+            if data.get("role_interview") is not None and data.get("preset") is None:
+                raise ValueError("A role interview needs preset quick or full.")
             if data.get("preset") is not None or data.get("flow_version") is not None:
                 from modules.staged_flow import validate_staged_request
 
@@ -201,10 +216,92 @@ def _with_round_stage(doc: RoundDocument, cfg: dict[str, Any]) -> RoundDocument:
     return doc
 
 
+def _role_interview_resume(
+    request: StartSessionRequest,
+    user: dict | None,
+    db: Any,
+) -> dict[str, Any] | None:
+    """Stored candidate used to plan a role interview, ownership-checked."""
+    from modules.role_interview import role_only_targets_enabled
+
+    role = request.role_interview
+    if role is None or not role.use_resume or not role_only_targets_enabled():
+        # Flag off: the plan resolver answers "Role interviews are off." first.
+        return None
+    candidate_id = (request.candidate_id or "").strip()
+    if not candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="use_resume needs candidate_id.",
+        )
+    candidate = db["candidates"].find_one({"candidate_id": candidate_id})
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
+    if not user or str(candidate.get("user_id") or "") != str(user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot plan with another user's resume.",
+        )
+    return candidate
+
+
+def _role_interview_blocks(
+    request: StartSessionRequest,
+    preset_name: str,
+    candidate: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    from modules.role_blueprints import get_blueprint
+    from modules.role_interview import (
+        RoleInterviewError,
+        build_role_blocks,
+        interview_slots,
+        resume_for_planning,
+        role_only_targets_enabled,
+    )
+
+    if not role_only_targets_enabled():
+        raise ValueError("Role interviews are off.")
+    role = request.role_interview
+    assert role is not None
+    blueprint = get_blueprint(role.role_id)
+    if blueprint is None:
+        raise ValueError(f"Unknown role '{role.role_id}'.")
+    level = str(role.level or "").strip().lower()
+    resume = resume_for_planning(candidate, blueprint) if candidate else None
+    try:
+        slots = interview_slots(
+            blueprint, level=level, length=preset_name, resume=resume,
+            core_competencies=role.core_competencies,
+        )
+        raw_blocks, meta, scripts = build_role_blocks(
+            blueprint, slots, preset=preset_name, level=level,
+            resume=resume, used_resume=resume is not None,
+        )
+    except RoleInterviewError as exc:
+        raise ValueError(str(exc)) from exc
+    meta["role_interview"]["scripts"] = scripts
+    return normalize_blocks(raw_blocks), meta
+
+
+def _attach_role_scripts(
+    expanded: list[dict[str, Any]],
+    staged_meta: dict[str, Any] | None,
+) -> None:
+    """Carry each scripted role question on its expanded plan entry."""
+    scripts = ((staged_meta or {}).get("role_interview") or {}).get("scripts") or {}
+    if not scripts:
+        return
+    for spec in expanded:
+        text = scripts.get(str(spec.get("block_id")))
+        if text:
+            spec["scripted_question"] = text
+
+
 def _resolve_block_plan(
     request: StartSessionRequest,
     *,
     role_id: str | None = None,
+    role_candidate: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Normalize staged_v1, custom blocks, or legacy fields into a block plan."""
     from modules.staged_flow import build_staged_blocks, validate_staged_request
@@ -215,6 +312,10 @@ def _resolve_block_plan(
         blocks=request.blocks,
         round_plan=request.round_plan,
     )
+    if request.role_interview is not None:
+        if staged is None:
+            raise ValueError("A role interview needs preset quick or full.")
+        return _role_interview_blocks(request, staged[1], role_candidate)
     if staged is not None:
         _, preset_name = staged
         difficulty_hint = (
@@ -885,7 +986,16 @@ def build_round_document(
 
     # technical_short_answer
     stage_val = str(cfg.get("stage") or "").strip().lower() or None
-    if stage_val == "warm_up":
+    from modules.staged_flow import scripted_spec_question
+
+    scripted = scripted_spec_question(
+        {"stage": stage_val, "scripted_question": cfg.get("scripted_question"),
+         "difficulty": cfg.get("difficulty")},
+        skill=skill,
+    )
+    if scripted is not None:
+        first_question, _, difficulty = scripted
+    elif stage_val == "warm_up":
         from modules.staged_flow import select_warm_up_question_payload
 
         first_question = select_warm_up_question_payload(
@@ -1589,7 +1699,12 @@ def _validate_block_content(
                 block["problem_ids"] = [p["id"] for p in selected]
         elif category == "interview":
             stage_val = str(block.get("stage") or "").strip().lower() or None
-            if stage_val == "warm_up":
+            if stage_val in ("warm_up", "practice"):
+                continue
+            if stage_val == "behavioural" and any(
+                spec.get("scripted_question")
+                for spec in by_block.get(str(block.get("id")), [])
+            ):
                 continue
             if stage_val == "behavioural":
                 from modules.staged_flow import load_behavioural_questions
@@ -1746,7 +1861,7 @@ def _enqueue_remaining_session_bundles(
             continue
         if str(spec.get("round_type") or "") != "technical_short_answer":
             continue
-        if str(spec.get("stage") or "").strip().lower() in ("warm_up", "behavioural"):
+        if str(spec.get("stage") or "").strip().lower() in ("warm_up", "behavioural", "practice"):
             continue
         spec_skill = str((spec.get("skills") or fallback_skills or ["System Design"])[0])
         spec_topic = _explicit_reviewed_topic(spec.get("topic")) or spec_skill
@@ -1787,16 +1902,24 @@ def start_session(
     saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
     company_slug = saved["company_id"] or request.target_company_id
     role_slug = saved["role_id"] or request.target_role_id
+    role_candidate = _role_interview_resume(request, user, db)
+    if request.role_interview is not None:
+        # A role interview never carries a company target.
+        company_slug = None
+        role_slug = None
 
     # ── Normalize staged_v1, builder, or legacy payloads into one block plan ──
     try:
-        block_plan, staged_meta = _resolve_block_plan(request, role_id=role_slug)
+        block_plan, staged_meta = _resolve_block_plan(
+            request, role_id=role_slug, role_candidate=role_candidate,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
     expanded = expand_blocks(block_plan)
+    _attach_role_scripts(expanded, staged_meta)
     plan = [spec["round_type"] for spec in expanded]
     opening_type = plan[0] if plan else "technical_short_answer"
     opening_spec = expanded[0]
@@ -1820,7 +1943,7 @@ def start_session(
     # Unscored Behavioural HR blocks stay off session/candidate skill ratings.
     session_skills: list[str] = []
     for block in block_plan:
-        if block.get("stage") == "behavioural":
+        if block.get("stage") in ("behavioural", "practice"):
             continue
         for skill in block.get("skills") or []:
             if skill not in session_skills:
@@ -1911,6 +2034,8 @@ def start_session(
     }
     if not opening_config.get("stage"):
         opening_config.pop("stage", None)
+    if opening_spec.get("scripted_question"):
+        opening_config["scripted_question"] = opening_spec["scripted_question"]
     # Preserve legacy timeout/row knobs when the legacy payload set them.
     legacy_cfg = dict(request.round_config or {})
     for key in ("max_rows", "timeout_seconds"):
@@ -2113,9 +2238,15 @@ def start_session(
         "config_json": round_document.config_json,
     }
     if staged_meta is not None:
+        from modules.role_interview import public_role_interview
+
         response["flow_version"] = staged_meta["version"]
         response["preset"] = staged_meta["preset"]
-        response["staged_flow"] = staged_meta
+        public_meta = {k: v for k, v in staged_meta.items() if k != "role_interview"}
+        response["staged_flow"] = public_meta
+        role_view = public_role_interview(staged_meta)
+        if role_view:
+            response["role_interview"] = role_view
     if opening_stage:
         response["stage"] = opening_stage
     if round_document.round_type == "mcq":
@@ -2163,14 +2294,25 @@ def check_availability(
     user = require_user(authorization)
     saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
     role_slug = saved["role_id"] or request.target_role_id
+    role_candidate = None
+    if request.role_interview is not None:
+        role_slug = None
+        try:
+            role_candidate = _role_interview_resume(request, user, get_database())
+        except DatabaseConnectionError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=str(exc)) from exc
     try:
-        block_plan, staged_meta = _resolve_block_plan(request, role_id=role_slug)
+        block_plan, staged_meta = _resolve_block_plan(
+            request, role_id=role_slug, role_candidate=role_candidate,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
     expanded = expand_blocks(block_plan)
+    _attach_role_scripts(expanded, staged_meta)
     plan = [spec["round_type"] for spec in expanded]
 
     allow_unknown_fallback = request.blocks is None and staged_meta is None
@@ -2357,7 +2499,12 @@ def get_session(
         meta = staged_flow_meta(session)
         payload["flow_version"] = meta.get("version") or "staged_v1"
         payload["preset"] = meta.get("preset")
-        payload["staged_flow"] = meta
+        from modules.role_interview import public_role_interview
+
+        role_view = public_role_interview(meta)
+        payload["staged_flow"] = {k: v for k, v in meta.items() if k != "role_interview"}
+        if role_view:
+            payload["role_interview"] = role_view
     return payload
 
 
