@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Send, Check, X, Clock3, RotateCcw, Code2, BookOpen, Lightbulb, Terminal } from 'lucide-react';
 import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft, fetchCodingExecutionStatus, fetchCodingCoach } from '../lib/api';
+import { ASSESSMENT_HINT_CONFIRM, assessmentHintConfirmRequired, codingHintPayload } from '../lib/codingHint';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 import CodeEditor from './CodeEditor';
 import './coding-workspace.css';
@@ -78,11 +79,31 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
   const submit = () => {
     if (!running && !isScoring && !closed && !expired && !executionDown && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
-  const requestHint = async () => {
+  const requestHint = async (confirmAssessmentHelp = false) => {
+    const payload = codingHintPayload({
+      sessionId,
+      round,
+      level: Math.min((coach?.level || 0) + 1, 3),
+      source,
+      language,
+      runnerError: error,
+      visible: result?.visible,
+      tests,
+      confirmAssessmentHelp,
+    });
     setCoachBusy(true); setError('');
-    try { setCoach(await fetchCodingCoach({ session_id: sessionId, round, level: Math.min((coach?.level || 0) + 1, 3) })); }
-    catch (err) { setError(err.message); }
-    finally { setCoachBusy(false); }
+    try {
+      setCoach(await fetchCodingCoach(payload));
+      setCoachBusy(false);
+    } catch (err) {
+      if (!confirmAssessmentHelp && assessmentHintConfirmRequired(err)) {
+        setCoachBusy(false);
+        if (window.confirm(ASSESSMENT_HINT_CONFIRM)) await requestHint(true);
+        return;
+      }
+      setError(err.message);
+      setCoachBusy(false);
+    }
   };
   const totalPassed = (currentArtifact?.visible?.passed || 0) + (currentArtifact?.hidden?.passed || 0);
   const totalTests = (currentArtifact?.visible?.total || 0) + (currentArtifact?.hidden?.total || 0);

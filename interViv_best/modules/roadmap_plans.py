@@ -138,6 +138,12 @@ def _build_tasks_from_evidence(
         focus_pop = POP_ASSISTED
     else:
         focus = evidence.unassessed[:5]
+        if not focus and not evidence.planning_context_skills and evidence.confirmed_goal:
+            from modules.guidance_coach import map_phrase_to_skills
+
+            extracted = list(dict.fromkeys(map_phrase_to_skills(evidence.confirmed_goal)))[:12]
+            if extracted:
+                evidence.planning_context_skills = extracted
         if not focus and evidence.planning_context_skills:
             from modules.planning_evidence import SkillEvidence
 
@@ -150,15 +156,17 @@ def _build_tasks_from_evidence(
                 for s in evidence.planning_context_skills[:5]
             ]
         if not focus:
-            from modules.planning_evidence import SkillEvidence
-
-            focus = [
-                SkillEvidence(
-                    skill="DSA",
-                    population=POP_UNASSESSED,
-                    rationale="Default starter skill when no role or goal skills are set.",
-                )
-            ]
+            meta["plan_kind"] = "needs_goal_skills"
+            meta["needs_goal_skills"] = True
+            meta["prompt"] = "needs_goal_skills"
+            meta["readiness_percentage"] = None
+            meta["readiness_note"] = (
+                "Name the skills to plan for. No default skill is substituted."
+            )
+            meta["hours_per_week"] = hours_per_week
+            meta["hours_per_week_default"] = DEFAULT_HOURS_PER_WEEK
+            meta["hours_editable"] = True
+            return [], meta
         focus_pop = POP_UNASSESSED
 
     ordinal = 0

@@ -21,6 +21,7 @@ DEFAULT_MODEL = "gemma2:2b"
 MAX_SOURCE_CHARS = 4000
 MAX_HINT_CHARS = 1200
 MAX_HINT_CODE_LINES = 3
+HINT_TIMEOUT_SECONDS = 15
 
 # Model output is checked before it reaches the candidate: the prompt asks for
 # no solution code, but a small local model does not always comply.
@@ -56,6 +57,41 @@ def _localhost_only(url: str) -> bool:
     )
 
 
+_TOPIC_ALIASES = {
+    "hash map": "hashing",
+    "hashmap": "hashing",
+    "hash table": "hashing",
+    "hashtable": "hashing",
+    "two pointers": "two-pointers",
+    "sliding window": "sliding-window",
+    "dynamic programming": "dp",
+}
+
+
+def _coding_topic_hint(raw: str, catalog: dict[str, str]) -> str | None:
+    text = str(raw or "").strip().lower().replace("_", " ")
+    if not text:
+        return None
+    candidates = [text, text.replace(" ", "-"), _TOPIC_ALIASES.get(text)]
+    for key in candidates:
+        if key and key in catalog:
+            return catalog[key]
+    return None
+
+
+def level_two_topic_hints(problem: dict[str, Any]) -> list[str]:
+    """Level-2 lines from hint_templates.json, chosen by the problem's topics."""
+    from backend.learning_hints import templates
+
+    catalog = templates().get("coding_topics") or {}
+    lines: list[str] = []
+    for raw in problem.get("topics") or []:
+        hint = _coding_topic_hint(str(raw), catalog)
+        if hint and hint not in lines:
+            lines.append(hint)
+    return lines
+
+
 def curated_hint(problem: dict[str, Any], level: int) -> str:
     title = problem.get("title") or "this problem"
     topics = ", ".join(problem.get("topics") or []) or "the stated constraints"
@@ -66,11 +102,12 @@ def curated_hint(problem: dict[str, Any], level: int) -> str:
             f"return for each input before writing code. Topics to keep in mind: {topics}."
         )
     if level == 2:
-        return (
-            f"Look for a pattern that avoids checking every pair or every order blindly. "
-            f"A single linear pass with memory (hash map / set / running state) often fits "
-            f"{topics}. Name the invariant you will maintain."
-        )
+        lines = level_two_topic_hints(problem)
+        if lines:
+            return " ".join(lines)
+        from backend.learning_hints import templates
+
+        return str(templates().get("coding_general") or "").strip()
     return (
         f"Walk one visible example line by line: after each input element, what must your "
         f"data structure contain so the answer for that prefix is correct? Implement that "
@@ -84,6 +121,7 @@ def _ollama_hint(
     level: int,
     source: str | None,
     last_error: str | None,
+    language: str | None = None,
 ) -> str | None:
     base = coach_endpoint()
     if not _localhost_only(base):
@@ -95,6 +133,7 @@ def _ollama_hint(
         "Rules: no complete solution, no full code dump, no hidden-test content, under 80 words.\n"
         f"Title: {problem.get('title')}\n"
         f"Function: {problem.get('function')}\n"
+        f"Language: {str(language or 'unspecified').strip()[:40]}\n"
         f"Topics: {', '.join(problem.get('topics') or [])}\n"
         f"Statement:\n{statement}\n"
     )
@@ -119,7 +158,7 @@ def _ollama_hint(
         method="POST",
     )
     try:
-        with build_opener(ProxyHandler({})).open(request, timeout=45) as response:
+        with build_opener(ProxyHandler({})).open(request, timeout=HINT_TIMEOUT_SECONDS) as response:
             body = json.loads(response.read(200_000))
     except (OSError, HTTPError, URLError, ValueError, TimeoutError):
         return None
@@ -150,12 +189,19 @@ def build_hint(
     level: int,
     source: str | None = None,
     last_error: str | None = None,
+    language: str | None = None,
     prefer_ai: bool = True,
 ) -> dict[str, Any]:
     level = max(1, min(3, int(level)))
     withheld = False
     if prefer_ai:
-        ai = _ollama_hint(problem=problem, level=level, source=source, last_error=last_error)
+        ai = _ollama_hint(
+            problem=problem,
+            level=level,
+            source=source,
+            last_error=last_error,
+            language=language,
+        )
         if ai and leaks_solution(ai):
             withheld = True
         elif ai:

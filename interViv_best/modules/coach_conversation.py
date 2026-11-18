@@ -32,6 +32,12 @@ CONVERSATION_SCHEMA = "coach_conversation_v1"
 MAX_MESSAGES = 40
 MAX_MESSAGE_CHARS = 2000
 PLANNING_TASK = "plan_explanation_v1"
+_PLAN_REQUEST = re.compile(
+    r"\b(?:make|create|build|update)\s+"
+    r"(?:me\s+|my\s+|a\s+|the\s+|our\s+)*(?:study\s+|starter\s+)?plan\b",
+    re.IGNORECASE,
+)
+_EXPLANATION_QUESTION = re.compile(r"^\s*(why|explain|how)\b", re.IGNORECASE)
 
 _MEMORY_CONVOS: dict[str, dict[str, Any]] = {}  # conversation_id -> doc
 _MEMORY_BY_OWNER: dict[str, str] = {}  # owner_key -> conversation_id
@@ -86,6 +92,18 @@ def owner_key(user_id: str | None, guest_session_id: str | None = None) -> str:
 
 def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
     return sanitize_user_text(text)[:limit]
+
+
+def is_explanation_question(text: str | None) -> bool:
+    """Questions that ask for an explanation must not create a plan or change the goal."""
+    return bool(_EXPLANATION_QUESTION.match(text or ""))
+
+
+def is_clear_plan_request(text: str | None) -> bool:
+    """A direct request to make, create, build, or update a plan."""
+    if is_explanation_question(text):
+        return False
+    return bool(_PLAN_REQUEST.search(text or ""))
 
 
 def classify_action_kind(action: str | None, *, delivers_help: bool = False) -> str:
@@ -314,6 +332,7 @@ def get_or_create_conversation(
             "adzuna_context": None,
         },
         "messages": [],
+        "rolling_summary": "",
         "created_at": _now().isoformat(),
         "updated_at": _now().isoformat(),
     }
@@ -426,12 +445,14 @@ def post_message(
     goals = dict(doc.get("goals") or {})
     payload = action_payload or {}
     user_text = _clip(text)
+    question = is_explanation_question(user_text)
 
     # Explicit validated application actions (not LLM tools).
     plan = None
-    if action == "create_plan" or (
-        not action and user_text and ("plan" in user_text.lower() or "roadmap" in user_text.lower())
-    ):
+    wants_plan = (
+        action == "create_plan" or (not action and is_clear_plan_request(user_text))
+    ) and not question
+    if wants_plan:
         plan = ensure_plan(
             user_id,
             role_id=goals.get("role_id") or doc.get("role_id"),
@@ -466,7 +487,7 @@ def post_message(
             confirmed_goal=goals.get("confirmed_goal"),
             completed=True,
         )
-    elif action == "update_goal":
+    elif action == "update_goal" and not question:
         goals["confirmed_goal"] = _clip(str(payload.get("confirmed_goal") or user_text), 500)
         doc["goals"] = goals
         plan = ensure_plan(
@@ -492,6 +513,33 @@ def post_message(
         goals=goals,
         evidence_digest=(plan or {}).get("evidence_digest"),
     )
+    # Coach chat v1: refusals apply to free-text turns before any provider
+    # call; the LLM helper runs only when COACH_CHAT_LLM_ENABLED is on.
+    # Explicit app actions keep the deterministic path above.
+    from modules import coach_chat
+
+    if not action:
+        try:
+            from backend.db import get_database
+
+            chat_sessions = list(get_database()["sessions"].find({"user_id": user_id}))
+        except Exception:
+            chat_sessions = []
+        if coach_chat.refusal_reason(chat_sessions, user_text):
+            reply = coach_chat.refusal_reply()
+        elif coach_chat.coach_chat_enabled():
+            context_block = coach_chat.build_context_block(
+                user={"id": user_id}, user_id=user_id, conversation=doc,
+                user_text=user_text, plan=plan, sessions=chat_sessions,
+            )
+            reply = coach_chat.generate_coach_reply(
+                user_id=user_id, user_text=user_text, context_block=context_block,
+                deterministic=deterministic, plan=plan, sessions=chat_sessions,
+            )
+            if reply.get("mode") == "provider":
+                doc["rolling_summary"] = coach_chat.updated_rolling_summary(
+                    doc.get("rolling_summary"), reply.get("message") or ""
+                )
 
     messages = list(doc.get("messages") or [])
     if user_text or action:
@@ -513,6 +561,7 @@ def post_message(
             "mode": reply.get("mode"),
             "clarifying_questions": reply.get("clarifying_questions") or [],
             "actions": reply.get("actions") or [],
+            "tool_proposal": reply.get("tool_proposal"),
             "created_at": _now().isoformat(),
         }
     )

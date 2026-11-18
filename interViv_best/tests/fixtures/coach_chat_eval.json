@@ -1,0 +1,711 @@
+[
+  {
+    "id": "case-01",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-02",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-03",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-04",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-05",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-06",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-07",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-08",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-09",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-10",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-11",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-12",
+    "category": "valid_no_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-13",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Python"
+          ]
+        }
+      }
+    },
+    "expected_tool": "start_practice",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-14",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "SQL"
+          ],
+          "practice_mode": "assessment",
+          "flow_preset": "quick"
+        }
+      }
+    },
+    "expected_tool": "start_practice",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-15",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "update_plan",
+        "args": {
+          "goal": "Backend",
+          "skills": [
+            "Python"
+          ]
+        }
+      }
+    },
+    "expected_tool": "update_plan",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-16",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "explain_last_interview",
+        "args": {
+          "session_id": "sess-1"
+        }
+      }
+    },
+    "expected_tool": "explain_last_interview",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-17",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Python"
+          ]
+        }
+      }
+    },
+    "expected_tool": "start_practice",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-18",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "SQL"
+          ],
+          "practice_mode": "assessment",
+          "flow_preset": "quick"
+        }
+      }
+    },
+    "expected_tool": "start_practice",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-19",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "update_plan",
+        "args": {
+          "goal": "Backend",
+          "skills": [
+            "Python"
+          ]
+        }
+      }
+    },
+    "expected_tool": "update_plan",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-20",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "explain_last_interview",
+        "args": {
+          "session_id": "sess-1"
+        }
+      }
+    },
+    "expected_tool": "explain_last_interview",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-21",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Python",
+            "SQL"
+          ]
+        }
+      }
+    },
+    "expected_tool": "start_practice",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-22",
+    "category": "valid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Python is at 66.7% in your plan context.",
+      "tool_proposal": {
+        "tool": "explain_last_interview",
+        "args": {
+          "session_id": "sess-1"
+        }
+      }
+    },
+    "expected_tool": "explain_last_interview",
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-23",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 99% now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-24",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 88 now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-25",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 42 now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-26",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 100 now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-27",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 75.5% now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-28",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 91 now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-29",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 63 now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-30",
+    "category": "number_violation",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "How am I doing?",
+    "fake_reply": {
+      "message": "Your readiness is 80% now.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-31",
+    "category": "invalid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Rust"
+          ]
+        }
+      }
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-32",
+    "category": "invalid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Go"
+          ]
+        }
+      }
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-33",
+    "category": "invalid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Java"
+          ]
+        }
+      }
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-34",
+    "category": "invalid_tool",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "What next?",
+    "fake_reply": {
+      "message": "Practise Python next.",
+      "tool_proposal": {
+        "tool": "start_practice",
+        "args": {
+          "skills": [
+            "Rust"
+          ]
+        }
+      }
+    },
+    "expected_tool": null,
+    "expected_refusal": false,
+    "sessions": []
+  },
+  {
+    "id": "case-35",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help me?",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 30
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "case-36",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help me?",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 30
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "case-37",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help me?",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 30
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "case-38",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help: Explain database indexing in detail with an example please",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 300
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "case-39",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help: Explain database indexing in detail with an example please",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 300
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "case-40",
+    "category": "refusal",
+    "context": "[Role]\nBlueprint: backend-engineer Title: Backend Engineer Level: junior\n[Resume skills]\nPython, SQL\n[App scores]\nOverall readiness: 66.7% Conservative: 50%\n[Recent debriefs]\nSession sess-1: missed indexing\n[Plan]\nPlan p1 v2 kind starter goal Backend hours 6 Task Python: Practice Python",
+    "user_message": "Help: Explain database indexing in detail with an example please",
+    "fake_reply": {
+      "message": "Your readiness is 66.7%.",
+      "tool_proposal": null
+    },
+    "expected_tool": null,
+    "expected_refusal": true,
+    "sessions": [
+      {
+        "session_id": "s-open",
+        "user_id": "u",
+        "status": "active",
+        "practice_mode": "assessment",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "in_progress",
+            "question": "Explain database indexing in detail with an example please",
+            "age_minutes": 300
+          }
+        ]
+      }
+    ]
+  }
+]

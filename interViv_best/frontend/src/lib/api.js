@@ -93,12 +93,14 @@ async function request(path, options = {}) {
     }
   }
   if (!response.ok) {
-    throw makeRequestError({
+    const error = makeRequestError({
       kind: kindForStatus(response.status),
       status: response.status,
       message: apiErrorMessage(data),
       detail: data.detail,
     });
+    if (data && typeof data.code === "string") error.code = data.code;
+    throw error;
   }
 
   return data;
@@ -300,6 +302,59 @@ export function postCoachMessage(conversationId, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export function confirmCoachTool(conversationId, payload) {
+  return request(`/coach/conversations/${encodeURIComponent(conversationId)}/tools/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function streamCoachMessage(conversationId, payload, onEvent) {
+  const token = readToken();
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(
+    apiUrl(`/coach/conversations/${encodeURIComponent(conversationId)}/messages/stream`),
+    { method: "POST", headers, body: JSON.stringify(payload) }
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw makeRequestError({
+      kind: kindForStatus(response.status),
+      status: response.status,
+      message: apiErrorMessage(data),
+      detail: data.detail,
+    });
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() || "";
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      let event = "message";
+      const dataLines = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      let data = dataLines.join("\n");
+      try {
+        data = JSON.parse(data);
+      } catch {
+        // Keep raw data.
+      }
+      onEvent?.({ event, data });
+    }
+  }
 }
 
 export function ensureStudyPlan(payload) {
