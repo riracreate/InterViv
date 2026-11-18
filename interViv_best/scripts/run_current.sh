@@ -6,8 +6,8 @@
 #   bash interViv_best/scripts/run_current.sh
 #
 # Scoring stays deterministic. The coding judge compares tests. It does not
-# ask a model to grade code. Accounts use memory mode and disappear when the
-# backend stops.
+# ask a model to grade code. Accounts stay in the local demo database when
+# that file is present, so a restart still accepts the same login.
 
 set -euo pipefail
 
@@ -99,7 +99,7 @@ PY
 wait_http() {
   local url="$1"
   local i
-  for i in $(seq 1 60); do
+  for i in $(seq 1 120); do
     if curl -sf -o /dev/null "$url"; then
       return 0
     fi
@@ -145,7 +145,14 @@ echo "1. Backend  http://127.0.0.1:8000"
 stop_ours 8000
 (
   cd "$APP"
-  export DATABASE_URL=
+  # An empty DATABASE_URL keeps accounts in process memory. They vanish on
+  # restart, and the next login reports "Invalid email or password."
+  accounts="${HOME}/interviv-demo/interviv-demo.sqlite3"
+  if [[ -f "$accounts" ]]; then
+    export DATABASE_URL="sqlite:///${accounts}"
+  else
+    export DATABASE_URL=
+  fi
   export CODING_EXECUTOR_URL=http://127.0.0.1:19000
   if [[ "$HAS_OPENROUTER" == "set" ]]; then
     export LLM_LIVE_FETCH=1
@@ -159,6 +166,7 @@ stop_ours 8000
   else
     export JOBS_LIVE_FETCH=0
   fi
+  export ROLE_PRACTICE_ENABLED=1
   detach "$RUN/backend.pid" "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 \
     >>"$RUN/backend.log" 2>&1
 )
@@ -168,6 +176,7 @@ echo "2. Frontend  http://127.0.0.1:5173"
 stop_ours 5173
 (
   cd "$APP/frontend"
+  export VITE_ROLE_PRACTICE=1
   detach "$RUN/frontend.pid" npm run dev -- --host 127.0.0.1 --port 5173 \
     >>"$RUN/frontend.log" 2>&1
 )
