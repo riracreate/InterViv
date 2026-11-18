@@ -1,6 +1,6 @@
 # Coach chat v1
 
-Status: design only. Do not build this until it is approved.
+Status: approved to build later, after Phase 2 of the role-content work lands. Do not build it before that. The changes below are part of that approval.
 
 Branch context: the bug fixes on `feat/coach-fixes` are separate. This document does not change the scorer, auth, `local_runner`, or `assistance_policy`. New chat behaviour stays behind flags that default off. The real database is not part of the tests. The local demo on ports 8000 and 5173 is not part of this work.
 
@@ -10,13 +10,14 @@ One coach thread per signed-in user, the thread `get_or_create_conversation` alr
 
 ## Context block
 
-About 3,000 tokens per message, hard stop 3,200. Estimate tokens as characters divided by 4. Trim in this order until the block fits: rolling summary, then debrief items beyond the newest, then plan tasks beyond the next four. Never drop the role line or the refusal rules.
+About 3,000 tokens per message, hard stop 3,200. Estimate tokens as characters divided by 4. Trim in this order until the block fits: rolling summary, then the oldest of the last six messages, then debrief items beyond the newest, then plan tasks beyond the next four. Never drop the current user message, the role line, or the refusal rules.
 
-The block is plain text with labelled sections. Numbers the model is allowed to say must appear here as the same digit sequence.
+The block is plain text with labelled sections. Numbers the model is allowed to say must appear here, or in the user's current message, as the same digit sequence.
 
 | Section | What goes in | Existing source |
 | --- | --- | --- |
-| Role and level | Company and role slugs, the role title, and each role skill's current score and attempt count | `get_user_target` in `backend/db/user_target.py`. Role title from the company graph `find_role` path already used by `collect_planning_evidence`. Levels from `StudentSkillGraph.get_current_state`. |
+| Role and level | The role-only target: blueprint id, title, and the chosen level (`intern`, `junior`, or `mid`) | After Phase 2, `get_blueprint` in `modules/role_blueprints.py` for the user's role-only target, plus the level stored on that target. Not the company graph and not `find_role`. |
+| Recent messages | The last 6 messages, user and assistant, trimmed to fit | `get_conversation` messages. The current user message is included. |
 | Resume skills | The stored skill list, capped at 12 names | `candidates.resume_skills` on the candidate row. Do not call the resume parser again. |
 | App scores | Overall readiness and the conservative figure, plus per-skill student level and attempts already on the gap report | `GapAnalysis.compute_gap` in `modules/gap_analysis.py` (`overall_readiness_percentage`, `overall_readiness_conservative`, per-skill `student_level`). Also the last completed session's stored `overall_readiness_score` when that field is present. No new score is computed. |
 | Last 3 debriefs | For the three newest completed sessions, the missed concept names only | Read `rounds[].scoring_breakdown.concepts`. `missing` and `concept_statuses.missed` were written by `question_concepts_summary` and `build_concepts_summary`. Read the stored fields. Do not call the scorer. |
@@ -32,9 +33,17 @@ The model returns a proposal. The UI shows an action card. Confirm calls the exi
 | --- | --- | --- |
 | `update_plan` | Shows the goal, hours, and skills that will be saved | `ensure_plan(..., regenerate=True)` in `modules/roadmap_plans.py`, using the conversation goals. |
 | `start_practice` | Shows skills, `practice_mode`, and `flow_preset` | `coach_start_practice` (`POST /coach/start-practice`). Default `coached_practice` and `legacy` unless the card says `assessment`, `quick`, or `full`. |
-| `explain_last_interview` | Shows which completed session will be explained | Read that session's stored `scoring_breakdown` and concept lists. No scorer call and no new narration job. |
+| `explain_last_interview` | Shows which completed session will be explained | Read that session's stored `scoring_breakdown` and concept lists. No scorer call and no new narration job. Then record a teaching exposure the same way Learning Hub does. |
 
 A proposal whose arguments are not in the context block is dropped before the card is shown.
+
+### explain_last_interview and assistance_v1
+
+This rule already applies, so the tool follows it. Do not change `assistance_policy`.
+
+`POLICY_VERSION` is `assistance_v1`. `explanation` is in `TEACHING_KINDS`. Learning Hub `GET /learning/explanation` (`get_explanation` in `backend/routes/learning_hub.py`) records that kind only after the user has a submitted attempt and the item is not still open in an active session. The write is `_record_assistance(..., kind="explanation")`, which calls `record_teaching_exposure(..., kind="explanation", also_legacy_assistance=True)`.
+
+`explain_last_interview` uses that same call, with `item_identity_for_round` for each explained round, and only when those two Learning Hub gates pass. The exposure is why a later attempt in the existing 24-hour window is `excluded` with `REASON_TEACHING_EXPOSURE`. Rounds that are already scored are not rescored.
 
 ## Model routing
 
@@ -69,7 +78,9 @@ Strict JSON schema: the compatibility page does not mention a `strict` field or 
 
 Thinking: on the compatible endpoint, `reasoning_effort: "none"` turns thinking off for 2.5 models. It cannot be turned off for Gemini 2.5 Pro, Gemini 3, or Gemini 4. Gemini 4 maps `minimal` to thinking level `low`. Gemini 2.5 maps effort to a thinking budget: `minimal` and `low` are 1,024 tokens, `medium` is 8,192, `high` is 24,576. v1 sends `reasoning_effort: "none"` with `gemini-2.5-flash-lite`. Output prices include thinking tokens, so leaving thinking on would bill tokens the coach does not show.
 
-`gemini-2.5-flash` is deprecated. From 1 December 2026 Google routes it to `gemini-3.5-flash-lite` and bills the 3.5 Flash-Lite rates. Gemini 3 cannot turn thinking off. If `gemini-2.5-flash-lite` stops accepting `reasoning_effort: "none"`, stop and re-read the docs. Do not move personal text onto a Gemini 3 or Gemini 4 model without a new approval.
+`gemini-2.5-flash` is deprecated. From 1 December 2026 Google routes it to `gemini-3.5-flash-lite` and bills the 3.5 Flash-Lite rates. Gemini 3 cannot turn thinking off.
+
+`gemini-2.5-flash-lite` deprecation, checked 2026-11-18 on [Gemini deprecations](https://ai.google.dev/gemini-api/docs/deprecations): stable id released 22 July 2025, shutdown date **not announced**. The preview id `gemini-2.5-flash-lite-preview-09-2025` shut down on 31 March 2026. The model page (updated 29 October 2026) still lists the stable id and says thinking and structured outputs are supported. If that stable id stops accepting `reasoning_effort: "none"`, or a shutdown date is announced, stop and re-read the docs. Do not move personal text onto a Gemini 3 or Gemini 4 model without a new approval. The live eval below is what chooses between Haiku and Flash-Lite before a default change.
 
 Paid prices below are US dollars per 1 million tokens, text, as listed on the pricing page on 2026-11-18. Output prices include thinking tokens. Free tier rows are listed so the journal can show why they are refused. On the free tier, Google says the data may be used to improve its products. On the paid tier, it says it is not.
 
@@ -87,26 +98,28 @@ The budget journal stores this table as a `rates` object (model, input_usd_per_m
 
 Reuse `_validate_provider_output` in `modules/coach_conversation.py`. It already rejects invented readiness, scores, Elo, mastery, hiring promises, plan mutation, and actions that point at unknown tasks or off-site URLs.
 
-Add one rule: every number in the assistant message must appear in the context block. A number is a maximal digit sequence, with an optional decimal point (`42`, `3.5`). It matches only the same sequence with boundaries, so `3` does not match inside `30`. Percent signs stay attached to the number (`66.7%` must appear that way). Words for numbers are not numbers. If any number fails, drop the provider reply, set `provider_rejected`, and show `_deterministic_reply`.
+Add one rule. Strip markdown list markers first (`1.`, `2)`, and the same forms at the start of a line). Then every remaining number in the assistant message must appear in the context block or in the user's current message. A number is a maximal digit sequence, with an optional decimal point (`42`, `3.5`). It matches only the same sequence with boundaries, so `3` does not match inside `30`. Percent signs stay attached to the number (`66.7%` must appear that way). Words for numbers are not numbers. The prompt tells the model to write counts as words. If any number fails, drop the provider reply, set `provider_rejected`, and show `_deterministic_reply`. The rejected text is not sent to the client.
 
 ## Refusals
 
 Refuse before any provider call, with a fixed deterministic sentence and no tool proposal:
 
-- The user has an assessment session whose round status is in `OPEN_STATUSES` (`ready` or `in_progress`) from `backend/round_lifecycle.py`.
+- The user has an assessment round that was opened in the last 3 hours, and that session has not expired. Opened means `started_at` is within 3 hours and the round status is `in_progress`. The session has not expired when its status is not `completed`, `closed`, or `expired`, and the round `expires_at` is absent or still in the future. A `ready` round that was never started, and an assessment round opened more than 3 hours ago, do not refuse the chat.
 - The message contains the question text of an open round, after whitespace and case are folded, when that question is at least 40 characters. The question text is not copied into the provider prompt.
 
 Coding hints during assessment stay on the path already shipped: the confirm dialog, then the submit lock. This chat does not offer hints.
 
 ## Cap and journal
 
-Per user, per UTC day, stop at 40 chat turns or an estimated $0.50, whichever comes first. Counts live in the existing file journal used by `RequestBudget` (`artifacts/interview_llm_limits.json`), under a `coach_chat` section keyed by user id. Store turn count, prompt tokens, completion tokens, estimated USD, provider, and model. Do not store message text. When the cap is hit, serve the deterministic reply and do not call a provider.
+Two caps, both per UTC day. Per user: 40 chat turns or an estimated $0.50, whichever comes first. Across all users: an estimated $0.50 (`COACH_CHAT_GLOBAL_DAILY_USD`, default `0.50`). Either cap stops the provider call and serves the deterministic reply.
+
+Counts live in the existing file journal used by `RequestBudget` (`artifacts/interview_llm_limits.json`), under a `coach_chat` section. Per-user rows are keyed by user id. One global row holds the day's estimated USD. Store turn count, prompt tokens, completion tokens, estimated USD, provider, and model. Do not store message text.
 
 Also call `log_llm_usage` with purpose `coach_chat` so the existing usage list shows the turn. `error` is a short code (`privacy`, `cap`, `provider`), not the response body.
 
 ## UI
 
-Streaming uses SSE on a new `POST /coach/conversations/{id}/messages/stream`. Events are `context_ready`, `token`, `tool_proposal`, `fallback`, and `done`. The deterministic path sends one `token` event with the full sentence, so the client has one renderer. Flag off does not open a provider stream.
+Streaming uses SSE on a new `POST /coach/conversations/{id}/messages/stream`. The server generates the full reply, validates it, and only then streams that validated text in chunks. A rejected reply never reaches the client. Events after validation are `token` (chunks of the accepted text), `tool_proposal`, and `done`. The deterministic fallback is validated the same way and then chunked. There is no event that carries unvalidated provider text. Flag off does not open a provider stream.
 
 Chat history is the `messages` list `get_conversation` already returns, shown oldest at the top. v1 does not add a second thread.
 
@@ -126,13 +139,17 @@ Provider tests use a fake transport. No test calls OpenRouter, Gemini, or Ollama
 - An open assessment round, and a pasted live question, do not call the transport.
 - Confirming `update_plan` calls `ensure_plan`. Confirming `start_practice` calls `coach_start_practice`. Dismissing a card calls neither.
 
-Eval set: 40 fixtures in `tests/fixtures/coach_chat_eval.json`. Each case has a context block, a user message, a fake provider reply, and the expected outcome. A case passes when:
+Two evals share `tests/fixtures/coach_chat_eval.json` (40 cases: context, user message, expected tool or none, expected refusal).
 
-- every number in the shown reply appears in the context block
+Safety test, in CI, fake replies only. The harness feeds each scripted reply through the validator. A case passes when:
+
+- every number in the shown reply appears in the context block or the user's current message, after list markers are stripped
 - the tool proposal is exactly the expected tool, or there is no proposal
-- assessment-open and pasted-question cases are refusals and record no provider call
+- assessment rounds opened in the last 3 hours, and pasted-question cases, are refusals and record no provider call
 
 The harness fails if any of the 40 miss a rule. It does not score writing quality.
+
+Live eval, by hand only, never in CI. It sends the same 40 contexts to the real model when credits are available. It reports validator pass rate (and so the fallback rate), correct tool proposals, correct refusals, cost, and 10 replies for a person to rate. Run it once for Haiku (`anthropic/claude-haiku-4.5`, the default) and once for `gemini-2.5-flash-lite`. The write-up of those two runs is what may change the default. Until that write-up, Haiku stays the default.
 
 ## Size
 
@@ -151,3 +168,5 @@ Roughly these files, and no others, if this is approved:
 | `frontend/tests/coachChat.test.js` | new | Chips, cards, and that Confirm is required |
 
 About 1,500 lines of production code and 1,200 lines of tests and fixtures. No migration. No change to `assistance_policy`, the scorer, auth, or `local_runner`.
+
+Build this only after Phase 2 of the role-content work has landed, so the role-only target and blueprint exist. Phase 0 and Phases 1–3 of that brief come first. The live model comparison is a manual run, not part of that build's CI.
