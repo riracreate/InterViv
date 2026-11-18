@@ -5,6 +5,7 @@ import {
   fetchMe,
   fetchCoachPlan,
   fetchCoachStartPractice,
+  fetchStudyPlan,
   saveInterviewState,
   fetchTargetContext,
   saveTargetContext,
@@ -62,10 +63,23 @@ export default function Coach() {
       .catch(() => {});
     createCoachConversation()
       .then((data) => {
-        if (cancelled) return;
-        const convo = data.conversation;
+        if (cancelled) return null;
+        const convo = data.conversation || {};
+        const goals = convo.goals || {};
         setConversationId(convo.conversation_id);
         setMessages(convo.messages || []);
+        if (goals.role_id) setRoleId((prev) => prev || goals.role_id);
+        if (goals.hours_per_week) setHoursPerWeek(goals.hours_per_week);
+        if (goals.confirmed_goal) {
+          setText((prev) => (String(prev || '').trim() ? prev : goals.confirmed_goal));
+        }
+        return fetchStudyPlan({
+          roleId: goals.role_id || undefined,
+          confirmedGoal: goals.confirmed_goal || undefined,
+        });
+      })
+      .then((planResp) => {
+        if (!cancelled && planResp?.plan) setStudyPlan(planResp.plan);
       })
       .catch(() => {});
     return () => {

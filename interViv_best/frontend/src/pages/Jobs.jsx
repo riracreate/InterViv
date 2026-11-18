@@ -12,7 +12,7 @@ import {
 } from '../lib/api';
 import {
   mapJobCard, jobApplyHref, formatSalary,
-  jobLaunchScope, jobPracticeBody, jobSkillKey, jobSkillList, jobStartState,
+  jobCoachHandoff, jobLaunchScope, jobPracticeBody, jobSkillKey, jobSkillList, jobStartState,
 } from '../lib/jobsMapping';
 import PlannedScope from '../components/PlannedScope';
 import AppNav from '../components/AppNav';
@@ -592,29 +592,14 @@ export default function Jobs() {
                   onClick={async () => {
                     try {
                       setBusy(true);
-                      const skills = (prepare.skills || []).map((s) => (typeof s === 'string' ? s : s.skill || s)).filter(Boolean);
-                      await saveTargetContext({
-                        role_id: prepare.role_id || null,
-                        job_id: prepare.job_id || selectedJobId,
-                        jd_source: fullJd.trim() ? 'paste' : 'job',
-                        jd_text: fullJd.trim() || null,
-                      }).catch(() => {});
+                      const handoff = jobCoachHandoff({
+                        prepare, draftSkills, draftRole, draftCompany, fullJd,
+                      });
+                      await saveTargetContext(handoff.target).catch(() => {});
                       const created = await createCoachConversation();
                       const cid = created.conversation?.conversation_id;
                       if (cid) {
-                        await patchCoachGoals(cid, {
-                          confirmed_goal: prepare.role_title || prepare.title || 'Target role from Jobs',
-                          role_id: prepare.role_id || null,
-                          planning_context_skills: skills,
-                          adzuna_context: {
-                            job_id: prepare.job_id || selectedJobId,
-                            role_title: prepare.role_title || prepare.title,
-                            company: prepare.company,
-                            snippet_is_incomplete: true,
-                            confirmed_skills: skills,
-                            full_jd_provided: Boolean(fullJd.trim()),
-                          },
-                        });
+                        await patchCoachGoals(cid, handoff.goals);
                       }
                       setPrepare(null);
                       navigate('/coach');
