@@ -162,7 +162,7 @@ def plan_role(blueprint: dict, *, level: str, length: str, resume: dict | None =
     extra = {str(skill).casefold() for skill in (extra_easy_skills or set())}
     if resume and resume.get("projects"):
         project = str(resume["projects"][0])
-        opener = PlanSlot("opener", "", "Resume opener", project, "easy", f"{project}: resume opener", False, True)
+        opener = PlanSlot("opener", "", "Resume opener", project, "easy", f"{project}: resume opener", False, False)
     else:
         opener = _warm_up(blueprint, technical, extra)
     slots = [opener]

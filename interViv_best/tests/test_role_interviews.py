@@ -236,3 +236,20 @@ def test_bundle_generator_prompt_enforces_reference_numbers_and_primary_sources(
         assert "never in required_concepts" in text
         assert "cite primary sources" in text
         assert "not blogs" in text
+
+
+def test_every_scripted_or_resume_opener_slot_is_unscored():
+    for doc in load_blueprints():
+        for length in ("quick", "full"):
+            with_resume = plan_role(
+                doc, level="junior", length=length,
+                resume={"projects": ["capstone"], "skills": {}},
+            )
+            assert with_resume[0].kind == "opener"
+            assert with_resume[0].name == "Resume opener"
+            assert with_resume[0].scored is False
+
+            without_resume = plan_role(doc, level="junior", length=length)
+            assert without_resume[0].kind == "opener"
+            if without_resume[0].name == "Role opener":
+                assert without_resume[0].scored is False
