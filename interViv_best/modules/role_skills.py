@@ -30,7 +30,7 @@ from typing import Any, Callable, Iterable
 
 from backend.config import get_settings
 from modules.llm_errors import LLMCreditExhaustedError, LLMTruncatedError
-from modules.resume_parser import TECH_SKILLS
+from modules.resume_parser import REGISTERED_AI_SKILLS, TECH_SKILLS
 
 try:
     import certifi
@@ -61,7 +61,8 @@ _INJECTION_RE = re.compile(
     r"<\s*/?\s*untrusted_job_data\s*>|"
     r"<\s*\|\s*(?:system|assistant|user|im_start|im_end)\s*\||"
     r"\bsystem\s*:|\bassistant\s*:|"
-    r"```(?:system|assistant)|you\s+are\s+now\s+|jailbreak)"
+    r"```(?:system|assistant)|you\s+are\s+now\s+|"
+    r"\bjailbreak\b(?!\s*[- ]\s*(?:defense|defence|prevention|detection|mitigation|resistance|guardrails?|testing|evals?|evaluation|safety)))"
 )
 
 _ACRONYMS: dict[str, str] = {
@@ -151,6 +152,33 @@ _ACRONYMS: dict[str, str] = {
     "macos": "macOS",
     "devops": "DevOps",
     "mlops": "MLOps",
+    "llmops": "LLMOps",
+    "rag": "RAG",
+    "gpu": "GPU",
+    "vram": "VRAM",
+    "mcp": "MCP",
+    "mig": "MIG",
+    "genai": "GenAI",
+    "peft": "PEFT",
+    "lora": "LoRA",
+    "qlora": "QLoRA",
+    "rlhf": "RLHF",
+    "dpo": "DPO",
+    "sft": "SFT",
+    "dvc": "DVC",
+    "onnx": "ONNX",
+    "owasp": "OWASP",
+    "vllm": "vLLM",
+    "sglang": "SGLang",
+    "tensorrt": "TensorRT",
+    "faiss": "FAISS",
+    "nemo": "NeMo",
+    "langchain": "LangChain",
+    "langgraph": "LangGraph",
+    "llamaindex": "LlamaIndex",
+    "chromadb": "ChromaDB",
+    "mlflow": "MLflow",
+    "huggingface": "HuggingFace",
     "finops": "FinOps",
     "revops": "RevOps",
     "martech": "MarTech",
@@ -248,22 +276,37 @@ _EQUIVALENT_SKILL_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"data analysis", "data analytics"}),
 )
 
-# Seed static base canonicals and aliases from TECH_SKILLS (82 canonicals).
+# Seed static base canonicals and aliases from TECH_SKILLS (82 canonicals),
+# plus the 10 approved canonical AI skill IDs and planned aliases (92 total)
+# without overriding existing TECH_SKILLS canonicals/aliases (PyTorch, Deep Learning).
 _BASE_CANONICALS: list[str] = []
 _BASE_CANONICAL_LOWER: dict[str, str] = {}
 _ALIAS_TO_CANONICAL: dict[str, str] = {}
 
-for _alias, _canonical in TECH_SKILLS:
-    if _canonical.lower() not in _BASE_CANONICAL_LOWER:
-        _BASE_CANONICAL_LOWER[_canonical.lower()] = _canonical
-        _BASE_CANONICALS.append(_canonical)
-    _a_low = _alias.strip().lower()
-    _ALIAS_TO_CANONICAL[_a_low] = _canonical
-    _ALIAS_TO_CANONICAL.setdefault(_canonical.lower(), _canonical)
-    # Punctuation-spaced alias forms (e.g. "scikit learn", "ci cd", "node js")
-    _spaced = re.sub(r"[-_./]+", " ", _a_low).strip()
-    if _spaced:
-        _ALIAS_TO_CANONICAL.setdefault(" ".join(_spaced.split()), _canonical)
+
+def _seed_skill_entries(
+    entries: Iterable[tuple[str, str]],
+    *,
+    overwrite_aliases: bool,
+) -> None:
+    for alias, canonical in entries:
+        if canonical.lower() not in _BASE_CANONICAL_LOWER:
+            _BASE_CANONICAL_LOWER[canonical.lower()] = canonical
+            _BASE_CANONICALS.append(canonical)
+        a_low = alias.strip().lower()
+        if overwrite_aliases:
+            _ALIAS_TO_CANONICAL[a_low] = canonical
+        else:
+            _ALIAS_TO_CANONICAL.setdefault(a_low, canonical)
+        _ALIAS_TO_CANONICAL.setdefault(canonical.lower(), canonical)
+        # Punctuation-spaced alias forms (e.g. "scikit learn", "ci cd", "node js")
+        spaced = re.sub(r"[-_./]+", " ", a_low).strip()
+        if spaced:
+            _ALIAS_TO_CANONICAL.setdefault(" ".join(spaced.split()), canonical)
+
+
+_seed_skill_entries(TECH_SKILLS, overwrite_aliases=True)
+_seed_skill_entries(REGISTERED_AI_SKILLS, overwrite_aliases=False)
 
 
 def _singularize_word(word: str) -> str:

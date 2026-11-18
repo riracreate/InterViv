@@ -87,6 +87,111 @@ REGISTERED_BLUEPRINT_SKILLS = [
     ("web performance", "Web Performance"),
 ]
 
+# Approved canonical AI skills and their planned resume aliases (docs/research/role_catalog_research.md),
+# kept separate from TECH_SKILLS and REGISTERED_BLUEPRINT_SKILLS so static taxonomy_skill(),
+# MiniLM hard-pair baselines, and starter-blueprint count assertions remain unchanged.
+REGISTERED_AI_SKILLS = [
+    # 1. RAG & Vector Databases
+    ("rag & vector databases", "RAG & Vector Databases"),
+    ("rag", "RAG & Vector Databases"),
+    ("retrieval-augmented generation", "RAG & Vector Databases"),
+    ("retrieval augmented generation", "RAG & Vector Databases"),
+    ("vector database", "RAG & Vector Databases"),
+    ("vector databases", "RAG & Vector Databases"),
+    ("vector db", "RAG & Vector Databases"),
+    ("pgvector", "RAG & Vector Databases"),
+    ("pinecone", "RAG & Vector Databases"),
+    ("qdrant", "RAG & Vector Databases"),
+    ("weaviate", "RAG & Vector Databases"),
+    ("milvus", "RAG & Vector Databases"),
+    ("chromadb", "RAG & Vector Databases"),
+    ("faiss", "RAG & Vector Databases"),
+    # 2. LLMs, Prompting & Agentic Workflows
+    ("llms, prompting & agentic workflows", "LLMs, Prompting & Agentic Workflows"),
+    ("llms & prompt engineering", "LLMs, Prompting & Agentic Workflows"),
+    ("llm", "LLMs, Prompting & Agentic Workflows"),
+    ("llms", "LLMs, Prompting & Agentic Workflows"),
+    ("large language models", "LLMs, Prompting & Agentic Workflows"),
+    ("prompt engineering", "LLMs, Prompting & Agentic Workflows"),
+    ("agentic workflows", "LLMs, Prompting & Agentic Workflows"),
+    ("ai agents", "LLMs, Prompting & Agentic Workflows"),
+    ("langchain", "LLMs, Prompting & Agentic Workflows"),
+    ("langgraph", "LLMs, Prompting & Agentic Workflows"),
+    ("llamaindex", "LLMs, Prompting & Agentic Workflows"),
+    ("mcp", "LLMs, Prompting & Agentic Workflows"),
+    ("function calling", "LLMs, Prompting & Agentic Workflows"),
+    ("tool calling", "LLMs, Prompting & Agentic Workflows"),
+    # 3. LLM Evaluation & Guardrails
+    ("llm evaluation & guardrails", "LLM Evaluation & Guardrails"),
+    ("llm evaluation", "LLM Evaluation & Guardrails"),
+    ("llm evals", "LLM Evaluation & Guardrails"),
+    ("ai evaluation", "LLM Evaluation & Guardrails"),
+    ("guardrails", "LLM Evaluation & Guardrails"),
+    ("llm-as-judge", "LLM Evaluation & Guardrails"),
+    ("ragas", "LLM Evaluation & Guardrails"),
+    ("deepeval", "LLM Evaluation & Guardrails"),
+    ("promptfoo", "LLM Evaluation & Guardrails"),
+    ("nemo guardrails", "LLM Evaluation & Guardrails"),
+    # 4. PyTorch & Deep Learning
+    ("pytorch & deep learning", "PyTorch & Deep Learning"),
+    ("pytorch", "PyTorch & Deep Learning"),
+    ("deep learning", "PyTorch & Deep Learning"),
+    ("neural networks", "PyTorch & Deep Learning"),
+    ("torch", "PyTorch & Deep Learning"),
+    # 5. Feature Engineering
+    ("feature engineering", "Feature Engineering"),
+    ("feast", "Feature Engineering"),
+    ("feature store", "Feature Engineering"),
+    ("feature stores", "Feature Engineering"),
+    # 6. Model Serving & MLOps
+    ("model serving & mlops", "Model Serving & MLOps"),
+    ("mlops", "Model Serving & MLOps"),
+    ("llmops", "Model Serving & MLOps"),
+    ("model serving", "Model Serving & MLOps"),
+    ("vllm", "Model Serving & MLOps"),
+    ("triton inference server", "Model Serving & MLOps"),
+    ("sglang", "Model Serving & MLOps"),
+    ("tensorrt-llm", "Model Serving & MLOps"),
+    ("mlflow", "Model Serving & MLOps"),
+    ("dvc", "Model Serving & MLOps"),
+    ("onnx", "Model Serving & MLOps"),
+    ("tensorrt", "Model Serving & MLOps"),
+    # 7. GPU & Cloud Ops
+    ("gpu & cloud ops", "GPU & Cloud Ops"),
+    ("gpu ops", "GPU & Cloud Ops"),
+    ("cuda", "GPU & Cloud Ops"),
+    ("k8s gpu operator", "GPU & Cloud Ops"),
+    ("mig", "GPU & Cloud Ops"),
+    ("vram sizing", "GPU & Cloud Ops"),
+    # 8. LLM Fine-Tuning & NLP
+    ("llm fine-tuning & nlp", "LLM Fine-Tuning & NLP"),
+    ("nlp & transformers", "LLM Fine-Tuning & NLP"),
+    ("fine-tuning", "LLM Fine-Tuning & NLP"),
+    ("llm fine-tuning", "LLM Fine-Tuning & NLP"),
+    ("peft", "LLM Fine-Tuning & NLP"),
+    ("lora", "LLM Fine-Tuning & NLP"),
+    ("qlora", "LLM Fine-Tuning & NLP"),
+    ("rlhf", "LLM Fine-Tuning & NLP"),
+    ("dpo", "LLM Fine-Tuning & NLP"),
+    ("sft", "LLM Fine-Tuning & NLP"),
+    ("transformers", "LLM Fine-Tuning & NLP"),
+    ("hugging face", "LLM Fine-Tuning & NLP"),
+    ("huggingface", "LLM Fine-Tuning & NLP"),
+    # 9. AI Security & Red-Teaming
+    ("ai security & red-teaming", "AI Security & Red-Teaming"),
+    ("ai security", "AI Security & Red-Teaming"),
+    ("llm security", "AI Security & Red-Teaming"),
+    ("ai red-teaming", "AI Security & Red-Teaming"),
+    ("red teaming", "AI Security & Red-Teaming"),
+    ("prompt injection", "AI Security & Red-Teaming"),
+    ("jailbreak defense", "AI Security & Red-Teaming"),
+    ("owasp llm", "AI Security & Red-Teaming"),
+    # 10. AI Product Strategy
+    ("ai product strategy", "AI Product Strategy"),
+    ("ai product management", "AI Product Strategy"),
+    ("genai product management", "AI Product Strategy"),
+]
+
 SECTION_PATTERNS = {
     "contact": re.compile(
         r"(?im)^(?:contact|email|phone|linkedin|github)\b|(?:[\w.+-]+@[\w.-]+\.\w{2,})"
@@ -272,14 +377,33 @@ def _extract_text(pdf_path):
     return _extract_text_and_layout(pdf_path)[0]
 
 
-_HYPHEN_SENSITIVE_ALIASES = frozenset({"go", "c", "r", "os", "ai", "ml", "ui", "cn", "hr"})
+_HYPHEN_SENSITIVE_ALIASES = frozenset(
+    {
+        "go",
+        "c",
+        "r",
+        "os",
+        "ai",
+        "ml",
+        "ui",
+        "cn",
+        "hr",
+        "rag",
+        "llm",
+        "mcp",
+        "dvc",
+        "mig",
+        "dpo",
+        "sft",
+    }
+)
 
 
 def _find_skills(text):
     text_lower = text.lower()
     skills = []
 
-    for skill, canonical in (*TECH_SKILLS, *REGISTERED_BLUEPRINT_SKILLS):
+    for skill, canonical in (*TECH_SKILLS, *REGISTERED_BLUEPRINT_SKILLS, *REGISTERED_AI_SKILLS):
         alias = skill.lower()
         if len(alias) <= 2 or alias in _HYPHEN_SENSITIVE_ALIASES:
             # Avoid false positives on hyphenated/underscored words like "go-to-market" or "go-live".
