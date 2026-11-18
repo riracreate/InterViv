@@ -14,7 +14,7 @@ Known limits:
 - **Sackett et al. (2022 vs. 2023)**: In the primary *Journal of Applied Psychology* meta-analysis (Sackett, Zhang, Berry, & Lievens, 2022), assessment centers had a base corrected operational validity of **0.29**. The **0.33** assessment-center figure appears in the follow-up *Industrial and Organizational Psychology* paper (*Revisiting the design of selection systems...*, Sackett et al., 2023) after applying a managerial criterion-reliability correction.
 - The two expiring CloudFront chart links (`role-competency-weights.png` and `ai-role-skill-heatmap.png`, expiring 2026-11-25) have been omitted.
 - The 20/10/60/10 STAR split is advice on time spent. Use it for coaching, not as a score.
-- AI skill IDs across v2 (`LLMs & Prompt Engineering` + `Agentic Workflows` vs. `LLMs, Prompting & Agentic Workflows`; `LLM Fine-Tuning & NLP` vs. `NLP & Transformers`) remain draft labels pending owner-approved canonical IDs before registration.
+- AI skill IDs across v2 are standardized under **10 approved canonical IDs** (plus existing `TECH_SKILLS` entries `Python`, `REST`, `Machine Learning`, `Docker`, `AWS`, `CI/CD`, `Computer Vision`, and audited `Product Metrics`; see the Approved Canonical AI Skill IDs table below). They remain **unregistered** until separate AI-role briefs authorize registration along with their resume aliases.
 
 ---
 
@@ -745,3 +745,22 @@ Because `interViv` keys technical question bundles by `(skill, topic, difficulty
 | **REST APIs & DBMS** | Backend, Full-Stack, Cybersecurity (+ Data Engineer) (**3–4 roles**) | **P0 (Core)**: Author 4 bundles each (HTTP idempotency, auth/BOLA/SSRF, ACID isolation, B-tree indexing, cursor pagination) |
 | **JavaScript, React & Web Perf** | Frontend, Full-Stack (**2 roles**) | **P0 (Core)**: Author 6 bundles across event loop, `AbortController` races, React render lifecycle, and Core Web Vitals |
 | **Statistics, Agile, Docker & AWS** | Data Analyst, Data Scientist, DevOps, Cybersecurity, APM, Ops (**2–4 roles each**) | **P1 (Core)**: Reuse `Agile`/`Docker`/`AWS` immediately; author 4 `Statistics` bundles (SRM, power/peeking, Simpson's paradox, causal bias) |
+
+### Approved Canonical AI Skill IDs (Standardized, Not Yet Registered)
+
+The 10 canonical AI skill IDs below are approved as the naming standard for v2 AI roles (`13`–`19`). Do **not** register them in runtime/taxonomy until the AI-role briefs authorize registration together with their resume-parsing aliases. Existing `TECH_SKILLS` entries (`Python`, `REST` via `REST APIs`, `Machine Learning`, `Docker`, `AWS`, `CI/CD`, `Computer Vision`) and already-audited `Product Metrics` are reused as-is.
+
+| Canonical AI Skill ID | V2 Labels Consolidated / Covered | Target AI Roles | Planned Resume Aliases (When Registered) |
+|---|---|---|---|
+| `RAG & Vector Databases` | `RAG & Vector Databases` | AI Engineer | `rag`, `retrieval-augmented generation`, `retrieval augmented generation`, `vector database`, `vector databases`, `vector db`, `pgvector`, `pinecone`, `qdrant`, `weaviate`, `milvus`, `chromadb`, `faiss` |
+| `LLMs, Prompting & Agentic Workflows` | `LLMs & Prompt Engineering`, `Agentic Workflows`, `LLMs, Prompting & Agentic Workflows` | AI Engineer | `llm`, `llms`, `large language models`, `prompt engineering`, `agentic workflows`, `ai agents`, `langchain`, `langgraph`, `llamaindex`, `mcp`, `function calling`, `tool calling` |
+| `LLM Evaluation & Guardrails` | `LLM Evaluation & Guardrails` | AI Engineer, LLM/NLP Fine-Tuning, AI Safety & Eval, AI PM | `llm evaluation`, `llm evals`, `ai evaluation`, `guardrails`, `llm-as-judge`, `ragas`, `deepeval`, `promptfoo`, `nemo guardrails` |
+| `PyTorch & Deep Learning` | `PyTorch & Deep Learning` | ML Engineer, LLM/NLP Fine-Tuning, Computer Vision | `pytorch`, `deep learning`, `neural networks`, `torch` |
+| `Feature Engineering` | `Feature Engineering` | ML Engineer | `feature engineering`, `feast`, `feature store`, `feature stores` |
+| `Model Serving & MLOps` | `Model Serving & MLOps` | ML Engineer, MLOps / AI Platform, Computer Vision | `mlops`, `llmops`, `model serving`, `vllm`, `triton inference server`, `sglang`, `tensorrt-llm`, `mlflow`, `dvc`, `onnx`, `tensorrt` |
+| `GPU & Cloud Ops` | `GPU & Cloud Ops` | MLOps / AI Platform | `gpu ops`, `cuda`, `k8s gpu operator`, `mig`, `vram sizing` |
+| `LLM Fine-Tuning & NLP` | `NLP & Transformers`, `LLM Fine-Tuning & NLP` | LLM / NLP & Fine-Tuning Engineer | `fine-tuning`, `llm fine-tuning`, `peft`, `lora`, `qlora`, `rlhf`, `dpo`, `sft`, `transformers`, `hugging face`, `huggingface` |
+| `AI Security & Red-Teaming` | `AI Security & Red-Teaming` | AI Safety & Eval Engineer | `ai security`, `llm security`, `ai red-teaming`, `red teaming`, `prompt injection`, `jailbreak defense`, `owasp llm` |
+| `AI Product Strategy` | `AI Product Strategy` | AI Product Manager | `ai product management`, `ai product strategy`, `genai product management` |
+
+*(Deferred non-AI roles `20`–`21` reference three separate unmapped labels not part of AI skill registration: `Data Pipelines`, `Distributed Data`, and `Application Security`.)*
