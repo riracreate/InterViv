@@ -171,6 +171,101 @@ def response_format_for(purpose: str, lane: str, expect_json: bool) -> dict | No
     return {"type": "json_object"}
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_NVIDIA_CONTENT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+DEFAULT_GROQ_CHECK_MODEL = "openai/gpt-oss-120b"
+VALID_CONTENT_PROVIDERS = frozenset({"openrouter", "nvidia", "groq"})
+DIRECT_PROVIDER_CAPABILITIES: dict[tuple[str, str], dict] = {
+    ("nvidia", "nvidia/llama-3.3-nemotron-super-49b-v1.5"): {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "family": "nemotron",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": "system_thinking_off",
+        "cost": 0,
+    },
+    ("nvidia", "nvidia/llama-3.3-nemotron-super-49b-v1"): {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "family": "nemotron",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": "system_thinking_off",
+        "cost": 0,
+    },
+    ("nvidia", "nvidia/llama-3.1-nemotron-ultra-253b-v1"): {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "family": "nemotron",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": "system_thinking_off",
+        "cost": 0,
+    },
+    ("nvidia", "nvidia/llama-3.1-nemotron-70b-instruct"): {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.1-nemotron-70b-instruct",
+        "family": "nemotron",
+        "context_length": 131072,
+        "max_completion_tokens": 16384,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": None,
+        "cost": 0,
+    },
+    ("groq", "openai/gpt-oss-120b"): {
+        "provider": "groq",
+        "id": "openai/gpt-oss-120b",
+        "family": "gpt-oss",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": True,
+        "supports_json_object": True,
+        "reasoning_control": "effort_low",
+        "cost": 0,
+    },
+    ("groq", "openai/gpt-oss-20b"): {
+        "provider": "groq",
+        "id": "openai/gpt-oss-20b",
+        "family": "gpt-oss",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": True,
+        "supports_json_object": True,
+        "reasoning_control": "effort_low",
+        "cost": 0,
+    },
+    ("groq", "llama-3.3-70b-versatile"): {
+        "provider": "groq",
+        "id": "llama-3.3-70b-versatile",
+        "family": "llama",
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": None,
+        "cost": 0,
+    },
+    ("groq", "llama-3.1-8b-instant"): {
+        "provider": "groq",
+        "id": "llama-3.1-8b-instant",
+        "family": "llama",
+        "context_length": 131072,
+        "max_completion_tokens": 131072,
+        "supports_json_schema": False,
+        "supports_json_object": True,
+        "reasoning_control": None,
+        "cost": 0,
+    },
+}
 MIN_CONTENT_CONTEXT = 16384
 DEFAULT_CONTENT_REASONING_MAX_TOKENS = 1024
 LOGGER = logging.getLogger("interviv.interview_llm")
@@ -216,6 +311,11 @@ class RoutingSettings:
     high_free_limit: bool = False
     account: str = "default"
     state_path: Path = Path(__file__).resolve().parents[1] / "artifacts" / "interview_llm_limits.json"
+    direct_providers_enabled: bool = False
+    content_provider: str = "openrouter"
+    check_provider: str = "openrouter"
+    nvidia_content_model: str = DEFAULT_NVIDIA_CONTENT_MODEL
+    groq_check_model: str = DEFAULT_GROQ_CHECK_MODEL
 
     @classmethod
     def from_env(cls):
@@ -233,6 +333,11 @@ class RoutingSettings:
             high_free_limit=_flag("OPENROUTER_FREE_HIGH_LIMIT_CONFIRMED"),
             account=os.getenv("INTERVIEW_LLM_ACCOUNT", "default").strip(),
             state_path=Path(os.getenv("INTERVIEW_LLM_STATE_PATH") or str(cls.state_path)),
+            direct_providers_enabled=_flag("INTERVIEW_DIRECT_PROVIDERS_ENABLED"),
+            content_provider=(os.getenv("INTERVIEW_CONTENT_PROVIDER") or "openrouter").strip().lower(),
+            check_provider=(os.getenv("INTERVIEW_CHECK_PROVIDER") or "openrouter").strip().lower(),
+            nvidia_content_model=(os.getenv("NVIDIA_CONTENT_MODEL") or DEFAULT_NVIDIA_CONTENT_MODEL).strip(),
+            groq_check_model=(os.getenv("GROQ_CHECK_MODEL") or DEFAULT_GROQ_CHECK_MODEL).strip(),
         )
 
 
@@ -241,6 +346,7 @@ class InterviewScope:
     interview_id: str
     core_count: int
     models: dict[str, str] = field(default_factory=dict)
+    providers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -248,6 +354,7 @@ class BatchScope:
     batch_id: str
     max_requests: int
     models: dict[str, str] = field(default_factory=dict)
+    providers: dict[str, str] = field(default_factory=dict)
 
 
 _SCOPE: contextvars.ContextVar[InterviewScope | BatchScope | None] = contextvars.ContextVar("interview_llm_scope", default=None)
@@ -284,6 +391,11 @@ def actual_model(purpose: str, default: str) -> str:
     return scope.models.get(purpose, default) if scope is not None else default
 
 
+def actual_provider(purpose: str, default: str = "openrouter") -> str:
+    scope = _SCOPE.get()
+    return scope.providers.get(purpose, default) if scope is not None else default
+
+
 def lane_for(purpose: str) -> str:
     if purpose in CONTENT_PURPOSES:
         return "content"
@@ -297,12 +409,17 @@ def consumer_for(purpose: str) -> str:
     return "interviewer" if purpose in {"interviewer_turn", "debrief"} else "questions"
 
 
-def enforce_outbound_policy(*, purpose: str, model: str, personal_text: bool = False) -> None:
+def enforce_outbound_policy(*, purpose: str, model: str, personal_text: bool = False,
+                            provider: str = "openrouter") -> None:
     lane = lane_for(purpose)
     personal = personal_text or purpose in PERSONAL_PURPOSES
+    if provider not in VALID_CONTENT_PROVIDERS:
+        raise PrivacyViolation(f"Unsupported outbound provider {provider!r}.")
+    if provider != "openrouter" and (lane == "conversation" or personal):
+        raise PrivacyViolation("Direct providers are restricted to non-personal content writing/checking.")
     if personal and model.casefold().endswith(":free"):
         raise PrivacyViolation("Personal text cannot be sent to a :free model.")
-    if lane == "conversation" and model != PAID_CONVERSATION_MODEL:
+    if lane == "conversation" and (model != PAID_CONVERSATION_MODEL or provider != "openrouter"):
         raise PrivacyViolation("Conversation text requires the paid Claude Haiku 4.5 allowlist.")
     if lane == "content" and personal:
         raise PrivacyViolation("Personal text is not permitted in the content lane.")
@@ -492,6 +609,148 @@ def same_model_family(requested: str, returned: str | None, *, canonical_slug: s
     return family(requested) == family(returned)
 
 
+def model_family(model: str | None, provider: str = "openrouter") -> str:
+    """Resolve model family across providers for writer/checker separation."""
+    if model and (provider, model) in DIRECT_PROVIDER_CAPABILITIES:
+        return str(DIRECT_PROVIDER_CAPABILITIES[(provider, model)]["family"])
+    low = (model or "").strip().casefold()
+    if not low:
+        return ""
+    if "nemotron" in low:
+        return "nemotron"
+    if "gpt-oss" in low:
+        return "gpt-oss"
+    if low.startswith(("meta-llama/", "llama-", "llama3", "llama4")):
+        return "llama"
+    return _vendor_prefix(model)
+
+
+def _same_writer_family(
+    cand_provider: str, cand_model: str,
+    gen_provider: str | None, gen_model: str | None,
+) -> bool:
+    if not gen_model:
+        return False
+    cand_fam = model_family(cand_model, cand_provider)
+    gen_fam = model_family(gen_model, gen_provider or "openrouter")
+    if cand_fam and gen_fam and cand_fam == gen_fam:
+        return True
+    cand_vendor = _vendor_prefix(cand_model)
+    gen_vendor = _vendor_prefix(gen_model)
+    return bool(cand_vendor and gen_vendor and cand_vendor == gen_vendor)
+
+
+def _strip_thinking_tags(text: str) -> str:
+    return re.sub(r"(?is)^\s*<think>.*?</think>\s*", "", text).strip()
+
+
+def _prepare_direct_request(
+    provider: str,
+    model: str,
+    purpose: str,
+    lane: str,
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    expect_json: bool,
+) -> tuple[list[dict[str, str]], int, dict | None, str | None]:
+    cap = DIRECT_PROVIDER_CAPABILITIES.get((provider, model))
+    prepared = [dict(msg) for msg in messages]
+    reasoning_control = cap.get("reasoning_control") if cap else None
+    reasoning_effort: str | None = None
+    if reasoning_control == "system_thinking_off":
+        if prepared and prepared[0].get("role") == "system":
+            sys_text = str(prepared[0].get("content") or "")
+            if not sys_text.lstrip().lower().startswith("detailed thinking off"):
+                prepared[0]["content"] = f"detailed thinking off\n{sys_text}".strip()
+        else:
+            prepared.insert(0, {"role": "system", "content": "detailed thinking off"})
+    elif reasoning_control == "effort_low":
+        reasoning_effort = "low"
+
+    req_max = max_tokens
+    if cap and type(cap.get("max_completion_tokens")) is int and cap["max_completion_tokens"] > 0:
+        req_max = min(max_tokens, cap["max_completion_tokens"])
+
+    resp_format: dict | None = None
+    if expect_json:
+        if cap and cap.get("supports_json_schema"):
+            resp_format = response_format_for(purpose, lane, True)
+        else:
+            resp_format = {"type": "json_object"}
+    return prepared, req_max, resp_format, reasoning_effort
+
+
+def check_nvidia_json_schema_support(
+    *,
+    model: str = DEFAULT_NVIDIA_CONTENT_MODEL,
+    timeout_s: float = 15,
+    opener=None,
+) -> dict:
+    """Check whether NVIDIA's hosted endpoint accepts response_format=json_schema for ``model``."""
+    if opener is None:
+        if not llm_outbound_gate.llm_consumer_enabled("questions"):
+            raise RoutingError("LLM_LIVE_FETCH=1 and the questions consumer are required for NVIDIA schema probe.")
+        key = os.getenv("NVIDIA_API_KEY", "").strip()
+        if not key:
+            raise RoutingError("NVIDIA_API_KEY is missing.")
+    else:
+        key = os.getenv("NVIDIA_API_KEY", "").strip() or "probe-override"
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "detailed thinking off"},
+            {"role": "user", "content": "Return {\"ok\": true}."},
+        ],
+        "max_tokens": 32,
+        "temperature": 0.0,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "schema_probe",
+                "strict": True,
+                "schema": _object_schema(("ok",), {"ok": {"type": "boolean"}}),
+            },
+        },
+    }
+    req = urllib.request.Request(
+        NVIDIA_CHAT_URL,
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    do_open = opener or (lambda r: urllib.request.urlopen(r, timeout=timeout_s, context=_SSL_CTX))
+    try:
+        with do_open(req) as resp:
+            status = getattr(resp, "status", 200)
+            raw = resp.read()
+        parsed = json.loads(raw) if raw else {}
+        choices = parsed.get("choices") if isinstance(parsed, dict) else None
+        supported = isinstance(choices, list) and bool(choices) and "error" not in parsed
+        return {
+            "provider": "nvidia",
+            "model": model,
+            "json_schema_supported": supported,
+            "status": status,
+            "detail": "ok" if supported else "unexpected_payload",
+        }
+    except urllib.error.HTTPError as exc:
+        return {
+            "provider": "nvidia",
+            "model": model,
+            "json_schema_supported": False,
+            "status": exc.code,
+            "detail": f"http_{exc.code}",
+        }
+    except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+        return {
+            "provider": "nvidia",
+            "model": model,
+            "json_schema_supported": False,
+            "status": type(exc).__name__,
+            "detail": type(exc).__name__,
+        }
+
+
 @dataclass(frozen=True)
 class Completion:
     text: str
@@ -500,17 +759,24 @@ class Completion:
     requested_model: str | None = None
     truncated: bool = False
     reasoning_tokens: int | None = None
+    provider: str = "openrouter"
+    headers: dict = field(default_factory=dict, repr=False, compare=False)
 
 
 class InterviewRouter:
     def __init__(self, settings: RoutingSettings, *, catalog_source: Callable[[], dict] | None = None,
-                 clock=time.time, budget: RequestBudget | None = None):
+                 clock=time.time, budget: RequestBudget | None = None, sleep: Callable[[float], None] | None = None):
         self.settings = settings
         if type(settings.min_content_context) is not int or settings.min_content_context < 1:
             raise RoutingError("Content context minimum must be a positive integer.")
         if type(settings.content_reasoning_max_tokens) is not int or settings.content_reasoning_max_tokens < 1:
             raise RoutingError("Content reasoning token cap must be a positive integer.")
+        if settings.content_provider not in VALID_CONTENT_PROVIDERS:
+            raise RoutingError(f"Unsupported INTERVIEW_CONTENT_PROVIDER {settings.content_provider!r}.")
+        if settings.check_provider not in VALID_CONTENT_PROVIDERS:
+            raise RoutingError(f"Unsupported INTERVIEW_CHECK_PROVIDER {settings.check_provider!r}.")
         self.clock = clock
+        self.sleep = sleep
         self.budget = budget or RequestBudget(settings.state_path, account=settings.account,
                                               high_free_limit=settings.high_free_limit, clock=clock)
         self.catalog_source = catalog_source or _fetch_catalog
@@ -570,45 +836,136 @@ class InterviewRouter:
         return tuple(sorted(model for model, row in models.items()
                             if _free_structured(row, self.settings.min_content_context)))
 
+    def _direct_model_for(self, provider: str, *, is_check: bool) -> str:
+        if provider == "nvidia":
+            model = self.settings.nvidia_content_model or DEFAULT_NVIDIA_CONTENT_MODEL
+        elif provider == "groq":
+            model = self.settings.groq_check_model or DEFAULT_GROQ_CHECK_MODEL
+        else:
+            raise RoutingError(f"Unsupported direct provider {provider!r}.")
+        cap = DIRECT_PROVIDER_CAPABILITIES.get((provider, model))
+        if cap is None:
+            raise RoutingError(
+                f"Direct model {(provider, model)!r} is missing from DIRECT_PROVIDER_CAPABILITIES."
+            )
+        if int(cap.get("context_length") or 0) < self.settings.min_content_context:
+            raise RoutingError(
+                f"Direct model {model!r} context length below {self.settings.min_content_context}."
+            )
+        if int(cap.get("cost") or 0) != 0:
+            raise RoutingError(f"Direct model {model!r} is not zero-cost.")
+        return model
+
+    def _openrouter_fallback_available(self, *, offline_override: bool, is_check: bool) -> bool:
+        configured = self.settings.check_models if is_check else self.settings.content_models
+        if not configured and not self.settings.allow_content_discovery:
+            return False
+        return bool(offline_override or self.injected_catalog or os.getenv("OPENROUTER_API_KEY", "").strip())
+
     def content_candidates(self, *, offline_override: bool = False) -> tuple[str, ...]:
+        return tuple(model for _, model in self.content_candidates_with_providers(offline_override=offline_override))
+
+    def content_candidates_with_providers(self, *, offline_override: bool = False) -> tuple[tuple[str, str], ...]:
         if len(set(self.settings.content_models)) != len(self.settings.content_models):
             raise RoutingError("Duplicate content model IDs in INTERVIEW_CONTENT_MODELS.")
+        if self.settings.direct_providers_enabled and self.settings.content_provider in {"nvidia", "groq"}:
+            direct = (self.settings.content_provider, self._direct_model_for(self.settings.content_provider, is_check=False))
+            candidates: list[tuple[str, str]] = [direct]
+            if self._openrouter_fallback_available(offline_override=offline_override, is_check=False):
+                models = self._models("questions", offline_override)
+                raw = self._select_free_candidates(self.settings.content_models, "INTERVIEW_CONTENT_MODELS", models)
+                or_choices = raw if self.settings.content_models else raw[:3]
+                candidates.extend(("openrouter", m) for m in or_choices)
+            return tuple(candidates)
         models = self._models("questions", offline_override)
         raw = self._select_free_candidates(self.settings.content_models, "INTERVIEW_CONTENT_MODELS", models)
         choices = raw if self.settings.content_models else raw[:3]
-        if self.settings.allow_paid_content:
+        if self.settings.allow_paid_content and not self.settings.direct_providers_enabled:
             choices = (*choices, self._paid_model(models))
         if not choices:
             raise RoutingError("No zero-priced structured-output content model is available.")
-        return choices
+        return tuple(("openrouter", m) for m in choices)
 
-    def _active_generator_model(self, *, offline_override: bool = False) -> str | None:
+    def _active_generator_identity(self, *, offline_override: bool = False) -> tuple[str | None, str | None]:
         scope = _SCOPE.get()
         if scope is not None:
-            scoped = scope.models.get("bundle_regeneration") or scope.models.get("bundle_generation")
-            if scoped:
-                return scoped
+            for key in ("bundle_regeneration", "bundle_generation"):
+                if key in scope.models and scope.models[key]:
+                    return scope.providers.get(key, "openrouter"), scope.models[key]
+        if self.settings.direct_providers_enabled and self.settings.content_provider in {"nvidia", "groq"}:
+            try:
+                return self.resolve_content_provider_and_model(offline_override=offline_override)
+            except RoutingError:
+                return None, None
         if not offline_override and not self.settings.content_models and not self.settings.allow_content_discovery:
-            return None
+            return None, None
         try:
-            return self.resolve_content_model(offline_override=offline_override)
+            return self.resolve_content_provider_and_model(offline_override=offline_override)
         except RoutingError:
-            return None
+            return None, None
+
+    def _active_generator_model(self, *, offline_override: bool = False) -> str | None:
+        return self._active_generator_identity(offline_override=offline_override)[1]
 
     def check_candidates(self, *, offline_override: bool = False,
                          generator_model: str | None = None) -> tuple[str, ...]:
+        return tuple(
+            model for _, model in self.check_candidates_with_providers(
+                offline_override=offline_override, generator_model=generator_model
+            )
+        )
+
+    def check_candidates_with_providers(
+        self,
+        *,
+        offline_override: bool = False,
+        generator_model: str | None = None,
+        generator_provider: str | None = None,
+    ) -> tuple[tuple[str, str], ...]:
         if len(set(self.settings.check_models)) != len(self.settings.check_models):
             raise RoutingError("Duplicate content model IDs in INTERVIEW_CHECK_MODELS.")
-        models = self._models("questions", offline_override)
-        raw = self._select_free_candidates(self.settings.check_models, "INTERVIEW_CHECK_MODELS", models)
-        if self.settings.allow_paid_content:
-            raw = (*raw, self._paid_model(models))
         scope = _SCOPE.get()
         scoped_gen = (
             (scope.models.get("bundle_regeneration") or scope.models.get("bundle_generation"))
             if scope is not None else None
         )
-        gen_model = generator_model or scoped_gen or self._active_generator_model(offline_override=offline_override)
+        scoped_prov = (
+            (scope.providers.get("bundle_regeneration") or scope.providers.get("bundle_generation"))
+            if scope is not None else None
+        )
+        active_prov, active_mod = self._active_generator_identity(offline_override=offline_override)
+        gen_model = generator_model or scoped_gen or active_mod
+        gen_provider = generator_provider or scoped_prov or active_prov or "openrouter"
+
+        if self.settings.direct_providers_enabled and self.settings.check_provider in {"nvidia", "groq"}:
+            direct_model = self._direct_model_for(self.settings.check_provider, is_check=True)
+            if not self.settings.allow_self_check and _same_writer_family(
+                self.settings.check_provider, direct_model, gen_provider, gen_model
+            ):
+                raise RoutingError(
+                    f"Checker model family ({model_family(direct_model, self.settings.check_provider)!r}) "
+                    "matches generator; configure an independent family or set INTERVIEW_ALLOW_SELF_CHECK=true."
+                )
+            candidates: list[tuple[str, str]] = [(self.settings.check_provider, direct_model)]
+            if self._openrouter_fallback_available(offline_override=offline_override, is_check=True):
+                models = self._models("questions", offline_override)
+                raw = self._select_free_candidates(self.settings.check_models, "INTERVIEW_CHECK_MODELS", models)
+                or_choices = raw if self.settings.check_models else raw[:3]
+                for m in or_choices:
+                    if not self.settings.allow_self_check and _same_writer_family("openrouter", m, gen_provider, gen_model):
+                        LOGGER.warning(
+                            "interview_llm_content_candidate_skipped model=%s reason=%s",
+                            m, "same_family_as_generator",
+                            extra={"requested_model": m, "reason": "same_family_as_generator"},
+                        )
+                        continue
+                    candidates.append(("openrouter", m))
+            return tuple(candidates)
+
+        models = self._models("questions", offline_override)
+        raw = self._select_free_candidates(self.settings.check_models, "INTERVIEW_CHECK_MODELS", models)
+        if self.settings.allow_paid_content and not self.settings.direct_providers_enabled:
+            raw = (*raw, self._paid_model(models))
         gen_vendor = _vendor_prefix(gen_model)
         legacy_unconfigured_override = (
             offline_override
@@ -618,12 +975,12 @@ class InterviewRouter:
             and not self.settings.content_models
             and not self.settings.allow_content_discovery
         )
-        if not self.settings.allow_self_check and gen_vendor:
+        if not self.settings.allow_self_check and gen_model:
             independent: list[str] = []
-            saw_same_vendor = False
+            saw_same = False
             for candidate in raw:
-                if _vendor_prefix(candidate) == gen_vendor:
-                    saw_same_vendor = True
+                if _same_writer_family("openrouter", candidate, gen_provider, gen_model):
+                    saw_same = True
                     if self.settings.check_models:
                         LOGGER.warning("interview_llm_content_candidate_skipped model=%s reason=%s",
                                        candidate, "same_vendor_as_generator",
@@ -634,160 +991,339 @@ class InterviewRouter:
             if not choices and legacy_unconfigured_override:
                 choices = raw[:3]
             if not choices:
-                if saw_same_vendor:
+                if saw_same:
                     raise RoutingError(
-                        f"Checker vendor prefix {gen_vendor!r} matches generator; "
+                        f"Checker vendor prefix {gen_vendor or model_family(gen_model, gen_provider)!r} matches generator; "
                         "configure an independent vendor in INTERVIEW_CHECK_MODELS or set INTERVIEW_ALLOW_SELF_CHECK=true."
                     )
                 raise RoutingError("No zero-priced structured-output checker model is available.")
-            return choices
+            return tuple(("openrouter", m) for m in choices)
         choices = raw if self.settings.check_models else raw[:3]
         if not choices:
             raise RoutingError("No zero-priced structured-output checker model is available.")
-        return choices
+        return tuple(("openrouter", m) for m in choices)
+
+    def resolve_content_provider_and_model(self, *, offline_override: bool = False) -> tuple[str, str]:
+        return self.content_candidates_with_providers(offline_override=offline_override)[0]
+
+    def resolve_check_provider_and_model(
+        self,
+        *,
+        offline_override: bool = False,
+        generator_model: str | None = None,
+        generator_provider: str | None = None,
+    ) -> tuple[str, str]:
+        if (
+            not offline_override
+            and not (self.settings.direct_providers_enabled and self.settings.check_provider in {"nvidia", "groq"})
+            and not self.settings.check_models
+            and not self.settings.allow_content_discovery
+        ):
+            raise RoutingError("Real checker dispatch requires INTERVIEW_CHECK_MODELS or explicit discovery opt-in.")
+        return self.check_candidates_with_providers(
+            offline_override=offline_override,
+            generator_model=generator_model,
+            generator_provider=generator_provider,
+        )[0]
 
     def resolve_content_model(self, *, offline_override: bool = False) -> str:
         return self.content_candidates(offline_override=offline_override)[0]
 
     def resolve_check_model(self, *, offline_override: bool = False,
                             generator_model: str | None = None) -> str:
-        if not offline_override and not self.settings.check_models and not self.settings.allow_content_discovery:
-            raise RoutingError("Real checker dispatch requires INTERVIEW_CHECK_MODELS or explicit discovery opt-in.")
-        return self.check_candidates(offline_override=offline_override, generator_model=generator_model)[0]
+        return self.resolve_check_provider_and_model(
+            offline_override=offline_override, generator_model=generator_model
+        )[1]
 
     def dispatch(self, *, purpose: str, messages: list[dict[str, str]], max_tokens: int = 700,
                  temperature: float = 0.1, timeout_s: float = 20, personal_text: bool = False,
                  model: str | None = None, expect_json: bool = True, bundle_id: str | None = None,
-                 override: Callable[[str], tuple[str, tuple[int, int, int]]] | None = None) -> Completion:
+                 override: Callable[[str], tuple[str, tuple[int, int, int]]] | None = None,
+                 provider: str | None = None) -> Completion:
         lane, consumer = lane_for(purpose), consumer_for(purpose)
         is_check = purpose in CHECK_PURPOSES
+        requested_provider = provider or ("openrouter" if lane == "conversation" else None)
         # Classify by purpose, not an optional caller-supplied privacy boolean.
-        enforce_outbound_policy(purpose=purpose, model=model or self.settings.conversation_model, personal_text=personal_text)
+        enforce_outbound_policy(
+            purpose=purpose,
+            model=model or self.settings.conversation_model,
+            personal_text=personal_text,
+            provider=requested_provider or "openrouter",
+        )
         _gate(consumer, offline_override=override is not None)
         scope = _SCOPE.get()
         if scope is None:
             raise RoutingError("Missing interview_scope; no unbudgeted routing is permitted.")
         if isinstance(scope, BatchScope) and lane != "content":
             raise PrivacyViolation("Batch scope is content-only; conversation purposes are forbidden.")
-        if lane == "content" and override is None and not self.settings.allow_content_discovery:
+        target_provider = (self.settings.check_provider if is_check else self.settings.content_provider)
+        direct_for_lane = self.settings.direct_providers_enabled and target_provider in {"nvidia", "groq"}
+        if lane == "content" and override is None and not self.settings.allow_content_discovery and not direct_for_lane:
             if is_check and not self.settings.check_models:
                 raise RoutingError("Real checker dispatch requires INTERVIEW_CHECK_MODELS or explicit discovery opt-in.")
             if not is_check and not self.settings.content_models:
                 raise RoutingError("Real content dispatch requires INTERVIEW_CONTENT_MODELS or explicit discovery opt-in.")
         if lane == "content":
             choices = (
-                self.check_candidates(offline_override=override is not None)
+                self.check_candidates_with_providers(offline_override=override is not None)
                 if is_check
-                else self.content_candidates(offline_override=override is not None)
+                else self.content_candidates_with_providers(offline_override=override is not None)
             )
-            models = self._models(consumer, override is not None)
+            models = (
+                self._models(consumer, override is not None)
+                if any(p == "openrouter" for p, _ in choices)
+                else {}
+            )
         else:
             models = self._models(consumer, override is not None)
-            choices = (self._paid_model(models),)
+            choices = (("openrouter", self._paid_model(models)),)
         if model is not None:
-            if model not in choices:
+            matched = tuple((p, m) for p, m in choices if m == model and (provider is None or p == provider))
+            if not matched:
                 raise RoutingError("Requested model is not a validated lane candidate.")
-            choices = (model,)
-        for choice in choices:
-            enforce_outbound_policy(purpose=purpose, model=choice, personal_text=personal_text)
-            entry = models.get(choice, {})
-            free = _free_structured(entry, self.settings.min_content_context)
-            reasoning_cfg, request_max_tokens = (
-                _content_reasoning_config(entry, max_tokens, self.settings.content_reasoning_max_tokens, messages)
-                if lane == "content" else (None, max_tokens)
+            choices = matched
+
+        for idx, (choice_provider, choice) in enumerate(choices):
+            has_fallback = idx + 1 < len(choices)
+            is_direct = choice_provider in {"nvidia", "groq"}
+            enforce_outbound_policy(
+                purpose=purpose, model=choice, personal_text=personal_text, provider=choice_provider
             )
-            try:
-                if isinstance(scope, BatchScope):
-                    token = self.budget.reserve_batch(batch_id=scope.batch_id, max_requests=scope.max_requests,
-                                                      lane=lane, model=choice, free=free, timeout_s=timeout_s)
-                else:
-                    token = self.budget.reserve(interview_id=scope.interview_id, core_count=scope.core_count,
-                                                lane=lane, model=choice, free=free, timeout_s=timeout_s)
-            except DispatchDeferred as exc:
-                if exc.reason == "model_backoff" and model is None and lane == "content":
-                    continue
-                if exc.reason == "free_daily" and self.settings.allow_paid_content and lane == "content" and free:
-                    continue
-                raise
-            started = time.monotonic()
-            usage = (0, 0, 0)
-            returned_model = None
-            reasoning_tokens = None
-            status, error_kind = "ok", None
-            try:
-                # Recheck after catalog/admission as flags may have changed concurrently.
-                _gate(consumer, offline_override=override is not None)
-                enforce_outbound_policy(purpose=purpose, model=choice, personal_text=personal_text)
-                scope.models[purpose] = choice
-                if override is not None:
-                    result = override(choice)
-                    if isinstance(result, Completion):
+            entry = models.get(choice, {}) if choice_provider == "openrouter" else {}
+            free = (not is_direct) and _free_structured(entry, self.settings.min_content_context)
+            if is_direct:
+                send_messages, request_max_tokens, direct_resp_fmt, direct_effort = _prepare_direct_request(
+                    choice_provider, choice, purpose, lane, messages, max_tokens, expect_json
+                )
+                reasoning_cfg = None
+            else:
+                send_messages = messages
+                direct_resp_fmt = response_format_for(purpose, lane, expect_json)
+                direct_effort = None
+                reasoning_cfg, request_max_tokens = (
+                    _content_reasoning_config(entry, max_tokens, self.settings.content_reasoning_max_tokens, messages)
+                    if lane == "content" else (None, max_tokens)
+                )
+
+            max_attempts = 2 if is_direct else 1
+            for attempt in range(max_attempts):
+                try:
+                    if isinstance(scope, BatchScope):
+                        token = self.budget.reserve_batch(
+                            batch_id=scope.batch_id, max_requests=scope.max_requests,
+                            lane=lane, model=choice, free=free, timeout_s=timeout_s,
+                            provider=choice_provider,
+                        )
+                    else:
+                        token = self.budget.reserve(
+                            interview_id=scope.interview_id, core_count=scope.core_count,
+                            lane=lane, model=choice, free=free, timeout_s=timeout_s,
+                            provider=choice_provider,
+                        )
+                except DispatchDeferred as exc:
+                    if (
+                        exc.reason in {"model_backoff", "nvidia_backoff", "nvidia_minute", "groq_rate_limit"}
+                        and model is None and lane == "content" and has_fallback
+                    ):
+                        break
+                    if (
+                        exc.reason == "free_daily"
+                        and not self.settings.direct_providers_enabled
+                        and self.settings.allow_paid_content
+                        and lane == "content"
+                        and free
+                    ):
+                        break
+                    raise
+
+                started = time.monotonic()
+                usage = (0, 0, 0)
+                returned_model = None
+                reasoning_tokens = None
+                status, error_kind = "ok", None
+                try:
+                    # Recheck after catalog/admission as flags may have changed concurrently.
+                    _gate(consumer, offline_override=override is not None)
+                    enforce_outbound_policy(
+                        purpose=purpose, model=choice, personal_text=personal_text, provider=choice_provider
+                    )
+                    scope.models[purpose] = choice
+                    scope.providers[purpose] = choice_provider
+                    if override is not None:
+                        result = override(choice)
+                        if isinstance(result, Completion):
+                            text, usage, returned_model = result.text, result.usage, result.model
+                            reasoning_tokens = result.reasoning_tokens
+                            resp_headers = result.headers or {}
+                        else:
+                            text, usage = result
+                            returned_model = choice
+                            resp_headers = {}
+                    elif is_direct:
+                        result = self._chat_direct_once(
+                            choice_provider, choice, send_messages, request_max_tokens,
+                            temperature, timeout_s, expect_json, direct_resp_fmt, direct_effort,
+                        )
                         text, usage, returned_model = result.text, result.usage, result.model
                         reasoning_tokens = result.reasoning_tokens
+                        resp_headers = result.headers or {}
                     else:
-                        text, usage = result
-                        returned_model = choice
-                else:
-                    result = self._chat_once(
-                        choice, messages, request_max_tokens, temperature, timeout_s, expect_json,
-                        reasoning_cfg, response_format_for(purpose, lane, expect_json),
+                        result = self._chat_once(
+                            choice, send_messages, request_max_tokens, temperature, timeout_s, expect_json,
+                            reasoning_cfg, direct_resp_fmt,
+                        )
+                        text, usage, returned_model = result.text, result.usage, result.model
+                        reasoning_tokens = result.reasoning_tokens
+                        resp_headers = getattr(result, "headers", {}) or {}
+                    if choice_provider == "groq" and resp_headers:
+                        self.budget.record_groq_headers(resp_headers)
+                    canonical_slug = (
+                        models.get(choice, {}).get("canonical_slug")
+                        if choice_provider == "openrouter"
+                        else DIRECT_PROVIDER_CAPABILITIES.get((choice_provider, choice), {}).get("canonical_slug")
                     )
-                    text, usage, returned_model = result.text, result.usage, result.model
-                    reasoning_tokens = result.reasoning_tokens
-                if not same_model_family(choice, returned_model, canonical_slug=models[choice].get("canonical_slug")):
-                    raise PrivacyViolation("Provider model identifier is missing or outside the requested family.")
-                scope.models[purpose] = returned_model
-                if isinstance(result, Completion) and result.truncated:
+                    if not same_model_family(choice, returned_model, canonical_slug=canonical_slug):
+                        raise PrivacyViolation("Provider model identifier is missing or outside the requested family.")
+                    scope.models[purpose] = returned_model
+                    scope.providers[purpose] = choice_provider
+                    if isinstance(result, Completion) and result.truncated:
+                        from modules.llm_errors import LLMTruncatedError
+                        raise LLMTruncatedError(model=returned_model, provider=choice_provider, usage=usage)
+                    return Completion(
+                        text, usage, returned_model, choice, False, reasoning_tokens, choice_provider, resp_headers
+                    )
+                except urllib.error.HTTPError as exc:
+                    status = "error"
+                    hdrs = exc.headers or {}
+                    if choice_provider == "groq":
+                        self.budget.record_groq_headers(hdrs)
+                    decision = classify_http_error(exc.code, exc.read(), hdrs, now=self.clock(), lane=lane)
+                    error_kind = decision.kind
+                    if decision.kind in {"authorization", "credits"}:
+                        self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
+                        raise DispatchDeferred(decision.kind, decision.retry_at) from exc
+                    if is_direct and decision.kind in {"rpm", "in_flight", "upstream"} and attempt + 1 < max_attempts:
+                        if self.sleep is not None and decision.retry_at is not None:
+                            delay = min(5.0, max(0.0, decision.retry_at - self.clock()))
+                            if delay > 0:
+                                self.sleep(delay)
+                        continue
+                    self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
+                    if is_direct and has_fallback:
+                        break
+                    raise DispatchDeferred(decision.kind, decision.retry_at) from exc
+                except ProviderResponseDeferred as exc:
+                    usage, returned_model, reasoning_tokens = exc.usage, exc.model, exc.reasoning_tokens
+                    if choice_provider == "groq" and exc.headers:
+                        self.budget.record_groq_headers(exc.headers)
+                    status = "truncated" if exc.reason == "truncated" else "error"
+                    decision = (classify_http_error(exc.code, exc.body, exc.headers, now=self.clock(), lane=lane)
+                                if exc.code is not None else LimitDecision(exc.reason, self.clock() + 300))
+                    if decision.kind == "http_error":
+                        decision = LimitDecision("provider_error", self.clock() + 300)
+                    error_kind = decision.kind
+                    self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
+                    if decision.kind in {"authorization", "credits"}:
+                        raise DispatchDeferred(decision.kind, decision.retry_at,
+                                               reasoning_tokens=reasoning_tokens) from exc
+                    if is_direct and has_fallback:
+                        break
+                    raise DispatchDeferred(decision.kind, decision.retry_at,
+                                           reasoning_tokens=reasoning_tokens) from exc
+                except (OSError, http.client.HTTPException) as exc:
+                    reason = getattr(exc, "reason", exc)
+                    error_kind = "timeout" if isinstance(reason, TimeoutError) else "network_unavailable"
+                    status = "error"
+                    decision = LimitDecision(error_kind, self.clock() + 4)
+                    self.budget.record_failure(choice, decision, free=free, provider=choice_provider)
+                    if is_direct and has_fallback:
+                        break
+                    raise DispatchDeferred(error_kind, decision.retry_at) from exc
+                except Exception as exc:
                     from modules.llm_errors import LLMTruncatedError
-                    raise LLMTruncatedError(model=returned_model, provider="openrouter", usage=usage)
-                return Completion(text, usage, returned_model, choice, False, reasoning_tokens)
-            except urllib.error.HTTPError as exc:
-                status = "error"
-                decision = classify_http_error(exc.code, exc.read(), exc.headers or {}, now=self.clock(), lane=lane)
-                error_kind = decision.kind
-                self.budget.record_failure(choice, decision, free=free)
-                raise DispatchDeferred(decision.kind, decision.retry_at) from exc
-            except ProviderResponseDeferred as exc:
-                usage, returned_model, reasoning_tokens = exc.usage, exc.model, exc.reasoning_tokens
-                status = "truncated" if exc.reason == "truncated" else "error"
-                decision = (classify_http_error(exc.code, exc.body, exc.headers, now=self.clock(), lane=lane)
-                            if exc.code is not None else LimitDecision(exc.reason, self.clock() + 300))
-                if decision.kind == "http_error":
-                    decision = LimitDecision("provider_error", self.clock() + 300)
-                error_kind = decision.kind
-                self.budget.record_failure(choice, decision, free=free)
-                raise DispatchDeferred(decision.kind, decision.retry_at,
-                                       reasoning_tokens=reasoning_tokens) from exc
-            except (OSError, http.client.HTTPException) as exc:
-                reason = getattr(exc, "reason", exc)
-                error_kind = "timeout" if isinstance(reason, TimeoutError) else "network_unavailable"
-                status = "error"
-                decision = LimitDecision(error_kind, self.clock() + 4)
-                self.budget.record_failure(choice, decision, free=free)
-                raise DispatchDeferred(error_kind, decision.retry_at) from exc
-            except Exception as exc:
-                from modules.llm_errors import LLMTruncatedError
-                status, error_kind = "error", type(exc).__name__
-                if isinstance(exc, LLMTruncatedError):
-                    status, usage = "truncated", exc.usage or usage
-                raise
-            finally:
-                try:
-                    self.budget.release(token)
+                    status, error_kind = "error", type(exc).__name__
+                    if isinstance(exc, LLMTruncatedError):
+                        status, usage = "truncated", exc.usage or usage
+                    raise
                 finally:
-                    from modules.llm_usage import log_llm_usage
-                    LOGGER.info("interview_llm_dispatch requested_model=%s returned_model=%s status=%s reasoning_tokens=%s",
-                                choice, returned_model, status, reasoning_tokens,
-                                extra={"requested_model": choice, "returned_model": returned_model,
-                                       "purpose": purpose, "reasoning_tokens": reasoning_tokens})
-                    log_llm_usage(provider="openrouter", model=returned_model or choice, purpose=purpose,
-                                  prompt_tokens=usage[0], completion_tokens=usage[1], total_tokens=usage[2],
-                                  latency_ms=int((time.monotonic() - started) * 1000), status=status,
-                                  error=error_kind, bundle_id=bundle_id)
+                    try:
+                        self.budget.release(token)
+                    finally:
+                        from modules.llm_usage import log_llm_usage
+                        LOGGER.info(
+                            "interview_llm_dispatch provider=%s requested_model=%s returned_model=%s status=%s reasoning_tokens=%s",
+                            choice_provider, choice, returned_model, status, reasoning_tokens,
+                            extra={"provider": choice_provider, "requested_model": choice,
+                                   "returned_model": returned_model, "purpose": purpose,
+                                   "reasoning_tokens": reasoning_tokens},
+                        )
+                        log_llm_usage(
+                            provider=choice_provider, model=returned_model or choice, purpose=purpose,
+                            prompt_tokens=usage[0], completion_tokens=usage[1], total_tokens=usage[2],
+                            latency_ms=int((time.monotonic() - started) * 1000), status=status,
+                            error=error_kind, bundle_id=bundle_id,
+                        )
         raise DispatchDeferred("content_models_unavailable")
 
     @staticmethod
-    def _chat_once(model, messages, max_tokens, temperature, timeout_s, expect_json, reasoning=None,
+    def _chat_http_post(url: str, key: str, body: dict, model: str, timeout_s: float, *,
+                        provider: str = "openrouter", strip_think: bool = False) -> Completion:
+        request = urllib.request.Request(
+            url, data=json.dumps(body).encode(), method="POST",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout_s, context=_SSL_CTX) as response:
+            raw = response.read()
+            headers = dict(getattr(response, "headers", {}) or {})
+        try:
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ProviderResponseDeferred("invalid_response", headers=headers) from exc
+        if not isinstance(data, dict):
+            raise ProviderResponseDeferred("invalid_response", headers=headers)
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+
+        def count(source, k):
+            value = source.get(k)
+            if isinstance(value, str) and len(value) <= 20 and value.isascii() and value.isdigit():
+                return int(value)
+            return value if type(value) is int and value >= 0 else None
+
+        prompt, completion = count(usage, "prompt_tokens") or 0, count(usage, "completion_tokens") or 0
+        counts = (prompt, completion, count(usage, "total_tokens") or prompt + completion)
+        details = usage.get("completion_tokens_details")
+        reasoning_tokens = count(details, "reasoning_tokens") if isinstance(details, dict) else None
+        metadata = {
+            "usage": counts, "model": data.get("model"),
+            "reasoning_tokens": reasoning_tokens, "headers": headers,
+        }
+        if "error" in data:
+            error = data["error"]
+            code = error.get("code") if isinstance(error, dict) else None
+            if isinstance(code, str) and len(code) == 3 and code.isascii() and code.isdigit():
+                code = int(code)
+            code = code if type(code) is int and 400 <= code <= 599 else None
+            raise ProviderResponseDeferred("provider_error", **metadata, code=code, body=json.dumps(data))
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        if choices[0].get("finish_reason") == "length":
+            raise ProviderResponseDeferred("truncated", **metadata)
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        content = message.get("content")
+        if not isinstance(content, str) if content is not None else False:
+            raise ProviderResponseDeferred("invalid_response", **metadata)
+        if strip_think and content is not None:
+            content = _strip_thinking_tags(content)
+        if content is None or not content.strip():
+            raise ProviderResponseDeferred("empty_response", **metadata)
+        return Completion(content, counts, data.get("model"), model, False, reasoning_tokens, provider, headers)
+
+    @classmethod
+    def _chat_once(cls, model, messages, max_tokens, temperature, timeout_s, expect_json, reasoning=None,
                    response_format=None):
         key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not key:
@@ -799,51 +1335,28 @@ class InterviewRouter:
             body["response_format"] = {"type": "json_object"}
         if reasoning is not None:
             body["reasoning"] = reasoning
-        request = urllib.request.Request(CHAT_URL, data=json.dumps(body).encode(), method="POST",
-                                         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout_s, context=_SSL_CTX) as response:
-            raw = response.read()
-            headers = getattr(response, "headers", {})
-        try:
-            data = json.loads(raw)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ProviderResponseDeferred("invalid_response") from exc
-        if not isinstance(data, dict):
-            raise ProviderResponseDeferred("invalid_response")
-        usage = data.get("usage")
-        usage = usage if isinstance(usage, dict) else {}
-        def count(source, key):
-            value = source.get(key)
-            if isinstance(value, str) and len(value) <= 20 and value.isascii() and value.isdigit():
-                return int(value)
-            return value if type(value) is int and value >= 0 else None
-        prompt, completion = count(usage, "prompt_tokens") or 0, count(usage, "completion_tokens") or 0
-        counts = (prompt, completion, count(usage, "total_tokens") or prompt + completion)
-        details = usage.get("completion_tokens_details")
-        reasoning_tokens = count(details, "reasoning_tokens") if isinstance(details, dict) else None
-        metadata = {"usage": counts, "model": data.get("model"), "reasoning_tokens": reasoning_tokens}
-        if "error" in data:
-            error = data["error"]
-            code = error.get("code") if isinstance(error, dict) else None
-            if isinstance(code, str) and len(code) == 3 and code.isascii() and code.isdigit():
-                code = int(code)
-            code = code if type(code) is int and 400 <= code <= 599 else None
-            raise ProviderResponseDeferred("provider_error", **metadata, code=code,
-                                           body=json.dumps(data), headers=headers)
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            raise ProviderResponseDeferred("invalid_response", **metadata)
-        if choices[0].get("finish_reason") == "length":
-            raise ProviderResponseDeferred("truncated", **metadata)
-        message = choices[0].get("message")
-        if not isinstance(message, dict):
-            raise ProviderResponseDeferred("invalid_response", **metadata)
-        content = message.get("content")
-        if content is None or isinstance(content, str) and not content.strip():
-            raise ProviderResponseDeferred("empty_response", **metadata)
-        if not isinstance(content, str):
-            raise ProviderResponseDeferred("invalid_response", **metadata)
-        return Completion(content, counts, data.get("model"), model, False, reasoning_tokens)
+        return cls._chat_http_post(CHAT_URL, key, body, model, timeout_s, provider="openrouter", strip_think=False)
+
+    @classmethod
+    def _chat_direct_once(cls, provider, model, messages, max_tokens, temperature, timeout_s,
+                          expect_json, response_format=None, reasoning_effort=None):
+        if provider == "nvidia":
+            url, env_name = NVIDIA_CHAT_URL, "NVIDIA_API_KEY"
+        elif provider == "groq":
+            url, env_name = GROQ_CHAT_URL, "GROQ_API_KEY"
+        else:
+            raise RoutingError(f"Unsupported direct provider {provider!r}.")
+        key = os.getenv(env_name, "").strip()
+        if not key:
+            raise RoutingError(f"{env_name} is missing.")
+        body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+        if response_format is not None:
+            body["response_format"] = response_format
+        elif expect_json:
+            body["response_format"] = {"type": "json_object"}
+        if reasoning_effort is not None:
+            body["reasoning_effort"] = reasoning_effort
+        return cls._chat_http_post(url, key, body, model, timeout_s, provider=provider, strip_think=True)
 
 
 @lru_cache(maxsize=4)

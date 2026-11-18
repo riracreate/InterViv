@@ -123,7 +123,9 @@ def build_bundle_id_for_cell(skill: str, topic: str, difficulty: str) -> str:
 def resolve_generation_provider_and_model() -> tuple[str, str]:
     """Return the configured (provider, model) pair for bundle generation."""
     if interview_llm.enabled():
-        return "openrouter", interview_llm.get_router().resolve_content_model(offline_override=_LLM_OVERRIDE is not None)
+        return interview_llm.get_router().resolve_content_provider_and_model(
+            offline_override=_LLM_OVERRIDE is not None
+        )
     provider, _api_key, model = question_bank._llm_provider()
     if not provider or not model:
         return (
@@ -145,7 +147,9 @@ def resolve_checker_provider_and_model() -> tuple[str, str]:
     else ``question_bank._llm_provider()`` model.
     """
     if interview_llm.enabled():
-        return "openrouter", interview_llm.get_router().resolve_check_model(offline_override=_LLM_OVERRIDE is not None)
+        return interview_llm.get_router().resolve_check_provider_and_model(
+            offline_override=_LLM_OVERRIDE is not None
+        )
     gen_provider, gen_model = resolve_generation_provider_and_model()
     explicit_model = (os.getenv("BUNDLE_CHECK_MODEL") or "").strip()
     explicit_provider = (os.getenv("BUNDLE_CHECK_PROVIDER") or "").strip().lower()
@@ -855,7 +859,9 @@ def _call_bundle_llm(
                 raise BundleGenerationError("Live bundle dispatch was explicitly disabled.")
             def override(actual_model):
                 return _invoke_override(
-                    _LLM_OVERRIDE, purpose=purpose, provider="openrouter", model=actual_model,
+                    _LLM_OVERRIDE, purpose=purpose,
+                    provider=interview_llm.actual_provider(purpose, provider),
+                    model=actual_model,
                     messages=messages, max_tokens=max_tokens, temperature=temperature,
                 )
             result = interview_llm.get_router().dispatch(
@@ -865,7 +871,7 @@ def _call_bundle_llm(
                 expect_json=expect_json,
                 bundle_id=bundle_id,
             )
-            provider, model = "openrouter", result.model
+            provider, model = result.provider, result.model
             pt, ct, tt = result.usage
             return result.text
         if _LLM_OVERRIDE is not None:
@@ -1440,7 +1446,7 @@ def _generate_validated_doc(
                 canonical_topic=canonical_topic,
                 difficulty=difficulty,
                 model=interview_llm.actual_model("bundle_generation", gen_model),
-                provider=gen_provider,
+                provider=interview_llm.actual_provider("bundle_generation", gen_provider),
                 role=role,
             )
         except (BundleContentError, BundleGenerationError) as exc:
@@ -1757,9 +1763,13 @@ def _run_step_e_for_version(
     if interview_llm.enabled():
         scope = interview_llm._SCOPE.get()
         if scope is not None:
-            author_model = (stored_version.get("attribution_json") or {}).get("generated_by_model") or gen_model
+            attr = stored_version.get("attribution_json") or {}
+            author_model = attr.get("generated_by_model") or gen_model
+            author_provider = attr.get("provider") or gen_provider
             if author_model:
                 scope.models.setdefault("bundle_generation", str(author_model))
+            if author_provider:
+                scope.providers.setdefault("bundle_generation", str(author_provider))
 
     blind_answer, eval_res, passed, hits = _evaluate_blind_answer(
         stored_version=stored_version,
@@ -1772,6 +1782,7 @@ def _run_step_e_for_version(
         allow_live=allow_live,
     )
     check_model = interview_llm.actual_model("bundle_blind_answer", check_model)
+    check_provider = interview_llm.actual_provider("bundle_blind_answer", check_provider)
     coverage = eval_res.get("coverage") or {}
     evaluator_version = str(eval_res.get("evaluator_version") or "unknown")
     if passed:
@@ -2023,7 +2034,7 @@ def _run_step_e_for_version(
             canonical_topic=canonical_topic,
             difficulty=difficulty,
             model=interview_llm.actual_model("bundle_regeneration", gen_model),
-            provider=gen_provider,
+            provider=interview_llm.actual_provider("bundle_regeneration", gen_provider),
             role=role,
             extra_attribution={"retried_from_version": version},
         )
@@ -2074,6 +2085,7 @@ def _run_step_e_for_version(
         allow_live=allow_live,
     )
     check_model = interview_llm.actual_model("bundle_blind_answer", check_model)
+    check_provider = interview_llm.actual_provider("bundle_blind_answer", check_provider)
     cov2 = eval2.get("coverage") or {}
     eval2_ver = str(eval2.get("evaluator_version") or "unknown")
     missed2 = [

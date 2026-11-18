@@ -16,8 +16,9 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Mapping
 
-from modules.llm_http_policy import LimitDecision, next_utc_day
+from modules.llm_http_policy import LimitDecision, next_utc_day, parse_ratelimit_headers
 
 LEASE_MIN_SECONDS = 120
 LEASE_GRACE_SECONDS = 60
@@ -71,34 +72,45 @@ class RequestBudget:
                     "leases": {}, "interviews": {}, "free_until": 0,
                     "all_until": 0, "credit_block": False, "models": {},
                     "operator_block": None, "batches": {}, "closed_interviews": {},
+                    "nvidia_starts": [], "nvidia_until": 0, "groq_until": 0,
+                    "groq_limits": {}, "direct_counts": {}, "cost_usd": 0.0,
                 })
                 # Backward-compatible metadata additions; no counter is reset.
                 account.setdefault("operator_block", None)
                 account.setdefault("batches", {})
                 account.setdefault("closed_interviews", {})
+                account.setdefault("nvidia_starts", [])
+                account.setdefault("nvidia_until", 0)
+                account.setdefault("groq_until", 0)
+                account.setdefault("groq_limits", {})
+                account.setdefault("direct_counts", {})
+                account.setdefault("cost_usd", 0.0)
                 # Validate persisted counters, never silently recreate a corrupt account.
                 for key in ("day", "free_count", "total_count"):
                     if type(account[key]) is not int or account[key] < 0:
                         raise ValueError("invalid counter")
-                for key in ("last_seen", "next_content_at", "free_until", "all_until"):
+                for key in ("last_seen", "next_content_at", "free_until", "all_until", "nvidia_until", "groq_until", "cost_usd"):
                     if not math.isfinite(account[key]) or account[key] < 0:
                         raise ValueError("invalid time")
-                for key in ("leases", "interviews", "models", "batches", "closed_interviews"):
+                for key in ("leases", "interviews", "models", "batches", "closed_interviews", "groq_limits", "direct_counts"):
                     if not isinstance(account[key], dict):
                         raise ValueError("invalid map")
                 if type(account["credit_block"]) is not bool:
                     raise ValueError("invalid credit block")
                 if account["operator_block"] not in {None, "authorization"}:
                     raise ValueError("invalid operator block")
-                if not isinstance(account["free_starts"], list) or any(
-                    not isinstance(t, (int, float)) or not math.isfinite(t) for t in account["free_starts"]
-                ):
-                    raise ValueError("invalid request window")
+                for win_key in ("free_starts", "nvidia_starts"):
+                    if not isinstance(account[win_key], list) or any(
+                        isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t)
+                        for t in account[win_key]
+                    ):
+                        raise ValueError("invalid request window")
                 now = max(now, account["last_seen"])  # clock rollback cannot reset a quota
                 account["last_seen"] = now
                 if int(now // 86400) > account["day"]:
                     account["day"], account["free_count"] = int(now // 86400), 0
                 account["free_starts"] = [t for t in account["free_starts"] if t > now - 60]
+                account["nvidia_starts"] = [t for t in account["nvidia_starts"] if t > now - 60]
                 for token, lease in list(account["leases"].items()):
                     pid = lease["pid"]
                     if type(pid) is not int or pid <= 0:
@@ -150,26 +162,30 @@ class RequestBudget:
             del state["interviews"][identity]
 
     def reserve(self, *, interview_id: str, core_count: int, lane: str, model: str, free: bool,
-                timeout_s: float = 45) -> str:
+                timeout_s: float = 45, provider: str = "openrouter") -> str:
         if not interview_id or len(interview_id) > 160 or type(core_count) is not int or core_count not in {2, 4}:
             raise BudgetUnavailable("A stable interview identifier and 2/4 core slots are required.")
         if lane not in {"content", "conversation"}:
             raise BudgetUnavailable("Unknown model lane.")
         cap = 6 * core_count + 1 if lane == "content" else core_count + 2
         return self._reserve_scope(kind="interviews", identity=interview_id, fixed_key="core_count",
-                                   fixed_value=core_count, lane=lane, cap=cap, model=model, free=free, timeout_s=timeout_s)
+                                   fixed_value=core_count, lane=lane, cap=cap, model=model, free=free,
+                                   timeout_s=timeout_s, provider=provider)
 
     def reserve_batch(self, *, batch_id: str, max_requests: int, lane: str, model: str, free: bool,
-                      timeout_s: float = 45) -> str:
+                      timeout_s: float = 45, provider: str = "openrouter") -> str:
         if not batch_id or len(batch_id) > 160 or type(max_requests) is not int or max_requests < 1:
             raise BudgetUnavailable("A batch ID and positive explicit max_requests are required.")
         if lane != "content":
             raise BudgetUnavailable("Batch scope is content-only.")
         return self._reserve_scope(kind="batches", identity=batch_id, fixed_key="max_requests",
                                    fixed_value=max_requests, lane=lane, cap=max_requests,
-                                   model=model, free=free, timeout_s=timeout_s)
+                                   model=model, free=free, timeout_s=timeout_s, provider=provider)
 
-    def _reserve_scope(self, *, kind, identity, fixed_key, fixed_value, lane, cap, model, free, timeout_s):
+    def _reserve_scope(self, *, kind, identity, fixed_key, fixed_value, lane, cap, model, free, timeout_s,
+                       provider="openrouter"):
+        if provider not in {"openrouter", "nvidia", "groq"}:
+            raise BudgetUnavailable(f"Unknown model provider {provider!r}.")
         if not isinstance(timeout_s, (int, float)) or isinstance(timeout_s, bool) or not math.isfinite(timeout_s) or timeout_s <= 0:
             raise BudgetUnavailable("A finite positive request timeout is required.")
         with self._state() as (state, now):
@@ -187,19 +203,28 @@ class RequestBudget:
                 raise DispatchDeferred("credits")
             if state["operator_block"]:
                 raise DispatchDeferred(state["operator_block"])
-            if state["all_until"] > now:
-                raise DispatchDeferred("account_backoff", state["all_until"])
             if state["models"].get(model, 0) > now:
                 raise DispatchDeferred("model_backoff", state["models"][model])
-            if free and (state["free_until"] > now or state["free_count"] >= self.daily_limit):
-                raise DispatchDeferred("free_daily", max(state["free_until"], next_utc_day(now)))
-            if free and len(state["free_starts"]) >= 20:
-                raise DispatchDeferred("free_minute", state["free_starts"][0] + 60)
+            if provider == "openrouter":
+                if state["all_until"] > now:
+                    raise DispatchDeferred("account_backoff", state["all_until"])
+                if free and (state["free_until"] > now or state["free_count"] >= self.daily_limit):
+                    raise DispatchDeferred("free_daily", max(state["free_until"], next_utc_day(now)))
+                if free and len(state["free_starts"]) >= 20:
+                    raise DispatchDeferred("free_minute", state["free_starts"][0] + 60)
+            elif provider == "nvidia":
+                if state["nvidia_until"] > now:
+                    raise DispatchDeferred("nvidia_backoff", state["nvidia_until"])
+                if len(state["nvidia_starts"]) >= 40:
+                    raise DispatchDeferred("nvidia_minute", state["nvidia_starts"][0] + 60)
+            elif provider == "groq":
+                if state["groq_until"] > now:
+                    raise DispatchDeferred("groq_rate_limit", state["groq_until"])
             if interview[lane] >= cap:
                 raise DispatchDeferred(f"{lane}_{'batch' if kind == 'batches' else 'interview'}_cap")
             if len(state["leases"]) >= 2:
                 raise DispatchDeferred("concurrency", now + 0.25)
-            if lane == "content" and state["next_content_at"] > now:
+            if provider == "openrouter" and lane == "content" and state["next_content_at"] > now:
                 raise DispatchDeferred("content_pacing", state["next_content_at"])
             token = uuid.uuid4().hex
             expires = now + max(LEASE_MIN_SECONDS, timeout_s + LEASE_GRACE_SECONDS)
@@ -209,10 +234,17 @@ class RequestBudget:
                                       "scope_id": identity, "scope_kind": kind}
             interview[lane] += 1
             state["total_count"] += 1
-            if free:
+            if provider == "openrouter" and free:
                 state["free_count"] += 1
                 state["free_starts"].append(now)
-            if lane == "content":
+            elif provider == "nvidia":
+                state["nvidia_starts"].append(now)
+                state["direct_counts"]["nvidia"] = int(state["direct_counts"].get("nvidia", 0)) + 1
+                state["cost_usd"] = 0.0
+            elif provider == "groq":
+                state["direct_counts"]["groq"] = int(state["direct_counts"].get("groq", 0)) + 1
+                state["cost_usd"] = 0.0
+            if provider == "openrouter" and lane == "content":
                 state["next_content_at"] = now + 4
             return token
 
@@ -220,21 +252,49 @@ class RequestBudget:
         with self._state() as (state, _):
             state["leases"].pop(token, None)
 
-    def record_failure(self, model: str, decision: LimitDecision, *, free: bool) -> None:
+    def record_groq_headers(self, headers: Mapping[str, str] | None) -> dict:
+        with self._state() as (state, now):
+            parsed = parse_ratelimit_headers(headers or {}, now)
+            stored = {k: v for k, v in parsed.items() if v is not None}
+            if stored:
+                state["groq_limits"] = stored
+            if (parsed.get("remaining_requests") == 0 or parsed.get("remaining_tokens") == 0) and parsed.get("reset_at"):
+                state["groq_until"] = max(state["groq_until"], float(parsed["reset_at"]))
+            return parsed
+
+    def record_failure(self, model: str, decision: LimitDecision, *, free: bool,
+                       provider: str = "openrouter") -> None:
         with self._state() as (state, now):
             if decision.kind == "free_daily":
-                state["free_until"] = max(state["free_until"], decision.retry_at or next_utc_day(now))
+                if provider == "openrouter":
+                    state["free_until"] = max(state["free_until"], decision.retry_at or next_utc_day(now))
+                elif provider == "groq":
+                    state["groq_until"] = max(state["groq_until"], decision.retry_at or next_utc_day(now))
+                elif provider == "nvidia":
+                    state["nvidia_until"] = max(state["nvidia_until"], decision.retry_at or next_utc_day(now))
             elif decision.kind == "credits":
                 state["credit_block"] = True
             elif decision.kind == "authorization":
                 state["operator_block"] = "authorization"
             elif decision.kind in {"rpm", "in_flight", "timeout", "network_unavailable"}:
-                state["all_until"] = max(state["all_until"], decision.retry_at or now + 60)
+                if provider == "groq":
+                    if decision.kind in {"rpm", "in_flight"}:
+                        state["groq_until"] = max(state["groq_until"], decision.retry_at or now + 60)
+                    else:
+                        state["models"][model] = decision.retry_at or now + 4
+                elif provider == "nvidia":
+                    state["nvidia_until"] = max(state["nvidia_until"], decision.retry_at or now + 4)
+                else:
+                    state["all_until"] = max(state["all_until"], decision.retry_at or now + 60)
             elif decision.kind in {"upstream", "model_unavailable", "request_rejected", "provider_error",
                                    "invalid_response", "empty_response", "truncated"}:
                 state["models"][model] = decision.retry_at or now + 300
             elif decision.kind == "unknown_quota":
-                if free:
+                if provider == "groq":
+                    state["groq_until"] = max(state["groq_until"], decision.retry_at or now + 60)
+                elif provider == "nvidia":
+                    state["nvidia_until"] = max(state["nvidia_until"], decision.retry_at or now + 60)
+                elif free:
                     state["free_until"] = next_utc_day(now)
                 else:
                     state["credit_block"] = True

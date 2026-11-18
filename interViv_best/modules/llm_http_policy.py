@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -18,6 +19,91 @@ class LimitDecision:
 def next_utc_day(now: float) -> float:
     date = datetime.fromtimestamp(now, timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     return (date + timedelta(days=1)).timestamp()
+
+
+_DURATION_TOKEN_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|h|m|s)")
+_DURATION_MULTIPLIER = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+
+
+def _parse_duration_seconds(raw: str | None) -> float | None:
+    text = str(raw or "").strip().lower()
+    if not text:
+        return None
+    try:
+        value = float(text)
+        return value if math.isfinite(value) and value >= 0 else None
+    except ValueError:
+        pass
+    pos = 0
+    total = 0.0
+    matched = False
+    for m in _DURATION_TOKEN_RE.finditer(text):
+        if text[pos:m.start()].strip():
+            return None
+        total += float(m.group(1)) * _DURATION_MULTIPLIER[m.group(2)]
+        pos = m.end()
+        matched = True
+    if not matched or text[pos:].strip():
+        return None
+    return total if math.isfinite(total) and total >= 0 else None
+
+
+def _opt_int(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text or not text.isascii() or not text.isdigit():
+        return None
+    return int(text)
+
+
+def _groq_reset_at(
+    *,
+    now: float,
+    remaining_requests: int | None,
+    remaining_tokens: int | None,
+    reset_req_s: float | None,
+    reset_tok_s: float | None,
+) -> float | None:
+    candidates: list[float] = []
+    if remaining_requests == 0 and reset_req_s is not None:
+        candidates.append(reset_req_s)
+    if remaining_tokens == 0 and reset_tok_s is not None:
+        candidates.append(reset_tok_s)
+    if not candidates:
+        candidates = [s for s in (reset_req_s, reset_tok_s) if s is not None]
+    return max(now, now + max(candidates)) if candidates else None
+
+
+def parse_ratelimit_headers(headers: Mapping[str, str], now: float) -> dict[str, object]:
+    """Parse OpenRouter/Groq rate-limit response headers into numeric limits and reset timestamp."""
+    lowered = {str(key).lower(): str(value) for key, value in (headers or {}).items()}
+    limit_requests = _opt_int(lowered.get("x-ratelimit-limit-requests"))
+    limit_tokens = _opt_int(lowered.get("x-ratelimit-limit-tokens"))
+    remaining_requests = _opt_int(lowered.get("x-ratelimit-remaining-requests"))
+    remaining_tokens = _opt_int(lowered.get("x-ratelimit-remaining-tokens"))
+    reset_req_s = _parse_duration_seconds(lowered.get("x-ratelimit-reset-requests"))
+    reset_tok_s = _parse_duration_seconds(lowered.get("x-ratelimit-reset-tokens"))
+
+    reset_at = _reset_time(headers, now)
+    if reset_at is None:
+        reset_at = _groq_reset_at(
+            now=now,
+            remaining_requests=remaining_requests,
+            remaining_tokens=remaining_tokens,
+            reset_req_s=reset_req_s,
+            reset_tok_s=reset_tok_s,
+        )
+
+    return {
+        "limit_requests": limit_requests,
+        "limit_tokens": limit_tokens,
+        "remaining_requests": remaining_requests,
+        "remaining_tokens": remaining_tokens,
+        "reset_requests_s": reset_req_s,
+        "reset_tokens_s": reset_tok_s,
+        "reset_at": reset_at,
+    }
 
 
 def _reset_time(headers: Mapping[str, str], now: float) -> float | None:
@@ -38,9 +124,17 @@ def _reset_time(headers: Mapping[str, str], now: float) -> float | None:
         value = float(lowered.get("x-ratelimit-reset", "nan"))
         if value > 10_000_000_000:  # OpenRouter also returns epoch milliseconds.
             value /= 1000
-        return max(now, value) if math.isfinite(value) else None
+        if math.isfinite(value):
+            return max(now, value)
     except ValueError:
-        return None
+        pass
+    return _groq_reset_at(
+        now=now,
+        remaining_requests=_opt_int(lowered.get("x-ratelimit-remaining-requests")),
+        remaining_tokens=_opt_int(lowered.get("x-ratelimit-remaining-tokens")),
+        reset_req_s=_parse_duration_seconds(lowered.get("x-ratelimit-reset-requests")),
+        reset_tok_s=_parse_duration_seconds(lowered.get("x-ratelimit-reset-tokens")),
+    )
 
 
 def classify_http_error(status: int, body: bytes | str, headers: Mapping[str, str], *, now: float,
