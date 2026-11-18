@@ -13,7 +13,7 @@ function englishVoice(win) {
   return voices.find((v) => /^en(-|_)/i.test(v.lang) && v.localService) || voices.find((v) => /^en/i.test(v.lang)) || null;
 }
 
-export function createSpeaker({ win = globalThis.window, onStart, onEnd } = {}) {
+export function createSpeaker({ win = globalThis.window, onStart, onEnd, chooseVoice } = {}) {
   const supported = speechSynthesisSupported(win);
   let active = null;
   return {
@@ -25,7 +25,8 @@ export function createSpeaker({ win = globalThis.window, onStart, onEnd } = {}) 
       const utterance = new win.SpeechSynthesisUtterance(clean.slice(0, 1200));
       utterance.lang = 'en-US';
       utterance.rate = rate;
-      const voice = englishVoice(win);
+      const voices = win.speechSynthesis.getVoices?.() || [];
+      const voice = chooseVoice ? chooseVoice(voices) : englishVoice(win);
       if (voice) utterance.voice = voice;
       const finish = () => {
         if (active !== utterance) return;

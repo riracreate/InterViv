@@ -9,7 +9,14 @@ LLM question generation:
 - per-minute LLM rate limiting, using Redis when configured and an in-memory
   fallback otherwise
 - exponential-backoff retry with a maximum of 3 attempts
-- deterministic CSV/domain/template fallback after final LLM failure
+- the content rules of ``modules/question_content.py`` on every scored
+  short-answer question: a generation whose reference answer or keywords
+  fail them is retried once, then replaced by an offline question that
+  passes them and is tied to the requested skill by its own metadata; when
+  none exists the caller is told the content is unavailable. Domain prompts
+  and templates carry no reference material and are never served.
+- one definition of that offline pool (:func:`eligible_offline_questions`),
+  used by the pre-start availability check and by serving.
 
 The LLM is still used only for question generation. All scoring, decisions,
 feedback, and recommendations remain deterministic Python.
@@ -30,6 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from modules import question_bank
+from modules.question_content import reference_issues, split_keywords
 
 try:
     import certifi
@@ -45,6 +53,10 @@ DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 0.25
 DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 60
+# One retry after a generation that fails the content rules. Transport
+# failures are retried separately inside ``call_llm_with_cache_retry``.
+MAX_GENERATION_ATTEMPTS = 2
+GENERATED_SOURCES = frozenset({"llm", "llm-adaptive"})
 
 _REDIS_CLIENT = None
 _REDIS_UNAVAILABLE = False
@@ -52,6 +64,7 @@ _IN_MEMORY_CACHE: dict[str, tuple[float, str]] = {}
 _IN_MEMORY_LIMITS: dict[str, tuple[int, int]] = {}
 _LAST_RUNTIME_ERROR: str | None = None
 _STRUCTURED_BANK: list[dict[str, str]] | None = None
+_OFFLINE_POOL: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +87,21 @@ class MarketQuestionContext:
     role_id: str | None = None
     resume_skills: tuple[str, ...] = ()
     weak_skills: tuple[str, ...] = ()
+
+
+class QuestionContentUnavailable(RuntimeError):
+    """No question with a reference answer can be served for this scope."""
+
+
+def reference_gap(payload: object) -> str | None:
+    """Why ``payload`` cannot be served as a scored short-answer question.
+
+    The first failure of the content rules in ``modules/question_content.py``
+    (a reference answer and keywords, both substantial), whatever the
+    question's source. ``None`` means servable.
+    """
+    issues = reference_issues(payload)
+    return issues[0] if issues else None
 
 
 def last_runtime_error() -> str | None:
@@ -274,9 +302,30 @@ def _cache_ttl_seconds() -> int:
         return DEFAULT_CACHE_TTL_SECONDS
 
 
+def _normalise_question_text(text: str | None) -> str:
+    return " ".join(str(text or "").strip().lower().split())
+
+
+def _extract_asked_from_prompt(prompt: str) -> list[str]:
+    if not prompt:
+        return []
+    match = re.search(
+        r"avoid repeating these previous questions:\s*((?:- .+\n?)+)",
+        prompt,
+        flags=re.I,
+    )
+    if not match:
+        return []
+    return [
+        line.lstrip("-").strip()
+        for line in match.group(1).splitlines()
+        if line.strip().startswith("-")
+    ]
+
+
 def _cache_get(context: QuestionCacheContext, asked: list[str]) -> str | None:
     key = question_cache_key(context)
-    asked_norm = {item.strip().lower() for item in (asked or [])}
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
     value = None
     client = _redis()
     if client is not None:
@@ -295,7 +344,7 @@ def _cache_get(context: QuestionCacheContext, asked: list[str]) -> str | None:
     if not value:
         return None
     question = _extract_question_from_raw(value)
-    if question and question.strip().lower() in asked_norm:
+    if not question or _normalise_question_text(question) in asked_norm:
         return None
     return value
 
@@ -313,6 +362,18 @@ def _cache_set(context: QuestionCacheContext, raw: str) -> None:
         except Exception as exc:  # pragma: no cover - depends on local Redis
             LOGGER.warning("Redis question cache write failed: %s", exc)
     _IN_MEMORY_CACHE[key] = (time.time() + ttl, raw)
+
+
+def _cache_delete(context: QuestionCacheContext) -> None:
+    """Forget a cached generation (one that failed the reference check)."""
+    key = question_cache_key(context)
+    _IN_MEMORY_CACHE.pop(key, None)
+    client = _redis()
+    if client is not None:
+        try:
+            client.delete(key)
+        except Exception as exc:  # pragma: no cover - depends on local Redis
+            LOGGER.warning("Redis question cache delete failed: %s", exc)
 
 
 def _rate_limit_per_minute() -> int:
@@ -376,15 +437,21 @@ def call_llm_with_cache_retry(
     from modules.llm_outbound_gate import question_llm_outbound_allowed
 
     _set_last_error(None)
-    cached = _cache_get(context, asked or [])
-    if cached:
-        return cached
-
     if not question_llm_outbound_allowed():
         _set_last_error(
             "LLM outbound gated off (LLM_LIVE_FETCH / QUESTION_GENERATION_MODE)."
         )
         return None
+
+    effective_asked = list(asked) if asked is not None else _extract_asked_from_prompt(prompt)
+    asked_norm = {
+        _normalise_question_text(item)
+        for item in effective_asked
+        if str(item).strip()
+    }
+    cached = _cache_get(context, effective_asked)
+    if cached:
+        return cached
 
     provider, api_key, model = question_bank._llm_provider()
     if not provider or not api_key or not model:
@@ -407,13 +474,16 @@ def call_llm_with_cache_retry(
     }
     attempts = _max_retries()
     delay = _retry_base_seconds()
+    url = question_bank._chat_completion_url(provider)
+    ssl_ctx = _SSL_CTX if url.startswith("https://") else None
+    timeout = float(os.getenv("QUESTION_LLM_TIMEOUT_SECONDS", "20"))
 
     for attempt in range(1, attempts + 1):
         if not _rate_limiter_allows(provider):
             _set_last_error("LLM rate limit exceeded.")
             return None
         req = urllib.request.Request(
-            question_bank._chat_completion_url(provider),
+            url,
             data=body,
             headers=headers,
             method="POST",
@@ -421,21 +491,60 @@ def call_llm_with_cache_retry(
         try:
             with urllib.request.urlopen(
                 req,
-                timeout=float(os.getenv("QUESTION_LLM_TIMEOUT_SECONDS", "20")),
-                context=_SSL_CTX,
+                timeout=timeout,
+                context=ssl_ctx,
             ) as resp:
                 raw = resp.read().decode("utf-8")
             content = _extract_provider_content(raw)
             if content:
-                _cache_set(context, content)
-                return content
-            _set_last_error("LLM response did not include message content.")
+                question = _extract_question_from_raw(content)
+                if question and _normalise_question_text(question) in asked_norm:
+                    _set_last_error("LLM returned a duplicate question already in asked.")
+                else:
+                    _cache_set(context, content)
+                    return content
+            else:
+                _set_last_error("LLM response did not include message content.")
         except urllib.error.HTTPError as exc:
-            try:
-                detail = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(exc)
-            _set_last_error(f"HTTP {exc.code}: {detail[:500]}")
+            if provider == "ollama" and exc.code == 404:
+                try:
+                    gen_req = urllib.request.Request(
+                        f"{question_bank._ollama_base_url()}/api/generate",
+                        data=json.dumps(
+                            {
+                                "model": model,
+                                "prompt": prompt,
+                                "stream": False,
+                                "format": "json",
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(
+                        gen_req,
+                        timeout=timeout,
+                        context=None,
+                    ) as resp:
+                        raw = resp.read().decode("utf-8")
+                    content = _extract_provider_content(raw)
+                    if content:
+                        question = _extract_question_from_raw(content)
+                        if question and _normalise_question_text(question) in asked_norm:
+                            _set_last_error("LLM returned a duplicate question already in asked.")
+                        else:
+                            _cache_set(context, content)
+                            return content
+                    else:
+                        _set_last_error("LLM response did not include message content.")
+                except Exception as fallback_exc:
+                    _set_last_error(f"HTTP {exc.code}: {str(fallback_exc)[:500]}")
+            else:
+                try:
+                    detail = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    detail = str(exc)
+                _set_last_error(f"HTTP {exc.code}: {detail[:500]}")
         except urllib.error.URLError as exc:
             _set_last_error(f"Network error: {getattr(exc, 'reason', exc)}")
         except TimeoutError:
@@ -453,7 +562,14 @@ def call_llm_with_cache_retry(
 def _extract_provider_content(raw: str) -> str | None:
     try:
         payload = json.loads(raw)
-        return payload["choices"][0]["message"]["content"].strip()
+        if isinstance(payload, dict):
+            if "choices" in payload:
+                return str(payload["choices"][0]["message"]["content"]).strip()
+            if isinstance(payload.get("message"), dict) and "content" in payload["message"]:
+                return str(payload["message"]["content"]).strip()
+            if "response" in payload:
+                return str(payload["response"]).strip()
+        return str(payload["choices"][0]["message"]["content"]).strip()
     except Exception as exc:
         _set_last_error(f"Invalid provider response: {exc}")
         return None
@@ -490,22 +606,6 @@ def _extract_question_from_raw(raw: str) -> str | None:
     return str(question) if question else None
 
 
-def _with_question_shape(
-    row: dict,
-    *,
-    skill: str,
-    sub_domain: str | None,
-    difficulty: str,
-    source: str | None = None,
-) -> dict:
-    row["skill"] = skill
-    row["sub_domain"] = sub_domain or "general"
-    row["difficulty"] = difficulty
-    if source:
-        row["source"] = source
-    return row
-
-
 def _structured_bank_path() -> Path:
     return Path(__file__).resolve().parents[1] / "data" / "fallback_question_bank.csv"
 
@@ -538,54 +638,256 @@ def _normalised_match(row_value: str | None, target: str | None) -> bool:
     return row_norm == target_norm or target_norm in row_norm or row_norm in target_norm
 
 
-def _structured_fallback_question(
-    skill: str,
-    sub_domain: Optional[str],
-    difficulty: str,
-    asked: list[str],
-    *,
-    company: str | None = None,
-    role: str | None = None,
-) -> dict | None:
-    rows = _load_structured_bank()
-    if not rows:
+def _name_key(value: object) -> str:
+    """Skill and tag names compared without case, spacing or punctuation.
+
+    'CI/CD' and 'cicd' are one name, as are 'Node.js' and 'nodejs'. '+' and
+    '#' are kept so that C, C++ and C# stay apart.
+    """
+    return re.sub(r"[^a-z0-9+#]", "", str(value or "").casefold())
+
+
+def _question_key(question: object) -> str:
+    return str(question or "").strip().lower()
+
+
+def _bank_entries() -> list[dict]:
+    """Every offline bank question with its own metadata, in serving order.
+
+    The curated fallback bank first, then the legacy bank. Each entry is the
+    served payload with the row's own skill, sub-domain, topic and
+    difficulty, plus ``_content`` saying how far it meets the content rules:
+    ``"full"`` (a substantial reference answer and keywords) or
+    ``"reference"`` (a substantial reference answer, no usable keywords).
+    Rows with no substantial reference answer are left out altogether.
+    """
+    global _OFFLINE_POOL
+    if _OFFLINE_POOL is not None:
+        return _OFFLINE_POOL
+    pool: list[dict] = []
+    seen: set[str] = set()
+
+    def admit(row: dict, *, source: str) -> None:
+        skill = (row.get("skill") or "").strip()
+        sub_domain = (row.get("sub_domain") or "").strip()
+        entry = {
+            "question": (row.get("question") or "").strip(),
+            "ideal_answer": (row.get("ideal_answer") or "").strip(),
+            "ideal_keywords": split_keywords(row.get("ideal_keywords")),
+            "source": source,
+            "company": (row.get("company") or "").strip(),
+            "role": (row.get("role") or "").strip(),
+            "skill": skill,
+            "sub_domain": sub_domain or "general",
+            "topic": (row.get("topic") or "").strip() or sub_domain or skill,
+            "difficulty": (row.get("difficulty") or "").strip().lower(),
+            "question_type": (row.get("question_type") or "").strip() or "conceptual",
+            "followups": [item.strip() for item in (row.get("followups") or "").split("|") if item.strip()],
+        }
+        key = _question_key(entry["question"])
+        if not skill or not key or key in seen:
+            return
+        issues = reference_issues(entry)
+        if not issues:
+            entry["_content"] = "full"
+        elif all("keyword" in issue for issue in issues):
+            entry["_content"] = "reference"
+        else:
+            return
+        seen.add(key)
+        pool.append(entry)
+
+    for row in _load_structured_bank():
+        admit(row, source="structured_fallback")
+    for row in getattr(question_bank._get_bank(), "rows", []) or []:
+        admit(row, source="csv")
+    _OFFLINE_POOL = pool
+    return pool
+
+
+def offline_pool() -> list[dict]:
+    """Every offline bank question that passes the content rules in full."""
+    return [entry for entry in _bank_entries() if entry["_content"] == "full"]
+
+
+def _bundle_entries(skill: object) -> list[dict]:
+    """Pre-generated bundle questions the selector may serve for ``skill``.
+
+    The same lookup ``select_bundle_question`` makes (reviewed, then
+    auto-checked; never generated, rejected, draft or retired), across all
+    difficulties. Entries carry the bundle identity only: the reference is
+    resolved from the store when the answer is scored. Empty under the
+    reviewed-only gate, which has its own selection path.
+    """
+    try:
+        from modules import bundle_store
+        from modules.bundle_selector import reviewed_bundles_only
+        from modules.question_bundles import candidate_payload
+
+        if reviewed_bundles_only():
+            return []
+        entries: list[dict] = []
+        for level in ("easy", "medium", "hard"):
+            for version in bundle_store.selectable_versions(
+                str(skill), level, None,
+                include_auto_checked=True, include_unchecked_generated=False,
+            ):
+                payload = candidate_payload(version)
+                topic = payload.get("topic") or "general"
+                entries.append({
+                    "question": str(payload["question"]).strip(),
+                    "skill": payload.get("skill") or str(skill),
+                    "sub_domain": topic,
+                    "topic": topic,
+                    "difficulty": str(payload.get("difficulty") or level).strip().lower(),
+                    "source": payload.get("source") or "auto_checked_bundle",
+                    "bundle_id": payload.get("bundle_id"),
+                    "version": payload.get("version"),
+                    "content_hash": payload.get("content_hash"),
+                    "target_concepts": [],
+                    "adaptive_selected": False,
+                    "company": "",
+                    "role": "",
+                    "_content": "full",
+                })
+        return entries
+    except Exception:  # the bundle store is optional content, never a hard dependency
+        return []
+
+
+def _whole_skill_alias(name: object) -> str | None:
+    """Bank skill that the alias table serves ``name`` from as a whole.
+
+    'SQL' -> DBMS and 'Operating Systems' -> OS map to that bank skill's own
+    sub-domain. 'CI/CD' -> System Design / devops only names one part of a
+    bank skill, which is no evidence that a question there is about CI/CD.
+    """
+    target = question_bank.SKILL_ALIASES.get(str(name or "").strip().lower())
+    if not target:
         return None
-    asked_norm = {q.lower().strip() for q in asked}
-    filters = [
-        lambda r: _normalised_match(r.get("company"), company)
-        and _normalised_match(r.get("role"), role)
-        and _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("sub_domain"), sub_domain)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("role"), role)
-        and _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("skill"), skill)
-        and _normalised_match(r.get("difficulty"), difficulty),
-        lambda r: _normalised_match(r.get("skill"), skill),
-    ]
-    for predicate in filters:
-        candidates = [
-            row for row in rows
-            if predicate(row) and (row.get("question") or "").lower().strip() not in asked_norm
-        ]
-        if candidates:
-            row = candidates[0]
-            return {
-                "question": row["question"],
-                "ideal_answer": row.get("ideal_answer", ""),
-                "ideal_keywords": [item.strip() for item in (row.get("ideal_keywords") or "").split("|") if item.strip()],
-                "source": "structured_fallback",
-                "company": row.get("company") or company,
-                "role": row.get("role") or role,
-                "skill": row.get("skill") or skill,
-                "sub_domain": row.get("sub_domain") or sub_domain or "general",
-                "topic": row.get("topic") or sub_domain or skill,
-                "difficulty": row.get("difficulty") or difficulty,
-                "question_type": row.get("question_type") or "conceptual",
-                "followups": [item.strip() for item in (row.get("followups") or "").split("|") if item.strip()],
-            }
+    return target[0] if question_bank.SKILL_ALIASES.get(target[0].strip().lower()) == target else None
+
+
+def _named_part(entry: dict) -> bool:
+    """True when a question's own tag is a named part of its bank skill
+    (docker, mongodb): an alias-table name that is not the whole skill."""
+    for tag in (entry["sub_domain"], entry["topic"]):
+        key = str(tag or "").strip().lower()
+        if key in question_bank.SKILL_ALIASES and _whole_skill_alias(key) is None:
+            return True
+    return False
+
+
+def _relevance(entry: dict, skill: object) -> int | None:
+    """How a question is tied to the requested skill, or ``None`` if it is not.
+
+    0  its sub-domain or topic names the skill, or it is filed under the
+       skill and not under a named part of it
+    1  the alias table serves the skill from the question's whole bank skill
+    2  it is filed under the skill but tagged as a named part of it (a
+       Docker question when System Design was asked for)
+
+    Only the question's explicit skill, sub-domain and topic and the alias
+    table decide this. The skill's name appearing in the question text is
+    not evidence of relevance and is not consulted.
+    """
+    key = _name_key(skill)
+    if not key:
+        return None
+    if key in (_name_key(entry["sub_domain"]), _name_key(entry["topic"])):
+        return 0
+    named = _named_part(entry)
+    if _name_key(entry["skill"]) == key:
+        return 2 if named else 0
+    whole = _whole_skill_alias(skill)
+    if whole and not named and _name_key(entry["skill"]) == _name_key(whole):
+        return 1
     return None
+
+
+def _eligible(skill: object, *, relaxed: bool = False) -> list[tuple[int, int, dict]]:
+    """Offline questions for ``skill`` as ``(rank, order, entry)``, best first.
+
+    Bank questions tied to the skill by their own metadata, then the skill's
+    pre-generated bundle questions. With ``relaxed`` (the staged flow), bank
+    questions that have a substantial reference answer but no keywords
+    follow, after everything that meets the rules in full.
+    """
+    ranked: list[tuple[int, int, dict]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(_bank_entries()):
+        rank = _relevance(entry, skill)
+        if rank is None:
+            continue
+        if entry["_content"] != "full":
+            if not relaxed:
+                continue
+            rank += 10
+        ranked.append((rank, index, entry))
+        seen.add(_question_key(entry["question"]))
+    offset = len(_bank_entries())
+    for index, entry in enumerate(_bundle_entries(skill)):
+        key = _question_key(entry["question"])
+        if key and key not in seen:
+            seen.add(key)
+            ranked.append((0, offset + index, entry))
+    return sorted(ranked, key=lambda item: item[:2])
+
+
+def _served(entry: dict) -> dict:
+    return {key: value for key, value in entry.items() if not key.startswith("_")}
+
+
+def eligible_offline_questions(skill: str, *, relaxed: bool = False) -> list[dict]:
+    """Offline questions that may be asked for ``skill``, most direct first.
+
+    The single eligibility rule: the pre-start availability check counts
+    this list and :func:`fallback_question` serves from it.
+    """
+    return [_served(entry) for _, _, entry in _eligible(skill, relaxed=relaxed)]
+
+
+def _reference_free_prompt(skill: str, sub_domain: Optional[str], difficulty: str, asked: list[str]) -> dict:
+    """A domain prompt or generic template that has not been asked yet.
+
+    These carry no reference material, so nothing can be scored against
+    them. Only the staged flow asks for them, and it leaves such a round
+    unscored (``no_reference_unscored``).
+    """
+    resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
+    if sub_domain is None or sub_domain == "general":
+        sub_domain = resolved_sub
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
+
+    def shaped(row: dict, source: str) -> dict:
+        row["skill"] = resolved_skill
+        row["sub_domain"] = sub_domain or "general"
+        row["difficulty"] = difficulty
+        row["source"] = row.get("source") or source
+        return row
+
+    if question_bank._question_generation_mode() != "template":
+        row = question_bank._domain_fallback_question(resolved_skill, sub_domain, asked)
+        if row and _normalise_question_text(row.get("question")) not in asked_norm:
+            return shaped(row, "domain_fallback")
+
+    row = question_bank._template_question(resolved_skill, sub_domain, difficulty)
+    if _normalise_question_text(row.get("question")) in asked_norm:
+        templates = question_bank._TEMPLATES.get(difficulty.lower(), question_bank._TEMPLATES["medium"])
+        topic = question_bank._template_topic(resolved_skill, sub_domain)
+        available = [
+            template.format(topic=topic, skill=resolved_skill)
+            for template in templates
+            if _normalise_question_text(template.format(topic=topic, skill=resolved_skill)) not in asked_norm
+        ]
+        if available:
+            row["question"] = available[0]
+        else:
+            row["question"] = (
+                f"For {resolved_skill}, explain a concrete lesson learned from working with "
+                f"{topic} (round {len(asked) + 1}). Include trade-offs and one edge case."
+            )
+    return shaped(row, "template")
 
 
 def fallback_question(
@@ -597,51 +899,113 @@ def fallback_question(
     mode: str | None = None,
     company: str | None = None,
     role: str | None = None,
+    relaxed: bool = False,
 ) -> dict:
-    """Deterministic fallback that bypasses strict LLM settings."""
-    resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
-    if sub_domain is None or sub_domain == "general":
-        sub_domain = resolved_sub
+    """An offline question for ``skill`` that has not been asked yet.
+
+    Chosen from :func:`eligible_offline_questions` only, so a skill is never
+    covered by a question about something else. Among those, a question
+    tied to the skill more directly comes first, then one matching the
+    preferred sub-domain and difficulty, then the target role and company.
+
+    When none is left this raises :class:`QuestionContentUnavailable`,
+    unless ``relaxed`` is set. The staged flow sets it: it also accepts
+    reference-only bank questions and, last, a reference-free prompt that it
+    leaves unscored. ``mode`` is accepted for callers that pass it; the
+    ``template`` generation mode skips the banks, as before.
+    """
+    asked_keys = {_normalise_question_text(question) for question in asked or [] if str(question).strip()}
+    want_sub = "" if str(sub_domain or "").strip().lower() in ("", "general") else _name_key(sub_domain)
+    want_difficulty = str(difficulty or "").strip().lower()
+
+    def order(item: tuple[int, int, dict]) -> tuple[int, int, int, int, int]:
+        rank, index, entry = item
+        same_difficulty = entry["difficulty"] == want_difficulty
+        same_sub = bool(want_sub) and _name_key(entry["sub_domain"]) == want_sub
+        return (
+            rank,
+            0 if same_sub and same_difficulty else 1 if same_difficulty else 2,
+            0 if role and _normalised_match(entry["role"], role) else 1,
+            0 if company and _normalised_match(entry["company"], company) else 1,
+            index,
+        )
 
     selected_mode = mode or question_bank._question_generation_mode()
-    if selected_mode != "template":
-        structured = _structured_fallback_question(
-            resolved_skill,
-            sub_domain,
-            difficulty,
-            asked,
-            company=company,
-            role=role,
-        )
-        if structured:
-            return structured
-        row = question_bank._get_bank().pick(resolved_skill, sub_domain, difficulty, asked)
-        if row:
-            return _with_question_shape(
-                row,
-                skill=resolved_skill,
-                sub_domain=sub_domain,
-                difficulty=difficulty,
-                source=row.get("source") or "csv",
-            )
-        row = question_bank._domain_fallback_question(resolved_skill, sub_domain, asked)
-        if row:
-            return _with_question_shape(
-                row,
-                skill=resolved_skill,
-                sub_domain=sub_domain,
-                difficulty=difficulty,
-                source=row.get("source") or "domain_fallback",
-            )
-
-    row = question_bank._template_question(resolved_skill, sub_domain, difficulty)
-    return _with_question_shape(
-        row,
-        skill=resolved_skill,
-        sub_domain=sub_domain,
-        difficulty=difficulty,
-        source=row.get("source") or "template",
+    eligible = [] if selected_mode == "template" else _eligible(skill, relaxed=relaxed)
+    remaining = [
+        item for item in eligible
+        if _normalise_question_text(item[2]["question"]) not in asked_keys
+    ]
+    if remaining:
+        return _served(min(remaining, key=order)[2])
+    if relaxed:
+        return _reference_free_prompt(skill, sub_domain, difficulty, asked)
+    raise QuestionContentUnavailable(
+        "No scored question with a reference answer and keywords is "
+        f"available for skill '{skill}'"
+        + (" that has not been asked already." if eligible else ".")
     )
+
+
+def offline_reference_count(skill: str) -> int:
+    """Distinct offline questions that may be asked for ``skill``."""
+    return len(_eligible(skill))
+
+
+def live_generation_available() -> bool:
+    """True when a question can be generated by the configured provider now."""
+    from modules.llm_outbound_gate import question_llm_outbound_allowed
+
+    provider, api_key, model = question_bank._llm_provider()
+    return bool(question_llm_outbound_allowed() and provider and api_key and model)
+
+
+def scope_sources(planned: list[dict]) -> list[dict]:
+    """Where each planned skill's questions come from, for the pre-start scope.
+
+    ``planned`` is ``[{"skill", "questions"}]`` for a whole plan. With
+    generation off, a skill is ``available`` only when its offline questions
+    (``offline_questions``, the list :func:`fallback_question` serves from)
+    cover its own planned count plus everything the other planned skills
+    could take from the same questions (``offline_needed``). Serving picks
+    one round at a time, so that is the count that cannot run short
+    whichever questions the other skills are given.
+    """
+    live = live_generation_available()
+    names: dict[str, str] = {}
+    need: dict[str, int] = {}
+    for item in planned:
+        key = _name_key(item["skill"])
+        names.setdefault(key, str(item["skill"]))
+        need[key] = need.get(key, 0) + int(item["questions"])
+    eligible = {key: _eligible(names[key]) for key in need}
+    pools = {key: {_question_key(entry["question"]) for _, _, entry in rows} for key, rows in eligible.items()}
+    out = []
+    for item in planned:
+        key = _name_key(item["skill"])
+        own = pools[key]
+        shared = {
+            other: min(need[other], len(own & pools[other]))
+            for other in need if other != key and own & pools[other]
+        }
+        needed = need[key] + sum(shared.values())
+        ranks = {rank for rank, _, _ in eligible[key]}
+        out.append({
+            "skill": item["skill"],
+            "questions": int(item["questions"]),
+            # The skill's questions across the whole plan (it can be planned
+            # in several blocks).
+            "planned_total": need[key],
+            # Set when every question comes from another bank skill that the
+            # alias table serves this one from (SQL from DBMS).
+            "served_as": _whole_skill_alias(item["skill"]) if ranks == {1} else None,
+            "offline_questions": len(own),
+            "offline_needed": needed,
+            "shared_with": [names[other] for other in shared],
+            "source": "generated" if live else "bank",
+            "available": live or len(own) >= needed,
+        })
+    return out
 
 
 def generate_question(
@@ -652,17 +1016,66 @@ def generate_question(
     *,
     target_concepts: list[str] | tuple[str, ...] | None = None,
     market_context: MarketQuestionContext | None = None,
+    relaxed: bool = False,
 ) -> dict:
-    """Hardened non-scoring question-generation entry point."""
+    """Hardened non-scoring question-generation entry point.
+
+    A pre-generated bundle for the skill first, then live generation, then
+    the offline fallback. A generated question has to pass
+    :func:`reference_gap`; otherwise it is retried once and then replaced.
+    Raises :class:`QuestionContentUnavailable` when nothing can be served
+    (never with ``relaxed``; see :func:`fallback_question`).
+    """
+    raw_sub = sub_domain
     resolved_skill, resolved_sub = question_bank.resolve_skill(skill)
     if sub_domain is None or sub_domain == "general":
         sub_domain = resolved_sub
     mode = question_bank._question_generation_mode()
     market = _resolve_market_context(market_context)
+    asked_norm = {_normalise_question_text(item) for item in (asked or []) if str(item).strip()}
+    # The generated question is about the skill the candidate confirmed
+    # (AWS), not the bank skill it is filed under (System Design); the bank
+    # sub-domain still supplies the focus hint.
+    requested = str(skill or "").strip()
+    prompt_skill = requested or resolved_skill
+    rejected: str | None = None
+
+    try:
+        from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
+
+        if not reviewed_bundles_only():
+            norm_topic = str(raw_sub or "").strip()
+            explicit_topic = (
+                None
+                if not norm_topic or norm_topic.lower() in {"general", "all", "default"}
+                else norm_topic
+            )
+            bundle_hit = select_bundle_question(
+                skill=skill,
+                difficulty=difficulty,
+                asked=asked,
+                topic=explicit_topic,
+            )
+            if bundle_hit is not None:
+                return {
+                    "question": bundle_hit["question"],
+                    "skill": bundle_hit.get("skill") or resolved_skill,
+                    "sub_domain": bundle_hit.get("topic") or sub_domain,
+                    "topic": bundle_hit.get("topic") or sub_domain,
+                    "difficulty": bundle_hit.get("difficulty") or difficulty,
+                    "source": bundle_hit.get("source") or "auto_checked_bundle",
+                    "bundle_id": bundle_hit.get("bundle_id"),
+                    "version": bundle_hit.get("version"),
+                    "content_hash": bundle_hit.get("content_hash"),
+                    "target_concepts": [],
+                    "adaptive_selected": False,
+                }
+    except Exception:
+        pass
 
     if mode in {"llm", "llm_csv_fallback"}:
         prompt = build_question_prompt(
-            skill=resolved_skill,
+            skill=prompt_skill,
             sub_domain=sub_domain,
             difficulty=difficulty,
             asked=asked,
@@ -670,7 +1083,7 @@ def generate_question(
             market_context=market,
         )
         context = QuestionCacheContext(
-            skill=resolved_skill,
+            skill=prompt_skill,
             sub_domain=sub_domain or "general",
             difficulty=difficulty,
             target_concepts=tuple(target_concepts or ()),
@@ -679,37 +1092,66 @@ def generate_question(
             resume_skills=tuple(market.resume_skills or ()),
             weak_skills=tuple(market.weak_skills or ()),
         )
-        raw = call_llm_with_cache_retry(prompt, context, asked=asked)
-        payload = parse_llm_json(raw or "")
-        if payload and payload.get("question"):
-            return {
-                "question": str(payload["question"]).strip(),
-                "ideal_answer": str(payload.get("ideal_answer", "")).strip(),
-                "ideal_keywords": payload.get("ideal_keywords", ""),
-                "source": "llm",
-                "llm_provider": question_bank._llm_provider()[0],
-                "llm_model": question_bank._llm_provider()[2],
-                "skill": resolved_skill,
-                "sub_domain": sub_domain or "general",
-                "difficulty": difficulty,
-                "topic": str(payload.get("topic") or sub_domain or resolved_skill),
-                "question_type": str(payload.get("question_type") or "conceptual"),
-                "company": str(payload.get("company") or market.company or ""),
-                "role": str(payload.get("role") or market.role or ""),
-                "followups": list(payload.get("followups") or []),
-                "cache_key": question_cache_key(context),
-            }
+        for _attempt in range(MAX_GENERATION_ATTEMPTS):
+            raw = call_llm_with_cache_retry(prompt, context, asked=asked)
+            if not raw:
+                # Gated off, unconfigured, or transport retries exhausted.
+                break
+            payload = parse_llm_json(raw)
+            row = None
+            if payload and payload.get("question"):
+                provider, _, model = question_bank._llm_provider()
+                row = {
+                    "question": str(payload["question"]).strip(),
+                    "ideal_answer": str(payload.get("ideal_answer") or "").strip(),
+                    "ideal_keywords": payload.get("ideal_keywords") or "",
+                    "source": "llm",
+                    "llm_provider": provider,
+                    "llm_model": model,
+                    "skill": resolved_skill,
+                    "sub_domain": sub_domain or "general",
+                    "difficulty": difficulty,
+                    "topic": str(payload.get("topic") or sub_domain or resolved_skill),
+                    "question_type": str(payload.get("question_type") or "conceptual"),
+                    "company": str(payload.get("company") or market.company or ""),
+                    "role": str(payload.get("role") or market.role or ""),
+                    "followups": list(payload.get("followups") or []),
+                    "cache_key": question_cache_key(context),
+                }
+            if row is None:
+                gap = "response was not a question object"
+            elif _normalise_question_text(row["question"]) in asked_norm:
+                gap = "duplicate of a question already asked"
+                _set_last_error("LLM returned a duplicate question already in asked.")
+            else:
+                gap = reference_gap(row)
+            if gap is None:
+                return row
+            # Never re-serve a rejected generation from the cache.
+            _cache_delete(context)
+            rejected = f"Generated question rejected: {gap}."
+            LOGGER.warning("LLM question for %s rejected (%s); attempt %d of %d.",
+                           prompt_skill, gap, _attempt + 1, MAX_GENERATION_ATTEMPTS)
 
-    row = fallback_question(
-        resolved_skill,
-        sub_domain,
-        difficulty,
-        asked,
-        mode=mode,
-        company=market.company,
-        role=market.role,
-    )
-    row["llm_fallback_reason"] = last_runtime_error()
+    reason = rejected or last_runtime_error()
+    try:
+        # The skill as confirmed, not the bank skill it resolves to: offline
+        # relevance is decided against the requested skill.
+        row = fallback_question(
+            requested or resolved_skill,
+            sub_domain,
+            difficulty,
+            asked,
+            mode=mode,
+            company=market.company,
+            role=market.role,
+            relaxed=relaxed,
+        )
+    except QuestionContentUnavailable as exc:
+        raise QuestionContentUnavailable(
+            str(exc) + (f" Live generation: {reason}" if reason else "")
+        ) from exc
+    row["llm_fallback_reason"] = reason
     row["fallback_generated_at"] = datetime.now(timezone.utc).isoformat()
     return row
 
@@ -730,13 +1172,20 @@ def warm_question_runtime() -> dict[str, object]:
 
 __all__ = [
     "QuestionCacheContext",
+    "QuestionContentUnavailable",
     "MarketQuestionContext",
     "build_question_prompt",
     "call_llm_with_cache_retry",
+    "eligible_offline_questions",
     "fallback_question",
     "generate_question",
     "last_runtime_error",
+    "live_generation_available",
+    "offline_pool",
+    "offline_reference_count",
     "parse_llm_json",
     "question_cache_key",
+    "reference_gap",
+    "scope_sources",
     "warm_question_runtime",
 ]

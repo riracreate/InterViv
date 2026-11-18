@@ -188,7 +188,7 @@ def process_narration_job(db: Any, job_id: str) -> dict[str, Any]:
     feedback — never labeled AI-written.
     Raises ``KeyError`` for an unknown id.
     """
-    from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.llm_outbound_gate import llm_consumer_enabled
     from modules.narration_provider import get_narration_provider
     from modules.narration_validator import validate_narration_artifact
 
@@ -260,7 +260,7 @@ def process_narration_job(db: Any, job_id: str) -> dict[str, Any]:
         "validation": "generation_disabled",
     }
 
-    if llm_live_fetch_enabled():
+    if llm_consumer_enabled("narration"):
         # Provider boundary: outside scoring transactions (worker only).
         last_error = None
         try:

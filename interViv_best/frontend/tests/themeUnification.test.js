@@ -8,13 +8,14 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8');
 
-test('shared tokens: system sans-serif and slate surfaces', () => {
+test('shared tokens: system sans-serif, cream surfaces, and a dark theme', () => {
   const theme = read('src/styles/theme.css');
   assert.match(theme, /--font-sans: ui-sans-serif, system-ui/);
   assert.match(theme, /--font-display: var\(--font-sans\)/);
   assert.match(theme, /--font-body: var\(--font-sans\)/);
-  assert.match(theme, /--color-surface: #f8fafc/);
+  assert.match(theme, /--color-surface: #f7f8f2/);
   assert.match(theme, /--color-card: #ffffff/);
+  assert.match(theme, /:root\[data-theme="dark"\]/);
   assert.doesNotMatch(read('src/styles/fonts.css'), /--font-(display|body): "Instrument Serif|--font-(display|body): "Barlow/);
 });
 

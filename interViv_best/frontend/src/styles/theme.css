@@ -25,34 +25,54 @@
   --space-8: 2rem;
 
   /* Radius */
-  --radius-card: 0.5rem;
+  --radius-card: 1rem;
   --radius-panel: 1.5rem;
   --radius-pill: 9999px;
 
   /* Status (shared hue language) */
-  --color-success: #0f766e;
-  --color-success-soft: #ecfdf5;
+  --color-success: #246748;
+  --color-success-soft: #ecf5ea;
   --color-warn: #b45309;
   --color-warn-soft: #fffbeb;
   --color-danger: #be123c;
   --color-danger-soft: #fff1f2;
-  --color-accent: #0e7490;
+  --color-accent: #245e43;
 
-  /* Light theme (slate) */
-  --color-surface: #f8fafc;
+  /* Light workspace */
+  --color-surface: #f7f8f2;
   --color-card: #ffffff;
-  --color-ink: #0f172a;
-  --color-ink-muted: #475569;
-  --color-border: #e2e8f0;
-  --color-background: #f8fafc;
-  --color-foreground: #0f172a;
-  --color-muted: #64748b;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --color-ink: #182720;
+  --color-ink-muted: #52645a;
+  --color-border: #e0e7dc;
+  --color-background: #f7f8f2;
+  --color-foreground: #182720;
+  --color-muted: #63736a;
+  --shadow-card: 0 8px 28px rgba(31, 56, 39, 0.045);
 
   /* Dark session surface (same token names, session scope overrides) */
   --color-session-bg: #0a0a0a;
   --color-session-card: rgba(255, 255, 255, 0.04);
   --color-session-border: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-surface: #18211b;
+  --color-card: #222e25;
+  --color-ink: #edf4e9;
+  --color-ink-muted: #c0ccbc;
+  --color-border: #405143;
+  --color-background: #18211b;
+  --color-foreground: #edf4e9;
+  --color-muted: #abb9a8;
+  --color-accent: #c2df9c;
+  --color-success: #a9dfb0;
+  --color-success-soft: #273c2c;
+  --color-warn: #f3d291;
+  --color-warn-soft: #3d3526;
+  --color-danger: #ffb8ba;
+  --color-danger-soft: #442c2e;
+  --shadow-card: 0 8px 28px rgba(0, 0, 0, .15);
 }
 
 .dashboard-session {
@@ -165,6 +185,28 @@
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
+/* Notices inside a panel. One warning and one error treatment for every
+   page: they are block elements with their own colours, so a page-level
+   paragraph rule (the hub pages have one) cannot grey them out. */
+.app-notice {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.app-notice-warn {
+  border-color: var(--color-warn);
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+}
+.app-notice-error {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.app-text-error { color: var(--color-danger); }
 .app-form-error {
   border: 1px solid var(--color-danger);
   border-radius: var(--radius-card);

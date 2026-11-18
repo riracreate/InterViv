@@ -1,0 +1,115 @@
+id: product-marketing
+title: Product Marketing
+aliases:
+- PMM Associate
+- Growth Marketing Analyst
+- GTM Specialist
+- Market Research Associate
+family: business
+levels:
+- intern
+- junior
+- mid
+practical_track: none
+status: draft
+version: 1
+level_expectations:
+  intern: Distinguishes product features from user benefits, identifies Ideal Customer
+    Profiles (ICPs) and competitive alternatives, writes clear value propositions,
+    and understands CAC, conversion rate, and activation funnels.
+  junior: Distinguishes product features from user benefits, identifies Ideal Customer
+    Profiles (ICPs) and competitive alternatives, writes clear value propositions,
+    and understands CAC, conversion rate, and activation funnels.
+  mid: Designs tiered Go-To-Market (GTM) launches (Tier 1 vs. Tier 3), equips sales/support
+    teams with battlecards, runs win/loss and pricing research, and attributes pipeline/adoption
+    impact accurately.
+level_expectation_review:
+  junior: needs owner edit
+competencies:
+- id: positioning-messaging-architecture
+  name: Positioning & Messaging Architecture
+  type: technical
+  weight: 0.15
+  skills:
+  - Positioning
+  scenario_topics: []
+- id: market-customer-research
+  name: Market & Customer Research
+  type: technical
+  weight: 0.15
+  skills:
+  - Market Research
+  scenario_topics: []
+- id: gtm-funnel-metrics
+  name: GTM & Funnel Metrics
+  type: technical
+  weight: 0.15
+  skills:
+  - Marketing Metrics
+  scenario_topics: []
+- id: go-to-market-launch-planning
+  name: Go-To-Market Launch Planning
+  type: role_scenario
+  weight: 0.3
+  skills: []
+  scenario_topics:
+  - Designing a launch plan for a new feature across existing vs. net-new segments;
+    responding to competitor pricing moves ([Google re:Work](https://rework.withgoogle.com/intl/en/guides/a-guide-to-structured-interviewing-for-better-hiring-practices?hl=en-US
+- id: cross-functional-alignment
+  name: Cross-Functional Alignment
+  type: behavioural
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Coordinating Product, Design, Sales, and Support around one launch narrative and
+    timeline
+- id: creative-ownership-iteration
+  name: Creative Ownership & Iteration
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Testing messaging hypotheses and pivoting quickly when campaign data underperforms
+draft_seeds:
+- kind: opener
+  text: Tell me about a campaign, club event, product launch, or research project
+    on your resume where you had to convince a specific audience to take action. How
+    did you choose the core message, and how did you know which channel actually drove
+    sign-ups?
+- kind: fundamentals
+  text: 'What is the difference between product positioning, messaging, and a tagline?
+    Take a technical feature like ''client-side browser webcam processing with zero
+    video upload'' and write positioning + messaging for two distinct personas: (1)
+    a college student practicing interviews in a hostel, and (2) a university placement
+    director.'
+- kind: tradeoff
+  text: Why do survey questions like 'Would you pay INR 499/month for this AI coach?'
+    systematically overestimate willingness to pay, and what research methods or behavioral
+    tests produce more reliable pricing and demand signals?
+- kind: scenario
+  text: Your B2B SaaS workflow tool is launching a new automated reporting add-on
+    in 4 weeks, and simultaneously your main competitor just made their basic reporting
+    tier free ([Google re:Work](https://rework.withgoogle.com/intl/en/guides/a-guide-to-structured-interviewing-for-better-hiring-practices?hl=en-US)).
+    How do you structure the launch tier, sharpen your differentiation, enable the
+    sales team, and measure 30-day success?
+- kind: behavioural
+  text: Describe a time a launch, event, or content piece fell short of your initial
+    goal. How did you diagnose whether the audience, channel, or message was wrong?
+provenance:
+  onet:
+    code: 13-1161.00
+    title: 13-1161.00 Market Research Analysts and Marketing Specialists
+    url: https://www.onetonline.org/link/summary/13-1161.00
+    accessed: '2026-11-17'
+    status: verified
+    page_title: 13-1161.00 - Market Research Analysts and Marketing Specialists
+    note: ''
+  esco:
+    code: 1221.3.2
+    title: marketing manager (ISCO 1221.3.2)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F6fcf4638-e7c7-4978-9302-9a7b63a3d57c&language=en
+    accessed: '2026-11-17'
+    status: verified
+    page_title: marketing manager
+    note: ''
+  source: docs/research/role_catalog_research.md

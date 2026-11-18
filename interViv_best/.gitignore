@@ -23,6 +23,7 @@ secrets*.json
 uploads/
 private/
 local-data/
+artifacts/
 .claude/
 .cursor/
 .matplotlib-cache/

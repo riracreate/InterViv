@@ -24,6 +24,7 @@ import { FeedbackCards } from "../components/dashboard/FeedbackCards";
 import { ScoringBreakdownPanel } from "../components/dashboard/ScoringBreakdownPanel";
 import Phase2InsightsPanel from "../components/dashboard/Phase2InsightsPanel";
 import { McqRoundReview } from "../components/dashboard/McqRoundReview";
+import TranscriptReview from "../components/dashboard/TranscriptReview";
 
 
 const pageMotion = {
@@ -269,6 +270,7 @@ export default function Dashboard() {
 
             {tab === "rounds" && (
               <div className="space-y-8">
+                <TranscriptReview rounds={data.rounds} />
                 <RoundTimeline rounds={data.rounds} />
                 {(data.mcqReviews || []).map((review, index) => (
                   <McqRoundReview key={`mcq-review-${index}`} review={review} />

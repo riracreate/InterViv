@@ -76,13 +76,15 @@ class BlockSpec(BaseModel):
     allow_optional_follow_ups: bool | None = None
     # Acceptance: lower per-block follow-up cap (default 2 when unset).
     max_follow_ups: int | None = Field(default=None, ge=0)
+    # Slice 2 (staged_v1): optional stage label stored in existing JSON columns.
+    stage: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _strip_strings(cls, data: Any) -> Any:
         if isinstance(data, dict):
             for key in ("id", "round_type", "category", "difficulty", "topic",
-                        "problem_id", "language", "review_policy"):
+                        "problem_id", "language", "review_policy", "stage"):
                 if isinstance(data.get(key), str):
                     data[key] = data[key].strip()
             for key in ("skills", "topics", "question_ids", "problem_ids"):
@@ -125,6 +127,41 @@ def derive_category(round_type: str, skills: list[str]) -> str:
     if round_type == "system_design":
         return "system_design"
     return "interview"
+
+
+def distribute_skills(skills: list[str], total: int) -> list[str]:
+    """Planned skill for each of an Interview block's ``total`` questions.
+
+    Confirmed order is kept and every skill gets a contiguous, near-equal
+    share (earlier skills take the remainder): ``[A, B, C]`` over 5 questions
+    is ``A A B B C``. With more skills than questions only the first
+    ``total`` skills are planned; :func:`interview_scope` reports the rest.
+    One skill keeps every question, as before.
+    """
+    planned = [s for s in skills if s][: max(0, int(total))]
+    if not planned:
+        return []
+    base, extra = divmod(int(total), len(planned))
+    out: list[str] = []
+    for index, skill in enumerate(planned):
+        out.extend([skill] * (base + (1 if index < extra else 0)))
+    return out
+
+
+def interview_scope(block: dict[str, Any]) -> dict[str, Any]:
+    """What an Interview block will ask: questions per skill, and any
+    confirmed skill the question budget cannot reach."""
+    skills = [s for s in (block.get("skills") or []) if s]
+    total = int(block.get("count") or 3)
+    planned = distribute_skills(skills, total)
+    counts: dict[str, int] = {}
+    for skill in planned:
+        counts[skill] = counts.get(skill, 0) + 1
+    return {
+        "questions": total,
+        "planned": [{"skill": skill, "questions": n} for skill, n in counts.items()],
+        "not_covered": [s for s in skills if s not in counts],
+    }
 
 
 def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -216,6 +253,15 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"Block {index + 1}: unsupported review_policy "
                 f"'{spec.review_policy}'."
             )
+        stage_value = (spec.stage or "").strip().lower() or None
+        if stage_value is not None:
+            from modules.staged_flow import STAGE_NAMES
+
+            if stage_value not in STAGE_NAMES:
+                raise ValueError(
+                    f"Block {index + 1}: unsupported stage '{spec.stage}'. "
+                    f"Allowed: {list(STAGE_NAMES)}."
+                )
         language = (spec.language or "").strip().lower() or None
         if category == "sql":
             if language is not None and language != "sql":
@@ -362,6 +408,7 @@ def normalize_blocks(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "position": index + 1,
             "round_type": round_type,
             "category": category,
+            "stage": stage_value,
             "skills": skills,
             "topic": topic,
             "count": count_value,
@@ -418,6 +465,12 @@ def legacy_to_blocks(
         coding_ids = [str(p).strip()
                       for p in (cfg.get("coding_problem_ids") or [])
                       if str(p).strip()]
+        # Free-text rounds share the confirmed skills in order, one skill per
+        # round, the way a multi-skill Interview block shares its questions.
+        # With the whole list on every round, each one resolved to the first
+        # skill.
+        free_text = [e for e in plan if e not in ("mcq", "sql", "coding")]
+        free_text_skills = iter(distribute_skills(skills, len(free_text)))
         for entry in plan:
             if entry == "mcq":
                 blocks.append({
@@ -464,9 +517,10 @@ def legacy_to_blocks(
                     coding_item["problem_ids"] = selected_coding
                 blocks.append(coding_item)
             else:
+                planned = next(free_text_skills, None)
                 blocks.append({
                     "round_type": "technical_short_answer",
-                    "skills": skills,
+                    "skills": [planned] if planned else skills,
                     "count": 1,
                     "duration_minutes": cfg.get("duration_minutes"),
                     "difficulty": cfg.get("difficulty"),
@@ -522,6 +576,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "block_total": 1,
                 "round_type": block["round_type"],
                 "category": category,
+                "stage": block.get("stage"),
                 "skills": list(block.get("skills") or []),
                 "topic": block.get("topic"),
                 "count": int(block.get("count") or 15),
@@ -550,6 +605,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": block["round_type"],
                     "category": category,
+                    "stage": block.get("stage"),
                     "skills": list(block.get("skills") or default_skills),
                     "topic": block.get("topic"),
                     "count": 1,
@@ -576,6 +632,7 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": "system_design",
                     "category": "system_design",
+                    "stage": block.get("stage"),
                     "skills": list(block.get("skills") or [SYSTEM_DESIGN_SKILL]),
                     "topic": block.get("topic"),
                     "count": 1,
@@ -589,6 +646,10 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 })
         else:
             total = int(block.get("count") or 3)
+            # One planned skill per question. A spec that carried the whole
+            # list resolved every round to its first skill, so a multi-skill
+            # block never credited (or covered) the others.
+            planned = distribute_skills(list(block.get("skills") or []), total)
             for item_index in range(total):
                 round_number += 1
                 expanded.append({
@@ -599,7 +660,8 @@ def expand_blocks(block_plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "block_total": total,
                     "round_type": "technical_short_answer",
                     "category": "interview",
-                    "skills": list(block.get("skills") or []),
+                    "stage": block.get("stage"),
+                    "skills": [planned[item_index]] if planned else [],
                     "topic": block.get("topic"),
                     "count": 1,
                     "duration_minutes": block.get("duration_minutes"),

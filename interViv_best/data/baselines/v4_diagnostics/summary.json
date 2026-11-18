@@ -1,0 +1,208 @@
+{
+ "produced_from_scorer_commit": "2bcd3d7a2f854f99c3684958a5f126229d03c91e",
+ "diagnostics_script_commit": "e3c516796beb86ce8f8a2623c2ef86a7531a51b5",
+ "diagnostics_script": "scripts/diagnose_scorer_v4.py",
+ "sha256_manifest": "data/baselines/v4/SHA256SUMS.json",
+ "answer_guard_v4_sha256": "90a77639bb0264cb61e0454f4508e1c5c7d3bae42b025b649d7cba52db2fa1ae",
+ "note": "Aggregates only (no rater or per-row data). Held-out metrics reproduced from locked v4 commit 2bcd3d7.",
+ "A": {
+  "all": {
+   "v3_final_score": {
+    "pearson": 0.3777,
+    "spearman": 0.3646,
+    "n": 789
+   },
+   "blended_cosine": {
+    "pearson": 0.6177,
+    "spearman": 0.6392,
+    "n": 789
+   },
+   "v4_without_model": {
+    "pearson": 0.6058,
+    "spearman": 0.6271,
+    "n": 789
+   },
+   "v4_with_model": {
+    "pearson": 0.6618,
+    "spearman": 0.6502,
+    "n": 789
+   }
+  },
+  "no_e11_e12": {
+   "v3_final_score": {
+    "pearson": 0.3801,
+    "spearman": 0.3785,
+    "n": 527
+   },
+   "blended_cosine": {
+    "pearson": 0.6079,
+    "spearman": 0.6381,
+    "n": 527
+   },
+   "v4_without_model": {
+    "pearson": 0.5915,
+    "spearman": 0.627,
+    "n": 527
+   },
+   "v4_with_model": {
+    "pearson": 0.648,
+    "spearman": 0.6418,
+    "n": 527
+   }
+  },
+  "diff_v4with_minus_blended_all": [
+   0.0103,
+   0.0814
+  ],
+  "diff_v4with_minus_v3_all": [
+   0.1128,
+   0.4425
+  ],
+  "spearman_diff_v4with_minus_blended_all": [
+   -0.0056,
+   0.0305
+  ],
+  "spearman_diff_v4with_minus_blended_no_e11_e12": [
+   -0.0123,
+   0.0218
+  ],
+  "compared_note": "blended cosine raw (0-100 rescale); v4 isotonic-calibrated on Mohler tune"
+ },
+ "B": {
+  "heldout_v4_chosen_ref_gating": {
+   "fp_rate_gte4.5": 0.0207,
+   "catch_lte1.0": 0.5556,
+   "n_high": 482,
+   "n_low": 18,
+   "fp_by_guard": {
+    "too_short": 8,
+    "off_topic": 1,
+    "repetition": 1
+   }
+  },
+  "heldout_v3_hard_caps": {
+   "fp_rate_gte4.5": 0.1846,
+   "catch_lte1.0": 0.6667,
+   "n_high": 482,
+   "n_low": 18,
+   "fp_by_guard": {
+    "too_short": 18,
+    "truncated_fragment": 60,
+    "gibberish": 1,
+    "question_parroting": 4,
+    "repetition": 5,
+    "off_topic": 1
+   }
+  },
+  "heldout_v4_no_short_caps": {
+   "fp_rate_gte4.5": 0.0041,
+   "catch_lte1.0": 0.0556,
+   "n_high": 482,
+   "n_low": 18,
+   "fp_by_guard": {
+    "off_topic": 1,
+    "repetition": 1
+   }
+  },
+  "n50_poor": {
+   "n": 20,
+   "v4_caught": 14,
+   "missed_count": 6,
+   "missed_words_mean": 16.8,
+   "missed_human_mean": 30.5
+  }
+ },
+ "C": {
+  "features": {
+   "semantic_score": {
+    "pearson": 0.4196,
+    "spearman": 0.4213,
+    "n": 50
+   },
+   "tfidf_score": {
+    "pearson": 0.2229,
+    "spearman": 0.192,
+    "n": 50
+   },
+   "concept_coverage": {
+    "pearson": 0.2499,
+    "spearman": 0.081,
+    "n": 50
+   },
+   "ideal_content_recall": {
+    "pearson": 0.4541,
+    "spearman": 0.4238,
+    "n": 50
+   },
+   "max_sentence_semantic_sim": {
+    "pearson": -0.0921,
+    "spearman": -0.0315,
+    "n": 50
+   },
+   "ref_sentence_coverage": {
+    "pearson": -0.0427,
+    "spearman": -0.0091,
+    "n": 50
+   }
+  },
+  "v4_before_calibration": {
+   "pearson": 0.3845,
+   "spearman": 0.4052,
+   "n": 50
+  },
+  "v4_after_calibration": {
+   "pearson": 0.3181,
+   "spearman": 0.387,
+   "n": 50
+  },
+  "band_definition": "bands from 23-rater mean: Poor 0-30, Average 31-60, Good 61-100 (docs/human_baseline_report.md); dataset label is separate",
+  "bands": {
+   "Poor (human 0-30)": {
+    "n": 16,
+    "mean_v4_cal": 93.4,
+    "mean_semantic": 0.76,
+    "mean_recall": 0.317,
+    "mean_sentence_cov": 0.892,
+    "mean_words": 6.0
+   },
+   "Average (31-60)": {
+    "n": 13,
+    "mean_v4_cal": 95.0,
+    "mean_semantic": 0.833,
+    "mean_recall": 0.285,
+    "mean_sentence_cov": 0.625,
+    "mean_words": 27.1
+   },
+   "Good (61-100)": {
+    "n": 21,
+    "mean_v4_cal": 95.2,
+    "mean_semantic": 0.847,
+    "mean_recall": 0.534,
+    "mean_sentence_cov": 0.855,
+    "mean_words": 46.5
+   }
+  }
+ },
+ "D": {
+  "heldout_v4_raw_percentiles": {
+   "0": 19.5,
+   "10": 41.4,
+   "25": 52.4,
+   "50": 65.5,
+   "75": 76.2,
+   "90": 88.2,
+   "100": 100.0
+  },
+  "heldout_v4_cal_percentiles": {
+   "0": 0.0,
+   "10": 72.3,
+   "25": 82.4,
+   "50": 88.9,
+   "75": 93.6,
+   "90": 98.5,
+   "100": 100.0
+  },
+  "heldout_cal_mean": 86.0,
+  "human_mean_x20": 82.1
+ }
+}

@@ -1,0 +1,43 @@
+diff --git a/interViv_best/modules/answer_guard_v4.py b/interViv_best/modules/answer_guard_v4.py
+index 1c0798f..c70e7c3 100644
+--- a/interViv_best/modules/answer_guard_v4.py
++++ b/interViv_best/modules/answer_guard_v4.py
+@@ -136,12 +136,11 @@ def _check_basic_rules_v4(
+                 return _cap("keyword_stuffing", 35)
+ 
+     meaningful_tokens = [t for t in alpha_tokens if _v3._is_meaningful_token(t, known)]
+-    # A short answer that still covers most reference content is complete,
+-    # not too short (Mohler short full-marks answers; v4 fixture case).
+-    ref_content = _v3._content_tokens(ideal_answer)
+-    ans_content = _v3._content_tokens(text)
+-    content_recall = len(ans_content & ref_content) / len(ref_content) if ref_content else 0.0
+-    if len(tokens) < 8 and short_vs_ref and content_recall < 0.50:
++    # Similarity or recall alone never lifts a short-answer cap: a short
++    # answer that is short relative to its reference is capped. Complete
++    # short answers escape only by not being short for their reference
++    # (short reference, or >= 8 tokens).
++    if len(tokens) < 8 and short_vs_ref:
+         return _cap("too_short", 20)
+     if len(tokens) < 8 and len(meaningful_tokens) < 3 and not ref_tokens:
+         return _cap("too_short", 20)
+diff --git a/interViv_best/tests/test_scorer_v4.py b/interViv_best/tests/test_scorer_v4.py
+index 9cd1469..5174b51 100644
+--- a/interViv_best/tests/test_scorer_v4.py
++++ b/interViv_best/tests/test_scorer_v4.py
+@@ -89,6 +89,16 @@ def test_guard_v4_short_full_marks_not_too_short() -> None:
+     assert out["cap_required"] is False
+ 
+ 
++def test_guard_v4_similarity_alone_does_not_lift_short_cap() -> None:
++    # Verbatim fragment of a long reference: high overlap, still capped.
++    out = check_answer_quality_v4(
++        "Encapsulation hides internal state",
++        question_text="Explain the four pillars of OOP.",
++        ideal_answer=OOP_IDEAL,
++    )
++    assert out["reason"] == "too_short"
++
++
+ def test_guard_v4_still_catches_gibberish_and_repetition() -> None:
+     assert check_answer_quality_v4("asdf qwer zxcv jkl;")["reason"] == "gibberish"
+     repeated = check_answer_quality_v4(" ".join(["banana"] * 6))

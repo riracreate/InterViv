@@ -11,8 +11,9 @@ After each round, the selector:
      with the spec-7b prompt extension that primes the model on
      the target concepts.
   4. Otherwise falls back transparently to
-     ``modules.question_bank.get_next_question(...)``, which
-     handles its own LLM/CSV/template chain.
+     ``modules.question_runtime.generate_question(...)``: the LLM,
+     then an offline bank question with a reference answer, else
+     ``QuestionContentUnavailable``.
 
 Design notes
 ------------
@@ -33,24 +34,31 @@ Design notes
 - Falls back gracefully when:
     - the user is anonymous (``user_id`` empty) → no concepts
     - the user has no concept mastery yet  → empty target list
-    - the LLM call fails / times out      → CSV/template fallback
+    - the LLM call fails / times out      → offline bank question
+    - the LLM answer has no reference     → not served; same fallback
     - the target skill is unknown to the KG → empty target list
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 
+from modules import question_bank, question_runtime as _qr
 from modules.concept_mastery import ConceptMastery, MasteryLevel
 from modules.question_runtime import (
     MarketQuestionContext,
     QuestionCacheContext,
+    _cache_delete,
     _resolve_market_context,
     build_question_prompt,
     call_llm_with_cache_retry,
+    fallback_question,
     generate_question,
+    last_runtime_error,
     parse_llm_json,
+    reference_gap,
 )
 from modules.skill_graph import StudentSkillGraph
 
@@ -155,7 +163,8 @@ def choose_adaptive_target(
 
     Priority:
       1. If a role is selected, recompute Gap Analysis and pick the
-         top ranked weak area.
+         top ranked weak area inside ``session_skills`` (the caller's
+         scope); a weak area outside it never becomes the target.
       2. Otherwise, pick the lowest-scoring skill from StudentSkillGraph.
       3. If neither has usable data, preserve the existing rotation skill.
 
@@ -173,6 +182,12 @@ def choose_adaptive_target(
 
             report = GapAnalyzer().compute_gap(user_id=user_id, role_id=str(target_role_id))
             for weak_area in report.ranked_weak_areas:
+                # Same scope filter as the skill-graph path below: without it
+                # an out-of-scope weak area supplied the difficulty and
+                # concepts for a question the caller then asked on another
+                # skill.
+                if allowed and str(weak_area.skill).strip().lower() not in allowed:
+                    continue
                 skill = weak_area.skill
                 source = "gap_analysis"
                 break
@@ -277,6 +292,9 @@ def build_targeted_prompt(
     return base_prompt + SPEC_PROMPT_EXTENSION_TEMPLATE.format(concept_list=concept_list)
 
 
+_ORIG_CALL_LLM_WITH_CACHE_RETRY = call_llm_with_cache_retry
+
+
 def _call_llm(prompt: str) -> Optional[str]:
     """POST the prompt to the configured LLM and return raw content.
 
@@ -286,7 +304,12 @@ def _call_llm(prompt: str) -> Optional[str]:
     """
     if _CURRENT_CACHE_CONTEXT is None:
         return None
-    return call_llm_with_cache_retry(
+    fn = (
+        call_llm_with_cache_retry
+        if call_llm_with_cache_retry is not _ORIG_CALL_LLM_WITH_CACHE_RETRY
+        else _qr.call_llm_with_cache_retry
+    )
+    return fn(
         prompt,
         _CURRENT_CACHE_CONTEXT,
         asked=_CURRENT_ASKED,
@@ -352,6 +375,16 @@ def _generate_targeted_question(
         payload["sub_domain"] = sub_domain or "general"
         payload["difficulty"] = difficulty
         payload["source"] = "llm-adaptive"
+        gap = reference_gap(payload)
+        if gap is not None:
+            # Not servable as a scored question. Drop it from the cache; the
+            # caller falls back to content that passes the content rules.
+            _cache_delete(_CURRENT_CACHE_CONTEXT)
+            LOGGER.warning("Targeted question for %s rejected: %s.", skill, gap)
+            return None
+        provider, _, model = question_bank._llm_provider()
+        payload.setdefault("llm_provider", provider)
+        payload.setdefault("llm_model", model)
         return payload
     finally:
         _CURRENT_CACHE_CONTEXT = None
@@ -371,6 +404,7 @@ def select_next_question(
     resume_skills: Optional[list[str]] = None,
     weak_skills: Optional[list[str]] = None,
     concept_limit: int = DEFAULT_TARGET_CONCEPT_LIMIT,
+    relaxed: bool = False,
 ) -> dict:
     """Adaptive question selector entry point.
 
@@ -388,6 +422,12 @@ def select_next_question(
     if target_concepts is None and user_id:
         target_concepts = pick_target_concepts(user_id, skill, concept_limit)
     target_concepts = list(target_concepts or [])
+    market = MarketQuestionContext(
+        company_id=target_company_id,
+        role_id=target_role_id,
+        resume_skills=tuple(resume_skills or ()),
+        weak_skills=tuple(weak_skills or target_concepts or ()),
+    )
 
     if target_concepts:
         targeted = _generate_targeted_question(
@@ -406,18 +446,36 @@ def select_next_question(
             targeted["adaptive_selected"] = True
             return targeted
 
-    payload = generate_question(
+        resolved_market = _resolve_market_context(market)
+        try:
+            payload = fallback_question(
+                skill,
+                sub_domain,
+                difficulty,
+                asked,
+                company=resolved_market.company,
+                role=resolved_market.role,
+                relaxed=relaxed,
+            )
+        except _qr.QuestionContentUnavailable:
+            # Nothing offline is about this skill. The targeted generation
+            # failed, but a bundle or a plain generation may still serve it.
+            payload = None
+        if payload is not None:
+            payload["llm_fallback_reason"] = last_runtime_error()
+            payload["fallback_generated_at"] = datetime.now(timezone.utc).isoformat()
+            payload["target_concepts"] = target_concepts
+            payload["adaptive_selected"] = False
+            return payload
+
+    payload = _qr.generate_question(
         skill,
         sub_domain,
         difficulty,
         asked,
         target_concepts=target_concepts,
-        market_context=MarketQuestionContext(
-            company_id=target_company_id,
-            role_id=target_role_id,
-            resume_skills=tuple(resume_skills or ()),
-            weak_skills=tuple(weak_skills or target_concepts or ()),
-        ),
+        market_context=market,
+        relaxed=relaxed,
     )
     if isinstance(payload, dict):
         payload.setdefault("target_concepts", target_concepts)

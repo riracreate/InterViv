@@ -564,6 +564,18 @@ export function fetchAvCapabilities() {
   return request("/av/capabilities");
 }
 
+export function fetchRoleCatalog() {
+  return request("/role-practice/catalog");
+}
+
+export function planRolePractice(payload) {
+  return request("/role-practice/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchSystemDesignAttempts() {
   return request("/av/system-design-attempts");
 }

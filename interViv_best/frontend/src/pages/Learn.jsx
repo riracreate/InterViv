@@ -242,15 +242,10 @@ export default function Learn() {
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
       <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
-        <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-          Learn
-        </h1>
-        <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-          Next steps, mistakes, spaced reviews, retry sets, and bookmarks —
-          everything here is built from your recorded attempts. Assisted and
-          unassisted work is labeled throughout. Reviews are practice, not
-          measured mastery.
-        </p>
+        <header className="app-page-hero"><p className="iv-page-kicker">Improve / Learning hub</p>
+          <h1>Turn practice into progress.</h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)]">Revisit mistakes, review saved questions, and pick up where you left off. Reviews are practice and do not change measured mastery.</p>
+        </header>
 
         {error && (
           <div role="alert" className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">

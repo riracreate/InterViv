@@ -3,8 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { fetchSession } from '../lib/api';
 import { interviewStateFromSession } from '../lib/accountOverview';
 import { accountLoadAction } from '../lib/requestErrors';
+import { interviewScreenForSession } from '../lib/stagedSession';
 
 const Interview = lazy(() => import('../pages/Interview.jsx'));
+const StagedInterview = lazy(() => import('../pages/StagedInterview.jsx'));
 
 export default function InterviewRoute() {
   const { sessionId } = useParams();
@@ -18,7 +20,12 @@ export default function InterviewRoute() {
     setError('');
     fetchSession(sessionId).then(session => {
       if (cancelled) return;
-      if (session.status === 'completed') {
+      const screen = interviewScreenForSession(session);
+      if (screen === 'staged') {
+        setLoaded({ sessionId: session.session_id, stagedSession: session });
+        return;
+      }
+      if (screen === 'dashboard') {
         navigate(`/dashboard/${encodeURIComponent(sessionId)}`, { replace: true });
         return;
       }
@@ -36,5 +43,7 @@ export default function InterviewRoute() {
   const waiting = <div className="min-h-screen grid place-items-center bg-white text-slate-700"><p role="status">Loading interview…</p></div>;
   if (error) return <main className="min-h-screen grid place-items-center bg-white p-6"><div><p role="alert">{error}</p><button type="button" className="mt-4 mr-5 underline" onClick={() => setRetry(value => value + 1)}>Try again</button><Link to="/home" className="underline">Back to Home</Link></div></main>;
   if (!loaded || loaded.sessionId !== sessionId) return waiting;
-  return <Suspense fallback={waiting}><Interview key={sessionId} sessionState={loaded} /></Suspense>;
+  return <Suspense fallback={waiting}>{loaded.stagedSession
+    ? <StagedInterview key={sessionId} session={loaded.stagedSession} />
+    : <Interview key={sessionId} sessionState={loaded} />}</Suspense>;
 }

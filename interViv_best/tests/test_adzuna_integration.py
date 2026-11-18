@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -62,6 +63,29 @@ def test_safe_redirect_rejects_unsafe():
     assert safe_redirect_url("javascript:alert(1)") is None
     assert safe_redirect_url("https://evil.example/phish") is None
     assert safe_redirect_url("data:text/html,hi") is None
+
+
+def test_httpx_info_logs_redact_live_credentials(monkeypatch, caplog):
+    """The underlying HTTP library must not log Adzuna query credentials."""
+    from modules import adzuna_client
+
+    monkeypatch.setenv("JOBS_LIVE_FETCH", "1")
+    monkeypatch.setenv("ADZUNA_APP_ID", "test-sensitive-id")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "test-sensitive-key")
+    get_settings.cache_clear()
+    original = httpx.Client
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"results": [], "count": 0}))
+    monkeypatch.setattr(adzuna_client.httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
+    caplog.set_level(logging.INFO, logger="httpx")
+    try:
+        result = adzuna_client.fetch_search(q="python", where="", page=1, country="in")
+        assert result["jobs"] == []
+        assert "api.adzuna.com" in caplog.text
+        assert "test-sensitive-id" not in caplog.text
+        assert "test-sensitive-key" not in caplog.text
+        assert caplog.text.count("[redacted]") >= 2
+    finally:
+        get_settings.cache_clear()
 
 
 def test_live_empty_results_distinct_from_config_failure(monkeypatch):

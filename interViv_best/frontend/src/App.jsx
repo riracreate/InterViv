@@ -14,10 +14,12 @@ import Ats from './pages/Ats.jsx';
 import Jobs from './pages/Jobs.jsx';
 import Coach from './pages/Coach.jsx';
 import Resources from './pages/Resources.jsx';
+import CareerProfile from './pages/CareerProfile.jsx';
 import Home from './pages/Home.jsx';
 import Progress from './pages/Progress.jsx';
 import InterviewRoute from './components/InterviewRoute.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
+import ScrollManager from './components/ScrollManager.jsx';
 
 function guarded(page) {
   return <RequireAuth>{page}</RequireAuth>;
@@ -25,7 +27,7 @@ function guarded(page) {
 
 export default function App() {
   return (
-    <Routes>
+    <><ScrollManager /><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
@@ -39,11 +41,12 @@ export default function App() {
       <Route path="/jobs" element={guarded(<Jobs />)} />
       <Route path="/coach" element={guarded(<Coach />)} />
       <Route path="/resources" element={guarded(<Resources />)} />
+      <Route path="/career" element={guarded(<CareerProfile />)} />
       <Route path="/interview/:sessionId" element={guarded(<InterviewRoute />)} />
       <Route path="/dashboard/:sessionId" element={guarded(<Dashboard />)} />
       <Route path="/dashboard" element={guarded(<Progress />)} />
       <Route path="/gap-analysis/:userId/:roleId" element={guarded(<GapAnalysis />)} />
       <Route path="/roadmap/:userId/:roleId" element={guarded(<Roadmap />)} />
-    </Routes>
+    </Routes></>
   );
 }

@@ -1,0 +1,124 @@
+id: backend-engineer
+title: Backend Engineer
+aliases:
+- SDE-1 (Backend)
+- API Developer
+- Server-Side Engineer
+- Java/Python Developer
+family: engineering
+levels:
+- intern
+- junior
+- mid
+practical_track: coding
+status: draft
+version: 1
+level_expectations:
+  intern: Writes clean Python or Java endpoints, explains HTTP status codes and idempotency,
+    normalizes relational tables with proper primary/foreign keys and indexes, and
+    understands process vs. thread fundamentals.
+  junior: Writes clean Python or Java endpoints, explains HTTP status codes and idempotency,
+    normalizes relational tables with proper primary/foreign keys and indexes, and
+    understands process vs. thread fundamentals.
+  mid: Designs pagination, caching invalidation, database transaction isolation levels,
+    connection pooling, asynchronous queues, and observability under load.
+level_expectation_review:
+  junior: needs owner edit
+competencies:
+- id: backend-programming-python-java
+  name: Backend Programming (Python / Java)
+  type: technical
+  weight: 0.2
+  skills:
+  - Python
+  - Java
+  - OOP
+  scenario_topics: []
+- id: database-management-systems-dbms
+  name: Database Management Systems (DBMS)
+  type: technical
+  weight: 0.15
+  skills:
+  - DBMS
+  - SQL
+  scenario_topics: []
+- id: rest-apis-service-design
+  name: REST APIs & Service Design
+  type: technical
+  weight: 0.15
+  skills:
+  - REST APIs
+  scenario_topics: []
+- id: operating-systems-runtime-basics
+  name: Operating Systems & Runtime Basics
+  type: technical
+  weight: 0.1
+  skills:
+  - Operating Systems
+  scenario_topics: []
+- id: production-debugging-reliability
+  name: Production Debugging & Reliability
+  type: role_scenario
+  weight: 0.2
+  skills: []
+  scenario_topics:
+  - Latency spikes, N+1 query regressions, race conditions in payment/order flows,
+    safe rollbacks
+- id: ownership-engineering-rigor
+  name: Ownership & Engineering Rigor
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Taking end-to-end responsibility for bugs, testing edge cases, post-incident follow-through
+- id: cross-team-technical-collaboration
+  name: Cross-Team Technical Collaboration
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Resolving API contract mismatches with frontend, QA, or mobile teammates
+draft_seeds:
+- kind: resume-project-opener-unscored-coaching
+  text: In your e-commerce backend project, you used JWT authentication and Redis
+    caching. Why did you cache product listings in Redis instead of relying on PostgreSQL
+    indexes, and how did you prevent stale prices when an admin updated inventory?
+- kind: core-technical-fundamentals-intern-junior-or-missing-skill
+  text: What makes an HTTP method idempotent, why is PUT considered idempotent while
+    POST typically is not, and how would you prevent duplicate charges if a client
+    retries a POST /payments request after a network timeout?
+- kind: core-technical-deep-trade-off-mid-or-claimed-skill
+  text: Two concurrent transactions read a user's wallet balance of 500, verify sufficient
+    funds, and each deduct 400. Which SQL isolation phenomena is occurring, why does
+    Read Committed fail to stop it without explicit locking, and how do SELECT FOR
+    UPDATE vs. optimistic concurrency version columns trade off under high contention?
+- kind: role-scenario-situational-scored
+  text: Ten minutes after deploying a minor release to the order-history service,
+    p95 API latency jumps from 120 ms to 4.2 seconds and database CPU hits 98%, though
+    error rates are still below 1%. Walk through your first 15 minutes of triage and
+    how you decide between rolling back and debugging live.
+- kind: behavioural
+  text: Tell me about the hardest bug or system failure you had to track down in a
+    project or internship where your first hypothesis turned out to be wrong. How
+    did you narrow down the real cause, and what changed afterward?
+- kind: non-leading-follow-up-probe
+  text: What specific instrumentation or test did you personally add so that class
+    of bug would be caught before deployment?
+provenance:
+  onet:
+    code: 15-1252.00
+    title: 15-1252.00 Software Developers
+    url: https://www.onetonline.org/link/summary/15-1252.00
+    accessed: '2026-11-17'
+    status: verified
+    page_title: 15-1252.00 - Software Developers
+    note: ''
+  esco:
+    code: '2512.3'
+    title: software developer (ISCO 2512.3)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Ff2b15a0e-e65a-438a-affb-29b9d50b77d1&language=en
+    accessed: '2026-11-17'
+    status: verified
+    page_title: software developer
+    note: ''
+  source: docs/research/role_catalog_research.md

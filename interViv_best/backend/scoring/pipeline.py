@@ -32,6 +32,7 @@ from backend.integrations import (
 )
 from modules.scoring_schema import (
     FINAL_SCORE_WEIGHTS,
+    FINAL_SCORE_WEIGHTS_V4,
     KG_BONUS_MAX,
     NER_BONUS_MAX_ENTITIES,
     NER_BONUS_PER_ENTITY,
@@ -39,7 +40,9 @@ from modules.scoring_schema import (
     build_concepts_summary,
     build_guard_summary,
     build_rubric_scores,
+    current_scorer_version,
 )
+from modules.question_concepts import question_concepts_summary
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +538,258 @@ def _debug_scoring_log(payload: dict[str, Any]) -> None:
     logger.info("DEBUG_SCORING %s", json.dumps(payload, default=str, ensure_ascii=True))
 
 
+# ── Scorer v4 (opt-in via SCORER_VERSION=v4; v3 above stays default) ───────
+
+@lru_cache(maxsize=1)
+def _load_v4_regression() -> Any | None:
+    try:
+        path = locate_file("scorer_v4_regression.joblib", group="model")
+    except IntegrationError:
+        return None
+    try:
+        payload = joblib.load(path)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) and payload.get("model") is not None else None
+
+
+@lru_cache(maxsize=1)
+def _load_v4_calibration() -> tuple[tuple[float, ...], tuple[float, ...]] | None:
+    try:
+        path = locate_file("scorer_v4_calibration.json", group="model")
+    except IntegrationError:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        xs = tuple(float(v) for v in data["x"])
+        ys = tuple(float(v) for v in data["y"])
+    except Exception:
+        return None
+    return (xs, ys) if len(xs) == len(ys) and len(xs) >= 2 else None
+
+
+def _apply_v4_calibration(score: float) -> float:
+    knots = _load_v4_calibration()
+    if knots is None:
+        return max(0.0, min(float(score), 100.0))
+    xs, ys = knots
+    if score <= xs[0]:
+        return max(0.0, min(ys[0], 100.0))
+    if score >= xs[-1]:
+        return max(0.0, min(ys[-1], 100.0))
+    for i in range(1, len(xs)):
+        if score <= xs[i]:
+            span = xs[i] - xs[i - 1] or 1.0
+            frac = (score - xs[i - 1]) / span
+            return max(0.0, min(ys[i - 1] + frac * (ys[i] - ys[i - 1]), 100.0))
+    return max(0.0, min(ys[-1], 100.0))
+
+
+def _v4_model_component(features: dict[str, float]) -> float | None:
+    payload = _load_v4_regression()
+    if payload is None:
+        return None
+    from modules.scoring_features import FEATURE_NAMES, feature_vector
+
+    names = tuple(payload.get("feature_names") or FEATURE_NAMES)
+    vector = [[float(features[name]) for name in names]]
+    try:
+        pred = float(payload["model"].predict(vector)[0])
+    except Exception:
+        return None
+    return max(0.0, min(pred, 1.0))
+
+
+def _run_scoring_pipeline_v4(
+    *,
+    answer_text: str,
+    word_count: int = 0,
+    engagement_label: str | None = None,
+    wpm: float | None = None,
+    pause_count: int | None = None,
+    question_context: dict[str, Any] | None = None,
+    difficulty: str = "medium",
+    candidate_baseline: float | None = None,
+) -> dict[str, Any]:
+    """Scorer v4: no 0.5 pin, strict concept slot, shared features, calibrated."""
+    from modules.answer_guard_v4 import check_answer_quality_v4
+    from modules.scoring_features import build_scoring_features
+
+    question_context = question_context or {}
+    client_word_count = word_count
+    word_count = _server_word_count(answer_text)
+    ideal_answer = question_context.get("ideal_answer", "") or ""
+    required_concepts = question_context.get("required_concepts") or None
+
+    guard = check_answer_quality_v4(
+        answer_text,
+        question_text=question_context.get("question", "") or "",
+        ideal_keywords=question_context.get("ideal_keywords", "") or "",
+        ideal_answer=ideal_answer,
+    )
+
+    nlp_score, nlp_payload = _run_nlp_score(
+        answer_text, question_context, difficulty, candidate_baseline
+    )
+    _p = nlp_payload if isinstance(nlp_payload, dict) else {}
+    layer1_score = _coerce_float(_p.get("layer1_score", 0.0))
+    layer2_score = _coerce_float(_p.get("layer2_score", 0.0))
+    layer3_score = _coerce_float(_p.get("layer3_score", 0.0))
+
+    features = build_scoring_features(
+        answer_text=answer_text,
+        ideal_answer=ideal_answer,
+        required_concepts=required_concepts,
+    )
+    semantic_component = features["semantic_score"]
+    tfidf_score = features["tfidf_score"]
+    concept_coverage = features["concept_coverage"]
+
+    cos_similarity, length_ratio = _compute_server_side_metrics(
+        answer_text, ideal_answer, word_count
+    )
+    classifier = _run_classifier(
+        cos_similarity=_coerce_float(_p.get("cosine_similarity", cos_similarity)),
+        length_ratio=_coerce_float(_p.get("clarity_score", length_ratio)),
+        keyword_coverage=_coerce_float(_p.get("keyword_coverage", 0.0)),
+        word_count=word_count,
+        concept_coverage=_coerce_float(_p.get("concept_coverage", 0.0)),
+    )
+    svm_label = str(classifier["label"])
+
+    kg_score, kg_payload = _run_knowledge_graph(answer_text, question_context)
+    ner_entities = _run_ner(answer_text)
+    ner_score = float(len(ner_entities))
+    if isinstance(kg_payload, dict):
+        kg_label = str(kg_payload.get("kg_label") or "")
+        covered_concepts = [str(x) for x in (kg_payload.get("found_nodes") or [])]
+        missing_concepts = [str(x) for x in (kg_payload.get("missing_key") or [])]
+    else:
+        kg_label = ""
+        covered_concepts = []
+        missing_concepts = []
+
+    model_component = _v4_model_component(features)
+    terms: dict[str, tuple[float, float]] = {
+        "semantic_or_lexical": (FINAL_SCORE_WEIGHTS_V4["semantic_or_lexical"], semantic_component),
+        "tfidf": (FINAL_SCORE_WEIGHTS_V4["tfidf"], tfidf_score),
+    }
+    if model_component is not None:
+        terms["model"] = (FINAL_SCORE_WEIGHTS_V4["model"], model_component)
+    if required_concepts:
+        terms["keyword"] = (FINAL_SCORE_WEIGHTS_V4["keyword"], concept_coverage)
+    weight_sum = sum(w for w, _ in terms.values()) or 1.0
+    base_score = 100.0 * sum(w * v for w, v in terms.values()) / weight_sum
+
+    kg_bonus = min(max(kg_score / 100.0, 0.0), 1.0) * KG_BONUS_MAX
+    ner_bonus = min(max(ner_score, 0.0), NER_BONUS_MAX_ENTITIES) * NER_BONUS_PER_ENTITY
+    uncalibrated = max(0.0, min(base_score + kg_bonus + ner_bonus, 100.0))
+    final_score = _apply_v4_calibration(uncalibrated)
+
+    effective_guard = dict(guard)
+    if effective_guard.get("cap_required"):
+        final_score = min(final_score, float(effective_guard["score_cap"]))
+
+    _gr = effective_guard.get("reason") if effective_guard.get("cap_required") else None
+    feedback = _run_feedback(
+        answer_text=answer_text,
+        nlp_score=nlp_score,
+        svm_label=svm_label,
+        kg_score=kg_score,
+        final_score=round(final_score, 2),
+        ner_entities=ner_entities,
+        question_context=question_context,
+        nlp_payload=nlp_payload if isinstance(nlp_payload, dict) else None,
+        guard_reason=_gr,
+    )
+    if effective_guard.get("cap_required"):
+        feedback.setdefault("content", []).insert(
+            0, "Your answer quality was flagged by the scoring guard."
+        )
+
+    guard_summary = build_guard_summary(guard, effective_guard)
+    rubric = build_rubric_scores(
+        semantic_component=semantic_component,
+        classifier_component=model_component if model_component is not None else 0.5,
+        keyword_coverage=concept_coverage,
+        concept_coverage=concept_coverage,
+        kg_score=kg_score,
+        depth_score=_p.get("depth_score", 0.0),
+        structure_score=_p.get("structure_score", 0.0),
+        clarity_score=_p.get("clarity_score", 0.0),
+        length_ratio=length_ratio,
+        score_cap=effective_guard.get("score_cap") if effective_guard.get("cap_required") else None,
+    )
+    concepts = build_concepts_summary(
+        covered_concepts=covered_concepts,
+        missing_concepts=missing_concepts,
+        question_concepts=None,
+    )
+    score_explanation = _build_score_explanation(
+        final_score=final_score,
+        semantic_available=True,
+        semantic_component_source="semantic",
+        keyword_details=_p.get("keyword_coverage_details") if isinstance(_p.get("keyword_coverage_details"), dict) else None,
+        guard_reason=_gr,
+        guard_softened=False,
+        tfidf_score=tfidf_score,
+        keyword_coverage=concept_coverage,
+    )
+    scoring_breakdown: dict[str, Any] = {
+        "scorer_version": "v4",
+        "scoring_schema_version": SCORING_SCHEMA_VERSION,
+        "rubric": rubric,
+        "concepts": concepts,
+        "guard": guard_summary,
+        "layer1_score": round(layer1_score, 2),
+        "layer2_score": round(layer2_score, 2),
+        "layer3_score": round(layer3_score, 2),
+        "semantic": round(semantic_component, 4),
+        "semantic_score": round(semantic_component, 4),
+        "tfidf_score": round(tfidf_score, 4),
+        "concept_coverage": round(concept_coverage, 4),
+        "features_v4": features,
+        "model_component": round(model_component, 4) if model_component is not None else None,
+        "kg_score": round(kg_score, 2),
+        "kg_label": kg_label,
+        "missing_concepts": missing_concepts,
+        "covered_concepts": covered_concepts,
+        "ner_score": ner_score,
+        "server_word_count": word_count,
+        "client_word_count_ignored": client_word_count,
+        "guard_applied": effective_guard["reason"] if effective_guard.get("cap_required") else None,
+        "final_score": round(final_score, 2),
+        "uncalibrated_score": round(uncalibrated, 2),
+        "nlp_score": round(nlp_score, 2),
+        "svm_label": svm_label,
+        "classifier_label": svm_label,
+        "score_explanation": score_explanation,
+        "feedback": feedback,
+    }
+    return {
+        "svm_label": svm_label,
+        "nlp_score": round(nlp_score, 2),
+        "kg_score": round(kg_score, 2),
+        "ner_entities": ner_entities,
+        "final_score": round(final_score, 2),
+        "feedback": feedback,
+        "metadata": {
+            "engagement_label": engagement_label,
+            "wpm": _coerce_float(wpm, 0.0) if wpm is not None else None,
+            "pause_count": int(pause_count) if pause_count is not None else None,
+            "server_word_count": word_count,
+        },
+        "score_explanation": score_explanation,
+        "scoring_schema_version": SCORING_SCHEMA_VERSION,
+        "scorer_version": "v4",
+        "rubric": rubric,
+        "concepts": concepts,
+        "guard": guard_summary,
+        "scoring_breakdown": scoring_breakdown,
+        "guard_applied": effective_guard["reason"] if effective_guard.get("cap_required") else None,
+    }
+
+
 def run_scoring_pipeline(
     *,
     answer_text: str,
@@ -551,6 +806,17 @@ def run_scoring_pipeline(
       layer1_score, layer2_score, layer3_score, scoring_breakdown, guard_applied
     cos_similarity / length_ratio are computed server-side (never from client).
     """
+    if current_scorer_version() == "v4":
+        return _run_scoring_pipeline_v4(
+            answer_text=answer_text,
+            word_count=word_count,
+            engagement_label=engagement_label,
+            wpm=wpm,
+            pause_count=pause_count,
+            question_context=question_context,
+            difficulty=difficulty,
+            candidate_baseline=candidate_baseline,
+        )
     question_context = question_context or {}
     client_word_count = word_count
     word_count = _server_word_count(answer_text)
@@ -731,9 +997,20 @@ def run_scoring_pipeline(
         length_ratio=length_ratio,
         score_cap=guard_score_cap,
     )
+    # Additive diagnostics only. Expected bank concepts were extracted offline;
+    # the calibrated feature, guard, rubric and score paths above are untouched.
+    from modules.nlp_scorer import _get_semantic_scorer
+
+    scoped_concepts = question_concepts_summary(
+        answer_text=answer_text,
+        question_context=question_context,
+        keyword_details=keyword_details,
+        semantic_scorer=_get_semantic_scorer() if semantic_available else None,
+    )
     concepts = build_concepts_summary(
         covered_concepts=covered_concepts,
         missing_concepts=missing_concepts,
+        question_concepts=scoped_concepts,
     )
     guard_summary = build_guard_summary(
         guard,

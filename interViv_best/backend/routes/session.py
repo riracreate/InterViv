@@ -37,6 +37,7 @@ from backend.models.blocks import (
     VERBAL_SKILL,
     canonicalize_verbal_skills,
     expand_blocks,
+    interview_scope,
     legacy_to_blocks,
     normalize_blocks,
 )
@@ -97,11 +98,32 @@ class StartSessionRequest(BaseModel):
     # for assessment).
     practice_mode: str | None = None
     allow_optional_follow_ups: bool | None = None
+    # Slice 2: optional staged_v1 flow + preset (Quick / Full).
+    preset: str | None = None
+    flow_version: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _ensure_at_least_one(cls, data):  # noqa: N805
         if isinstance(data, dict):
+            if data.get("preset") is not None or data.get("flow_version") is not None:
+                from modules.staged_flow import validate_staged_request
+
+                validate_staged_request(
+                    preset=data.get("preset"),
+                    flow_version=data.get("flow_version"),
+                    blocks=data.get("blocks"),
+                    round_plan=data.get("round_plan"),
+                )
+                skills = data.get("skills")
+                skill = data.get("skill")
+                if skills:
+                    data["skills"] = [s.strip() for s in skills if s and str(s).strip()]
+                elif skill and str(skill).strip():
+                    data["skills"] = [str(skill).strip()]
+                else:
+                    data["skills"] = []
+                return data
             if data.get("blocks") is not None:
                 raw_blocks = data.get("blocks")
                 if not isinstance(raw_blocks, list) or not raw_blocks:
@@ -170,6 +192,75 @@ class SaveAnswerDraftRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _with_round_stage(doc: RoundDocument, cfg: dict[str, Any]) -> RoundDocument:
+    """Attach optional ``stage`` inside ``RoundDocument.config_json`` (A1)."""
+    stage_val = str(cfg.get("stage") or "").strip().lower() or None
+    if stage_val:
+        doc.config_json = {**dict(doc.config_json or {}), "stage": stage_val}
+    return doc
+
+
+def _resolve_block_plan(
+    request: StartSessionRequest,
+    *,
+    role_id: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Normalize staged_v1, custom blocks, or legacy fields into a block plan."""
+    from modules.staged_flow import build_staged_blocks, validate_staged_request
+
+    staged = validate_staged_request(
+        preset=request.preset,
+        flow_version=request.flow_version,
+        blocks=request.blocks,
+        round_plan=request.round_plan,
+    )
+    if staged is not None:
+        _, preset_name = staged
+        difficulty_hint = (
+            (request.round_config or {}).get("difficulty")
+            if isinstance(request.round_config, dict)
+            else None
+        )
+        raw_blocks, staged_meta = build_staged_blocks(
+            preset=preset_name,
+            skills=list(request.skills),
+            sub_domain=request.sub_domain,
+            difficulty=difficulty_hint,
+            role_id=role_id,
+        )
+        return normalize_blocks(raw_blocks), staged_meta
+
+    if request.blocks is not None:
+        return normalize_blocks(request.blocks), None
+
+    legacy_skills = canonicalize_verbal_skills(list(request.skills)) or []
+    # Preserve valid legacy standalone Verbal requests; composition
+    # with other skills requires the new blocks flow.
+    if VERBAL_SKILL in legacy_skills:
+        legacy_plan = list(request.round_plan) if request.round_plan else None
+        is_standalone = (
+            legacy_skills == [VERBAL_SKILL]
+            and request.round_type == "mcq"
+            and request.rounds_per_skill == 1
+            and (legacy_plan is None or legacy_plan == ["mcq"])
+        )
+        if not is_standalone:
+            raise ValueError(
+                "Verbal Ability practice cannot be combined with other "
+                "skills via legacy fields; use blocks for composition."
+            )
+    return (
+        legacy_to_blocks(
+            skills=list(request.skills),
+            rounds_per_skill=request.rounds_per_skill,
+            round_type=request.round_type,
+            round_config=request.round_config,
+            round_plan=list(request.round_plan) if request.round_plan else None,
+        ),
+        None,
+    )
+
 
 def _elo_to_difficulty(elo: float) -> str:
     if elo < 1200:
@@ -252,9 +343,15 @@ def _normalize_question_payload(payload: object, *, skill: str,
         if not question_text:
             raise IntegrationError("question_bank returned a payload with no question text.")
         source = str(payload.get("source") or "unknown")
-        # Reviewed-bundle candidate payloads carry identity only. Persist the
-        # pin on the round; resolve reference material server-side at score time.
+        # Reviewed/auto-checked bundle candidate payloads carry identity only.
+        # Persist the pin on the round; resolve reference material server-side
+        # at score time.
         if source == "reviewed_bundle" or payload.get("bundle_id"):
+            normalized_source = (
+                source
+                if source in {"reviewed_bundle", "auto_checked_bundle", "generated_bundle"}
+                else "reviewed_bundle"
+            )
             return {
                 "question": str(question_text),
                 "skill": str(payload.get("skill") or skill),
@@ -265,7 +362,7 @@ def _normalize_question_payload(payload: object, *, skill: str,
                 "company": payload.get("company") or "",
                 "role": payload.get("role") or "",
                 "followups": list(payload.get("followups") or []),
-                "source": "reviewed_bundle",
+                "source": normalized_source,
                 "bundle_id": payload.get("bundle_id"),
                 "version": payload.get("version"),
                 "content_hash": payload.get("content_hash"),
@@ -323,8 +420,14 @@ def _get_next_question(
     target_concepts: list[str] | None = None,
     resume_skills: list[str] | None = None,
     weak_skills: list[str] | None = None,
+    relaxed: bool = False,
 ) -> dict:
     """Return the next question payload.
+
+    ``relaxed`` is set for staged_v1 rounds. That flow also accepts
+    reference-only bank questions and, as a last resort, a reference-free
+    prompt which it leaves unscored. Everywhere else a question has to meet
+    the content rules in full or the caller is told none is available.
 
     When ``REVIEWED_BUNDLES_ONLY`` is on, select a genuinely reviewed pinned
     version or raise assessment-unavailable (no draft/legacy scored fallback).
@@ -336,6 +439,7 @@ def _get_next_question(
     from modules.bundle_selector import (
         ReviewedInventoryUnavailable,
         reviewed_bundles_only,
+        select_bundle_question,
         select_reviewed_question,
     )
 
@@ -356,6 +460,24 @@ def _get_next_question(
             payload, skill=skill, sub_domain=sub_domain, difficulty=difficulty
         )
 
+    try:
+        topic = _explicit_reviewed_topic(sub_domain)
+        bundle_payload = select_bundle_question(
+            skill=skill,
+            difficulty=difficulty,
+            asked=asked,
+            topic=topic,
+        )
+        if bundle_payload is not None:
+            return _normalize_question_payload(
+                bundle_payload,
+                skill=skill,
+                sub_domain=sub_domain,
+                difficulty=difficulty,
+            )
+    except Exception:
+        pass
+
     if user_id:
         from modules import adaptive_question_selector
 
@@ -371,6 +493,7 @@ def _get_next_question(
                 target_concepts=target_concepts,
                 resume_skills=resume_skills,
                 weak_skills=weak_skills,
+                relaxed=relaxed,
             )
         except Exception as exc:
             raise IntegrationError(str(exc)) from exc
@@ -392,6 +515,7 @@ def _get_next_question(
                 resume_skills=tuple(resume_skills or ()),
                 weak_skills=tuple(weak_skills or target_concepts or ()),
             ),
+            relaxed=relaxed,
         )
     except Exception as exc:
         raise IntegrationError(str(exc)) from exc
@@ -580,6 +704,7 @@ def build_round_document(
     block_index: int | None = None,
     block_total: int | None = None,
     allow_unknown_fallback: bool = False,
+    staged_v1: bool = False,
 ) -> RoundDocument:
     """Build a RoundDocument for technical / MCQ / SQL (shared by start + answer).
 
@@ -607,7 +732,7 @@ def build_round_document(
             allow_unknown_fallback=allow_unknown_fallback,
         )
         expires_at = now + timedelta(minutes=duration_mins)
-        return RoundDocument(
+        return _with_round_stage(RoundDocument(
             round=round_number,
             round_type="mcq",
             question="Multiple Choice Assessment",
@@ -629,7 +754,7 @@ def build_round_document(
             block_category=block_category,
             block_index=block_index,
             block_total=block_total,
-        )
+        ), cfg)
 
     if round_type == "sql":
         duration_mins = int(cfg.get("duration_minutes", 25))
@@ -639,7 +764,7 @@ def build_round_document(
             problem_id = problem_ids[sql_problem_index]
         problem = _select_sql_problem(problem_id=problem_id)
         expires_at = now + timedelta(minutes=duration_mins)
-        return RoundDocument(
+        return _with_round_stage(RoundDocument(
             round=round_number,
             round_type="sql",
             question=problem["prompt"],
@@ -662,7 +787,7 @@ def build_round_document(
             block_category=block_category,
             block_index=block_index,
             block_total=block_total,
-        )
+        ), cfg)
 
     if round_type == "coding":
         duration_mins = int(cfg.get("duration_minutes", 30))
@@ -672,7 +797,7 @@ def build_round_document(
             problem_id = problem_ids[sql_problem_index]
         problem = _select_coding_problem(problem_id=problem_id)
         expires_at = now + timedelta(minutes=duration_mins)
-        return RoundDocument(
+        return _with_round_stage(RoundDocument(
             round=round_number,
             round_type="coding",
             question=str(problem.get("title") or problem.get("id")),
@@ -694,7 +819,7 @@ def build_round_document(
             block_category=block_category,
             block_index=block_index,
             block_total=block_total,
-        )
+        ), cfg)
 
     if round_type == "ml_primitives":
         from backend.ml_primitives.catalog import select_problems
@@ -703,7 +828,7 @@ def build_round_document(
         problem_id = ids[sql_problem_index] if ids else cfg.get("problem_id")
         public = select_problems(problem_ids=[problem_id] if problem_id else None)[0]
         duration_mins = int(cfg.get("duration_minutes", 30))
-        return RoundDocument(
+        return _with_round_stage(RoundDocument(
             round=round_number, round_type="ml_primitives",
             question=public["title"], difficulty=public["difficulty"],
             elo_before=elo_before, question_context=public,
@@ -723,7 +848,7 @@ def build_round_document(
             status="in_progress", block_id=block_id,
             block_position=block_position, block_category="ml_primitives",
             block_index=block_index, block_total=block_total,
-        )
+        ), cfg)
 
     if round_type == "system_design":
         duration_mins = int(cfg.get("duration_minutes", 25))
@@ -734,7 +859,7 @@ def build_round_document(
         prompt = _select_system_design_prompt(prompt_id=prompt_id)
         expires_at = now + timedelta(minutes=duration_mins)
         public = public_system_design_prompt_context(prompt)
-        return RoundDocument(
+        return _with_round_stage(RoundDocument(
             round=round_number,
             round_type="system_design",
             question=str(prompt.get("title") or prompt.get("id")),
@@ -758,19 +883,37 @@ def build_round_document(
             block_category=block_category or "system_design",
             block_index=block_index,
             block_total=block_total,
-        )
+        ), cfg)
 
     # technical_short_answer
-    first_question = _get_next_question(
-        skill=skill,
-        sub_domain=sub_domain,
-        difficulty=difficulty,
-        asked=list(asked or []),
-        user_id=user_id,
-        target_company_id=target_company_id,
-        target_role_id=target_role_id,
-        resume_skills=resume_skills or skills,
-    )
+    stage_val = str(cfg.get("stage") or "").strip().lower() or None
+    if stage_val == "warm_up":
+        from modules.staged_flow import select_warm_up_question_payload
+
+        first_question = select_warm_up_question_payload(
+            skill=skill,
+            asked=list(asked or []),
+        )
+        difficulty = "easy"
+    elif stage_val == "behavioural":
+        from modules.staged_flow import select_behavioural_question_payload
+
+        first_question = select_behavioural_question_payload(
+            asked=list(asked or []),
+        )
+        difficulty = str(first_question.get("difficulty") or "medium")
+    else:
+        first_question = _get_next_question(
+            skill=skill,
+            sub_domain=sub_domain,
+            difficulty=difficulty,
+            asked=list(asked or []),
+            user_id=user_id,
+            target_company_id=target_company_id,
+            target_role_id=target_role_id,
+            resume_skills=resume_skills or skills,
+            relaxed=staged_v1 and stage_val == "core",
+        )
     duration_value = cfg.get("duration_minutes")
     expires_at = None
     if duration_value is not None:
@@ -780,7 +923,7 @@ def build_round_document(
             duration_mins = 0
         if duration_mins > 0:
             expires_at = now + timedelta(minutes=duration_mins)
-    return RoundDocument(
+    return _with_round_stage(RoundDocument(
         round=round_number,
         round_type="technical_short_answer",
         question=first_question["question"],
@@ -795,7 +938,16 @@ def build_round_document(
         block_category=block_category,
         block_index=block_index,
         block_total=block_total,
-    )
+    ), cfg)
+
+
+def _interview_live_generation() -> bool:
+    from modules import question_runtime
+
+    try:
+        return bool(question_runtime.live_generation_available())
+    except Exception:  # pragma: no cover - metadata must not break the catalog
+        return False
 
 
 def _interview_topic_metadata() -> dict[str, list[str]]:
@@ -889,6 +1041,10 @@ def list_practice_bank_items() -> dict[str, Any]:
         "system_design": system_design,
         "ml_primitives": ml_primitives,
         "interview_topics": _interview_topic_metadata(),
+        # Additive: whether new interview questions are generated now or come
+        # from the offline bank. The form's default question count depends on
+        # it. A boolean only; nothing about the provider is exposed.
+        "interview_live_generation": _interview_live_generation(),
         "counts": {
             "mcq": len(mcq),
             "verbal": len(verbal),
@@ -1212,11 +1368,137 @@ def _verify_served_topic(
     )
 
 
+def _interview_planned_scopes(
+    block_plan: list[dict[str, Any]],
+    *,
+    staged_v1: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Each Interview block's actual scope, keyed by block id.
+
+    Questions per confirmed skill and where they come from, plus the skills
+    the question budget cannot reach. Offline questions are counted across
+    the whole plan with the rule serving uses
+    (``question_runtime.eligible_offline_questions``), because skills in
+    different blocks can draw on the same questions. No writes, no
+    generation.
+    """
+    from modules import question_runtime
+    from modules.bundle_selector import reviewed_bundles_only
+
+    # Only a validated staged_v1 request gets the relaxed contract. Custom
+    # blocks may carry a stage label without belonging to that flow.
+    if staged_v1:
+        return {}
+    blocks = [b for b in block_plan if b.get("category") == "interview"]
+    scopes = [interview_scope(b) for b in blocks]
+    planned = [item for scope in scopes for item in scope["planned"]]
+    if reviewed_bundles_only():
+        sourced = [dict(item, source="reviewed") for item in planned]
+    else:
+        sourced = question_runtime.scope_sources(planned)
+    out: dict[str, dict[str, Any]] = {}
+    cursor = 0
+    for block, scope in zip(blocks, scopes):
+        size = len(scope["planned"])
+        out[str(block.get("id"))] = {
+            "questions": scope["questions"],
+            "skills": sourced[cursor:cursor + size],
+            "not_covered": scope["not_covered"],
+        }
+        cursor += size
+    return out
+
+
+def launch_planned_scope(
+    start_body: dict[str, Any],
+    confirmed_skills: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Planned scope of a practice launch whose plan the server builds.
+
+    Jobs and Coach propose a start payload (blocks, or skills with a round
+    plan) from a list of skills. This is the same summary Practice shows
+    before a start: free-text questions per skill and where they come from,
+    and the confirmed skills that get no free-text question. Read-only;
+    ``None`` when the payload has no interview questions or is not valid.
+    """
+    try:
+        if start_body.get("blocks"):
+            block_plan = normalize_blocks(list(start_body["blocks"]))
+        else:
+            block_plan = legacy_to_blocks(
+                skills=list(start_body.get("skills") or []),
+                rounds_per_skill=int(start_body.get("rounds_per_skill") or 3),
+                round_type=str(start_body.get("round_type") or "technical_short_answer"),
+                round_config=start_body.get("round_config"),
+                round_plan=list(start_body.get("round_plan") or []) or None,
+            )
+    except (TypeError, ValueError):
+        return None
+    scopes = list(_interview_planned_scopes(block_plan).values())
+    if not scopes:
+        return None
+    skills = [item for scope in scopes for item in scope["skills"]]
+    planned = {str(item["skill"]).strip().lower() for item in skills}
+    not_covered: list[str] = []
+    for skill in [s for scope in scopes for s in scope["not_covered"]] + list(confirmed_skills or []):
+        if str(skill).strip().lower() not in planned and skill not in not_covered:
+            not_covered.append(skill)
+    return {
+        "questions": sum(int(scope["questions"]) for scope in scopes),
+        "skills": skills,
+        "not_covered": not_covered,
+    }
+
+
+def _reference_shortfall(scope: dict[str, Any]) -> str | None:
+    """Why an Interview block cannot be asked as scored questions, if it can't.
+
+    Every planned question needs a reference answer and keywords to be
+    scored, and has to be about its skill. With generation off, the offline
+    bank must hold enough such questions for each planned skill; the scope
+    is never quietly filled from another skill's questions.
+    """
+    short = [item for item in scope["skills"] if item.get("available") is False]
+    if not short:
+        return None
+
+    def planned(item: dict[str, Any]) -> int:
+        return item.get("planned_total") or item["questions"]
+
+    def pronoun(items: list[dict[str, Any]]) -> str:
+        return "it" if len(items) == 1 else "them"
+
+    # Two different problems with two different remedies: nothing offline is
+    # about the skill at all, or there is some content but less than planned.
+    none = [item for item in short if not item["offline_questions"]]
+    few = [item for item in short if item["offline_questions"]]
+    parts = ["Not enough scored interview questions are available offline."]
+    if none:
+        listed = ", ".join(f"'{item['skill']}' ({planned(item)} planned)" for item in none)
+        parts.append(
+            f"No offline questions for {listed}: remove {pronoun(none)}, or use "
+            "live question generation where it is configured."
+        )
+    if few:
+        listed = ", ".join(
+            f"'{item['skill']}' ({planned(item)} planned, {item['offline_questions']} available"
+            + (f", shared with {' and '.join(item['shared_with'])}" if item.get("shared_with") else "")
+            + ")"
+            for item in few
+        )
+        parts.append(
+            f"Fewer than planned for {listed}: lower the question count or "
+            f"remove {pronoun(few)}."
+        )
+    return " ".join(parts)
+
+
 def _validate_block_content(
     block_plan: list[dict[str, Any]],
     expanded: list[dict[str, Any]],
     allow_unknown_fallback: bool = False,
     sub_domain: str | None = None,
+    staged_v1: bool = False,
 ) -> None:
     """Check every block's content limits upfront (no writes).
 
@@ -1308,6 +1590,17 @@ def _validate_block_content(
                     spec["problem_ids"] = [prompt["id"]]
                 block["problem_ids"] = [p["id"] for p in selected]
         elif category == "interview":
+            stage_val = str(block.get("stage") or "").strip().lower() or None
+            if stage_val == "warm_up":
+                continue
+            if stage_val == "behavioural":
+                from modules.staged_flow import load_behavioural_questions
+
+                if not load_behavioural_questions():
+                    raise ValueError(
+                        "Confirmed behavioural question bank is unavailable or empty."
+                    )
+                continue
             # Reviewed-only gate: fail before any write when the pinned
             # selection policy has no eligible inventory for a requested
             # skill. Gate off → legacy/adaptive selection, unchanged,
@@ -1316,6 +1609,7 @@ def _validate_block_content(
             from modules.bundle_selector import (
                 reviewed_available_count,
                 reviewed_bundles_only,
+                select_bundle_question,
             )
 
             if reviewed_bundles_only():
@@ -1340,10 +1634,25 @@ def _validate_block_content(
                 topic = (block.get("topic") or "").strip() or None
                 if topic and topic.lower() != "general":
                     difficulty = block.get("difficulty")
+                    diffs_to_check = (
+                        [str(difficulty)] if difficulty else ["easy", "medium", "hard"]
+                    )
                     for skill in block.get("skills") or []:
                         eligible, offered = _topic_scope_status(
                             str(skill), topic, difficulty=difficulty,
                         )
+                        if not eligible:
+                            has_bundle = any(
+                                select_bundle_question(
+                                    skill=str(skill),
+                                    difficulty=d,
+                                    asked=[],
+                                    topic=topic,
+                                )
+                                is not None
+                                for d in diffs_to_check
+                            )
+                            eligible = has_bundle
                         if not eligible:
                             raise ValueError(
                                 f"Topic '{topic}' is not available for skill "
@@ -1355,6 +1664,109 @@ def _validate_block_content(
                                 + ". Split the block, adjust skills, or clear "
                                 "the topic."
                             )
+    # Scored interview questions need a reference answer; checked across the
+    # plan passed in, since blocks can share one offline pool.
+    for scope in _interview_planned_scopes(block_plan, staged_v1=staged_v1).values():
+        shortfall = _reference_shortfall(scope)
+        if shortfall:
+            raise ValueError(shortfall)
+
+
+def _inline_bundle_generation_enabled() -> bool:
+    from modules import bundle_generator, llm_outbound_gate
+
+    if bundle_generator._LLM_OVERRIDE is not None:
+        return True
+    if not llm_outbound_gate.llm_live_fetch_enabled():
+        return False
+    default_flag = "0" if os.getenv("PYTEST_CURRENT_TEST") else "1"
+    raw = os.getenv("BUNDLE_INLINE_ON_START", default_flag)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _background_bundle_prefetch_enabled() -> bool:
+    from modules import bundle_generator, llm_outbound_gate
+
+    if bundle_generator._LLM_OVERRIDE is not None:
+        return True
+    if llm_outbound_gate.llm_live_fetch_enabled():
+        return True
+    raw = os.getenv("BUNDLE_PREFETCH_ON_START", "0")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _maybe_prepare_opening_bundle(
+    *,
+    skill: str,
+    topic: str | None,
+    difficulty: str,
+    role: str | None,
+) -> None:
+    from modules import bundle_generator
+    from modules.bundle_selector import reviewed_bundles_only, select_bundle_question
+
+    if reviewed_bundles_only():
+        return
+    explicit_topic = _explicit_reviewed_topic(topic)
+    if (
+        select_bundle_question(
+            skill=skill,
+            difficulty=difficulty,
+            asked=[],
+            topic=explicit_topic,
+        )
+        is not None
+    ):
+        return
+    if not _inline_bundle_generation_enabled():
+        return
+    bundle_generator.generate_and_check_bundle(
+        skill=skill,
+        topic=explicit_topic or skill,
+        difficulty=difficulty,
+        role=role,
+    )
+
+
+def _enqueue_remaining_session_bundles(
+    *,
+    session_id: str,
+    expanded: list[dict[str, Any]],
+    fallback_skills: list[str],
+    default_difficulty: str,
+    role: str | None,
+) -> None:
+    from modules import bundle_jobs
+    from modules.bundle_selector import reviewed_bundles_only
+
+    if reviewed_bundles_only() or not _background_bundle_prefetch_enabled():
+        return
+    seen: set[tuple[str, str, str]] = set()
+    enqueued = 0
+    for spec in expanded[1:]:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("round_type") or "") != "technical_short_answer":
+            continue
+        if str(spec.get("stage") or "").strip().lower() in ("warm_up", "behavioural"):
+            continue
+        spec_skill = str((spec.get("skills") or fallback_skills or ["System Design"])[0])
+        spec_topic = _explicit_reviewed_topic(spec.get("topic")) or spec_skill
+        spec_diff = str(spec.get("difficulty") or default_difficulty or "medium")
+        key = (spec_skill.lower(), spec_topic.lower(), spec_diff.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        bundle_jobs.enqueue_bundle_job(
+            skill=spec_skill,
+            topic=spec_topic,
+            difficulty=spec_diff,
+            role=role,
+            session_id=session_id,
+        )
+        enqueued += 1
+    if enqueued > 0:
+        bundle_jobs.trigger_background_bundle_worker()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1373,61 +1785,33 @@ def start_session(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=str(exc)) from exc
 
-    # ── Normalize legacy and builder payloads into one block plan ──────────
-    if request.blocks is not None:
-        try:
-            block_plan = normalize_blocks(request.blocks)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-    else:
-        legacy_skills = canonicalize_verbal_skills(list(request.skills)) or []
-        # Preserve valid legacy standalone Verbal requests; composition
-        # with other skills requires the new blocks flow.
-        if VERBAL_SKILL in legacy_skills:
-            legacy_plan = list(request.round_plan) if request.round_plan else None
-            is_standalone = (
-                legacy_skills == [VERBAL_SKILL]
-                and request.round_type == "mcq"
-                and request.rounds_per_skill == 1
-                and (legacy_plan is None or legacy_plan == ["mcq"])
-            )
-            if not is_standalone:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=(
-                        "Verbal Ability practice cannot be combined with other "
-                        "skills via legacy fields; use blocks for composition."
-                    ),
-                )
-        try:
-            block_plan = legacy_to_blocks(
-                skills=list(request.skills),
-                rounds_per_skill=request.rounds_per_skill,
-                round_type=request.round_type,
-                round_config=request.round_config,
-                round_plan=list(request.round_plan) if request.round_plan else None,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
+    user = require_user(authorization)
+    saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
+    company_slug = saved["company_id"] or request.target_company_id
+    role_slug = saved["role_id"] or request.target_role_id
+
+    # ── Normalize staged_v1, builder, or legacy payloads into one block plan ──
+    try:
+        block_plan, staged_meta = _resolve_block_plan(request, role_id=role_slug)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     expanded = expand_blocks(block_plan)
     plan = [spec["round_type"] for spec in expanded]
     opening_type = plan[0] if plan else "technical_short_answer"
     opening_spec = expanded[0]
-    # Legacy launches keep the unknown-topic fallback; blocks are strict.
-    allow_unknown_fallback = request.blocks is None
+    # Legacy launches keep the unknown-topic fallback; blocks & staged_v1 are strict.
+    allow_unknown_fallback = request.blocks is None and staged_meta is None
 
     # Validate all blocks' content before any writes: no session, no silent
     # reductions, no mid-run failures after retries.
     try:
         _validate_block_content(block_plan, expanded,
                                 allow_unknown_fallback=allow_unknown_fallback,
-                                sub_domain=request.sub_domain)
+                                sub_domain=request.sub_domain,
+                                staged_v1=staged_meta is not None)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1435,15 +1819,17 @@ def start_session(
         ) from exc
 
     # Union of block skills in first-seen order (for Elo seeding/history).
+    # Unscored Behavioural HR blocks stay off session/candidate skill ratings.
     session_skills: list[str] = []
     for block in block_plan:
+        if block.get("stage") == "behavioural":
+            continue
         for skill in block.get("skills") or []:
             if skill not in session_skills:
                 session_skills.append(skill)
 
     candidate_id = (request.candidate_id or "").strip()
     candidate = db["candidates"].find_one({"candidate_id": candidate_id}) if candidate_id else None
-    user = require_user(authorization)
 
     needs_phase2_auth = any(
         t in ("mcq", "sql", "coding", "system_design", "ml_primitives") for t in plan
@@ -1478,9 +1864,6 @@ def start_session(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You cannot start a session for another user's candidate.",
                 )
-    saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
-    company_slug = saved["company_id"] or request.target_company_id
-    role_slug = saved["role_id"] or request.target_role_id
     target_company_id = storage_target_id(company_slug, "company")
     target_role_id = storage_target_id(role_slug, "role")
     candidate_is_new = False
@@ -1526,7 +1909,10 @@ def start_session(
         "question_ids": opening_spec.get("question_ids") or None,
         "problem_ids": opening_spec.get("problem_ids") or None,
         "problem_id": (opening_spec.get("problem_ids") or [None])[0],
+        "stage": opening_spec.get("stage"),
     }
+    if not opening_config.get("stage"):
+        opening_config.pop("stage", None)
     # Preserve legacy timeout/row knobs when the legacy payload set them.
     legacy_cfg = dict(request.round_config or {})
     for key in ("max_rows", "timeout_seconds"):
@@ -1534,6 +1920,21 @@ def start_session(
             opening_config[key] = legacy_cfg[key]
     if opening_config.get("duration_minutes") is None:
         opening_config.pop("duration_minutes", None)
+
+    opening_stage = str(opening_spec.get("stage") or "").strip().lower() or None
+    if opening_type == "technical_short_answer" and opening_stage not in (
+        "warm_up",
+        "behavioural",
+    ):
+        try:
+            _maybe_prepare_opening_bundle(
+                skill=first_skill,
+                topic=sub_domain,
+                difficulty=difficulty,
+                role=role_slug,
+            )
+        except Exception:
+            logger.debug("Inline bundle preparation skipped cleanly.", exc_info=True)
 
     try:
         round_document = build_round_document(
@@ -1556,13 +1957,15 @@ def start_session(
             block_index=opening_spec.get("block_index"),
             block_total=opening_spec.get("block_total"),
             allow_unknown_fallback=allow_unknown_fallback,
+            staged_v1=staged_meta is not None,
         )
-        _verify_served_topic(
-            requested=opening_spec.get("topic"),
-            served=(round_document.question_context or {}).get("sub_domain"),
-            skill=first_skill,
-            difficulty=difficulty,
-        )
+        if opening_stage not in ("warm_up", "behavioural"):
+            _verify_served_topic(
+                requested=opening_spec.get("topic"),
+                served=(round_document.question_context or {}).get("sub_domain"),
+                skill=first_skill,
+                difficulty=difficulty,
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1604,11 +2007,17 @@ def start_session(
     session_dict["user_id"] = user["id"]
     session_dict["target_company_id"] = target_company_id
     session_dict["target_role_id"] = target_role_id
-    session_dict["round_config"] = request.round_config or {}
+    session_round_config = dict(request.round_config or {})
+    if staged_meta is not None:
+        session_round_config["staged_flow"] = staged_meta
+    session_dict["round_config"] = session_round_config
     session_dict["round_plan"] = plan
     session_dict["block_plan"] = block_plan
     session_dict["expanded_plan"] = expanded
     session_dict["allow_unknown_topic_fallback"] = allow_unknown_fallback
+    if staged_meta is not None:
+        session_dict["flow_version"] = staged_meta["version"]
+        session_dict["preset"] = staged_meta["preset"]
     mode = str(request.practice_mode or "").strip().lower()
     if mode not in ("assessment", "coached_practice"):
         # Infer assessment when any block uses after_session review.
@@ -1672,6 +2081,17 @@ def start_session(
             ) from exc
         raise
 
+    try:
+        _enqueue_remaining_session_bundles(
+            session_id=session_id,
+            expanded=expanded,
+            fallback_skills=session_skills,
+            default_difficulty=difficulty,
+            role=role_slug,
+        )
+    except Exception:
+        logger.debug("Background bundle prefetch enqueue skipped cleanly.", exc_info=True)
+
     response = {
         "session_id": session_id,
         "candidate_id": candidate_id,
@@ -1694,6 +2114,12 @@ def start_session(
         "expires_at": round_document.expires_at.isoformat() if round_document.expires_at else None,
         "config_json": round_document.config_json,
     }
+    if staged_meta is not None:
+        response["flow_version"] = staged_meta["version"]
+        response["preset"] = staged_meta["preset"]
+        response["staged_flow"] = staged_meta
+    if opening_stage:
+        response["stage"] = opening_stage
     if round_document.round_type == "mcq":
         sanitized = sanitize_round_for_client(round_document.model_dump())
         response["question_context"] = sanitized["question_context"]
@@ -1736,48 +2162,45 @@ def check_availability(
     """
     from modules.bundle_selector import reviewed_bundles_only
 
-    if request.blocks is not None:
-        try:
-            block_plan = normalize_blocks(request.blocks)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-    else:
-        try:
-            block_plan = legacy_to_blocks(
-                skills=list(request.skills),
-                rounds_per_skill=request.rounds_per_skill,
-                round_type=request.round_type,
-                round_config=request.round_config,
-                round_plan=list(request.round_plan) if request.round_plan else None,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
+    user = require_user(authorization)
+    saved = get_user_target(user) if user else {"company_id": None, "role_id": None}
+    role_slug = saved["role_id"] or request.target_role_id
+    try:
+        block_plan, staged_meta = _resolve_block_plan(request, role_id=role_slug)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     expanded = expand_blocks(block_plan)
     plan = [spec["round_type"] for spec in expanded]
 
-    require_user(authorization)
-
-    allow_unknown_fallback = request.blocks is None
+    allow_unknown_fallback = request.blocks is None and staged_meta is None
     by_block: dict[str, list[dict[str, Any]]] = {}
     for spec in expanded:
         by_block.setdefault(str(spec.get("block_id")), []).append(spec)
 
     gate_on = reviewed_bundles_only()
+    # Additive: the scope each Interview block will actually ask, with
+    # offline pools counted across the whole plan as the start does.
+    scopes = _interview_planned_scopes(block_plan, staged_v1=staged_meta is not None)
     results: list[dict[str, object]] = []
     for block in block_plan:
         specs = by_block.get(str(block.get("id")), [])
+        scope = scopes.get(str(block.get("id")))
+        planned_scope = {"planned_scope": scope} if scope else {}
         try:
             _validate_block_content(
                 [block], specs,
                 allow_unknown_fallback=allow_unknown_fallback,
                 sub_domain=request.sub_domain,
+                staged_v1=staged_meta is not None,
             )
+            # A pool shared with other blocks can be short even when this
+            # block alone fits.
+            shortfall = _reference_shortfall(scope) if scope else None
+            if shortfall:
+                raise ValueError(shortfall)
         except ValueError as exc:
             results.append({
                 "position": block.get("position"),
@@ -1786,6 +2209,7 @@ def check_availability(
                 "topic": block.get("topic"),
                 "available": False,
                 "reason": str(exc),
+                **planned_scope,
             })
             continue
         detail: dict[str, object] = {}
@@ -1801,6 +2225,7 @@ def check_availability(
             "available": True,
             "reason": None,
             "detail": detail,
+            **planned_scope,
         })
     return {
         "reviewed_only": gate_on,
@@ -1851,7 +2276,15 @@ def get_session(
 
     assert_session_access(session, authorization)
 
+    from modules.staged_flow import (
+        is_staged_v1_session,
+        round_stage,
+        staged_flow_meta,
+    )
+
     is_completed = session_assessment_completed(session)
+    staged_session = is_staged_v1_session(session)
+    defer_feedback = staged_session and not is_completed
     in_progress = next(
         (r for r in reversed(rounds) if r.get("status") == "in_progress"), None
     )
@@ -1862,13 +2295,24 @@ def get_session(
     active_round = in_progress or (None if pending else latest)
 
     sanitized_active_round = (
-        sanitize_round_for_client(active_round, is_session_completed=is_completed)
+        sanitize_round_for_client(
+            active_round,
+            is_session_completed=is_completed,
+            defer_feedback=(
+                defer_feedback
+                and active_round.get("status") not in OPEN_STATUSES
+            ),
+        )
         if active_round
         else None
     )
     closed = [r for r in rounds if r.get("status") not in OPEN_STATUSES]
     round_history = [
-        sanitize_round_for_client(dict(r), is_session_completed=is_completed)
+        sanitize_round_for_client(
+            dict(r),
+            is_session_completed=is_completed,
+            defer_feedback=defer_feedback,
+        )
         for r in closed
     ]
     # The round under review: the latest answered round while no question
@@ -1876,6 +2320,7 @@ def get_session(
     review_round = (
         int(closed[-1].get("round") or 0) if closed and in_progress is None else None
     )
+    pending_stage = round_stage(pending) if pending else None
     pending_round = (
         {
             "round": pending.get("round"),
@@ -1885,13 +2330,14 @@ def get_session(
             "difficulty": pending.get("difficulty"),
             "block_id": pending.get("block_id"),
             "block_category": pending.get("block_category"),
+            **({"stage": pending_stage} if pending_stage else {}),
             "duration_seconds": round_duration_seconds(pending),
         }
         if pending
         else None
     )
 
-    return {
+    payload: dict[str, object] = {
         "session_id": session["session_id"],
         "candidate_id": session.get("candidate_id"),
         "user_id": session.get("user_id"),
@@ -1909,6 +2355,12 @@ def get_session(
         "review_round": review_round,
         "pending_round": pending_round,
     }
+    if staged_session:
+        meta = staged_flow_meta(session)
+        payload["flow_version"] = meta.get("version") or "staged_v1"
+        payload["preset"] = meta.get("preset")
+        payload["staged_flow"] = meta
+    return payload
 
 
 # ─────────────────────────────────────────────────────────────────────────────

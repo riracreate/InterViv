@@ -1,0 +1,124 @@
+id: devops-cloud-engineer
+title: DevOps / Cloud Engineer
+aliases:
+- SRE Intern/Junior
+- Cloud Infrastructure Engineer
+- Platform Engineer
+- Build & Release Engineer
+family: engineering
+levels:
+- intern
+- junior
+- mid
+practical_track: none
+status: draft
+version: 1
+level_expectations:
+  intern: Writes clean multi-stage Dockerfiles, explains Linux permissions/processes/ports,
+    configures basic GitHub Actions/GitLab CI pipelines, and understands VPC subnets,
+    security groups, and IAM least privilege.
+  junior: Writes clean multi-stage Dockerfiles, explains Linux permissions/processes/ports,
+    configures basic GitHub Actions/GitLab CI pipelines, and understands VPC subnets,
+    security groups, and IAM least privilege.
+  mid: Designs zero-downtime deployments (blue/green, canary), Infrastructure-as-Code
+    state locking and drift remediation, secrets management, observability (metrics/logs/traces,
+    SLOs), and structured incident response.
+level_expectation_review:
+  junior: needs owner edit
+competencies:
+- id: containers-docker
+  name: Containers & Docker
+  type: technical
+  weight: 0.2
+  skills:
+  - Docker
+  scenario_topics: []
+- id: cloud-infrastructure-aws
+  name: Cloud Infrastructure (AWS)
+  type: technical
+  weight: 0.15
+  skills:
+  - AWS
+  scenario_topics: []
+- id: ci-cd-deployment-automation
+  name: CI/CD & Deployment Automation
+  type: technical
+  weight: 0.15
+  skills:
+  - CI/CD
+  scenario_topics: []
+- id: networking-linux-systems
+  name: Networking & Linux Systems
+  type: technical
+  weight: 0.1
+  skills:
+  - Computer Networks
+  - Operating Systems
+  scenario_topics: []
+- id: live-incident-response-recovery
+  name: Live Incident Response & Recovery
+  type: role_scenario
+  weight: 0.2
+  skills: []
+  scenario_topics:
+  - Outage triage, misconfigured IAM/certificates/deployments, blast-radius containment,
+    blameless postmortems
+- id: cautiousness-operational-discipline
+  name: Cautiousness & Operational Discipline
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Verifying blast radius before running destructive changes; protecting production
+    secrets/data
+- id: cross-team-incident-communication
+  name: Cross-Team Incident Communication
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Keeping developers and stakeholders aligned calmly under outage pressure
+draft_seeds:
+- kind: opener
+  text: You containerized your web application with Docker and deployed it on AWS
+    using a CI/CD pipeline. How did you pass production secrets into the container,
+    and what happens right now if a broken build passes unit tests but crashes on
+    startup?
+- kind: fundamentals
+  text: Why can a naive Node.js or Python Dockerfile end up over 1.2 GB and rebuild
+    `npm install` or `pip install` on every single code edit, and how do layer ordering
+    and multi-stage builds solve both problems?
+- kind: tradeoff
+  text: An application running in a private AWS VPC subnet suddenly fails to pull
+    packages from an external HTTPS registry and cannot read objects from an S3 bucket
+    in the same region. Walk through every VPC, routing, security-group/NACL, IAM,
+    and VPC Endpoint layer you check—and why a Gateway VPC Endpoint is preferable
+    to routing S3 traffic through a NAT Gateway.
+- kind: scenario
+  text: At 2:00 AM, alerts fire showing HTTP 502 errors spiking to 60% behind your
+    Application Load Balancer right after an automated scaling event and config update.
+    Disk space on two nodes is also at 99%. How do you stabilize service, isolate
+    whether the config change or disk exhaustion is primary, and prevent recurrence?
+- kind: behavioural
+  text: Tell me about a time an automation script, configuration change, or deployment
+    you worked on caused an unexpected failure—or nearly did. How did you catch or
+    contain it, and what safeguard did you put in place?
+provenance:
+  onet:
+    code: 15-1299.08
+    title: 15-1299.08 Computer Systems Engineers/Architects
+    url: https://www.onetonline.org/link/summary/15-1299.08
+    accessed: '2026-11-17'
+    status: verified
+    page_title: 15-1299.08 - Computer Systems Engineers/Architects
+    note: 'Owner decision: use Computer Systems Engineers/Architects instead of the
+      network-administrator mapping. '
+  esco:
+    code: '2522.1'
+    title: ICT system administrator (ISCO 2522.1)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F9e2e6e1e-363b-4e1b-a673-7bc0f7343300&language=en
+    accessed: '2026-11-17'
+    status: verified
+    page_title: ICT system administrator
+    note: 'Page was read. Owner did not replace this ESCO code; it remains ICT system administrator, a weak fit for DevOps. '
+  source: docs/research/role_catalog_research.md

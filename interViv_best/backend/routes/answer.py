@@ -77,7 +77,18 @@ from modules.assistance_policy import (
     evaluate_eligibility,
     is_follow_up_round,
 )
-from modules.teaching_exposures import list_exposures_for_eligibility
+from modules.follow_ups import (
+    build_bundle_follow_up_round_doc,
+    evaluate_inline_follow_up_outcome,
+    is_inline_bundle_follow_up_round,
+    is_inline_bundle_follow_up_spec,
+    log_follow_up_decision,
+    maybe_apply_inline_bundle_follow_up,
+)
+from modules.teaching_exposures import (
+    list_exposures_for_eligibility,
+    record_teaching_exposure,
+)
 
 router = APIRouter(prefix="/session", tags=["answer"])
 logger = logging.getLogger(__name__)
@@ -347,13 +358,18 @@ def _settle_narration(db: Any, session_id: str, round_number: int) -> str | None
     rules script, so it is rendered here (post-commit, no network) instead of
     leaving the job queued for a worker that the local app never runs. With
     live narration on, the job stays queued for the worker.
+
+    Live narration needs the live-LLM gate to cover narration and a
+    narration provider to be installed. The gate is shared with question
+    generation, so being open does not by itself mean anything can narrate.
     """
-    from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.llm_outbound_gate import llm_consumer_enabled
     from modules.narration_jobs import narration_job_id, process_narration_job
+    from modules.narration_provider import narration_provider_installed
 
     job_id = narration_job_id(session_id, round_number)
     try:
-        if llm_live_fetch_enabled():
+        if llm_consumer_enabled("narration") and narration_provider_installed():
             job = db["narration_jobs"].find_one({"id": job_id})
         else:
             job = process_narration_job(db, job_id)
@@ -751,12 +767,28 @@ def submit_answer(
                 float(item["final_score"]) for item in rounds_so_far
             ) / len(rounds_so_far)
 
+        from modules.staged_flow import (
+            UNSCORED_STAGES,
+            apply_deferred_answer_mask,
+            is_staged_v1_session,
+            round_stage,
+            select_non_core_stage_question,
+            unscored_stage_result,
+        )
+
+        active_stage = round_stage(active_round)
+        scoring_question_context: dict[str, Any] = dict(active_round.get("question_context", {}) or {})
         try:
             follow_up_scoring_pre = (
                 (active_round.get("config_json") or {}).get("follow_up_scoring")
                 or active_round.get("follow_up_scoring")
             )
-            if is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
+            if active_stage in UNSCORED_STAGES:
+                # Warm-up and Behavioural share the same null-score mechanism.
+                scoring_result = unscored_stage_result(
+                    stage=active_stage, reason=f"{active_stage}_unscored"
+                )
+            elif is_follow_up_round(active_round) and follow_up_scoring_pre == "unreviewed":
                 # Unreviewed follow-ups are explicitly unscored practice even
                 # when REVIEWED_BUNDLES_ONLY is false. No numeric score.
                 scoring_result = {
@@ -851,17 +883,32 @@ def submit_answer(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail=str(exc),
                     ) from exc
-                scoring_result = score_round(
-                    round_type=round_type,
-                    answer_text=request.answer_text,
-                    word_count=_server_word_count(request.answer_text or ""),
-                    engagement_label=request.engagement_label,
-                    wpm=request.wpm,
-                    pause_count=request.pause_count,
-                    question_context=scoring_question_context,
-                    difficulty=active_round.get("difficulty", "medium"),
-                    candidate_baseline=candidate_baseline,
-                )
+                reference = str(
+                    scoring_question_context.get("ideal_answer")
+                    or scoring_question_context.get("reference_answer")
+                    or ""
+                ).strip()
+                if (
+                    is_staged_v1_session(session)
+                    and active_stage == "core"
+                    and not reference
+                    and not scoring_question_context.get("required_concepts")
+                ):
+                    scoring_result = unscored_stage_result(
+                        stage=active_stage, reason="no_reference_unscored"
+                    )
+                else:
+                    scoring_result = score_round(
+                        round_type=round_type,
+                        answer_text=request.answer_text,
+                        word_count=_server_word_count(request.answer_text or ""),
+                        engagement_label=request.engagement_label,
+                        wpm=request.wpm,
+                        pause_count=request.pause_count,
+                        question_context=scoring_question_context,
+                        difficulty=active_round.get("difficulty", "medium"),
+                        candidate_baseline=candidate_baseline,
+                    )
         except Exception as exc:
             # Rollback status on failure so round is not stuck in 'finalizing'
             _release_claim_to_pre_submit(
@@ -1057,7 +1104,12 @@ def submit_answer(
                 )
 
         assessment_eligible = eligibility["decision"] == ELIGIBLE
-        if practice_only or is_spaced_review or not assessment_eligible:
+        if (
+            practice_only
+            or is_spaced_review
+            or not assessment_eligible
+            or scoring_result.get("final_score") is None
+        ):
             elo_after = elo_before
             next_difficulty = active_round.get("difficulty", "medium")
             difficulty_change = "same"
@@ -1097,8 +1149,35 @@ def submit_answer(
                 },
             }
 
+        is_inline_follow_up = is_inline_bundle_follow_up_round(active_round)
+        inline_follow_up_outcome: dict[str, Any] | None = None
+        inline_client_feedback: dict[str, Any] | None = None
+
         # Persist this round (assisted already resolved above)
         _bd = dict(scoring_result.get("scoring_breakdown", {}) or {})
+        if active_stage:
+            _bd["stage"] = active_stage
+        raw_guard_applied = scoring_result.get("guard_applied")
+        if is_inline_follow_up:
+            _bd["inline_follow_up"] = True
+            _bd["raw_v3_final_score"] = scoring_result.get("final_score")
+            if raw_guard_applied is not None:
+                _bd["guard_applied"] = raw_guard_applied
+            outcome_eval = evaluate_inline_follow_up_outcome(
+                active_round=active_round,
+                scoring_question_context=scoring_question_context,
+                answer_text=request.answer_text or "",
+                scoring_result=scoring_result,
+            )
+            inline_follow_up_outcome = {
+                "targets_concept": outcome_eval["targets_concept"],
+                "concept_label": outcome_eval["concept_label"],
+                "demonstrated": outcome_eval["demonstrated"],
+                "status": outcome_eval["status"],
+            }
+            inline_client_feedback = outcome_eval["feedback"]
+            _bd["follow_up_outcome"] = inline_follow_up_outcome
+
         scoring_mode = (
             SCORING_MODE_PRACTICE_ESTIMATE
             if scoring_result.get("evaluation_mode") == SYSTEM_DESIGN_CONTENT_MODE
@@ -1168,10 +1247,14 @@ def submit_answer(
             "covered_concepts": _bd.get("covered_concepts", []),
             "missing_concepts": _bd.get("missing_concepts", []),
             "ner_entities": scoring_result.get("ner_entities", []),
-            "final_score": scoring_result["final_score"],
+            "final_score": None if is_inline_follow_up else scoring_result["final_score"],
             "difficulty_change": difficulty_change,
-            "feedback": scoring_result["feedback"],
-            "score_explanation": scoring_result.get("score_explanation", {}),
+            "feedback": (
+                inline_client_feedback
+                if is_inline_follow_up and inline_client_feedback is not None
+                else scoring_result["feedback"]
+            ),
+            "score_explanation": {} if is_inline_follow_up else scoring_result.get("score_explanation", {}),
             "elo_before": elo_before,
             "elo_after": elo_after,
             "engagement_label": request.engagement_label,
@@ -1182,7 +1265,18 @@ def submit_answer(
             "pause_count": request.pause_count,
             "scoring_breakdown": _bd,
             "artifact_json": scoring_result.get("artifact_json") or _scored_base.get("artifact_json", {}),
-            "guard_applied": scoring_result.get("guard_applied"),
+            "guard_applied": None if is_inline_follow_up else scoring_result.get("guard_applied"),
+            **(
+                {
+                    "config_json": {
+                        **(active_round.get("config_json") or {}),
+                        "follow_up_outcome": inline_follow_up_outcome,
+                    },
+                    "follow_up_outcome": inline_follow_up_outcome,
+                }
+                if is_inline_follow_up and inline_follow_up_outcome is not None
+                else {}
+            ),
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evidence_kind": evidence_kind,
             "scoring_mode": scoring_mode,
@@ -1198,7 +1292,9 @@ def submit_answer(
 
         from backend.db.sqlalchemy_store import SessionWriteConflict
 
+        inline_followup_result: dict[str, Any] | None = None
         for _commit_attempt in range(MAX_SUBMIT_COMMIT_ATTEMPTS):
+            inline_followup_result = None
             if _commit_attempt:
                 # Lost a write race: reload, revalidate ownership of this
                 # round, and re-run progression against the fresh session so
@@ -1286,6 +1382,15 @@ def submit_answer(
                 break
 
             total_rounds = _total_rounds(session, settings)
+            if settings.staged_inline_follow_ups:
+                inline_followup_result = maybe_apply_inline_bundle_follow_up(
+                    session=session,
+                    active_round=active_round,
+                    rounds=rounds,
+                    total_rounds=total_rounds,
+                    target_difficulty=next_difficulty,
+                )
+                total_rounds = int(inline_followup_result["total_rounds"])
 
             next_skill: str | None = None
             next_target: dict[str, object] | None = None
@@ -1385,6 +1490,8 @@ def submit_answer(
                                     "problem_ids": expanded_spec.get("problem_ids") or None,
                                     "problem_id": (expanded_spec.get("problem_ids") or [None])[0],
                                 }
+                                if expanded_spec.get("stage"):
+                                    spec_config["stage"] = expanded_spec["stage"]
                                 legacy_cfg = dict(session.get("round_config") or {})
                                 for key in ("max_rows", "timeout_seconds"):
                                     if key in legacy_cfg:
@@ -1428,6 +1535,7 @@ def submit_answer(
                                     block_index=(expanded_spec or {}).get("block_index"),
                                     block_total=(expanded_spec or {}).get("block_total"),
                                     allow_unknown_fallback=bool(session.get("allow_unknown_topic_fallback")),
+                                    staged_v1=is_staged_v1_session(session),
                                 )
                             except ValueError as exc:
                                 progression_blocked_reason = str(exc)
@@ -1460,82 +1568,124 @@ def submit_answer(
                                 next_block_category = next_doc.block_category
                                 # No write here: the appended round joins the single
                                 # commit below with the scored round and Elo.
-                        else:
-                            # Block sessions constrain adaptation to the block's own
-                            # skills; legacy sessions adapt across all session skills.
-                            adaptive_skills = (
-                                session_skills if expanded_spec
-                                else (session.get("skills") or [session.get("skill")])
-                            )
-                            target = adaptive_question_selector.choose_adaptive_target(
-                                user_id=str(session_user_id) if session_user_id else None,
-                                fallback_skill=rotation_skill,
-                                fallback_difficulty=rotation_difficulty,
-                                session_skills=adaptive_skills,
-                                target_role_id=str(session_target_role) if session_target_role else None,
-                                candidate_elo_by_skill=candidate_elos,
-                            )
-                            next_skill = target.skill
-                            if expanded_spec:
-                                # Stay inside the requested block topics.
-                                spec_skill_set = set(session_skills)
-                                if next_skill not in spec_skill_set:
-                                    next_skill = rotation_skill
-                            next_skill_elo = float(
-                                target.current_elo
-                                if target.current_elo is not None
-                                else candidate_elos.get(next_skill, elo_after)
-                            )
-                            next_round_difficulty = (
-                                str(expanded_spec.get("difficulty"))
-                                if expanded_spec and expanded_spec.get("difficulty")
-                                else target.difficulty
+                        elif is_inline_bundle_follow_up_spec(expanded_spec):
+                            assert expanded_spec is not None
+                            next_skill = str(expanded_spec.get("skill") or rotation_skill)
+                            next_round_difficulty = str(
+                                expanded_spec.get("difficulty") or rotation_difficulty
                             )
                             response_next_difficulty = next_round_difficulty
-                            # The block's explicit topic (if any) stays pinned
-                            # for every round of the block, like the opening
-                            # round at start.
-                            sub = ((expanded_spec or {}).get("topic")
-                                   or _sub_domain_for_skill(candidate_doc, next_skill))
+                            next_round_type = "technical_short_answer"
+                            next_target = None
+                            next_round_doc = build_bundle_follow_up_round_doc(
+                                expanded_spec=expanded_spec,
+                                round_number=next_round,
+                                candidate_elos=candidate_elos,
+                                initial_elo=settings.initial_elo,
+                                ready_status=ROUND_STATUS_READY,
+                            )
+                            rounds.append(next_round_doc)
+                            next_round_number = next_round
+                            next_round_status = ROUND_STATUS_READY
+                            next_block_id = expanded_spec.get("block_id")
+                            next_block_position = expanded_spec.get("block_position")
+                            next_block_category = (
+                                expanded_spec.get("category")
+                                or expanded_spec.get("block_category")
+                            )
+                        else:
                             asked = [item.get("question", "") for item in rounds]
-                            weak_context = list(target.target_concepts or [])
-                            if target.source != "rotation" and target.skill:
-                                weak_context.insert(0, target.skill)
-
-                            try:
-                                question_payload = _get_next_question(
-                                    skill=next_skill,
-                                    sub_domain=sub,
-                                    difficulty=next_round_difficulty,
-                                    asked=asked,
-                                    user_id=str(session_user_id) if session_user_id else None,
-                                    target_company_id=str(session_target_company) if session_target_company else None,
-                                    target_role_id=str(session_target_role) if session_target_role else None,
-                                    target_concepts=target.target_concepts,
-                                    resume_skills=resume_skills,
-                                    weak_skills=weak_context,
+                            next_spec_stage = (expanded_spec or {}).get("stage")
+                            non_core = select_non_core_stage_question(
+                                stage=next_spec_stage,
+                                skill=rotation_skill,
+                                asked=asked,
+                            )
+                            if non_core is not None:
+                                question_payload, next_skill, next_round_difficulty = non_core
+                                next_skill_elo = float(
+                                    candidate_elos.get(next_skill, settings.initial_elo)
                                 )
-                            except IntegrationError as exc:
-                                progression_blocked_reason = str(exc)
-                                question_payload = None
-                            if question_payload is not None:
+                                response_next_difficulty = next_round_difficulty
+                                next_target = None
+                                next_round_type = "technical_short_answer"
+                            else:
+                                # Block sessions constrain adaptation to the block's own
+                                # skills; legacy sessions adapt across all session skills.
+                                adaptive_skills = (
+                                    session_skills if expanded_spec
+                                    else (session.get("skills") or [session.get("skill")])
+                                )
+                                target = adaptive_question_selector.choose_adaptive_target(
+                                    user_id=str(session_user_id) if session_user_id else None,
+                                    fallback_skill=rotation_skill,
+                                    fallback_difficulty=rotation_difficulty,
+                                    session_skills=adaptive_skills,
+                                    target_role_id=str(session_target_role) if session_target_role else None,
+                                    candidate_elo_by_skill=candidate_elos,
+                                )
+                                next_skill = target.skill
+                                if expanded_spec:
+                                    # Stay inside the requested block topics.
+                                    spec_skill_set = set(session_skills)
+                                    if next_skill not in spec_skill_set:
+                                        next_skill = rotation_skill
+                                next_skill_elo = float(
+                                    target.current_elo
+                                    if target.current_elo is not None
+                                    else candidate_elos.get(next_skill, elo_after)
+                                )
+                                next_round_difficulty = (
+                                    str(expanded_spec.get("difficulty"))
+                                    if expanded_spec and expanded_spec.get("difficulty")
+                                    else target.difficulty
+                                )
+                                response_next_difficulty = next_round_difficulty
+                                # The block's explicit topic (if any) stays pinned
+                                # for every round of the block, like the opening
+                                # round at start.
+                                sub = ((expanded_spec or {}).get("topic")
+                                       or _sub_domain_for_skill(candidate_doc, next_skill))
+                                weak_context = list(target.target_concepts or [])
+                                if target.source != "rotation" and target.skill:
+                                    weak_context.insert(0, target.skill)
+
                                 try:
-                                    _verify_served_topic(
-                                        requested=(expanded_spec or {}).get("topic"),
-                                        served=question_payload.get("sub_domain"),
+                                    question_payload = _get_next_question(
                                         skill=next_skill,
+                                        sub_domain=sub,
                                         difficulty=next_round_difficulty,
+                                        asked=asked,
+                                        user_id=str(session_user_id) if session_user_id else None,
+                                        target_company_id=str(session_target_company) if session_target_company else None,
+                                        target_role_id=str(session_target_role) if session_target_role else None,
+                                        target_concepts=target.target_concepts,
+                                        resume_skills=resume_skills,
+                                        weak_skills=weak_context,
+                                        relaxed=(is_staged_v1_session(session)
+                                                 and (expanded_spec or {}).get("stage") == "core"),
                                     )
-                                except ValueError as exc:
+                                except IntegrationError as exc:
                                     progression_blocked_reason = str(exc)
                                     question_payload = None
+                                if question_payload is not None:
+                                    try:
+                                        _verify_served_topic(
+                                            requested=(expanded_spec or {}).get("topic"),
+                                            served=question_payload.get("sub_domain"),
+                                            skill=next_skill,
+                                            difficulty=next_round_difficulty,
+                                        )
+                                    except ValueError as exc:
+                                        progression_blocked_reason = str(exc)
+                                        question_payload = None
+                                if question_payload is not None:
+                                    question_payload["adaptive_target"] = target.to_dict()
+                                    next_target = target.to_dict()
+                                next_round_type = "technical_short_answer"
                             if question_payload is None:
                                 pass
                             else:
-                                question_payload["adaptive_target"] = target.to_dict()
-                                next_target = target.to_dict()
-                                next_round_type = "technical_short_answer"
-
                                 next_config_value: dict[str, Any] = {}
                                 if expanded_spec and expanded_spec.get("duration_minutes"):
                                     minutes = int(expanded_spec["duration_minutes"])
@@ -1543,6 +1693,8 @@ def submit_answer(
                                         "duration_minutes": minutes,
                                         DURATION_SECONDS_KEY: minutes * 60,
                                     }
+                                if next_spec_stage:
+                                    next_config_value["stage"] = next_spec_stage
                                 next_round_doc = {
                                     "round": next_round,
                                     "skill": next_skill,
@@ -1573,6 +1725,8 @@ def submit_answer(
                                     "block_index": (expanded_spec or {}).get("block_index"),
                                     "block_total": (expanded_spec or {}).get("block_total"),
                                 }
+                                if next_spec_stage:
+                                    next_round_doc["stage"] = next_spec_stage
                                 if expanded_spec and expanded_spec.get("is_follow_up"):
                                     next_round_doc["is_follow_up"] = True
                                     next_round_doc["follow_up_parent_round"] = (
@@ -1637,6 +1791,8 @@ def submit_answer(
                 }
                 if progression_blocked_reason:
                     session_update["progression_blocked_reason"] = progression_blocked_reason
+                if inline_followup_result and inline_followup_result.get("plan_update"):
+                    session_update.update(inline_followup_result["plan_update"])
                 if session_status == "completed":
                     session_update["completed_at"] = datetime.now(timezone.utc)
                     session_update["overall_readiness_score"] = (
@@ -1651,6 +1807,25 @@ def submit_answer(
                         {"$set": session_update},
                         expected_revision=session.get("revision"),
                     )
+                    if inline_followup_result and inline_followup_result.get("scheduled"):
+                        exposure_concept = inline_followup_result.get("exposure_concept")
+                        record_teaching_exposure(
+                            db,
+                            kind="follow_up_prompt",
+                            item_type="follow_up",
+                            item_id=str(inline_followup_result["follow_up_identity"]),
+                            session=session,
+                            user_id=session.get("user_id"),
+                            round_number=int(inline_followup_result["parent_round"]),
+                            block_id=active_round.get("block_id"),
+                            content_fingerprint=str(inline_followup_result["follow_up_identity"]),
+                            concept_topic_scope=(
+                                {"concept": exposure_concept}
+                                if exposure_concept
+                                else None
+                            ),
+                            also_legacy_assistance=False,
+                        )
                     if (
                         not practice_only
                         and not is_spaced_review
@@ -1674,8 +1849,16 @@ def submit_answer(
                         round_number=request.round,
                         user_id=session.get("user_id"),
                         skill=current_skill,
-                        final_score=scoring_result.get("final_score"),
-                        feedback=scoring_result["feedback"],
+                        final_score=(
+                            None
+                            if is_inline_follow_up
+                            else scoring_result.get("final_score")
+                        ),
+                        feedback=(
+                            inline_client_feedback
+                            if is_inline_follow_up and inline_client_feedback is not None
+                            else scoring_result["feedback"]
+                        ),
                         snapshot_digest=scored_snapshot.get("digest"),
                     )
                     if (
@@ -1751,6 +1934,12 @@ def submit_answer(
                     exc_info=True,
                 )
 
+        if (
+            inline_followup_result is not None
+            and inline_followup_result.get("decision_record")
+        ):
+            log_follow_up_decision(inline_followup_result["decision_record"])
+
         # Clear the saved draft for the submitted round: submitted attempts
         # are immutable and drafts must not survive submission.
         try:
@@ -1760,20 +1949,35 @@ def submit_answer(
 
         narration_status = _settle_narration(db, request.session_id, request.round)
 
+        try:
+            from modules import bundle_generator, bundle_jobs, llm_outbound_gate
+
+            if (
+                bundle_generator._LLM_OVERRIDE is not None
+                or llm_outbound_gate.llm_live_fetch_enabled()
+            ):
+                bundle_jobs.trigger_background_bundle_worker()
+        except Exception:
+            logger.debug("Background bundle worker trigger skipped cleanly.", exc_info=True)
+
         resp_artifact = scoring_result.get("artifact_json")
         if round_type == "sql" and resp_artifact:
             resp_artifact = sanitize_sql_artifact_for_client(resp_artifact)
 
-        return {
-            "svm_label": scoring_result.get("svm_label"),
-            "nlp_score": scoring_result.get("nlp_score"),
-            "kg_score": scoring_result.get("kg_score"),
-            "ner_entities": scoring_result.get("ner_entities", []),
-            "final_score": scoring_result["final_score"],
-            "feedback": scoring_result["feedback"],
-            "score_explanation": scoring_result.get("score_explanation", {}),
+        response_payload: dict[str, Any] = {
+            "svm_label": None if is_inline_follow_up else scoring_result.get("svm_label"),
+            "nlp_score": None if is_inline_follow_up else scoring_result.get("nlp_score"),
+            "kg_score": None if is_inline_follow_up else scoring_result.get("kg_score"),
+            "ner_entities": [] if is_inline_follow_up else scoring_result.get("ner_entities", []),
+            "final_score": None if is_inline_follow_up else scoring_result["final_score"],
+            "feedback": (
+                inline_client_feedback
+                if is_inline_follow_up and inline_client_feedback is not None
+                else scoring_result["feedback"]
+            ),
+            "score_explanation": {} if is_inline_follow_up else scoring_result.get("score_explanation", {}),
             "scoring_schema_version": scoring_result.get("scoring_schema_version"),
-            "rubric": scoring_result.get("rubric", {}),
+            "rubric": {} if is_inline_follow_up else scoring_result.get("rubric", {}),
             "evaluation_mode": scoring_result.get("evaluation_mode"),
             "evaluation_boundary": scoring_result.get("boundary"),
             "evidence_kind": evidence_kind,
@@ -1787,11 +1991,11 @@ def submit_answer(
                 scoring_result.get("semantic_fallback_reason"),
             ),
             "scoring_mode_label": scoring_mode,
-            "concepts": scoring_result.get("concepts", {}),
-            "guard": scoring_result.get("guard", {}),
+            "concepts": {} if is_inline_follow_up else scoring_result.get("concepts", {}),
+            "guard": {} if is_inline_follow_up else scoring_result.get("guard", {}),
             "scoring_breakdown": scoring_result.get("scoring_breakdown", {}),
-            "artifact_json": resp_artifact,
-            "guard_applied": scoring_result.get("guard_applied"),
+            "artifact_json": {} if is_inline_follow_up else resp_artifact,
+            "guard_applied": None if is_inline_follow_up else scoring_result.get("guard_applied"),
             # The next prompt is revealed only by activation, so reading time
             # is never free; these keys stay for compatibility and are null.
             "next_question": None,
@@ -1822,4 +2026,16 @@ def submit_answer(
             "eligibility_policy_version": eligibility["policy_version"],
             "eligibility_exclusion_reasons": eligibility["exclusion_reasons"],
             "is_follow_up": bool(is_follow_up_round(active_round)),
+            "follow_up_scheduled": bool(
+                inline_followup_result and inline_followup_result.get("scheduled")
+            ),
         }
+        if active_stage:
+            response_payload["stage"] = active_stage
+        if is_inline_follow_up:
+            response_payload.pop("scoring_breakdown", None)
+            if inline_follow_up_outcome is not None:
+                response_payload["follow_up_outcome"] = dict(inline_follow_up_outcome)
+        if is_staged_v1_session(session):
+            response_payload = apply_deferred_answer_mask(response_payload)
+        return response_payload

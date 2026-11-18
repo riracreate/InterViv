@@ -75,6 +75,7 @@ export function pendingRoundFromSession(pending) {
 /** UI fields for an opened round (activate / continue / GET active_round). */
 export function roundFieldsFromPayload(round, fallback = {}) {
   if (!round) return null;
+  const config = round.config_json || {};
   return {
     round: Number(round.round) || fallback.round || 1,
     question: round.question || '',
@@ -83,9 +84,11 @@ export function roundFieldsFromPayload(round, fallback = {}) {
     difficulty: round.difficulty || fallback.difficulty || 'medium',
     skill: round.skill || fallback.skill || '',
     questionContext: round.question_context || {},
-    configJson: round.config_json || {},
+    configJson: config,
     expiresAt: round.expires_at ?? null,
     startedAt: round.started_at ?? null,
+    isFollowUp: Boolean(round.is_follow_up || config.is_follow_up),
+    followUpParentRound: round.follow_up_parent_round ?? config.follow_up_parent_round ?? null,
   };
 }
 
@@ -96,10 +99,52 @@ export function feedbackText(feedback) {
   return feedback.next_step || (Array.isArray(feedback.content) ? feedback.content[0] : '') || '';
 }
 
+/** Extract S1b-1 concept outcome object for inline follow-ups when present. */
+export function followUpOutcomeFromPayload(payload) {
+  const outcome = payload?.follow_up_outcome || payload?.config_json?.follow_up_outcome || null;
+  if (!outcome || typeof outcome !== 'object' || !outcome.concept_label) return null;
+  return outcome;
+}
+
+/** Display label for the three inline follow-up outcomes (P1). */
+export function followUpOutcomeLabel(outcome) {
+  if (!outcome) return 'Follow-up submitted';
+  const status = String(outcome.status || '').trim().toLowerCase();
+  if (status === 'demonstrated' || outcome.demonstrated === true) {
+    return 'Demonstrated';
+  }
+  if (status === 'unclear') {
+    return 'Unclear';
+  }
+  return 'Not clearly demonstrated';
+}
+
+/** Whether the legacy "Request optional follow-up" CTA may be shown for this round. */
+export function canRequestManualFollowUp({
+  roundType,
+  phase,
+  followUpNote,
+  followUpScheduled,
+  isFollowUp,
+}) {
+  return (
+    roundType === 'technical_short_answer'
+    && phase === PHASES.REVIEWING
+    && !followUpNote
+    && !followUpScheduled
+    && !isFollowUp
+  );
+}
+
 /** Result fields for a submitted round from GET /session round_history. */
 export function resultFromHistory(entry) {
   if (!entry) return null;
   const breakdown = entry.scoring_breakdown || {};
+  const config = entry.config_json || {};
+  const followUpOutcome = followUpOutcomeFromPayload(entry);
+  const inlineFeedback = followUpOutcome && Array.isArray(entry.feedback?.content) && entry.feedback.content[0]
+    ? entry.feedback.content[0]
+    : feedbackText(entry.feedback);
   return {
     round: Number(entry.round),
     question: entry.question || '',
@@ -108,16 +153,18 @@ export function resultFromHistory(entry) {
     difficulty: entry.difficulty || 'medium',
     skill: entry.skill || '',
     questionContext: entry.question_context || {},
-    configJson: entry.config_json || {},
+    configJson: config,
     answerText: entry.answer_text || '',
-    score: typeof entry.final_score === 'number' ? entry.final_score : null,
-    feedback: feedbackText(entry.feedback),
+    score: followUpOutcome ? null : (typeof entry.final_score === 'number' ? entry.final_score : null),
+    feedback: inlineFeedback,
     rubric: breakdown.rubric || null,
     concepts: breakdown.concepts || null,
     artifact: entry.artifact_json || null,
     evaluationMode: entry.evaluation_mode || null,
     eligibility: entry.assessment_eligibility || null,
-    isFollowUp: Boolean(entry.is_follow_up),
+    isFollowUp: Boolean(entry.is_follow_up || config.is_follow_up),
+    followUpParentRound: entry.follow_up_parent_round ?? config.follow_up_parent_round ?? null,
+    followUpOutcome,
   };
 }
 

@@ -254,7 +254,7 @@ def test_list_jobs_and_practice_session_shape() -> None:
     practice = client.post(
         f"/jobs/{job_id}/practice",
         headers=headers,
-        json={"confirm": True},
+        json={"confirm": True, "skills": ["DBMS", "DSA", "Python"]},
     )
     assert practice.status_code == 200, practice.text
     data = practice.json()

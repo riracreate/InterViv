@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { ArrowUpRight, Braces, BrainCircuit, ClipboardList, Code2, Database, Layers3, MessageCircle, Mic, PenTool, Sparkles } from 'lucide-react';
 import {
   fetchMe,
   fetchCompanies,
@@ -19,7 +20,11 @@ import ResourceLinks from '../components/ResourceLinks';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
 import SkillChipInput from '../components/SkillChipInput';
+import PlannedScope from '../components/PlannedScope';
 import InterviewResumePanel from '../components/InterviewResumePanel';
+import StagedInterviewLauncher from '../components/staged/StagedInterviewLauncher';
+import RolePracticeCard from '../components/staged/RolePracticeCard';
+import { ROLE_PRACTICE_ENABLED } from '../lib/rolePractice';
 import { readScoped, writeScoped } from '../lib/accountStorage';
 import {
   WIZARD_STORAGE_NAME,
@@ -60,9 +65,16 @@ import {
   reconcileTopic,
   sharedTopicsForSkills,
   summarizeAvailability,
+  summarizePlannedScope,
+  INTERVIEW_QUESTION_COUNT,
+  interviewQuestionCount,
 } from '../lib/practiceBuilder';
 
 const DEFAULT_SKILLS = ['DBMS', 'OOP', 'DSA'];
+const MODE_ICONS = { interview: Mic, full: MessageCircle, coding: Code2, problems: Braces,
+  ml_primitives: BrainCircuit, oa: ClipboardList, verbal: MessageCircle, sql: Database,
+  oa_sql: Layers3, system_design: PenTool, custom: Sparkles };
+const DEFAULT_STANDALONE_TOPICS = 'DBMS';
 
 function stripClientOnly(payload) {
   const next = { ...payload };
@@ -128,10 +140,20 @@ export default function Practice() {
   const [sqlCases, setSqlCases] = useState(1);
 
   // Phase B standalone forms
-  const [standaloneCount, setStandaloneCount] = useState(10);
+  const [standaloneCount, setStandaloneCount] = useState(INTERVIEW_QUESTION_COUNT);
+  // False until the candidate edits a count. Until then Interview practice
+  // uses its mode's default (interviewQuestionCount) instead of this state.
+  const [countChosen, setCountChosen] = useState(false);
+  const chooseCount = (value) => {
+    setCountChosen(true);
+    setStandaloneCount(value);
+  };
+  // Whether new interview questions are generated live; null until known.
+  const [liveGeneration, setLiveGeneration] = useState(null);
+  const [systemDesignCount, setSystemDesignCount] = useState(1);
   const [standaloneDuration, setStandaloneDuration] = useState(20);
   const [standaloneDifficulty, setStandaloneDifficulty] = useState('');
-  const [standaloneTopics, setStandaloneTopics] = useState('DBMS');
+  const [standaloneTopics, setStandaloneTopics] = useState(DEFAULT_STANDALONE_TOPICS);
   const [standaloneTopic, setStandaloneTopic] = useState('');
   const [topicNote, setTopicNote] = useState('');
   const [topicMetadata, setTopicMetadata] = useState(null);
@@ -232,6 +254,9 @@ export default function Practice() {
         if (cancelled) return;
         setTopicMetadataError(false);
         setTopicMetadata(data.interview_topics || {});
+        setLiveGeneration(
+          typeof data.interview_live_generation === 'boolean' ? data.interview_live_generation : null
+        );
       })
       .catch(() => {
         if (cancelled) return;
@@ -249,6 +274,9 @@ export default function Practice() {
       .then((data) => {
         setTopicMetadataError(false);
         setTopicMetadata(data.interview_topics || {});
+        setLiveGeneration(
+          typeof data.interview_live_generation === 'boolean' ? data.interview_live_generation : null
+        );
       })
       .catch(() => {
         setTopicMetadata({});
@@ -344,9 +372,9 @@ export default function Practice() {
       setSkillsExplicit(true);
       skillsExplicitRef.current = true;
       skillsRef.current = next;
-      setPrefillNote(
-        `Prefilled from ${location.state?.prefillSource || 'gap analysis'} weak areas.`
-      );
+      setPrefillNote(location.state?.prefillSource === 'career profile'
+        ? 'Prefilled from your career profile. Check or edit the selected skills before starting.'
+        : `Prefilled from ${location.state?.prefillSource || 'gap analysis'} weak areas.`);
     }
     // Adopt the hop's target only when no target is set yet.
     const hopCompany = location.state?.targetCompanyId || '';
@@ -362,6 +390,65 @@ export default function Practice() {
     () => standaloneTopics.split(',').map((s) => s.trim()).filter(Boolean),
     [standaloneTopics]
   );
+
+  // Interview practice: the count the candidate chose, else the default for
+  // this session mode and question source. Other forms use standaloneCount.
+  const interviewCount = interviewQuestionCount({
+    chosen: countChosen ? standaloneCount : null,
+    practiceMode,
+    liveGeneration,
+  });
+
+  // Planned scope preview: the server's plan for the current interview
+  // selection, from the same endpoint the start button probes.
+  const [plannedScope, setPlannedScope] = useState(null);
+  const scopePayload = useMemo(() => {
+    let mapped = null;
+    if (mode === 'interview') {
+      mapped = mapStandaloneToStartPayload('interview', {
+        skills: standaloneSkillList,
+        count: interviewCount,
+        difficulty: standaloneDifficulty || undefined,
+        topic: standaloneTopic || undefined,
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    } else if (mode === 'full') {
+      mapped = mapFullInterviewToStartPayload({
+        skills,
+        roundsPerSkill,
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    } else if (mode === 'custom') {
+      mapped = mapBlocksToStartPayload(blocks, {
+        targetCompanyId: target.companyId,
+        targetRoleId: target.roleId,
+      });
+    }
+    return mapped?.payload && payloadHasInterview(mapped.payload) ? mapped.payload : null;
+  }, [mode, standaloneSkillList, interviewCount, standaloneDifficulty, standaloneTopic,
+    skills, roundsPerSkill, blocks, target.companyId, target.roleId]);
+  useEffect(() => {
+    if (!scopePayload || !userId) {
+      setPlannedScope(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchAvailability(stripClientOnly(scopePayload))
+        .then((resp) => {
+          if (!cancelled) setPlannedScope(summarizePlannedScope(resp));
+        })
+        .catch(() => {
+          if (!cancelled) setPlannedScope(null);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scopePayload, userId]);
   const metadataReady = topicMetadata != null && Object.keys(topicMetadata).length > 0;
   const standaloneTopicOptions = useMemo(
     () => sharedTopicsForSkills(standaloneSkillList, topicMetadata),
@@ -549,14 +636,22 @@ export default function Practice() {
       domainProfile: domainProfile || {},
     };
     setResumeState(nextState);
-    const topSkills = (extractedSkills || []).slice(0, 5);
-    if (topSkills.length > 0) {
-      setSkillsExplicit(true);
-      skillsExplicitRef.current = true;
-      skillsRef.current = topSkills;
-      setSkills(topSkills);
-      setStandaloneTopics(topSkills.slice(0, 3).join(', '));
-      setPrefillNote(`Extracted ${extractedSkills.length} skill${extractedSkills.length === 1 ? '' : 's'} from ${fileName || 'your resume'}.`);
+    // The extracted list is alphabetical, not ranked, so nothing is chosen on
+    // the candidate's behalf. This mode's placeholder default is cleared and
+    // the interview covers only the skills they confirm; a selection they
+    // already made is kept.
+    const found = extractedSkills || [];
+    let selected = skillsRef.current;
+    if (found.length > 0) {
+      if (mode === 'full' && !skillsExplicitRef.current) {
+        selected = [];
+        skillsRef.current = selected;
+        setSkills(selected);
+      }
+      if (mode === 'interview') {
+        setStandaloneTopics((prev) => (prev === DEFAULT_STANDALONE_TOPICS ? '' : prev));
+      }
+      setPrefillNote(`Found ${found.length} skill${found.length === 1 ? '' : 's'} in ${fileName || 'your resume'}. Choose the ones to practise.`);
     }
     if (userId) {
       writeScoped(
@@ -565,7 +660,7 @@ export default function Practice() {
         WIZARD_STORAGE_NAME,
         serializeWizard({
           ...nextState,
-          selectedSkills: topSkills.length > 0 ? topSkills : skills,
+          selectedSkills: selected,
           targetSelection: target,
         }),
         WIZARD_STORAGE_VERSION
@@ -601,13 +696,13 @@ export default function Practice() {
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-ink-muted)]">
             Standalone blocks, guided modes, and a custom builder for Verbal, OA, SQL, coding, and interview practice.
-            Coding practice runs Python with visible examples and hidden-test scoring; SQL practice uses the sandboxed SQL runner only.
+            Coding practice includes visible examples and hidden tests; SQL practice uses the SQL runner.
           </p>
           <p className="mt-3 text-sm">
             <Link to="/problems" className="font-semibold text-[var(--color-ink)] underline-offset-2 hover:underline">
               Open coding Problems →
             </Link>
-            <span className="text-[var(--color-ink-muted)]"> Python problems with examples and coach hints.</span>
+            <span className="text-[var(--color-ink-muted)]"> Browse problems with examples and coach hints.</span>
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-6">
             <label className="flex flex-col gap-1 text-sm">
@@ -667,25 +762,36 @@ export default function Practice() {
           </div>
         )}
 
+        {ROLE_PRACTICE_ENABLED && <div className="mt-6"><RolePracticeCard /></div>}
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2" data-testid="staged-launchers">
+          <StagedInterviewLauncher userId={userId}
+            onStarted={started => navigate(`/interview/${encodeURIComponent(started.session_id)}`)} />
+        </div>
+
         {!mode && (
-          <div className="mt-6 space-y-8" data-testid="practice-tracks">
+          <div className="iv-practice-tracks mt-6 space-y-8" data-testid="practice-tracks">
             {PRACTICE_TRACKS.map((track) => (
               <section key={track.id} aria-labelledby={`track-${track.id}`} data-track={track.id}>
                 <h2 id={`track-${track.id}`} className="text-lg font-semibold text-[var(--color-ink)]">{track.title}</h2>
                 <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{track.blurb}</p>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  {track.modes.map(modeById).filter(Boolean).map((m) => (
+                  {track.modes.map(modeById).filter(Boolean).map((m) => {
+                    const Icon = MODE_ICONS[m.id] || Sparkles;
+                    return (
                     <button
                       key={m.id}
                       type="button"
                       data-mode={m.id}
                       onClick={() => setMode(m.id)}
-                      className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
+                      className="iv-practice-card rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 text-left shadow-sm transition hover:border-slate-300"
                     >
+                      <span className="iv-practice-icon"><Icon size={20} aria-hidden="true" /></span>
                       <h3 className="text-base font-semibold text-[var(--color-ink)]">{m.title}</h3>
                       <p className="mt-2 text-sm leading-6 text-[var(--color-ink-muted)]">{m.blurb}</p>
+                      <span className="iv-practice-action">Set up practice <ArrowUpRight size={15} aria-hidden="true" /></span>
                     </button>
-                  ))}
+                  ); })}
                 </div>
               </section>
             ))}
@@ -725,7 +831,7 @@ export default function Practice() {
           />
         )}
 
-        {(mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
+        {ROLE_PRACTICE_ENABLED ? null : (mode === 'full' || mode === 'oa_sql' || mode === 'custom') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target role & skills
@@ -757,7 +863,7 @@ export default function Practice() {
           </section>
         )}
 
-        {(mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
+        {ROLE_PRACTICE_ENABLED ? null : (mode === 'verbal' || mode === 'oa' || mode === 'sql' || mode === 'coding' || mode === 'system_design' || mode === 'ml_primitives' || mode === 'interview') && (
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-accent)]">
               Target (optional)
@@ -794,6 +900,7 @@ export default function Practice() {
                 onChange={(e) => setRoundsPerSkill(Number(e.target.value))}
               />
             </label>
+            <PlannedScope scope={plannedScope} />
             <button
               type="button"
               disabled={busy}
@@ -891,7 +998,7 @@ export default function Practice() {
                   type="number" min={1} max={30}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -939,7 +1046,7 @@ export default function Practice() {
                   type="number" min={1} max={30}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
                   value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1028,7 +1135,7 @@ export default function Practice() {
           <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <h2 className="text-xl font-semibold">Coding practice</h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-              Python problems with visible examples and hidden-test scoring (60% visible, 40% hidden).
+              Coding problems with visible examples and hidden-test scoring (60% visible, 40% hidden). Available languages depend on your executor.
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">
@@ -1109,8 +1216,8 @@ export default function Practice() {
                 <input
                   type="number" min={1} max={5}
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                  value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  value={systemDesignCount}
+                  onChange={(e) => setSystemDesignCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1127,7 +1234,7 @@ export default function Practice() {
               type="button" disabled={busy}
               className="mt-4 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               onClick={() => runStart(mapStandaloneToStartPayload('system_design', {
-                count: Math.min(5, Math.max(1, Number(standaloneCount) || 1)),
+                count: systemDesignCount,
                 durationMinutes: standaloneDuration,
                 targetCompanyId: target.companyId, targetRoleId: target.roleId,
               }))}
@@ -1217,9 +1324,10 @@ export default function Practice() {
                 Questions (1–10)
                 <input
                   type="number" min={1} max={10}
+                  data-testid="interview-question-count"
                   className="mt-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
-                  value={standaloneCount}
-                  onChange={(e) => setStandaloneCount(Number(e.target.value))}
+                  value={interviewCount}
+                  onChange={(e) => chooseCount(Number(e.target.value))}
                 />
               </label>
               <label className="text-sm">
@@ -1236,12 +1344,13 @@ export default function Practice() {
                 </select>
               </label>
             </div>
+            <PlannedScope scope={plannedScope} />
             <button
               type="button" disabled={busy || interviewTopicHeldOnMetadataError}
               className="mt-5 rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               onClick={() => runStart(mapStandaloneToStartPayload('interview', {
                 skills: standaloneSkillList,
-                count: standaloneCount,
+                count: interviewCount,
                 difficulty: standaloneDifficulty || undefined,
                 topic: standaloneTopic || undefined,
                 candidateId: resumeState.candidateId || undefined,
@@ -1586,6 +1695,7 @@ export default function Practice() {
                     </button>
                   </p>
                 )}
+                <PlannedScope scope={plannedScope} />
                 <button
                   type="button"
                   disabled={busy || blocks.length === 0 || customTopicsHeldOnMetadataError}

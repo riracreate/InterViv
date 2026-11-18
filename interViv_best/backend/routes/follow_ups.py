@@ -12,7 +12,8 @@ from backend.db.follow_up_allocate import allocate_follow_up
 from backend.routes.answer import _submit_locked
 from backend.routes.auth import require_authenticated
 from backend.routes.session_access import assert_session_access
-from modules.follow_ups import build_follow_up_plan_entry
+from modules import bundle_store
+from modules.follow_ups import build_follow_up_plan_entry, select_follow_up_spec
 
 router = APIRouter(prefix="/session", tags=["follow-ups"])
 
@@ -72,18 +73,26 @@ def request_follow_up(
             # Never invent reviewed inventory. Prefer clarification unscored
             # when no reviewed bundle is available in the production path.
             reviewed = None
-            clarification = None
             ctx = parent.get("question_context") or {}
             followups = ctx.get("followups") or []
-            if isinstance(followups, list) and followups:
-                first = followups[0]
-                clarification = first if isinstance(first, str) else str(
-                    (first or {}).get("prompt") or first or ""
-                )
+            if not followups and ctx.get("bundle_id") and ctx.get("version") is not None:
+                try:
+                    bundle_ver = bundle_store.get_version(
+                        str(ctx["bundle_id"]), int(ctx["version"])
+                    )
+                    followups = (
+                        (bundle_ver.get("content_json") or {}).get("followups") or []
+                    )
+                except Exception:
+                    followups = []
+            clarification, targets_concept = select_follow_up_spec(
+                parent, followups if isinstance(followups, list) else []
+            )
             plan_entry = build_follow_up_plan_entry(
                 parent_round_doc=parent,
                 reviewed_bundle=reviewed,
                 clarification_prompt=clarification,
+                targets_concept=targets_concept,
             )
             # Store-level atomic allocation: re-validates caps on a fresh
             # read inside one transaction (conditional revision write +

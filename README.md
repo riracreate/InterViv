@@ -37,7 +37,7 @@ Other languages still need Piston. Details:
 [coding execution security](interViv_best/docs/coding_execution_security.md#trusted-local-runner-docker-free-demo-mode).
 
 - [Application setup and architecture](interViv_best/README.md)
-- [Maintenance results and folder guide](interViv_best/docs/maintenance_2026-11-02.md)
+- [Maintenance record, 2026-11-02 (historical)](interViv_best/docs/maintenance_2026-11-02.md)
 - [Researched improvement roadmap](interViv_best/docs/IMPROVEMENT_ROADMAP.md)
 - [Overhaul acceptance record and manual checklist](interViv_best/docs/overhaul_acceptance.md)
 
@@ -53,10 +53,11 @@ Other languages still need Piston. Details:
 
 The old `archive/`, `interviv_colab_lab/`, `hint_coach_training/`, root
 `scripts/` folders and the two `.worktrees/` checkouts were removed on
-2026-11-04. Checksummed tarballs of the removed files and a git bundle of the
-`phase4b/roadmap-coach` and `codex/phase-b-block-practice` branches are in
-`private/overhaul-2026-11-03/phase8-cleanup/`; both branches also remain in
-this repository.
+2026-11-04. Checksummed tarballs of the removed files are in
+`private/overhaul-2026-11-03/phase8-cleanup/`. The `phase4b/roadmap-coach`
+and `codex/phase-b-block-practice` branches remain in this repository. The
+older `private/maintenance-2026-11-02/` backup was deleted the same day; every
+commit it referred to is still on a branch.
 
 This working copy has local changes beyond the older GitHub `main` snapshot.
 Do not replace it with a clone of `main` until the changes are reconciled and

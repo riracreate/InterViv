@@ -7,6 +7,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Frozen scoring runtime: changing either value requires a new golden capture.
+SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+SEMANTIC_MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -34,6 +38,9 @@ class Settings:
     # never feeds production scoring, mastery, Elo, or readiness.
     experimental_concept_evaluator: bool
     length_ratio_multiplier_enabled: bool
+    # Staged interview flow Slice 1: automatic inline bundle follow-ups inside
+    # POST /session/answer (coached_practice only). Default off.
+    staged_inline_follow_ups: bool
     adzuna_app_id: str | None
     adzuna_app_key: str | None
     jobs_live_fetch: bool
@@ -90,7 +97,8 @@ def _resolve_paths(raw_value: str | None, defaults: list[Path]) -> list[Path]:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[1]
     modules_dir = project_root / "modules"
-    load_dotenv(project_root / ".env", override=False)
+    if os.getenv("INTERVIV_DISABLE_DOTENV") != "1":
+        load_dotenv(project_root / ".env", override=False)
 
     default_module_paths = [
         modules_dir,
@@ -133,6 +141,7 @@ def get_settings() -> Settings:
         reviewed_bundles_only=_env_bool("REVIEWED_BUNDLES_ONLY", False),
         experimental_concept_evaluator=_env_bool("EXPERIMENTAL_CONCEPT_EVALUATOR", False),
         length_ratio_multiplier_enabled=_env_bool("LENGTH_RATIO_MULTIPLIER_ENABLED", False),
+        staged_inline_follow_ups=_env_bool("STAGED_INLINE_FOLLOW_UPS", False),
         adzuna_app_id=(os.getenv("ADZUNA_APP_ID") or "").strip() or None,
         adzuna_app_key=(os.getenv("ADZUNA_APP_KEY") or "").strip() or None,
         jobs_live_fetch=_env_bool("JOBS_LIVE_FETCH", False),

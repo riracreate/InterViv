@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { loadInterviewState, submitAnswer as apiSubmitAnswer, buildAnswerMetrics, clearInterviewState, transcribeAudio, saveInterviewState, fetchSession, saveAnswerDraft, fetchAnswerDraft, fetchAvCapabilities, continueSession, fetchRoundFeedback, requestFollowUp, activateRound } from '../lib/api';
 import {
   MAX_NARRATION_POLLS,
   PHASES,
   TECHNICAL_ADVISORY_SECONDS,
+  canRequestManualFollowUp,
+  followUpOutcomeFromPayload,
+  followUpOutcomeLabel,
   inputsLocked,
   isShowingResult,
   pendingRoundFromResponse,
@@ -31,9 +34,12 @@ import MLPrimitivesRound from '../components/MLPrimitivesRound';
 import SystemDesignRound from '../components/SystemDesignRound';
 import AvUnavailablePanel from '../components/AvUnavailablePanel';
 import { AV_STATES, classifyMediaError, transcriptionFailureResult } from '../lib/avStates';
+import StarComposer from '../components/StarComposer';
+import { readDevicePreference, writeDevicePreference } from '../lib/accountStorage';
 import { createSpeaker } from '../lib/speech/tts';
 import { createRecognitionController, deliverySignals, recognitionClass } from '../lib/speech/stt';
 
+const VivStage = lazy(() => import('../components/VivStage'));
 const DEADLINE_TRANSCRIPTION_NOTICE =
   'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
 
@@ -92,12 +98,18 @@ export default function Interview({ sessionState = null }) {
   const [actionError, setActionError] = useState('');
   // Opt-in read-aloud of questions and feedback; recognition pauses meanwhile.
   const [readAloud, setReadAloud] = useState(false);
+  const [showViv, setShowViv] = useState(false);
+  const [vivAppearance, setVivAppearance] = useState(() => {
+    const saved = readDevicePreference('viv-appearance');
+    return ['fern', 'ocean', 'plum'].includes(saved) ? saved : 'fern';
+  });
+  const [vivSpeaking, setVivSpeaking] = useState(false);
   const speakerRef = useRef(null);
   if (speakerRef.current === null && typeof window !== 'undefined') {
     speakerRef.current = createSpeaker({
       win: window,
-      onStart: () => recognitionRef.current?.pause?.(),
-      onEnd: () => recognitionRef.current?.resume?.(),
+      onStart: () => { setVivSpeaking(true); recognitionRef.current?.pause?.(); },
+      onEnd: () => { setVivSpeaking(false); recognitionRef.current?.resume?.(); },
     });
   }
   const spokenKeyRef = useRef('');
@@ -151,6 +163,23 @@ export default function Interview({ sessionState = null }) {
   const [eligibilityLabel, setEligibilityLabel] = useState('');
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpNote, setFollowUpNote] = useState('');
+  const [isFollowUp, setIsFollowUp] = useState(
+    Boolean(initState.isFollowUp || initState.is_follow_up || initState.config_json?.is_follow_up)
+  );
+  const [followUpParentRound, setFollowUpParentRound] = useState(
+    initState.followUpParentRound
+    ?? initState.follow_up_parent_round
+    ?? initState.config_json?.follow_up_parent_round
+    ?? null
+  );
+  const [followUpScheduledForRound, setFollowUpScheduledForRound] = useState(
+    Boolean(initState.followUpScheduled)
+  );
+  const [followUpOutcome, setFollowUpOutcome] = useState(
+    restoredResult
+      ? (initState.followUpOutcome || followUpOutcomeFromPayload({ config_json: initState.config_json }) || null)
+      : null
+  );
   const feedbackPollRef = useRef(null);
   const feedbackRoundRef = useRef(null);
   const [currentRubric, setCurrentRubric] = useState(restoredResult ? (initState.currentRubric || null) : null);
@@ -161,7 +190,6 @@ export default function Interview({ sessionState = null }) {
   const [serverTranscribing, setServerTranscribing] = useState(false);
   const [engagementReady, setEngagementReady] = useState(false);
   const [engagementLoadFailed, setEngagementLoadFailed] = useState(false);
-  const [liveEngagement, setLiveEngagement] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraCollapsed, setCameraCollapsed] = useState(false);
   const [deadlineNotice, setDeadlineNotice] = useState('');
@@ -204,7 +232,6 @@ export default function Interview({ sessionState = null }) {
   const clearEngagementSamples = useCallback(() => {
     engagementSamplesRef.current = [];
     lastEngagementSampleAtRef.current = 0;
-    setLiveEngagement(null);
   }, []);
 
   const ensureMicrophone = useCallback(async () => {
@@ -475,7 +502,6 @@ export default function Interview({ sessionState = null }) {
         const sample = await classifyFrame(videoRef.current);
         if (cancelled) return;
         if (sample) {
-          setLiveEngagement(sample);
           const now = Date.now();
           if (now - lastEngagementSampleAtRef.current >= 2000) {
             engagementSamplesRef.current.push(sample);
@@ -538,6 +564,10 @@ export default function Interview({ sessionState = null }) {
       expires_at: expiresAt,
       elo,
       totalRounds,
+      isFollowUp,
+      followUpParentRound,
+      followUpScheduled: followUpScheduledForRound,
+      followUpOutcome,
       progressionBlocked,
       progressionBlockedReason,
       status: progressionBlocked ? 'content_blocked' : undefined,
@@ -555,6 +585,10 @@ export default function Interview({ sessionState = null }) {
     difficulty,
     elo,
     expiresAt,
+    followUpOutcome,
+    followUpParentRound,
+    followUpScheduledForRound,
+    isFollowUp,
     progressionBlocked,
     progressionBlockedReason,
     question,
@@ -807,11 +841,19 @@ export default function Interview({ sessionState = null }) {
       const resp = await apiSubmitAnswer(payload);
 
       // Never invent a score when the API omits one.
-      const score = typeof resp.final_score === 'number' ? resp.final_score : null;
-      const feedbackRaw = resp.feedback?.next_step || resp.feedback?.content?.[0] || resp.feedback || '';
+      const outcome = followUpOutcomeFromPayload(resp);
+      const isInlineFollowUpResp = Boolean(outcome);
+      const score = isInlineFollowUpResp
+        ? null
+        : (typeof resp.final_score === 'number' ? resp.final_score : null);
+      const feedbackRaw = isInlineFollowUpResp
+        ? (resp.feedback?.content?.[0] || resp.feedback?.next_step || '')
+        : (resp.feedback?.next_step || resp.feedback?.content?.[0] || resp.feedback || '');
       const feedback = typeof feedbackRaw === 'string' ? feedbackRaw : '';
-      const rubric = resp.rubric || resp.scoring_breakdown?.rubric || null;
-      const concepts = resp.concepts || resp.scoring_breakdown?.concepts || null;
+      const rubric = isInlineFollowUpResp ? null : (resp.rubric || resp.scoring_breakdown?.rubric || null);
+      const concepts = isInlineFollowUpResp ? null : (resp.concepts || resp.scoring_breakdown?.concepts || null);
+      setFollowUpOutcome(outcome);
+      setFollowUpScheduledForRound(Boolean(resp.follow_up_scheduled));
       setCurrentScore(score);
       const elig = resp.assessment_eligibility;
       if (elig === 'excluded' || resp.assisted) {
@@ -965,6 +1007,8 @@ export default function Interview({ sessionState = null }) {
     setEvaluationMode(null); setEvaluationBoundary(null);
     setEligibilityLabel('');
     setFollowUpNote(''); setFollowUpBusy(false);
+    setIsFollowUp(false); setFollowUpParentRound(null);
+    setFollowUpScheduledForRound(false); setFollowUpOutcome(null);
     setActionError('');
     recordedMsRef.current = 0;
     recordingSinceRef.current = null;
@@ -982,6 +1026,10 @@ export default function Interview({ sessionState = null }) {
     setExpiresAt(fields.expiresAt);
     setStartedAt(fields.startedAt);
     setRound(fields.round);
+    setIsFollowUp(Boolean(fields.isFollowUp));
+    setFollowUpParentRound(fields.followUpParentRound ?? null);
+    setFollowUpScheduledForRound(false);
+    setFollowUpOutcome(null);
     setNowMs(Date.now());
   };
 
@@ -1095,25 +1143,6 @@ export default function Interview({ sessionState = null }) {
         : micError
           ? 'Mic Check'
           : 'Standby';
-  const engagementStatus = !isVideoOn
-    ? 'Off'
-    : engagementLoadFailed
-      ? 'Unavailable'
-      : !engagementReady
-        ? 'Loading'
-        : liveEngagement?.label || 'Waiting';
-  const engagementConfidence = liveEngagement?.confidence != null
-    ? `${Math.round(liveEngagement.confidence * 100)}%`
-    : null;
-  const engagementTone = engagementStatus === 'High'
-    ? 'bg-emerald-500'
-    : engagementStatus === 'Low'
-      ? 'bg-red-500'
-      : engagementStatus === 'Neutral'
-        ? 'bg-blue-500'
-        : engagementStatus === 'Uncertain'
-          ? 'bg-amber-500'
-          : 'bg-slate-300';
   // Typed round components share one contract: their result stays visible
   // after submission (scored or not) until Next opens the next round.
   const roundProps = {
@@ -1136,7 +1165,7 @@ export default function Interview({ sessionState = null }) {
   const roundKey = `${sessionId}:${round}`;
 
   return (
-    <div className="h-screen bg-[var(--color-surface)] flex flex-col overflow-y-auto lg:overflow-hidden">
+    <div className="iv-interview-shell h-screen bg-[var(--color-surface)] flex flex-col overflow-y-auto lg:overflow-hidden">
       <header className="h-14 px-6 flex items-center justify-between border-b border-[var(--color-border)] shrink-0 sticky top-0 bg-white z-10">
         <div className="flex items-center gap-4">
           <button type="button" onClick={saveAndExit} className="app-button" style={{ minHeight: 32, padding: '6px 14px' }}
@@ -1218,8 +1247,8 @@ export default function Interview({ sessionState = null }) {
             evaluationBoundary={evaluationBoundary} />
         </div>
       ) : (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
-        <div className="relative flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white flex flex-col min-h-0">
+        <div className="iv-interview-grid flex-1 grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 p-4 overflow-hidden">
+        <div className="iv-interview-question relative flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white flex flex-col min-h-0">
           {/* Live status chips */}
           <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
             {/* Only after a requested mic/camera actually failed. */}
@@ -1251,12 +1280,18 @@ export default function Interview({ sessionState = null }) {
                 {voiceStatus}
               </span>
             </div>
+            <button type="button" className="iv-viv-toggle" aria-pressed={showViv} onClick={() => setShowViv(value => !value)}>
+              {showViv ? 'Hide Viv' : 'Show Viv'}
+            </button>
+            {showViv && <label className="iv-viv-style">Viv style <select value={vivAppearance} onChange={event => { setVivAppearance(event.target.value); writeDevicePreference('viv-appearance', event.target.value); }}>
+              <option value="fern">Fern</option><option value="ocean">Ocean</option><option value="plum">Plum</option>
+            </select></label>}
             {isVideoOn && (
               <div className="flex items-center gap-2 bg-black/[0.03] px-3 py-1.5 rounded-full border border-[var(--color-border)]">
-                <div className={`w-2 h-2 rounded-full ${engagementTone}`} />
+                <div className={`w-2 h-2 rounded-full ${engagementLoadFailed ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                 <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-ink-muted)]"
-                  style={{ fontFamily: "var(--font-body)" }}>
-                  Engagement {engagementStatus}{engagementConfidence ? ` · ${engagementConfidence}` : ''}
+                  style={{ fontFamily: "var(--font-body)" }} title="Camera cues do not measure readiness or competence.">
+                  Camera on{engagementLoadFailed ? ' · cues unavailable' : ''}
                 </span>
               </div>
             )}
@@ -1264,11 +1299,21 @@ export default function Interview({ sessionState = null }) {
 
           {/* Question — the primary focus of the screen */}
           <div className="flex-1 flex flex-col justify-center px-8 md:px-12 py-6 overflow-y-auto min-h-0">
+            {showViv && <Suspense fallback={<p className="iv-viv-loading" role="status">Loading Viv…</p>}><VivStage speaking={vivSpeaking} listening={isRecording || serverRecording} appearance={vivAppearance} /></Suspense>}
             <div className="flex items-center gap-3 mb-5 flex-wrap">
               <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-[var(--color-ink-muted)]"
                 style={{ fontFamily: "var(--font-body)" }}>
                 Question {String(round).padStart(2, '0')} / {String(totalRounds).padStart(2, '0')}
               </span>
+              {isFollowUp && (
+                <span
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-800 border border-amber-500/20"
+                  style={{ fontFamily: "var(--font-body)" }}
+                  data-testid="followup-badge"
+                >
+                  Follow-up{followUpParentRound != null ? ` (Round ${followUpParentRound})` : ''}
+                </span>
+              )}
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-black/[0.04] text-[var(--color-ink-muted)] capitalize"
                 style={{ fontFamily: "var(--font-body)" }}>
                 {currentSkill} · {difficulty}
@@ -1328,7 +1373,7 @@ export default function Interview({ sessionState = null }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 overflow-y-auto min-h-0 lg:overflow-hidden">
+        <div className="iv-interview-answer flex flex-col gap-3 overflow-y-auto min-h-0 lg:overflow-hidden">
           {deadlineNotice && (
             <div
               role="status"
@@ -1413,6 +1458,7 @@ export default function Interview({ sessionState = null }) {
               className="flex-1 min-h-[180px] w-full resize-none rounded-xl border border-transparent bg-transparent text-sm leading-relaxed text-[var(--color-ink)] outline-none transition-colors placeholder:text-[var(--color-ink-muted)] focus:border-[var(--color-border)] focus:bg-black/[0.015] disabled:cursor-default"
               style={{ fontFamily: "var(--font-body)" }}
             />
+            {!locked && <StarComposer onInsert={(text) => setTranscript(previous => previous.trim() ? `${previous.trim()}\n\n${text}` : text)} />}
             {!locked && answerWordCount > 0 && (
               <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)]" data-testid="delivery-checklist"
                 style={{ fontFamily: "var(--font-body)" }}>
@@ -1441,10 +1487,35 @@ export default function Interview({ sessionState = null }) {
 
           {showingResult && (
             <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5" data-testid="verbal-review">
-              <div className="text-3xl font-normal mb-1 text-center"
-                style={{ fontFamily: "var(--font-display)", color: currentScore == null ? 'var(--color-ink-muted)' : scoreColor(currentScore) }}>
-                {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
-              </div>
+              {followUpOutcome || (isFollowUp && currentScore == null) ? (
+                <div className="text-center mb-1" data-testid="followup-concept-outcome">
+                  <div
+                    className="text-xl font-medium mb-1"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      color: followUpOutcome
+                        ? (followUpOutcome.demonstrated
+                          ? '#16A34A'
+                          : followUpOutcome.status === 'unclear'
+                            ? '#D97706'
+                            : '#DC2626')
+                        : 'var(--color-ink)',
+                    }}
+                  >
+                    {followUpOutcomeLabel(followUpOutcome)}
+                  </div>
+                  {followUpOutcome?.concept_label && (
+                    <p className="text-xs font-medium text-[var(--color-ink)]" style={{ fontFamily: "var(--font-body)" }}>
+                      {followUpOutcome.concept_label}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-3xl font-normal mb-1 text-center"
+                  style={{ fontFamily: "var(--font-display)", color: currentScore == null ? 'var(--color-ink-muted)' : scoreColor(currentScore) }}>
+                  {currentScore == null ? '—' : `${Math.round(currentScore)}%`}
+                </div>
+              )}
               {eligibilityLabel && (
                 <p className="text-[11px] uppercase tracking-wider text-center text-[var(--color-ink-muted)] mb-2"
                   style={{ fontFamily: "var(--font-body)" }}>
@@ -1511,7 +1582,13 @@ export default function Interview({ sessionState = null }) {
                   <span className="font-medium text-[var(--color-ink)]">Review:</span> {currentConcepts.missing.slice(0, 4).join(', ')}
                 </p>
               )}
-              {roundType === 'technical_short_answer' && phase === PHASES.REVIEWING && !followUpNote && (
+              {canRequestManualFollowUp({
+                roundType,
+                phase,
+                followUpNote,
+                followUpScheduled: followUpScheduledForRound,
+                isFollowUp,
+              }) && (
                 <button
                   type="button"
                   className="mt-4 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-ink)] disabled:opacity-50"

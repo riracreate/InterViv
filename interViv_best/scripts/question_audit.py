@@ -25,6 +25,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from modules.company_graph import get_company_graph  # noqa: E402
+from modules.question_content import (  # noqa: E402
+    MIN_KEYWORDS,
+    MIN_REFERENCE_WORDS,
+    VALID_DIFFICULTIES,
+    VALID_QUESTION_TYPES,
+    split_keywords,
+    word_count,
+)
 
 
 REQUIRED_COLUMNS = [
@@ -41,14 +49,9 @@ REQUIRED_COLUMNS = [
     "followups",
 ]
 
-VALID_DIFFICULTIES = {"easy", "medium", "hard"}
-VALID_QUESTION_TYPES = {
-    "conceptual",
-    "coding",
-    "system_design",
-    "behavioral",
-    "resume_based",
-}
+# The value sets and the keyword and reference thresholds are the served
+# content rules (``modules/question_content.py``), so this audit and the
+# running app cannot drift apart.
 
 
 @dataclass
@@ -76,13 +79,8 @@ class AuditReport:
         return [issue for issue in self.issues if issue.severity == "warning"]
 
 
-def _split_multi(value: str) -> list[str]:
-    raw = str(value or "").replace(",", "|")
-    return [item.strip() for item in raw.split("|") if item.strip()]
-
-
-def _word_count(value: str) -> int:
-    return len(str(value or "").split())
+_split_multi = split_keywords
+_word_count = word_count
 
 
 def _load_rows(path: Path) -> tuple[list[dict[str, str]], list[str]]:
@@ -173,18 +171,20 @@ def audit_question_bank(path: Path, minimum_questions: int = 50) -> AuditReport:
             issues.append(AuditIssue(index, "error", f"Invalid question_type: {question_type}"))
 
         keywords = _split_multi(normalized["ideal_keywords"])
-        if len(keywords) < 4:
+        if len(keywords) < MIN_KEYWORDS:
             issues.append(
-                AuditIssue(index, "warning", "Fewer than 4 ideal keywords; scoring may be thin.")
+                AuditIssue(index, "warning",
+                           f"Fewer than {MIN_KEYWORDS} ideal keywords; scoring may be thin.")
             )
 
         followups = _split_multi(normalized["followups"])
         if len(followups) < 2:
             issues.append(AuditIssue(index, "warning", "Fewer than 2 follow-up prompts."))
 
-        if _word_count(normalized["ideal_answer"]) < 20:
+        if _word_count(normalized["ideal_answer"]) < MIN_REFERENCE_WORDS:
             issues.append(
-                AuditIssue(index, "warning", "Ideal answer is under 20 words; reference may be weak.")
+                AuditIssue(index, "warning",
+                           f"Ideal answer is under {MIN_REFERENCE_WORDS} words; reference may be weak.")
             )
 
         company = normalized["company"]

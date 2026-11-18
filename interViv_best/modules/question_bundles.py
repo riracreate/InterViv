@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -20,6 +21,10 @@ import yaml
 DIFFICULTIES = ("easy", "medium", "hard")
 SOURCES = ("imported_csv", "llm_draft", "human_authored")
 DEFAULT_CATEGORY = "technical_short_answer"
+BUNDLE_ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+MAX_BUNDLE_ID_LEN = 64
+GOOD_CALIBRATION_MAX_WORDS = 35
+POOR_CALIBRATION_MIN_WORDS = 90
 
 # Order is irrelevant for the hash (sorted keys), listed here for readers.
 # ``version`` is deliberately not hashed: it numbers content, it is not content,
@@ -120,6 +125,212 @@ def validate_bundle_doc(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def safe_slug(text: str, max_len: int = 28) -> str:
+    """Return a clean ``[a-z0-9-]+`` slug bounded to ``max_len`` characters."""
+    limit = max(1, int(max_len))
+    raw = str(text or "").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", raw)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    if len(slug) > limit:
+        slug = slug[:limit].strip("-")
+    return slug or ("item"[:limit])
+
+
+def build_bundle_id(skill: str, topic: str) -> str:
+    """Build a safe canonical bundle_id ``<skill-slug>.<topic-slug>`` (<= 57 chars)."""
+    return f"{safe_slug(skill, 24)}.{safe_slug(topic, 32)}"
+
+
+def safe_bundle_relative_path(skill: str, bundle_id: str) -> Path:
+    """Return a strictly validated relative ``<skill_slug>/<bundle_id>.yaml`` path."""
+    bid = str(bundle_id or "").strip()
+    if (
+        not bid
+        or ".." in bid
+        or "/" in bid
+        or "\\" in bid
+        or len(bid) > MAX_BUNDLE_ID_LEN
+        or not BUNDLE_ID_RE.fullmatch(bid)
+    ):
+        raise BundleContentError(
+            f"invalid bundle_id for file path: {bundle_id!r}"
+        )
+    skill_dir = safe_slug(skill, 32)
+    rel = Path(skill_dir) / f"{bid}.yaml"
+    if rel.is_absolute() or len(rel.parts) != 2 or ".." in rel.parts:
+        raise BundleContentError(f"unsafe relative bundle path: {rel!r}")
+    return rel
+
+
+def _non_empty_str_list(
+    items: Any,
+    label: str,
+    *,
+    min_len: int = 1,
+    max_len: int | None = None,
+) -> list[str]:
+    if not isinstance(items, list):
+        raise BundleContentError(f"{label} must be a list")
+    cleaned = [item.strip() for item in items if isinstance(item, str) and item.strip()]
+    if len(cleaned) != len(items):
+        raise BundleContentError(f"{label} must contain only non-empty strings")
+    if len(cleaned) < min_len:
+        raise BundleContentError(f"{label} must contain at least {min_len} item(s)")
+    if max_len is not None and len(cleaned) > max_len:
+        raise BundleContentError(f"{label} must contain at most {max_len} item(s)")
+    return cleaned
+
+
+def _validate_concept_entries(
+    items: Any,
+    field_name: str,
+    *,
+    min_len: int,
+    max_len: int | None = None,
+) -> list[str]:
+    if not isinstance(items, list) or len(items) < min_len or (max_len is not None and len(items) > max_len):
+        bound = f"{min_len}..{max_len}" if max_len is not None else f">= {min_len}"
+        raise BundleContentError(f"{field_name} must have {bound} concept entries")
+    ids: list[str] = []
+    for idx, entry in enumerate(items):
+        if not isinstance(entry, dict):
+            raise BundleContentError(f"{field_name}[{idx}] must be a mapping")
+        cid = entry.get("id").strip() if isinstance(entry.get("id"), str) else ""
+        if not cid:
+            raise BundleContentError(f"{field_name}[{idx}].id must be a non-empty string")
+        desc_val = entry.get("description") if entry.get("description") is not None else entry.get("descriptor")
+        desc = desc_val.strip() if isinstance(desc_val, str) else ""
+        if not desc:
+            raise BundleContentError(f"{field_name}[{idx}].description must be a non-empty string")
+        _non_empty_str_list(entry.get("aliases"), f"{field_name}[{idx}].aliases", min_len=1)
+        _non_empty_str_list(
+            entry.get("expected_propositions"),
+            f"{field_name}[{idx}].expected_propositions",
+            min_len=1,
+        )
+        ids.append(cid)
+    return ids
+
+
+def evaluate_calibration_length_bias(
+    answer: str,
+    author_level: Any,
+    expected_band: Any,
+) -> tuple[int, bool | None, str | None]:
+    """Return ``(word_count, length_bias_usable, unusable_reason)`` without clamping."""
+    words = len(str(answer or "").split())
+    if isinstance(author_level, bool):
+        return words, None, None
+    if author_level == 3 and expected_band == "Good":
+        if 0 < words <= GOOD_CALIBRATION_MAX_WORDS:
+            return words, True, None
+        reason = "empty_answer" if words == 0 else "good_exceeded_35_words"
+        return words, False, reason
+    if author_level == 0 and expected_band == "Poor":
+        if words >= POOR_CALIBRATION_MIN_WORDS:
+            return words, True, None
+        reason = "empty_answer" if words == 0 else "poor_under_90_words"
+        return words, False, reason
+    return words, None, None
+
+
+def validate_generated_bundle_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    """Validate a newly generated WS2 bundle document (strict Step E.1 structural checks)."""
+    parsed = validate_bundle_doc(doc)
+    content = parsed["content"]
+
+    if content["category"] != DEFAULT_CATEGORY:
+        raise BundleContentError(
+            f"generated bundle category must be {DEFAULT_CATEGORY!r}, got {content['category']!r}"
+        )
+
+    bundle_id = str(content["bundle_id"])
+    if len(bundle_id) > MAX_BUNDLE_ID_LEN or not BUNDLE_ID_RE.fullmatch(bundle_id):
+        raise BundleContentError(
+            f"bundle_id must match {BUNDLE_ID_RE.pattern} and be <= {MAX_BUNDLE_ID_LEN} chars"
+        )
+
+    required_ids = set(
+        _validate_concept_entries(content["required_concepts"], "required_concepts", min_len=2, max_len=5)
+    )
+    _validate_concept_entries(content["optional_concepts"], "optional_concepts", min_len=1)
+    _non_empty_str_list(content["keywords"], "keywords", min_len=3, max_len=10)
+
+    misconceptions = content["misconceptions"]
+    if not isinstance(misconceptions, list) or len(misconceptions) < 1:
+        raise BundleContentError("misconceptions must contain at least 1 entry")
+    for idx, entry in enumerate(misconceptions):
+        if not isinstance(entry, dict):
+            raise BundleContentError(f"misconceptions[{idx}] must be a mapping")
+        mid = entry.get("id").strip() if isinstance(entry.get("id"), str) else ""
+        mdesc = entry.get("description").strip() if isinstance(entry.get("description"), str) else ""
+        if not mid or not mdesc:
+            raise BundleContentError(
+                f"misconceptions[{idx}] must have non-empty id and description"
+            )
+        _non_empty_str_list(
+            entry.get("candidate_patterns"),
+            f"misconceptions[{idx}].candidate_patterns",
+            min_len=1,
+        )
+
+    followups = content["followups"]
+    if not isinstance(followups, list) or len(followups) < 2:
+        raise BundleContentError("followups must contain at least 2 entries")
+    for idx, entry in enumerate(followups):
+        if not isinstance(entry, dict):
+            raise BundleContentError(f"followups[{idx}] must be a mapping with prompt and targets_concept")
+        prompt = entry.get("prompt").strip() if isinstance(entry.get("prompt"), str) else ""
+        target = entry.get("targets_concept").strip() if isinstance(entry.get("targets_concept"), str) else ""
+        if not prompt or not target:
+            raise BundleContentError(f"followups[{idx}] must have non-empty prompt and targets_concept")
+        if target not in required_ids:
+            raise BundleContentError(
+                f"followups[{idx}].targets_concept {target!r} must match an id in required_concepts"
+            )
+
+    examples = content["calibration_examples"]
+    if not isinstance(examples, list) or len(examples) < 2:
+        raise BundleContentError("calibration_examples must contain at least 2 entries")
+    has_good = False
+    has_poor = False
+    for idx, ex in enumerate(examples):
+        if not isinstance(ex, dict):
+            raise BundleContentError(f"calibration_examples[{idx}] must be a mapping")
+        answer = ex.get("answer").strip() if isinstance(ex.get("answer"), str) else ""
+        if not answer:
+            raise BundleContentError(f"calibration_examples[{idx}].answer must be non-empty")
+        level = ex.get("author_level")
+        band = ex.get("expected_band")
+        words, usable, reason = evaluate_calibration_length_bias(answer, level, band)
+        ex["word_count"] = words
+        if usable is not None:
+            ex["length_bias_usable"] = usable
+            if reason is not None:
+                ex["length_bias_unusable_reason"] = reason
+            else:
+                ex.pop("length_bias_unusable_reason", None)
+        else:
+            ex.pop("length_bias_usable", None)
+            ex.pop("length_bias_unusable_reason", None)
+        if not isinstance(level, bool) and level == 3 and band == "Good":
+            has_good = True
+        if not isinstance(level, bool) and level == 0 and band == "Poor":
+            has_poor = True
+
+    if not has_good:
+        raise BundleContentError(
+            "calibration_examples must include a Good example (author_level=3, expected_band='Good')"
+        )
+    if not has_poor:
+        raise BundleContentError(
+            "calibration_examples must include a Poor example (author_level=0, expected_band='Poor')"
+        )
+
+    parsed["content_hash"] = content_hash(content)
+    return parsed
+
+
 def default_bundle_root() -> Path:
     return Path(__file__).resolve().parents[1] / "data" / "question_bundles"
 
@@ -139,6 +350,12 @@ def iter_bundle_files(root: Path | None = None) -> Iterator[tuple[Path, dict[str
 def candidate_payload(version_doc: dict[str, Any]) -> dict[str, Any]:
     """Candidate-facing view: identity + question only. No reference material."""
     content = version_doc["content_json"]
+    status = version_doc.get("status")
+    payload_source = (
+        "reviewed_bundle"
+        if status in ("reviewed", "draft", None)
+        else f"{status}_bundle"
+    )
     return {
         "bundle_id": version_doc["bundle_id"],
         "version": version_doc["version"],
@@ -148,7 +365,7 @@ def candidate_payload(version_doc: dict[str, Any]) -> dict[str, Any]:
         "topic": content["topic"],
         "difficulty": content["difficulty"],
         "question": content["question"],
-        "source": "reviewed_bundle",
+        "source": payload_source,
     }
 
 

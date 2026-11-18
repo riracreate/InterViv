@@ -121,3 +121,8 @@ def set_narration_provider(provider: NarrationProvider | None) -> None:
 
 def get_narration_provider() -> NarrationProvider:
     return _PROVIDER
+
+
+def narration_provider_installed() -> bool:
+    """True when something other than the null default can narrate."""
+    return not isinstance(_PROVIDER, NullNarrationProvider)

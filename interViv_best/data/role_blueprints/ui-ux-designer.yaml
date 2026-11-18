@@ -1,0 +1,115 @@
+id: ui-ux-designer
+title: UI/UX Designer
+aliases:
+- Product Designer
+- Interaction Designer
+- UX Researcher & Designer
+- Digital Designer
+family: design
+levels:
+- intern
+- junior
+- mid
+practical_track: none
+status: draft
+version: 1
+level_expectations:
+  intern: Conducts non-leading usability tests, applies visual hierarchy, spacing,
+    and WCAG contrast/focus basics, designs empty/loading/error states, and uses Figma
+    auto-layout and reusable components.
+  junior: Conducts non-leading usability tests, applies visual hierarchy, spacing,
+    and WCAG contrast/focus basics, designs empty/loading/error states, and uses Figma
+    auto-layout and reusable components.
+  mid: Structures design tokens and scalable component systems, balances user friction
+    against business/technical constraints, synthesizes mixed qualitative + quantitative
+    funnel evidence, and hands off developer-ready specs.
+level_expectation_review:
+  junior: needs owner edit
+competencies:
+- id: user-research-synthesis
+  name: User Research & Synthesis
+  type: technical
+  weight: 0.2
+  skills:
+  - User Research
+  scenario_topics: []
+- id: usability-interaction-accessibility
+  name: Usability, Interaction & Accessibility
+  type: technical
+  weight: 0.15
+  skills:
+  - Usability
+  scenario_topics: []
+- id: design-systems-developer-handoff
+  name: Design Systems & Developer Handoff
+  type: technical
+  weight: 0.15
+  skills:
+  - Design Systems
+  scenario_topics: []
+- id: evidence-driven-redesign
+  name: Evidence-Driven Redesign
+  type: role_scenario
+  weight: 0.25
+  skills: []
+  scenario_topics:
+  - Redesigning a broken multi-step flow after usability testing or funnel analytics
+    reveal high confusion/drop-off
+- id: receptiveness-to-critique-iteration
+  name: Receptiveness to Critique & Iteration
+  type: behavioural
+  weight: 0.15
+  skills: []
+  scenario_topics:
+  - Separating personal attachment to visual work from user evidence during design
+    reviews
+- id: design-engineering-partnership
+  name: Design–Engineering Partnership
+  type: behavioural
+  weight: 0.1
+  skills: []
+  scenario_topics:
+  - Adapting designs pragmatically when engineering constraints surface mid-sprint
+draft_seeds:
+- kind: opener
+  text: Walk me through one screen or flow from your portfolio where usability feedback
+    forced you to throw away your initial layout. What specific behaviour did users
+    exhibit during testing, and what changed in version 2?
+- kind: fundamentals
+  text: What makes a usability-test task prompt leading versus non-leading? Suppose
+    you are testing a new 'Swap Interview Skill' button on a practice preview card—write
+    a non-leading scenario prompt and list three behavioural signals you watch before
+    asking follow-up questions.
+- kind: tradeoff
+  text: When building or extending a design system, how do you decide whether a product
+    team's new UI need should become a variant on an existing shared component, a
+    brand-new shared component, or a local one-off pattern—and how do semantic design
+    tokens support dark mode and WCAG AA contrast?
+- kind: scenario
+  text: Analytics show 62% of mobile users abandon a 4-step resume-and-role setup
+    form on Step 2, and 5 usability sessions reveal users are anxious about where
+    their resume text goes and overwhelmed by 9 inputs on one screen. Engineering
+    says backend endpoints cannot change this sprint. How do you redesign and validate
+    the flow?
+- kind: behavioural
+  text: Tell me about a time engineering told you your design would take three weeks
+    instead of three days to build. How did you compromise without sacrificing the
+    core user experience?
+provenance:
+  onet:
+    code: 15-1255.00
+    title: 15-1255.00 Web and Digital Interface Designers
+    url: https://www.onetonline.org/link/summary/15-1255.00
+    accessed: '2026-11-17'
+    status: verified
+    page_title: 15-1255.00 - Web and Digital Interface Designers
+    note: ''
+  esco:
+    code: '2513.3'
+    title: user interface designer (ISCO 2513.3)
+    url: https://ec.europa.eu/esco/api/resource/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2F96e20037-0a25-4bf6-a25e-808d1605d890&language=en
+    accessed: '2026-11-17'
+    status: verified
+    page_title: user interface designer
+    note: ''
+  source: docs/research/role_catalog_research.md

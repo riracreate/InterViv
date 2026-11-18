@@ -36,7 +36,7 @@ export default function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-slate-950">
+    <main className="iv-auth min-h-screen bg-white text-slate-950">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 sm:px-8">
         <button
           type="button"
@@ -54,7 +54,7 @@ export default function Login() {
               Continue your readiness practice.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
-              Sign in to keep your skill graph, company target, practice history, and roadmap tied to your profile.
+              Sign in to pick up your practice, revisit feedback, and keep working toward your goals.
             </p>
           </div>
 

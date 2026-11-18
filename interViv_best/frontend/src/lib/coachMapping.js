@@ -1,6 +1,7 @@
 /**
  * Map coach API payload → display model. Pure helpers for UI + tests.
  */
+import { summarizeLaunchScope } from './practiceBuilder.js';
 
 export function mapCoachPlan(payload) {
   if (!payload || typeof payload !== 'object') return null;
@@ -32,6 +33,8 @@ export function mapCoachPlan(payload) {
       roundPlan: Array.isArray(payload.practice_preview?.round_plan)
         ? payload.practice_preview.round_plan.map(String)
         : [],
+      // What "Start practice" will ask: at most three free-text questions.
+      plannedScope: summarizeLaunchScope(payload.practice_preview?.planned_scope),
     },
     mode: payload.mode || 'fallback',
     disclaimer:

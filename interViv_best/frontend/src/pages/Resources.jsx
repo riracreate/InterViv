@@ -55,12 +55,10 @@ export default function Resources() {
     <main className="min-h-screen bg-[var(--color-surface)] text-[var(--color-ink)]">
       <div className="app-container">
         <AppNav userId={navUser.userId} roleId={navUser.roleId} />
-        <h1 className="mt-6 text-[length:var(--text-3xl)] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-          Learning resources
-        </h1>
-        <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-          Courses, videos, practice sites, and guides for your next interview. Choose a category to get started.
-        </p>
+        <header className="app-page-hero"><p className="iv-page-kicker">Improve / Resources</p>
+          <h1>Keep learning, one skill at a time.</h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)]">Explore courses, videos, practice sites, and guides for your next interview.</p>
+        </header>
         <nav aria-label="Resource categories" className="mt-6 flex flex-wrap gap-2">
           {CATEGORIES.map(category => (
             <button key={category} type="button" aria-pressed={skillId === category}
@@ -80,7 +78,7 @@ export default function Resources() {
         <div className="mt-6">
           <h2 className="text-lg font-semibold">{skillId}</h2>
           <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Links open in a new tab. Some providers offer paid extras or require an account.</p>
-          <ResourceLinks key={skillId} skillId={skillId} maxPerLevel={100} heading="Curated links" emptyMessage="No curated resources are available for this skill yet. Try another skill." />
+          <ResourceLinks key={skillId} skillId={skillId} maxPerLevel={100} heading="Curated links" emptyMessage="No curated resources are available for this skill yet. Try another skill." trackProgress userId={navUser.userId} />
         </div>
       </div>
     </main>

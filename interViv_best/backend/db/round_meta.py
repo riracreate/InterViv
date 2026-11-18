@@ -9,8 +9,10 @@ from __future__ import annotations
 
 ROUND_PRIVATE_META_KEYS: tuple[str, ...] = (
     "coding_exec_count",
+    "follow_up_decision",
     "follow_up_scoring",
     "purpose",
+    "targets_concept",
     "wpm",
     "pause_count",
 )

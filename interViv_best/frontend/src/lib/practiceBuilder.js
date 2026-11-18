@@ -50,7 +50,7 @@ export const STANDALONE_MODES = [
   { id: 'verbal', title: 'Verbal Ability', blurb: 'English MCQs: grammar, vocabulary, comprehension, ordering, idioms.' },
   { id: 'oa', title: 'OA practice', blurb: 'Technical MCQs restricted to your selected topics.' },
   { id: 'sql', title: 'SQL practice', blurb: 'SQL problems with schemas and execution-based evaluation.' },
-  { id: 'coding', title: 'Coding practice', blurb: 'Python problems with visible examples and hidden-test scoring.' },
+  { id: 'coding', title: 'Coding practice', blurb: 'Solve coding problems with examples and test-based feedback.' },
   { id: 'system_design', title: 'System design', blurb: 'Written design notes get a practice estimate per criterion; self-assessment ratings are optional (no auto diagram scoring).' },
   { id: 'ml_primitives', title: 'ML primitives', blurb: 'Implement numerical algorithms with NumPy. Graded when the local runner is on; otherwise submissions are stored ungraded.' },
   { id: 'interview', title: 'Interview practice', blurb: 'Technical/HR questions with text and voice input.' },
@@ -654,6 +654,100 @@ export function multiSkillTopicNote(skills, metadata, metadataReady) {
   if (!metadataReady || list.length < 2) return null;
   if (sharedTopicsForSkills(list, metadata).length > 0) return null;
   return `No topic is shared by ${list.join(' and ')}. Split into separate blocks, adjust skills, or leave the topic unrestricted.`;
+}
+
+export const INTERVIEW_QUESTION_COUNT = 10;
+// Offline, the largest single-skill pool of the default skill is nine scored
+// questions, so ten cannot start. Eight leaves room and is only a default.
+export const OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT = 8;
+
+/**
+ * Question count for the Interview practice form.
+ *
+ * A count the candidate chose always wins, including ten offline: the scope
+ * panel then reports the shortage, and nothing is shortened for them. Until
+ * they choose, Coached practice with no live generation starts at eight.
+ * Live generation, Assessment, and an unknown question source keep ten.
+ * `chosen` is null until the candidate edits a count; `liveGeneration` is
+ * the server's `interview_live_generation` (null while unknown).
+ */
+export function interviewQuestionCount({ chosen = null, practiceMode, liveGeneration = null }) {
+  if (chosen != null) return chosen;
+  return practiceMode === 'coached_practice' && liveGeneration === false
+    ? OFFLINE_COACHED_INTERVIEW_QUESTION_COUNT
+    : INTERVIEW_QUESTION_COUNT;
+}
+
+function plannedTotal(item) {
+  return Number(item.planned_total) || Number(item.questions) || 0;
+}
+
+function plannedSkillNote(item) {
+  if (item.available === false) {
+    const have = Number(item.offline_questions) || 0;
+    if (!have) return 'no offline questions';
+    const shared = (item.shared_with || []).length ? `, shared with ${item.shared_with.join(' and ')}` : '';
+    return `${plannedTotal(item)} planned, ${have} available offline${shared}`;
+  }
+  if (item.source === 'generated') return 'generated for this skill';
+  if (item.source === 'reviewed') return 'reviewed questions';
+  if (item.served_as) return `from the ${item.served_as} question bank`;
+  return 'question bank';
+}
+
+/**
+ * The scope an interview will actually ask, from the `planned_scope` of a
+ * POST /session/availability response: questions per confirmed skill and
+ * where they come from, and three kinds of gap that need different advice:
+ * `notCovered` (the question budget does not reach the skill), `noContent`
+ * (nothing offline is about the skill) and `insufficient` (some offline
+ * questions, fewer than planned). `unavailable` names every skill that
+ * blocks a start. Pure for tests. Returns null when the response carries
+ * no planned scope (no interview block, older server).
+ */
+export function summarizePlannedScope(resp) {
+  const scopes = (resp?.blocks || []).map((b) => b?.planned_scope).filter(Boolean);
+  if (!scopes.length) return null;
+  // One row per skill: several blocks can plan the same one.
+  const bySkill = new Map();
+  const shortBySkill = new Map();
+  scopes.flatMap((scope) => scope.skills || []).forEach((item) => {
+    const skill = String(item.skill);
+    const row = bySkill.get(skill) || { skill, questions: 0, available: true, note: plannedSkillNote(item) };
+    row.questions += Number(item.questions) || 0;
+    if (item.available === false) {
+      row.available = false;
+      row.note = plannedSkillNote(item);
+      shortBySkill.set(skill, {
+        skill,
+        planned: plannedTotal(item),
+        available: Number(item.offline_questions) || 0,
+        sharedWith: (item.shared_with || []).map(String),
+      });
+    }
+    bySkill.set(skill, row);
+  });
+  const skills = [...bySkill.values()];
+  const short = [...shortBySkill.values()];
+  const notCovered = scopes.flatMap((scope) => scope.not_covered || []).map(String);
+  return {
+    questions: scopes.reduce((sum, scope) => sum + (Number(scope.questions) || 0), 0),
+    skills,
+    notCovered: [...new Set(notCovered)].filter((skill) => !bySkill.has(skill)),
+    noContent: short.filter((item) => !item.available).map((item) => item.skill),
+    insufficient: short.filter((item) => item.available > 0),
+    unavailable: skills.filter((item) => !item.available).map((item) => item.skill),
+  };
+}
+
+/**
+ * Planned scope of a launch whose plan the server builds (Jobs, Coach): the
+ * `planned_scope` object on the draft or preview, in the same display shape
+ * as `summarizePlannedScope`. Null when there is none.
+ */
+export function summarizeLaunchScope(plannedScope) {
+  if (!plannedScope || typeof plannedScope !== 'object') return null;
+  return summarizePlannedScope({ blocks: [{ planned_scope: plannedScope }] });
 }
 
 /**

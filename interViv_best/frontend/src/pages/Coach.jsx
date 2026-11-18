@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import PlannedScope from '../components/PlannedScope';
 import {
   fetchMe,
   fetchCoachPlan,
@@ -383,6 +384,11 @@ export default function Coach() {
               ))}
             </ol>
 
+            <PlannedScope
+              scope={plan.practicePreview.plannedScope}
+              notCoveredHint="Coach practice asks at most three free-text questions."
+              countFixed
+            />
             <button
               type="button"
               disabled={busy || !plan.practicePreview.skills.length}

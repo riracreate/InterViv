@@ -17,6 +17,7 @@ from urllib.parse import quote, urlencode
 
 from modules.jobs_explorer import MAX_PRACTICE_SKILLS, build_practice_start_payload, user_skills_for_overlay
 from modules.resume_parser import TECH_SKILLS, extract_skills_from_text
+from modules.role_skills import OFFLINE_UNCACHED_MESSAGE, extract_role_skills, is_known_canonical
 
 MAX_INPUT_CHARS = 8000
 MIN_USEFUL_CHARS = 20
@@ -89,11 +90,12 @@ def _llm_extract_phrases(text: str) -> list[str] | None:
     if _LLM_OVERRIDE is not None:
         return _LLM_OVERRIDE(text)
 
-    from modules.llm_outbound_gate import llm_live_fetch_enabled
+    from modules.llm_outbound_gate import llm_consumer_enabled
     from modules import question_bank
 
-    # Coach is independent of QUESTION_GENERATION_MODE; live-fetch gate still applies.
-    if not llm_live_fetch_enabled():
+    # Coach is independent of QUESTION_GENERATION_MODE; the live-fetch gate
+    # still applies and has to cover the coach (LLM_LIVE_CONSUMERS).
+    if not llm_consumer_enabled("coach"):
         return None
 
     provider, api_key, model = question_bank._llm_provider()
@@ -273,17 +275,19 @@ def build_plan_steps(
 
 def build_coach_plan(
     *,
-    jd_text: str | None,
-    goal_text: str | None,
+    jd_text: str | None = None,
+    goal_text: str | None = None,
     user_id: str,
     role_id: str | None = None,
+    role: str | None = None,
     include_dashboard: bool = True,
 ) -> dict[str, Any]:
     jd = sanitize_user_text(jd_text)
     goal = sanitize_user_text(goal_text)
+    effective_role = sanitize_user_text(role or role_id)[:200] if (role or role_id) else None
     combined = "\n".join(p for p in (jd, goal) if p).strip()
 
-    if len(combined) < MIN_USEFUL_CHARS:
+    if len(combined) < MIN_USEFUL_CHARS and not (effective_role and len(effective_role.strip()) >= 3):
         return {
             "needs_clarification": True,
             "clarifying_questions": [
@@ -304,22 +308,65 @@ def build_coach_plan(
     # 1. Deterministic lexicon extract (always)
     det_skills = extract_skills_from_text(combined)
 
-    # 2. Optional LLM phrases → map or unrecognized
     unrecognized: list[str] = []
-    llm_mapped: list[str] = []
-    llm_phrases = _llm_extract_phrases(combined)
-    mode = "llm" if llm_phrases is not None else "fallback"
-    if llm_phrases:
-        for phrase in llm_phrases:
-            mapped = map_phrase_to_skills(phrase)
-            if mapped:
-                llm_mapped.extend(mapped)
-            else:
-                label = phrase.strip()
-                if label and label not in unrecognized:
-                    unrecognized.append(label)
+    skill_specs: list[dict[str, Any]] = []
+    cache_hit = False
+    allow_dynamic_canonicals = False
 
-    recognized = _merge_skills(det_skills, llm_mapped)
+    if _LLM_OVERRIDE is not None:
+        # Preserve legacy phrase-list override contract for existing tests.
+        llm_mapped: list[str] = []
+        llm_phrases = _llm_extract_phrases(combined)
+        mode = "llm" if llm_phrases is not None else "fallback"
+        if llm_phrases:
+            for phrase in llm_phrases:
+                mapped = map_phrase_to_skills(phrase)
+                if mapped:
+                    llm_mapped.extend(mapped)
+                else:
+                    label = phrase.strip()
+                    if label and label not in unrecognized:
+                        unrecognized.append(label)
+        recognized = _merge_skills(det_skills, llm_mapped)
+    else:
+        rs_result = extract_role_skills(
+            role=effective_role,
+            jd_text=jd or goal,
+        )
+        rs_mode = str(rs_result.get("mode") or "")
+        rs_skills = [str(s).strip() for s in (rs_result.get("skills") or []) if str(s).strip()]
+        if rs_mode in {"llm", "cached"} and rs_skills:
+            recognized = _merge_skills(rs_skills, det_skills)
+            mode = rs_mode
+            cache_hit = bool(rs_result.get("cache_hit"))
+            skill_specs = list(rs_result.get("skill_specs") or [])
+            allow_dynamic_canonicals = True
+        elif det_skills:
+            recognized = det_skills
+            mode = "fallback"
+        else:
+            msg = str(rs_result.get("message") or OFFLINE_UNCACHED_MESSAGE)
+            return {
+                "needs_clarification": False,
+                "clarifying_questions": [msg],
+                "recognized_skills": [],
+                "have_skills": [],
+                "missing_skills": [],
+                "unrecognized": [],
+                "steps": [
+                    {
+                        "title": "Role skills unavailable offline",
+                        "why": msg,
+                        "href": "/practice",
+                    }
+                ],
+                "practice_preview": {"skills": [], "round_plan": []},
+                "mode": "offline_uncached",
+                "offline_uncached": True,
+                "cache_hit": False,
+                "skill_specs": [],
+                "disclaimer": "Coach maps your text onto interViv skills. It does not score interviews.",
+            }
 
     user_skills = user_skills_for_overlay(user_id) or []
     have = [s for s in recognized if s in set(user_skills)]
@@ -330,19 +377,31 @@ def build_coach_plan(
         missing = list(recognized)
 
     practice_skills = missing[:MAX_PRACTICE_SKILLS] or recognized[:MAX_PRACTICE_SKILLS]
-    # Never include unrecognized
-    practice_skills = [s for s in practice_skills if s in _CANONICAL][:MAX_PRACTICE_SKILLS]
-    preview_payload = build_practice_start_payload(skills=practice_skills) if practice_skills else {
-        "skills": [],
-        "round_plan": [],
-    }
+    if not allow_dynamic_canonicals:
+        # Never include unrecognized phrases when using legacy override/lexicon mode.
+        practice_skills = [s for s in practice_skills if s in _CANONICAL][:MAX_PRACTICE_SKILLS]
+    else:
+        practice_skills = practice_skills[:MAX_PRACTICE_SKILLS]
+
+    preview_payload = (
+        build_practice_start_payload(
+            skills=practice_skills,
+            role=effective_role,
+            jd_text=jd or goal,
+        )
+        if practice_skills
+        else {
+            "skills": [],
+            "round_plan": [],
+        }
+    )
 
     steps = build_plan_steps(
         recognized=recognized,
         missing=missing,
         have=have,
         unrecognized=unrecognized,
-        goal_text=goal or jd,
+        goal_text=goal or jd or (effective_role or ""),
         user_id=user_id,
         role_id=role_id,
         include_dashboard=include_dashboard,
@@ -363,6 +422,9 @@ def build_coach_plan(
             "round_plan": list(preview_payload.get("round_plan") or []),
         },
         "mode": mode,
+        "offline_uncached": False,
+        "cache_hit": cache_hit,
+        "skill_specs": skill_specs,
         "disclaimer": "Coach maps your text onto interViv skills. It does not score interviews.",
     }
 
@@ -371,9 +433,14 @@ def cap_practice_skills(skills: list[str] | None) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for s in skills or []:
-        mapped = map_phrase_to_skills(str(s)) or ([s] if s in _CANONICAL else [])
+        raw = str(s).strip()
+        if not raw:
+            continue
+        mapped = map_phrase_to_skills(raw) or (
+            [raw] if (raw in _CANONICAL or is_known_canonical(raw)) else []
+        )
         for m in mapped:
-            if m in _CANONICAL and m not in seen:
+            if (m in _CANONICAL or is_known_canonical(m)) and m not in seen:
                 seen.add(m)
                 out.append(m)
         if len(out) >= MAX_PRACTICE_SKILLS:

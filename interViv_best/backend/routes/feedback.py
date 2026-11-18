@@ -20,6 +20,7 @@ from backend.routes.session_access import (
 from modules.narration_jobs import narration_job_id
 from modules.teaching_exposures import record_teaching_exposure
 from modules.assistance_policy import item_identity_for_round
+from modules.follow_ups import is_inline_bundle_follow_up_round
 
 router = APIRouter(prefix="/session", tags=["feedback"])
 
@@ -163,7 +164,21 @@ def get_round_feedback(
                 detail="Round has not been submitted yet; feedback is unavailable.",
             )
 
+        from modules.staged_flow import (
+            deferred_feedback_response,
+            is_staged_v1_session,
+        )
+
         assessment_done = session_assessment_completed(session)
+        if is_staged_v1_session(session) and not assessment_done:
+            # A7: staged_v1 defers all scores, feedback, and narration until
+            # completion so pre-completion checks cannot record feedback_reveal.
+            return deferred_feedback_response(
+                session_id=session_id,
+                round_number=int(round_number),
+                session_status=session.get("status"),
+            )
+
         job = db["narration_jobs"].find_one({
             "id": narration_job_id(session_id, int(round_number)),
         })
@@ -188,12 +203,18 @@ def get_round_feedback(
         except Exception:
             pass
 
+        is_inline_fu = is_inline_bundle_follow_up_round(round_doc)
+        cfg = round_doc.get("config_json") or {}
+        follow_up_outcome = (
+            round_doc.get("follow_up_outcome")
+            or (cfg.get("follow_up_outcome") if isinstance(cfg, dict) else None)
+        )
         response = {
             "session_id": session_id,
             "round": int(round_number),
             "session_status": session.get("status"),
             "feedback": _feedback_allowlist(round_doc.get("feedback")),
-            "final_score": round_doc.get("final_score"),
+            "final_score": None if is_inline_fu else round_doc.get("final_score"),
             "narration": _narration_payload(
                 job,
                 assessment_completed=assessment_done,
@@ -205,7 +226,9 @@ def get_round_feedback(
             )
             or [],
         }
-        if round_doc.get("guard_applied") is not None:
+        if is_inline_fu and isinstance(follow_up_outcome, dict):
+            response["follow_up_outcome"] = dict(follow_up_outcome)
+        if not is_inline_fu and round_doc.get("guard_applied") is not None:
             response["guard_applied"] = round_doc.get("guard_applied")
         return response
     except HTTPException:
