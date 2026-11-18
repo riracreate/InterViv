@@ -360,9 +360,10 @@ def _validate_positive_examples(content: dict[str, Any]) -> None:
     """Each required concept carries 2-3 natural one-sentence correct answers.
 
     Examples are 6-25 words, one sentence, worded differently from each other,
-    and not copied from the reference answer. They feed the evaluator's
-    semantic tier, so a copied or duplicated example would make the check
-    easier without adding evidence.
+    and at most one per concept may reuse or nearly copy a sentence from the
+    reference answer. They feed the evaluator's semantic tier, so duplicated
+    or wholesale-copied examples would make the check easier without adding
+    evidence.
     """
     reference = str(content.get("reference_answer") or "")
     for idx, concept in enumerate(content.get("required_concepts") or []):
@@ -374,6 +375,7 @@ def _validate_positive_examples(content: dict[str, Any]) -> None:
             min_len=POSITIVE_EXAMPLES_MIN,
             max_len=POSITIVE_EXAMPLES_MAX,
         )
+        ref_copies = 0
         for example in examples:
             words = len(example.split())
             if not POSITIVE_EXAMPLE_MIN_WORDS <= words <= POSITIVE_EXAMPLE_MAX_WORDS:
@@ -388,10 +390,12 @@ def _validate_positive_examples(content: dict[str, Any]) -> None:
                 )
             copied = near_copy_source(example, [reference])
             if copied is not None:
-                raise BundleContentError(
-                    f"positive example for concept {cid!r} is copied from the reference "
-                    f"answer: {example!r} ~ {copied!r}"
-                )
+                ref_copies += 1
+                if ref_copies > 1:
+                    raise BundleContentError(
+                        f"at most one positive example for concept {cid!r} may be copied "
+                        f"from the reference answer: {example!r} ~ {copied!r}"
+                    )
         for i in range(len(examples)):
             for j in range(i + 1, len(examples)):
                 if _near_copy(examples[i], examples[j]):

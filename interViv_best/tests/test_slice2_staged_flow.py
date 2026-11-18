@@ -192,29 +192,59 @@ def _seed_single_reviewed_python_bundle(difficulty: str = "medium") -> dict[str,
     }
     imported = bundle_store.import_bundle(doc, actor_id="test", initial_status="draft")
     v = imported["version"]
-    v = bundle_store.submit_for_review(
-        v["bundle_id"], int(v["version"]), actor_id="test", reason="Ready for review"
-    )
-    bundle_store.record_decision(
+    return _approve_bundle_version(
         v["bundle_id"],
         int(v["version"]),
+        actor_id="test",
+        reason1="Reference answer and concept propositions match expected rubric.",
+        reason2="Second independent approval for reviewed Python medium bundle.",
+    )
+
+
+def _approve_bundle_version(
+    bundle_id: str,
+    version: int,
+    *,
+    actor_id: str = "test-reviewer",
+    reason1: str = "Reference answer and concept propositions verified for test bundle.",
+    reason2: str = "Second independent approval for test bundle.",
+) -> dict[str, Any]:
+    """Submit a bundle version and record two independent approvals to reach 'reviewed'."""
+    v = bundle_store.submit_for_review(
+        bundle_id, version, actor_id=actor_id, reason="Ready for review"
+    )
+    bundle_store.record_decision(
+        bundle_id,
+        version,
         reviewer_id="reviewer-1",
         content_hash=v["content_hash"],
         decision="approve",
         checklist=_CHECK_OK,
-        reasons="Reference answer and concept propositions match expected rubric.",
+        reasons=reason1,
         calibration=_CALIB,
     )
     return bundle_store.record_decision(
-        v["bundle_id"],
-        int(v["version"]),
+        bundle_id,
+        version,
         reviewer_id="reviewer-2",
         content_hash=v["content_hash"],
         decision="approve",
         checklist=_CHECK_OK,
-        reasons="Second independent approval for reviewed Python medium bundle.",
+        reasons=reason2,
         calibration=_CALIB,
     )
+
+
+def _review_seeded_demo_bundles() -> None:
+    """Transition seeded demo bundles from auto_checked to reviewed for test eligibility."""
+    for bundle_id in (
+        "demo.python.01_gil.v1",
+        "demo.python.02_generators.v1",
+        "demo.python.03_closures.v1",
+    ):
+        if bundle_store.get_version(bundle_id, 1)["status"] == "reviewed":
+            continue
+        _approve_bundle_version(bundle_id, 1)
 
 
 def test_staged_v1_preset_validation_and_stage_persistence_no_migration(staged_sql_env):
@@ -500,6 +530,7 @@ def test_behavioural_csv_builder_unscored_question_only_and_skip_when_absent(
     monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", "0")
     app_config.get_settings.cache_clear()
     seed_demo_bundles()
+    _review_seeded_demo_bundles()
     client = TestClient(app)
     r_start = client.post(
         "/session/start",
@@ -612,6 +643,7 @@ def test_deferred_feedback_enforced_and_legacy_sessions_unchanged(
     monkeypatch.setenv("STAGED_INLINE_FOLLOW_UPS", "0")
     app_config.get_settings.cache_clear()
     seed_demo_bundles()
+    _review_seeded_demo_bundles()
     client = TestClient(app)
 
     # Staged_v1 session
@@ -721,6 +753,7 @@ def test_quick_staged_v1_end_to_end_demo_bundles_with_inline_followup(staged_sql
     db = staged_sql_env["db"]
     _, headers = _create_user_headers(db)
     seed_demo_bundles()
+    _review_seeded_demo_bundles()
     client = TestClient(app)
 
     start_resp = client.post(

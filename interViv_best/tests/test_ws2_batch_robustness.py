@@ -884,14 +884,24 @@ def test_demotion_not_applied_when_only_2_required_concepts_and_writes_audit_jso
             assert {"id", "label", "descriptor"} <= set(mc.keys())
 
 
+@pytest.mark.requires_semantic_model
 def test_step_e_uses_concept_evaluator_v3_and_records_version(batch_env: Path) -> None:
-    """Step E.2 runs concept_evaluator_v3 and records evaluator_version in check metadata."""
+    """Step E.2 runs concept_evaluator_v3 in strict mode and records evaluator_version."""
     audit_path = batch_env / "v3_rejected.jsonl"
 
     def v3_semantic_override(purpose: str, **kwargs):
         if purpose == "bundle_generation":
-            # Propositions alone cannot match (v2 would fail), but v3 semantic/alias tiers match.
+            # Propositions alone cannot match (v2 would fail), while v3.1 semantic tier
+            # matches via positive_examples under strict mode.
             payload = _valid_bundle_payload(topic="Backpressure", all_tight=True)
+            payload["required_concepts"][0]["positive_examples"] = [
+                "Token buckets pace average traffic throughput while smoothing sudden burst spikes cleanly.",
+                "Rate limiting maintains token balances to sustain steady throughput and absorb short bursts.",
+            ]
+            payload["required_concepts"][1]["positive_examples"] = [
+                "Once capacity empties, servers reject requests using status 429 and a Retry-After wait interval.",
+                "Clients receive a 429 response with backoff timing headers whenever bucket quota expires.",
+            ]
             return {"content": json.dumps(payload), "usage": {"total_tokens": 90}}
         if purpose == "bundle_blind_answer":
             return {
@@ -913,8 +923,9 @@ def test_step_e_uses_concept_evaluator_v3_and_records_version(batch_env: Path) -
     )
     assert passed["status"] == "auto_checked"
     assert passed["retried"] is False
-    assert passed["blind_eval"]["evaluator_version"] == "concept_evaluator_v3.0"
-    assert passed["bundle"]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.0"
+    assert passed["blind_eval"]["evaluator_version"] == "concept_evaluator_v3.1"
+    assert passed["bundle"]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.1"
+    assert [c["match_type"] for c in passed["blind_eval"]["concepts"]] == ["semantic", "semantic"]
     assert not audit_path.exists()
 
     # Verify evaluator_version is also persisted on retry/rejection metadata
@@ -953,8 +964,63 @@ def test_step_e_uses_concept_evaluator_v3_and_records_version(batch_env: Path) -
     )
     assert rejected["status"] == "rejected"
     versions = {v["version"]: v for v in bundle_store.list_versions(rejected["bundle_id"])}
-    assert versions[1]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.0"
-    assert versions[2]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.0"
+    assert versions[1]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.1"
+    assert versions[2]["attribution_json"]["auto_check"]["evaluator_version"] == "concept_evaluator_v3.1"
+
+
+def test_step_e_strict_rejects_alias_only_blind_answer(batch_env: Path) -> None:
+    """Under strict mode (v3.1), alias-only blind answers stay 'mentioned' and fail Step E.2."""
+    audit_path = batch_env / "v3_strict_alias_rejected.jsonl"
+
+    def _alias_only_payload(retry: bool = False) -> dict[str, Any]:
+        payload = _valid_bundle_payload(topic="Circuit Breaker", all_tight=True)
+        if retry:
+            payload["question"] = "[Retry] " + payload["question"]
+        payload["required_concepts"][0]["descriptor"] = "Arbitrary distributed consensus quorum clock"
+        payload["required_concepts"][1]["descriptor"] = "Arbitrary database vacuum compaction schedule"
+        return payload
+
+    def alias_only_override(purpose: str, **kwargs):
+        if purpose == "bundle_generation":
+            return {"content": json.dumps(_alias_only_payload(retry=False)), "usage": {"total_tokens": 80}}
+        if purpose == "bundle_regeneration":
+            return {"content": json.dumps(_alias_only_payload(retry=True)), "usage": {"total_tokens": 80}}
+        if purpose == "bundle_blind_answer":
+            return {
+                "content": "The architecture mentions token bucket alongside retry after today.",
+                "usage": {"total_tokens": 25},
+            }
+        if purpose == "bundle_check_audit":
+            return {
+                "content": json.dumps(
+                    {
+                        "root_cause": "blind answer only named aliases without substance",
+                        "issue_type": "question",
+                        "fixes": ["clarify mechanism required"],
+                    }
+                ),
+                "usage": {"total_tokens": 25},
+            }
+        raise AssertionError(purpose)
+
+    bundle_generator.set_bundle_llm_override(alias_only_override)
+    rejected = bundle_generator.generate_and_check_bundle(
+        skill="API Design",
+        topic="Circuit Breaker",
+        difficulty="medium",
+        rejected_audit_path=audit_path,
+    )
+    assert rejected["status"] == "rejected"
+    assert rejected["retried"] is True
+    assert rejected["blind_eval"]["evaluator_version"] == "concept_evaluator_v3.1"
+    assert rejected["blind_eval"]["coverage"]["k_supported"] == 0
+    assert all(
+        c["state"] == "mentioned" and c["match_type"] == "alias"
+        for c in rejected["blind_eval"]["concepts"]
+    )
+    versions = {v["version"]: v for v in bundle_store.list_versions(rejected["bundle_id"])}
+    assert versions[1]["status"] == "rejected"
+    assert versions[2]["status"] == "rejected"
 
 
 # ─── Item A: Calibration length clamp removed + usable flag ───────────────────
@@ -1234,7 +1300,7 @@ def test_pregenerate_pilot_metrics_and_export_bundles_review_csv(
                 "id": "http_429_headers",
                 "descriptor": "Return HTTP 429 with Retry-After header",
                 "aliases": ["retry after"],
-                "expected_propositions": ["nonexistent hyperloop signal"],
+                "expected_propositions": ["include retry after headers"],
                 "positive_examples": list(FIXTURE_POSITIVE_EXAMPLES),
             },
             {
@@ -1346,10 +1412,10 @@ def test_pregenerate_pilot_metrics_and_export_bundles_review_csv(
     assert rr["reason"]
     assert rr["missed_concepts"] == ["token_bucket", "http_429_headers"]
 
-    # Pass Flow: 1 proposition + 1 alias + 1 semantic; Demote Flow: 2 propositions; Reject Flow: 0
+    # Pass Flow: 2 propositions + 1 semantic; Demote Flow: 2 propositions; Reject Flow: 0
     assert report["blind_match_tier_counts"] == {
-        "proposition": 3,
-        "alias": 1,
+        "proposition": 4,
+        "alias": 0,
         "semantic": 1,
     }
 

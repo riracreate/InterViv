@@ -256,3 +256,57 @@ def test_round_frozen_eligible_before_the_rule_stays_eligible(slice1_sql_env, mo
     assert dash_body["rounds"][0]["assessment_eligibility"] == "eligible"
     assert dash_body["block_results"][0]["assessment_eligible_rounds"] == 1
     assert dash_body["overall_readiness_score"] == pytest.approx(body["final_score"], abs=0.05)
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("reviewed_bundle", "reviewed_bundle"),
+        ("auto_checked_bundle", "auto_checked_bundle"),
+        ("generated_bundle", "generated_bundle"),
+        ("draft_bundle", "draft_bundle"),
+        ("unknown_bundle", "unknown_bundle"),
+        (None, "unknown_bundle"),
+        ("something_else", "unknown_bundle"),
+    ],
+)
+def test_attempt_snapshot_preserves_bundle_status_label(source, expected) -> None:
+    from modules.attempt_snapshot import (
+        _reference_from_context,
+        freeze_attempt_snapshot,
+        verify_attempt_snapshot,
+    )
+
+    ctx: dict = {
+        "bundle_id": "python.label",
+        "version": 1,
+        "content_hash": "h",
+    }
+    if source is not None:
+        ctx["source"] = source
+
+    ref = _reference_from_context(ctx)
+    assert ref == {
+        "source": expected,
+        "bundle_id": "python.label",
+        "version": 1,
+        "content_hash": "h",
+    }
+
+    snapshot = freeze_attempt_snapshot(
+        {
+            "round": 1,
+            "round_type": "technical_short_answer",
+            "skill": "Python",
+            "question": "Q?",
+            "answer_text": "A.",
+            "final_score": 50.0,
+            "feedback": {},
+            "scoring_breakdown": {},
+            "question_context": ctx,
+            "config_json": {},
+        },
+        {"scoring_schema_version": "v-test"},
+    )
+    assert snapshot["reference"] == ref
+    assert verify_attempt_snapshot(snapshot) is True
