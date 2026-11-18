@@ -100,6 +100,21 @@ def _forbid_cloud(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("urllib.request.urlopen", forbid_urlopen)
 
 
+def test_ollama_hint_times_out_after_15_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CODING_COACH_URL", raising=False)
+    seen: dict[str, float | None] = {}
+
+    def fake_open(self, request, timeout=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        return _Body({"message": {"content": "Name the invariant."}})
+
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
+    payload = build_hint(problem=PROBLEM, level=1, language="python")
+    assert payload["kind"] == "ai"
+    assert seen["timeout"] == 15
+    assert coding_coach.HINT_TIMEOUT_SECONDS == 15
+
+
 def test_hint_requests_stay_on_local_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")

@@ -21,6 +21,7 @@ DEFAULT_MODEL = "gemma2:2b"
 MAX_SOURCE_CHARS = 4000
 MAX_HINT_CHARS = 1200
 MAX_HINT_CODE_LINES = 3
+HINT_TIMEOUT_SECONDS = 15
 
 # Model output is checked before it reaches the candidate: the prompt asks for
 # no solution code, but a small local model does not always comply.
@@ -157,7 +158,7 @@ def _ollama_hint(
         method="POST",
     )
     try:
-        with build_opener(ProxyHandler({})).open(request, timeout=45) as response:
+        with build_opener(ProxyHandler({})).open(request, timeout=HINT_TIMEOUT_SECONDS) as response:
             body = json.loads(response.read(200_000))
     except (OSError, HTTPError, URLError, ValueError, TimeoutError):
         return None
