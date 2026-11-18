@@ -10,6 +10,12 @@ Policy v1 (initial):
 - Exact-item repetition is always repeated practice (window does not help).
 - Incomplete history → unknown, never clean.
 - Legacy rows without a persisted decision → legacy/unknown.
+- A round served from a question bundle counts only when the bundle label
+  frozen in its question_context at serve time is ``reviewed_bundle``.
+  Auto-checked, generated, draft or unlabelled bundle rounds keep their
+  feedback but are excluded (``unreviewed_content``). The served snapshot
+  decides, never a live store lookup; persisted decisions on past rounds
+  are never recomputed.
 """
 
 from __future__ import annotations
@@ -35,6 +41,11 @@ REASON_COARSE_SCOPE = "coarse_topic_scope"
 REASON_GUEST_SESSION_ONLY = "guest_session_scoped"
 REASON_LEGACY_UNVERIFIABLE = "legacy_unverifiable"
 REASON_UNSCORED_FOLLOW_UP = "unreviewed_follow_up"
+REASON_UNREVIEWED_CONTENT = "unreviewed_content"
+
+# Label written by question_bundles.candidate_payload only for a bundle
+# version whose status was exactly "reviewed" when it was served.
+REVIEWED_BUNDLE_SOURCE = "reviewed_bundle"
 
 TEACHING_KINDS = frozenset({
     "hint",
@@ -120,6 +131,30 @@ def topic_scope_for_round(round_doc: dict[str, Any], session: dict[str, Any] | N
         "concept_ids": concept_ids,
         "scope_certainty": "concept" if concept_ids else ("topic" if topic or skill else "unknown"),
     }
+
+
+def served_bundle_label(round_doc: dict[str, Any] | None) -> str | None:
+    """Bundle trust label frozen in question_context when the question was served.
+
+    ``None`` when the round was not served from a question bundle (bank,
+    template, LLM, MCQ, SQL or coding items are not affected by this rule).
+    A pinned bundle with no label reads as ``unknown_bundle``.
+    """
+    if not isinstance(round_doc, dict):
+        return None
+    ctx = round_doc.get("question_context") or {}
+    if not isinstance(ctx, dict):
+        return None
+    source = str(ctx.get("source") or "").strip()
+    if ctx.get("bundle_id") is None and not source.endswith("_bundle"):
+        return None
+    return source or "unknown_bundle"
+
+
+def is_unreviewed_bundle_round(round_doc: dict[str, Any] | None) -> bool:
+    """True when the round was served from a bundle not explicitly reviewed."""
+    label = served_bundle_label(round_doc)
+    return label is not None and label != REVIEWED_BUNDLE_SOURCE
 
 
 def is_follow_up_round(round_doc: dict[str, Any] | None) -> bool:
@@ -302,6 +337,10 @@ def evaluate_eligibility(
         ).get("follow_up_scoring")
         if follow_up_scoring == "unreviewed":
             reasons.append(REASON_UNSCORED_FOLLOW_UP)
+    elif is_unreviewed_bundle_round(round_doc):
+        # Follow-ups are already excluded; any other bundle round counts only
+        # when it was served from an explicitly reviewed version.
+        reasons.append(REASON_UNREVIEWED_CONTENT)
 
     retries = _prior_same_item_attempts(
         prior_rounds=prior_rounds,
@@ -384,6 +423,7 @@ def evaluate_eligibility(
                 REASON_RELATED_EXPOSURE,
                 REASON_COARSE_SCOPE,
                 REASON_UNSCORED_FOLLOW_UP,
+                REASON_UNREVIEWED_CONTENT,
             )
         ):
             decision = EXCLUDED

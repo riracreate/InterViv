@@ -347,11 +347,9 @@ def _normalize_question_payload(payload: object, *, skill: str,
         # Persist the pin on the round; resolve reference material server-side
         # at score time.
         if source == "reviewed_bundle" or payload.get("bundle_id"):
-            normalized_source = (
-                source
-                if source in {"reviewed_bundle", "auto_checked_bundle", "generated_bundle"}
-                else "reviewed_bundle"
-            )
+            # Keep the served bundle label; never upgrade an unknown label to
+            # reviewed (eligibility reads it from this snapshot).
+            normalized_source = source if source.endswith("_bundle") else "unknown_bundle"
             return {
                 "question": str(question_text),
                 "skill": str(payload.get("skill") or skill),

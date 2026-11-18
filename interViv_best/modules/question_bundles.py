@@ -604,12 +604,10 @@ def iter_bundle_files(root: Path | None = None) -> Iterator[tuple[Path, dict[str
 def candidate_payload(version_doc: dict[str, Any]) -> dict[str, Any]:
     """Candidate-facing view: identity + question only. No reference material."""
     content = version_doc["content_json"]
-    status = version_doc.get("status")
-    payload_source = (
-        "reviewed_bundle"
-        if status in ("reviewed", "draft", None)
-        else f"{status}_bundle"
-    )
+    status = str(version_doc.get("status") or "").strip()
+    # Only an explicit "reviewed" status is labelled reviewed; eligibility
+    # reads this label from the served snapshot (assistance_policy).
+    payload_source = f"{status}_bundle" if status else "unknown_bundle"
     return {
         "bundle_id": version_doc["bundle_id"],
         "version": version_doc["version"],

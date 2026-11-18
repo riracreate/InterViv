@@ -1726,13 +1726,13 @@ def test_s1b3_deferred_feedback_three_core_shared_topic_one_followup_all_core_el
     """S1b-3 (Q1 acceptance): 3 bundle core rounds (>=2 sharing topic) + 1 inline follow-up, no mid-session /feedback."""
     _seed_bundle(
         "python.s1b3.core1",
-        status="auto_checked",
+        status="reviewed",
         topic="Concurrency",
         question="Core 1: Explain how the GIL affects bytecode threads vs blocking I/O.",
     )
     _seed_bundle(
         "python.s1b3.core2",
-        status="auto_checked",
+        status="reviewed",
         topic="Concurrency",
         question="Core 2: How does releasing the lock on socket waits help multi-threaded servers?",
         required_concepts=[
@@ -1752,7 +1752,7 @@ def test_s1b3_deferred_feedback_three_core_shared_topic_one_followup_all_core_el
     )
     _seed_bundle(
         "python.s1b3.core3",
-        status="auto_checked",
+        status="reviewed",
         topic="Generators",
         question="Core 3: How does yield suspend generator execution in memory?",
         required_concepts=[
