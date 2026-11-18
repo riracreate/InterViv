@@ -68,6 +68,8 @@ DEFAULT_GENERATION_MAX_TOKENS = 2800
 DEFAULT_BLIND_CHECK_MAX_TOKENS = 380
 DEFAULT_AUDIT_MAX_TOKENS = 400
 DEFAULT_PROMPT_A_MAX_TOKENS = 700
+# Step E.2 blind check: an alias mention never counts as concept support.
+BLIND_CHECK_STRICT = True
 
 OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
@@ -1631,11 +1633,18 @@ def _score_with_concept_evaluator(
     bundle_content: dict[str, Any],
     bundle_content_hash: str | None,
 ) -> dict[str, Any]:
-    """Run the configured Step E concept evaluator (v3)."""
+    """Run the Step E concept evaluator (v3) in strict mode.
+
+    Strict mode (``concept_evaluator_v3.1``) records an alias hit as a mention,
+    never as support, so a blind answer passes only when every required concept
+    is matched by a proposition or a semantic example. The result's
+    ``evaluator_version`` is copied into every automated-check verdict.
+    """
     return concept_evaluator_v3.evaluate_answer(
         answer_text=answer_text,
         bundle_content=bundle_content,
         bundle_content_hash=bundle_content_hash,
+        strict=BLIND_CHECK_STRICT,
     )
 
 
