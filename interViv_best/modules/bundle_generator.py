@@ -1035,8 +1035,9 @@ def _build_prompt_b_messages(
         "such that a vague or off-topic answer would not contain it. "
         "No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\").\n"
         "   - positive_examples (required_concepts only): 2-3 natural one-sentence answers that a strong candidate might say "
-        "and that correctly demonstrate this concept, each 6-25 words, each worded differently from the others, "
-        "written fresh (never copied or lightly edited from reference_answer), and never a bare label or alias list\n"
+        "and that correctly demonstrate this concept, each 6-25 words, each worded differently from the others; "
+        "at most one example per concept may reuse a sentence from reference_answer, while the others must differ "
+        "from reference_answer and from each other, and never a bare label or alias list\n"
         "7. misconceptions (1-2 items): each has id (snake_case), description "
         "(phrased directly as the FALSE claim itself so a correct answer will not hit "
         "its tokens), and candidate_patterns (2-3 specific verbatim false-claim phrases "
@@ -1180,7 +1181,7 @@ def _build_regeneration_messages(
         "repair_rules": [
             "Write 3-5 expected_propositions per concept as short complete affirmative claims of 4-10 words with a verb (e.g. \"an outlier pulls the mean toward it\"), using varied singular/plural and active/passive wordings matching how a strong engineer writes. Use 4-6 high-frequency words from blind_answer_excerpt in each 4-10 word proposition (with a verb). Aliases never count as support and must not be words from the question. No proposition may be under 3 words or restate only words from the question. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
             "Ensure the question explicitly asks for every required concept in STRICTLY 1 or 2 sentences (never 3 sentences, and at most 40 words) so a knowledgeable engineer does not omit one, without leaking prompt instructions or word limits.",
-            "Give every required concept 2-3 positive_examples: natural one-sentence correct answers of 6-25 words in different wordings. Write them fresh: never copy or lightly edit sentences from blind_answer_excerpt or reference_answer.",
+            "Give every required concept 2-3 positive_examples: natural one-sentence correct answers of 6-25 words in different wordings. At most one per concept may reuse a sentence from reference_answer; the others must differ from reference_answer and each other, and never copy or lightly edit sentences from blind_answer_excerpt.",
             "Ensure misconception descriptions and candidate_patterns represent genuinely FALSE statements absent from a correct answer.",
             "Keep calibration_examples targets: author_level=3 expected_band='Good' (at most 35 words, <= 35 words) and author_level=0 expected_band='Poor' (at least 90 words, >= 90 words).",
         ],
@@ -1435,10 +1436,10 @@ def _generate_validated_doc(
     role: str | None,
     allow_live: bool | None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Call Prompt B and run Step E.1, with one schema/overlap feedback retry."""
+    """Call Prompt B and run Step E.1, with up to two schema/overlap feedback retries."""
     last_err: Exception | None = None
     feedback: str | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         messages = _build_prompt_b_messages(
             skill=canonical_skill,
             topic=canonical_topic,
@@ -1481,10 +1482,10 @@ def _generate_validated_doc(
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, no parenthetical length notes); "
                 "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
                 "(3) no concept id or alias may be a word or phrase from the question; "
-                "(4) every required concept has 2-3 positive_examples, each one fresh 6-25 word sentence."
+                "(4) every required concept has 2-3 positive_examples (6-25 words, one sentence each, worded differently from each other; at most one per concept may reuse a reference_answer sentence, and none may copy a blind answer)."
             )
     raise BundleGenerationError(
-        f"Bundle failed Step E.1 validation after retry: {last_err}"
+        f"Bundle failed Step E.1 validation after retries: {last_err}"
     )
 
 
@@ -2044,7 +2045,7 @@ def _run_step_e_for_version(
     regen_feedback: str | None = None
     last_regen_err: Exception | None = None
     regen_doc: dict[str, Any] | None = None
-    for regen_attempt in range(2):
+    for regen_attempt in range(3):
         regen_messages = _build_regeneration_messages(
             skill=canonical_skill,
             topic=canonical_topic,
@@ -2107,7 +2108,7 @@ def _run_step_e_for_version(
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, never put parenthetical length limits like max/words in question or followups); "
                 "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
                 "(3) no concept id or alias may be a word or phrase from the question; "
-                "(4) every required concept has 2-3 positive_examples, each one fresh 6-25 word sentence."
+                "(4) every required concept has 2-3 positive_examples (6-25 words, one sentence each, worded differently from each other; at most one per concept may reuse a reference_answer sentence, and none may copy the blind answer)."
             )
     if regen_doc is None:
         raise BundleGenerationError(

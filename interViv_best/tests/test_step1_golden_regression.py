@@ -161,7 +161,7 @@ def test_index_has_all_bank_questions_in_deterministic_order():
     questions = load_index()['questions']
     assert sum(q['bank_source']=='v6' for q in questions.values()) == 773
     assert sum(q['bank_source']=='fallback' for q in questions.values()) == 53
-    assert sum(q['bank_source']=='bundle' for q in questions.values()) == 24
+    assert sum(q['bank_source']=='bundle' for q in questions.values()) == 25
     for q in questions.values():
         assert [c['order'] for c in q['concepts']] == list(range(len(q['concepts'])))
         offsets = [c['ideal_answer_offset'] for c in q['concepts'] if c['source']=='ideal_answer_kg']

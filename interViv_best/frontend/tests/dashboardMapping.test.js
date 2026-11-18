@@ -4,6 +4,8 @@ import {
   blockDisplayLabel,
   blockMetricLabel,
   buildReviewSummaryProps,
+  eligibilityPracticeHint,
+  eligibilityPracticeLabel,
   isMultiBlockSession,
   mapRealDataToDashboard,
   scoreAccent,
@@ -243,4 +245,109 @@ test('missing measurements are omitted, never derived from the average', () => {
   assert.deepEqual(mapped.layers, []);
   assert.deepEqual(mapped.radar, []);
   assert.ok(!mapped.highlights.weaknesses.some((w) => w.title === 'Push for depth'));
+});
+
+const UNREVIEWED_HINT =
+  'Auto-checked question — feedback is shown for practice; not counted toward readiness or Elo.';
+
+test('eligibilityPracticeLabel and eligibilityPracticeHint label unreviewed_content practice distinctly', () => {
+  const unreviewed = {
+    assessment_eligibility: 'excluded',
+    eligibility_exclusion_reasons: ['unreviewed_content'],
+    is_follow_up: false,
+    assisted: false,
+  };
+  assert.equal(eligibilityPracticeLabel(unreviewed), 'Practice, not scored');
+  assert.equal(eligibilityPracticeHint(unreviewed), UNREVIEWED_HINT);
+
+  assert.equal(
+    eligibilityPracticeLabel({ ...unreviewed, is_follow_up: true }),
+    'Follow-up',
+  );
+  assert.equal(eligibilityPracticeHint({ ...unreviewed, is_follow_up: true }), null);
+
+  assert.equal(
+    eligibilityPracticeLabel({
+      ...unreviewed,
+      eligibility_exclusion_reasons: ['unreviewed_content', 'follow_up'],
+    }),
+    'Follow-up',
+  );
+  assert.equal(
+    eligibilityPracticeLabel({
+      ...unreviewed,
+      eligibility_exclusion_reasons: ['unreviewed_content', 'same_item_retry'],
+    }),
+    'Repeated practice',
+  );
+  assert.equal(
+    eligibilityPracticeHint({
+      ...unreviewed,
+      eligibility_exclusion_reasons: ['unreviewed_content', 'same_item_retry'],
+    }),
+    null,
+  );
+
+  assert.equal(eligibilityPracticeLabel({ ...unreviewed, assisted: true }), 'Practiced with help');
+  assert.equal(eligibilityPracticeHint({ ...unreviewed, assisted: true }), null);
+
+  for (const exposureReason of ['teaching_exposure', 'related_topic_exposure', 'coarse_topic_scope']) {
+    const exposed = {
+      ...unreviewed,
+      eligibility_exclusion_reasons: ['unreviewed_content', exposureReason],
+    };
+    assert.equal(eligibilityPracticeLabel(exposed), 'Practiced with help', exposureReason);
+    assert.equal(eligibilityPracticeHint(exposed), null, exposureReason);
+  }
+
+  assert.equal(eligibilityPracticeLabel({ assessment_eligibility: 'eligible' }), 'Assessment');
+  assert.equal(eligibilityPracticeHint({ assessment_eligibility: 'eligible' }), null);
+  assert.equal(eligibilityPracticeLabel({ assessment_eligibility: 'unknown' }), 'Unscored practice');
+  assert.equal(eligibilityPracticeHint({ assessment_eligibility: 'unknown' }), null);
+  assert.equal(eligibilityPracticeLabel({ assessment_eligibility: 'legacy_unknown' }), 'Unscored practice');
+  assert.equal(eligibilityPracticeLabel({ assisted: true }), 'Practiced with help');
+  assert.equal(eligibilityPracticeLabel({}), null);
+  assert.equal(eligibilityPracticeHint({}), null);
+});
+
+test('mapRealDataToDashboard exposes practiceLabel and practiceHint on mapped rounds', () => {
+  const mapped = mapRealDataToDashboard({
+    started_at: '2026-09-01T10:00:00Z',
+    skills: ['Python'],
+    total_rounds: 3,
+    averages: { final_score: 80 },
+    rounds: [
+      {
+        final_score: 75,
+        question: 'Explain closures.',
+        answer_text: 'A closure captures enclosing scope.',
+        assessment_eligibility: 'excluded',
+        eligibility_exclusion_reasons: ['unreviewed_content'],
+        is_follow_up: false,
+        assisted: false,
+      },
+      {
+        final_score: 80,
+        question: 'Explain generators.',
+        answer_text: 'Generators yield values lazily.',
+        assessment_eligibility: 'eligible',
+        eligibility_exclusion_reasons: [],
+      },
+      {
+        final_score: 65,
+        question: 'Explain decorators.',
+        answer_text: 'Decorators wrap callables.',
+        assessment_eligibility: 'excluded',
+        eligibility_exclusion_reasons: ['teaching_exposure'],
+        assisted: true,
+      },
+    ],
+  });
+
+  assert.equal(mapped.rounds[0].practiceLabel, 'Practice, not scored');
+  assert.equal(mapped.rounds[0].practiceHint, UNREVIEWED_HINT);
+  assert.equal(mapped.rounds[1].practiceLabel, 'Assessment');
+  assert.equal(mapped.rounds[1].practiceHint, null);
+  assert.equal(mapped.rounds[2].practiceLabel, 'Practiced with help');
+  assert.equal(mapped.rounds[2].practiceHint, null);
 });

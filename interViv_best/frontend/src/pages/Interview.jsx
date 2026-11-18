@@ -38,10 +38,36 @@ import StarComposer from '../components/StarComposer';
 import { readDevicePreference, writeDevicePreference } from '../lib/accountStorage';
 import { createSpeaker } from '../lib/speech/tts';
 import { createRecognitionController, deliverySignals, recognitionClass } from '../lib/speech/stt';
+import {
+  UNREVIEWED_PRACTICE_HINT,
+  UNREVIEWED_PRACTICE_LABEL,
+  isUnreviewedContentPracticeRound,
+} from '../lib/dashboardMapping';
 
 const VivStage = lazy(() => import('../components/VivStage'));
 const DEADLINE_TRANSCRIPTION_NOTICE =
   'Time expired. Your answer was submitted with the text captured so far. Transcription after the deadline does not extend assessment time.';
+
+/** Resolve eligibility label and optional practice hint for the Interview feedback panel. */
+export function interviewEligibilityFeedback(resp, score = null) {
+  const elig = resp?.assessment_eligibility;
+  if (elig === 'excluded' || resp?.assisted) {
+    if (isUnreviewedContentPracticeRound(resp)) {
+      return { label: UNREVIEWED_PRACTICE_LABEL, hint: UNREVIEWED_PRACTICE_HINT };
+    }
+    return {
+      label: resp?.is_follow_up ? 'Follow-up · Practiced with help' : 'Practiced with help',
+      hint: '',
+    };
+  }
+  if (elig === 'eligible') {
+    return { label: 'Assessment', hint: '' };
+  }
+  if (elig === 'unknown' || elig === 'legacy_unknown' || score === null) {
+    return { label: 'Unscored practice', hint: '' };
+  }
+  return { label: '', hint: '' };
+}
 
 export default function Interview({ sessionState = null }) {
   const { sessionId } = useParams();
@@ -160,7 +186,17 @@ export default function Interview({ sessionState = null }) {
     initState.progressionBlockedReason || initState.progression_blocked_reason || ''
   );
   const [continueBusy, setContinueBusy] = useState(false);
-  const [eligibilityLabel, setEligibilityLabel] = useState('');
+  const initialEligibility = restoredResult && (
+    initState.eligibilityLabel != null
+    || initState.assessment_eligibility != null
+    || initState.assisted != null
+  )
+    ? (initState.eligibilityLabel != null
+      ? { label: initState.eligibilityLabel, hint: initState.eligibilityHint || '' }
+      : interviewEligibilityFeedback(initState, initState.currentScore ?? null))
+    : { label: '', hint: '' };
+  const [eligibilityLabel, setEligibilityLabel] = useState(initialEligibility.label);
+  const [eligibilityHint, setEligibilityHint] = useState(initialEligibility.hint);
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpNote, setFollowUpNote] = useState('');
   const [isFollowUp, setIsFollowUp] = useState(
@@ -855,20 +891,9 @@ export default function Interview({ sessionState = null }) {
       setFollowUpOutcome(outcome);
       setFollowUpScheduledForRound(Boolean(resp.follow_up_scheduled));
       setCurrentScore(score);
-      const elig = resp.assessment_eligibility;
-      if (elig === 'excluded' || resp.assisted) {
-        setEligibilityLabel(
-          resp.is_follow_up ? 'Follow-up · Practiced with help' : 'Practiced with help'
-        );
-      } else if (elig === 'eligible') {
-        setEligibilityLabel('Assessment');
-      } else if (elig === 'unknown' || elig === 'legacy_unknown') {
-        setEligibilityLabel('Unscored practice');
-      } else if (score === null) {
-        setEligibilityLabel('Unscored practice');
-      } else {
-        setEligibilityLabel('');
-      }
+      const nextEligibility = interviewEligibilityFeedback(resp, score);
+      setEligibilityLabel(nextEligibility.label);
+      setEligibilityHint(nextEligibility.hint);
       let feedbackWithMode = feedback;
       if (resp.scoring_mode === 'lexical_fallback_degraded') {
         feedbackWithMode = (
@@ -1006,6 +1031,7 @@ export default function Interview({ sessionState = null }) {
     setCurrentArtifact(null);
     setEvaluationMode(null); setEvaluationBoundary(null);
     setEligibilityLabel('');
+    setEligibilityHint('');
     setFollowUpNote(''); setFollowUpBusy(false);
     setIsFollowUp(false); setFollowUpParentRound(null);
     setFollowUpScheduledForRound(false); setFollowUpOutcome(null);
@@ -1517,9 +1543,21 @@ export default function Interview({ sessionState = null }) {
                 </div>
               )}
               {eligibilityLabel && (
-                <p className="text-[11px] uppercase tracking-wider text-center text-[var(--color-ink-muted)] mb-2"
-                  style={{ fontFamily: "var(--font-body)" }}>
+                <p
+                  className={`text-[11px] uppercase tracking-wider text-center text-[var(--color-ink-muted)] ${eligibilityHint ? 'mb-1' : 'mb-2'}`}
+                  style={{ fontFamily: "var(--font-body)" }}
+                  data-testid="eligibility-label"
+                >
                   {eligibilityLabel}
+                </p>
+              )}
+              {eligibilityHint && (
+                <p
+                  className="text-[11px] text-center text-[var(--color-ink-muted)] mb-2 leading-relaxed"
+                  style={{ fontFamily: "var(--font-body)" }}
+                  data-testid="eligibility-practice-hint"
+                >
+                  {eligibilityHint}
                 </p>
               )}
               {currentFeedback && (

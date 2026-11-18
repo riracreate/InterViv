@@ -1496,7 +1496,7 @@ def test_s1b1_inline_followup_client_hides_score_and_breakdown_while_preserving_
     """S1b-1: null candidate final_score, concept-only feedback, score-free narration, raw DB breakdown."""
     _seed_bundle(
         "python.s1b1.gil",
-        status="auto_checked",
+        status="reviewed",
         topic="Interpreter Mutex",
         question="Explain GIL bytecode execution and blocking I/O release.",
     )

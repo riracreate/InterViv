@@ -869,7 +869,7 @@ def test_routed_generation_schema_rejects_text_calibration_and_passes_answer(env
         bundle_generator.BundleGenerationError, match="answer must be non-empty",
     ):
         bundle_generator._generate_validated_doc(**kwargs)
-    assert len(sent) == 2
+    assert len(sent) == 3
     for body in sent:
         fmt = body["response_format"]
         assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True

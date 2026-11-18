@@ -28,15 +28,41 @@ function capitalizeDifficulty(raw) {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
+export const UNREVIEWED_PRACTICE_LABEL = "Practice, not scored";
+export const UNREVIEWED_PRACTICE_HINT =
+  "Auto-checked question — feedback is shown for practice; not counted toward readiness or Elo.";
+
+const TEACHING_EXPOSURE_REASONS = new Set([
+  "teaching_exposure",
+  "related_topic_exposure",
+  "coarse_topic_scope",
+]);
+
+/** True when a round was excluded solely for unreviewed bundle content (no follow-up/retry/assistance/exposure). */
+export function isUnreviewedContentPracticeRound(round) {
+  const decision = String(round?.assessment_eligibility || "").toLowerCase();
+  if (decision !== "excluded") return false;
+  if (round?.is_follow_up || round?.assisted) return false;
+  const reasons = Array.isArray(round?.eligibility_exclusion_reasons)
+    ? round.eligibility_exclusion_reasons
+    : [];
+  if (!reasons.includes("unreviewed_content")) return false;
+  if (reasons.includes("same_item_retry") || reasons.includes("follow_up")) return false;
+  return !reasons.some((reason) => TEACHING_EXPOSURE_REASONS.has(reason));
+}
+
 /** Phase 4A display labels for assessment eligibility. */
 export function eligibilityPracticeLabel(round) {
   const decision = String(round?.assessment_eligibility || "").toLowerCase();
   if (round?.is_follow_up) return "Follow-up";
   if (decision === "eligible") return "Assessment";
   if (decision === "excluded") {
-    const reasons = round?.eligibility_exclusion_reasons || [];
+    const reasons = Array.isArray(round?.eligibility_exclusion_reasons)
+      ? round.eligibility_exclusion_reasons
+      : [];
     if (reasons.includes("same_item_retry")) return "Repeated practice";
     if (reasons.includes("follow_up")) return "Follow-up";
+    if (isUnreviewedContentPracticeRound(round)) return UNREVIEWED_PRACTICE_LABEL;
     return "Practiced with help";
   }
   if (decision === "unknown" || decision === "legacy_unknown") {
@@ -44,6 +70,13 @@ export function eligibilityPracticeLabel(round) {
   }
   if (round?.assisted) return "Practiced with help";
   return null;
+}
+
+/** Hint shown when a round is auto-checked practice excluded from readiness and Elo. */
+export function eligibilityPracticeHint(round) {
+  return eligibilityPracticeLabel(round) === UNREVIEWED_PRACTICE_LABEL
+    ? UNREVIEWED_PRACTICE_HINT
+    : null;
 }
 
 // The API sends a null average when no measured round was scored (e.g. an
@@ -287,6 +320,7 @@ export function mapRealDataToDashboard(session) {
       assessment_eligibility: r.assessment_eligibility || null,
       eligibility_exclusion_reasons: r.eligibility_exclusion_reasons || [],
       practiceLabel: eligibilityPracticeLabel(r),
+      practiceHint: eligibilityPracticeHint(r),
       is_follow_up: Boolean(r.is_follow_up),
       mcqReview,
       reviewPolicy: r.review_policy || r.config_json?.review_policy || null,

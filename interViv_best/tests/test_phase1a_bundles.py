@@ -318,19 +318,24 @@ def test_repo_pilot_yaml_imports_as_drafts_with_no_overlap(memory_store):
     root = Path(__file__).resolve().parents[1] / "data" / "question_bundles"
     report = import_directory(root, actor_id="cli")
     assert report["failed"] == [] and report["flagged"] == []
-    # 12 bundles × 2 versions (v1 CSV import + v2 concept authorship drafts)
-    assert len(report["created"]) == 24
+    # 12 bundles × 2 versions (v1 CSV import + v2 concept authorship drafts) + v3 on python.lists-vs-tuples
+    assert len(report["created"]) == 25
     inv = bundle_store.inventory()
-    assert inv["reviewed_total"] == 0 and inv["status_totals"]["draft"] == 24
-    # Two bundles per skill×difficulty at each version → 4 draft versions per cell.
+    assert inv["reviewed_total"] == 0 and inv["status_totals"]["draft"] == 25
+    # Two bundles per skill×difficulty at each version (+ v3 on python.lists-vs-tuples) → 5 for Python easy, 4 elsewhere.
     per = {(s, d): sum(1 for topic in inv["unreviewed"][s].values() for dd, n in topic.items() if dd == d for _ in range(n))
            for s in ("Python", "DBMS") for d in ("easy", "medium", "hard")}
-    assert all(n == 4 for n in per.values()), per
+    expected_per = {
+        (s, d): (5 if (s, d) == ("Python", "easy") else 4)
+        for s in ("Python", "DBMS") for d in ("easy", "medium", "hard")
+    }
+    assert per == expected_per, per
     ids = sorted({validate_bundle_doc(d)["content"]["bundle_id"] for _, d in iter_bundle_files()})
     assert len(ids) == 12
     for bid in ids:
         vs = bundle_store.list_versions(bid)
-        assert {v["version"] for v in vs} == {1, 2}
+        expected_versions = {1, 2, 3} if bid == "python.lists-vs-tuples" else {1, 2}
+        assert {v["version"] for v in vs} == expected_versions
         v1 = next(v for v in vs if v["version"] == 1)
         v2 = next(v for v in vs if v["version"] == 2)
         assert v1["status"] == v2["status"] == "draft"
@@ -338,7 +343,7 @@ def test_repo_pilot_yaml_imports_as_drafts_with_no_overlap(memory_store):
         assert v2["source"] == "human_authored"
         assert not v1["content_json"]["required_concepts"]
         assert v2["content_json"]["required_concepts"]
-    assert import_directory(root, actor_id="cli")["unchanged"].__len__() == 24
+    assert import_directory(root, actor_id="cli")["unchanged"].__len__() == 25
 
 
 # ─── inventory + selector ──────────────────────────────────────────────────

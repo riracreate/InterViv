@@ -68,7 +68,9 @@ def snapshot_digest(core: dict[str, Any]) -> str:
 def _reference_from_context(question_context: dict[str, Any] | None) -> dict[str, Any]:
     """Server-only reference identity / provenance from the scored round context.
 
-    Reviewed bundles: exact pin only (no invented fields).
+    Bundles: exact pin only (no invented fields), preserving the served bundle
+    status label (e.g. ``reviewed_bundle``, ``auto_checked_bundle``, or
+    ``unknown_bundle``).
     Legacy: source + optional LLM attribution, with ideal answer/keywords
     retained under ``reference`` so provenance is complete while serializers
     continue to strip snapshots from client payloads.
@@ -78,7 +80,9 @@ def _reference_from_context(question_context: dict[str, Any] | None) -> dict[str
     if source == "reviewed_bundle" or (
         ctx.get("bundle_id") is not None and ctx.get("version") is not None
     ):
-        ref: dict[str, Any] = {"source": "reviewed_bundle"}
+        ref: dict[str, Any] = {
+            "source": source if source.endswith("_bundle") else "unknown_bundle"
+        }
         for key in ("bundle_id", "version", "content_hash"):
             if ctx.get(key) is not None:
                 ref[key] = ctx[key]
