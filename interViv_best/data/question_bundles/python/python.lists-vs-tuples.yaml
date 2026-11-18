@@ -135,3 +135,119 @@
     concept_authorship: Developer-authored required/optional concepts, misconceptions, rubric descriptors,
       and calibration examples for Phase 1B. Not human-reviewed. Intended labels are development expectations,
       not human ground truth. Question and reference text remain from the original imported CSV row.
+- bundle_id: python.lists-vs-tuples
+  version: 3
+  category: technical_short_answer
+  skill: Python
+  topic: Core data structures
+  difficulty: easy
+  question: Explain the difference between lists and tuples in Python.
+  reference_answer: Lists are mutable ordered sequences defined with square brackets; tuples are immutable
+    ordered sequences defined with parentheses. Because tuples are immutable they are hashable and can
+    be used as dictionary keys or set members. Tuples are generally faster to iterate and use less memory.
+    Use a list when you need to modify the collection; use a tuple when the data should not change.
+  acceptable_variants:
+  - Lists are mutable sequences; tuples are immutable sequences.
+  keywords:
+  - list
+  - tuple
+  - mutable
+  - immutable
+  required_concepts:
+  - id: list_mutability
+    descriptor: A list can be changed in place after it is created
+    aliases:
+    - mutable
+    - mutability
+    - append
+    expected_propositions:
+    - lists are mutable sequences
+    - list elements can be changed in place
+    - you can append items to a list
+    - a list can grow or shrink
+    positive_examples:
+    - You can append, remove or overwrite items in a list after you create it.
+    - A list is modified in place, for example by assigning a new value to an index.
+  - id: tuple_immutability
+    descriptor: A tuple's elements stay fixed once it is created
+    aliases:
+    - immutable
+    - immutability
+    - read-only
+    expected_propositions:
+    - tuples are immutable sequences
+    - tuple contents stay fixed after creation
+    - assigning to a tuple index raises TypeError
+    positive_examples:
+    - Once a tuple exists its elements are fixed, and assigning to an index raises a TypeError.
+    - Tuples are read-only sequences whose contents stay the same for their whole lifetime.
+  optional_concepts:
+  - id: hashable_dict_keys
+    descriptor: Immutable tuples are hashable and work as dictionary keys or set members
+    aliases:
+    - hashable
+    - dictionary key
+    - set member
+    expected_propositions:
+    - tuples can be dictionary keys
+    - hashable tuples work in sets
+  - id: choose_by_intent
+    descriptor: Use a list for changing data and a tuple for fixed records
+    aliases:
+    - fixed record
+    - heterogeneous record
+    expected_propositions:
+    - use tuples for fixed records
+    - use lists for changing collections
+  misconceptions:
+  - id: tuples_are_faster_only_reason
+    description: Claiming tuples exist only because they are faster
+    candidate_patterns:
+    - tuples only exist for speed
+    - lists and tuples are the same except speed
+  depth_markers:
+  - hashable
+  - dict keys
+  - fixed structure
+  rubric_descriptors:
+    coverage: States that lists are mutable and tuples are immutable, in the candidate's own claims.
+    accuracy: Does not claim they differ only by performance.
+    depth: Mentions hashability (dictionary keys, set members) or choosing a tuple for fixed records.
+    clarity: Clear contrast without mixing in sets or dicts as if they were sequences.
+  followups:
+  - prompt: What happens if you try to change one element of a tuple?
+    targets_concept: tuple_immutability
+  - prompt: Name two operations you can perform on a list after creating it.
+    targets_concept: list_mutability
+  calibration_examples:
+  - answer: Lists are mutable, so you can append or change items; tuples are immutable, which also makes
+      them hashable and usable as dict keys.
+    author_level: 3
+    note: strong
+  - answer: Lists and tuples store sequences.
+    author_level: 1
+    note: partial
+  - answer: Tuples are just faster lists; otherwise identical.
+    author_level: 0
+    note: incorrect
+  - answer: Lists are mutable; tuples are immutable.
+    author_level: 2
+    note: concise-correct
+  - answer: Use whichever you like.
+    author_level: 0
+    note: ambiguous/unhelpful
+  source: llm_draft
+  author: llm:claude-opus-5-5
+  attribution:
+    source_file: data/interview_dataset_v6.csv
+    source_line: 5
+    dataset_source_label: curated_v3
+    dataset_sub_domain: python_core
+    dataset_skill_label: Python
+    dataset_difficulty_label: Easy
+    note: v3 rewrites the v2 concepts for strict-mode checking. Concept ids and aliases avoid question
+      words (no 'list', 'tuple' or plural forms), propositions are full claims without negation, and each
+      required concept has two positive_examples. Question and reference text are unchanged from the
+      imported CSV row. Drafted by Claude Code (Phase 0.B); status stays draft until two human reviewers
+      approve it.
+    previous_version: 2

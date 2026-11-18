@@ -111,3 +111,38 @@ export function adminErrorNotice(err) {
   }
   return err.message || 'Unable to load bundle review queue.';
 }
+
+export const REVIEWER_CONCEPT_GUIDANCE =
+  'Aliases must not be words from the question; propositions must be full claims.';
+
+// Mirrors modules/question_bundles.alias_question_overlap: whole-token
+// sequences, split like the concept evaluator splits ids and aliases, with
+// simple plural folding so 'tuples' in the question flags a 'tuple' alias.
+const TERM_TOKEN_RE = /[A-Za-z0-9_]+(?:'[A-Za-z]+)?/g;
+
+function foldPlural(token) {
+  if (token.length > 4 && token.endsWith('ies')) return `${token.slice(0, -3)}y`;
+  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+function termTokens(text) {
+  return (String(text || '').toLowerCase().match(TERM_TOKEN_RE) || []).map(foldPlural);
+}
+
+export function questionWordTerms(question, concept) {
+  const q = termTokens(question);
+  if (!q.length || !concept) return [];
+  const terms = [concept.id, ...(Array.isArray(concept.aliases) ? concept.aliases : [])];
+  return terms.filter((term) => {
+    const parts = String(term || '')
+      .toLowerCase()
+      .split(/[\s_/.-]+/)
+      .flatMap((piece) => termTokens(piece));
+    if (!parts.length || parts.length > q.length) return false;
+    for (let i = 0; i + parts.length <= q.length; i += 1) {
+      if (parts.every((part, k) => q[i + k] === part)) return true;
+    }
+    return false;
+  });
+}

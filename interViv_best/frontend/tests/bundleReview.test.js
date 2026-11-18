@@ -191,3 +191,34 @@ test('BundleReview SSR renders question, hidden reference, concepts, misconcepti
   });
   assert.match(deniedHtml, /ADMIN_USER_EMAILS/);
 });
+
+test('review page shows concept guidance, flags question-word aliases, and lists positive examples', async () => {
+  const { REVIEWER_CONCEPT_GUIDANCE, questionWordTerms } = await import('../src/lib/bundleReview.js');
+  assert.equal(
+    REVIEWER_CONCEPT_GUIDANCE,
+    'Aliases must not be words from the question; propositions must be full claims.'
+  );
+  const question = 'Explain the difference between lists and tuples in Python.';
+  assert.deepEqual(questionWordTerms(question, { id: 'tuple', aliases: ['tuples'] }), ['tuple', 'tuples']);
+  assert.deepEqual(questionWordTerms(question, { id: 'tuple_immutability', aliases: ['immutable'] }), []);
+  assert.deepEqual(questionWordTerms(question, { id: 'x', aliases: ['between-lists'] }), ['between-lists']);
+
+  const detail = sampleDetail('in_review');
+  detail.content = {
+    ...detail.content,
+    required_concepts: [
+      {
+        id: 'mean_shift',
+        descriptor: 'Mean shifts toward extreme values',
+        aliases: ['average pulled', 'outlier'],
+        expected_propositions: ['extreme outliers pull arithmetic mean toward tail'],
+        positive_examples: ['One huge value drags the average far from the typical case.'],
+      },
+    ],
+  };
+  const html = renderReview({ initialBundles: sampleBundles, initialDetail: detail });
+  assert.match(html, /Aliases must not be words from the question; propositions must be full claims\./);
+  assert.match(html, /Question words used as id\/alias:/);
+  assert.match(html, /Positive examples:/);
+  assert.match(html, /One huge value drags the average far from the typical case\./);
+});

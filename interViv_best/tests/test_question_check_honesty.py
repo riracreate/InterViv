@@ -505,3 +505,57 @@ def test_regeneration_examples_copied_from_blind_answer_are_rejected(memory_stor
     assert "copied from the blind answer" in regen_prompts[1]
     stored = res["bundle"]["content_json"]["required_concepts"][0]["positive_examples"]
     assert all("I would talk about" not in ex for ex in stored)
+
+
+# ─── 0.B: python.lists-vs-tuples v3 ──────────────────────────────────────────
+
+
+def _lists_vs_tuples(version: int) -> dict:
+    from modules.question_bundles import default_bundle_root, iter_bundle_files, validate_bundle_doc
+
+    path = default_bundle_root() / "python" / "python.lists-vs-tuples.yaml"
+    for _, doc in iter_bundle_files(path.parent):
+        if doc["bundle_id"] == "python.lists-vs-tuples" and doc["version"] == version:
+            return validate_bundle_doc(doc)["content"]
+    raise AssertionError(f"v{version} missing")
+
+
+def test_lists_vs_tuples_v3_has_no_question_word_terms_and_valid_examples() -> None:
+    from modules.question_bundles import (
+        _validate_positive_examples,
+        alias_question_overlap,
+        validate_generated_bundle_text_quality,
+    )
+
+    v2 = _lists_vs_tuples(2)
+    assert ("tuple", "tuple") in alias_question_overlap(v2)
+    v3 = _lists_vs_tuples(3)
+    assert alias_question_overlap(v3) == []
+    terms = {
+        t.lower()
+        for c in v3["required_concepts"] + v3["optional_concepts"]
+        for t in [c["id"], *c["aliases"]]
+    }
+    assert not terms & {"tuple", "tuples", "list", "lists"}
+    validate_generated_bundle_text_quality(v3)
+    _validate_positive_examples(v3)
+    for concept in v3["required_concepts"]:
+        assert len(concept["positive_examples"]) == 2
+        for prop in concept["expected_propositions"]:
+            assert len(prop.split()) >= 4
+
+
+def test_lists_vs_tuples_v3_under_strict_mode(monkeypatch) -> None:
+    monkeypatch.setenv("DISABLE_SEMANTIC_SCORING", "1")
+    v3 = _lists_vs_tuples(3)
+    strong = (
+        "Lists are mutable sequences, so you can append items to a list or change elements "
+        "in place. Tuples are immutable sequences: tuple contents stay fixed after creation."
+    )
+    echo = "Lists and tuples are different in Python. Lists are lists and tuples are tuples."
+    res = concept_evaluator_v3.evaluate_answer(answer_text=strong, bundle_content=v3, strict=True)
+    assert res["evaluator_version"] == STRICT_VERSION
+    assert res["coverage"]["k_supported"] == res["coverage"]["n_required"] == 2
+    assert {c["match_type"] for c in res["concepts"]} == {"proposition"}
+    res = concept_evaluator_v3.evaluate_answer(answer_text=echo, bundle_content=v3, strict=True)
+    assert res["coverage"]["k_supported"] == 0

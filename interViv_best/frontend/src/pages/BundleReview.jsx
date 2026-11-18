@@ -8,6 +8,7 @@ import {
 } from '../lib/api';
 import {
   DIFFICULTY_OPTIONS,
+  REVIEWER_CONCEPT_GUIDANCE,
   REVIEW_CHECKLIST_ITEMS,
   adminErrorNotice,
   availableDecisions,
@@ -15,6 +16,7 @@ import {
   canSubmitForReview,
   emptyChecklist,
   formatAutoCheckSummary,
+  questionWordTerms,
   validateReviewForm,
 } from '../lib/bundleReview';
 
@@ -304,6 +306,9 @@ export default function BundleReview({
                     <h3 className="text-sm font-semibold">
                       Required Concepts ({(content.required_concepts || []).length})
                     </h3>
+                    <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {REVIEWER_CONCEPT_GUIDANCE}
+                    </p>
                     <ul className="space-y-2">
                       {(content.required_concepts || []).map((concept) => (
                         <li
@@ -318,6 +323,12 @@ export default function BundleReview({
                               Aliases: {concept.aliases.join(', ')}
                             </div>
                           )}
+                          {questionWordTerms(content.question, concept).length > 0 && (
+                            <div className="mt-1 text-xs font-medium text-red-700">
+                              Question words used as id/alias:{' '}
+                              {questionWordTerms(content.question, concept).join(', ')}
+                            </div>
+                          )}
                           {Array.isArray(concept.expected_propositions) &&
                             concept.expected_propositions.length > 0 && (
                               <ul className="mt-1 list-disc pl-5 text-xs">
@@ -325,6 +336,17 @@ export default function BundleReview({
                                   <li key={pIdx}>{prop}</li>
                                 ))}
                               </ul>
+                            )}
+                          {Array.isArray(concept.positive_examples) &&
+                            concept.positive_examples.length > 0 && (
+                              <div className="mt-1 text-xs">
+                                <div className="text-[var(--muted)]">Positive examples:</div>
+                                <ul className="list-disc pl-5">
+                                  {concept.positive_examples.map((ex, eIdx) => (
+                                    <li key={eIdx}>{ex}</li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                         </li>
                       ))}

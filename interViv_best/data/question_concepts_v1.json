@@ -13,7 +13,7 @@
     "data/question_bundles/python/python.generators.yaml": "0211d5d34b90b370abcdf3f004afb1d9916c972c831d3724245047bcfdf376db",
     "data/question_bundles/python/python.gil.yaml": "6020b9e6377f43c7ca940dac59f251f64c9bfe0d7caf329a18283ab08853fa11",
     "data/question_bundles/python/python.is-vs-equals.yaml": "69c720351232f8d3e5ba34cb5ac53e95198e1abfa87b0b004b3fff6f609c25b0",
-    "data/question_bundles/python/python.lists-vs-tuples.yaml": "beb777ac2bea44ca31bd16a943ef75be4aab547f28a1b0c9b1e85b9119831a39",
+    "data/question_bundles/python/python.lists-vs-tuples.yaml": "1ecb0385cfaefc7c3f0b51d707f4525962188fe082e2f0d54b624fd3f4197f20",
     "data/question_bundles/python/python.memory-management.yaml": "d0d4efb743a6f8e475f106f803dd6e33c0ddb598fad560b6ec21a2121d1a9a03",
     "data/question_bundles/python/python.shallow-vs-deep-copy.yaml": "b8254617c54524ec9176019a03742a73d7c466ce681dbb5745060d008185db0f",
     "modules/knowledge_graph.py": "bc1e80a0d17ded7e296a6529dbc039822c9ce25b2cc51df5a7a86ef2a18b93ed",
@@ -24288,6 +24288,41 @@
         "list",
         "tuple"
       ],
+      "review_status": "external_db_required_draft_in_source"
+    },
+    "bundle:python.lists-vs-tuples:v3": {
+      "question_id": "bundle:python.lists-vs-tuples:v3",
+      "skill": "Python",
+      "difficulty": "easy",
+      "bank_source": "bundle",
+      "question": "Explain the difference between lists and tuples in Python.",
+      "source": "bundle_v2",
+      "rubric_hash": "996244b0e8724d0185eb1d30d7de54e26c39ce680e2af29f61de0ac1c7d39a0b",
+      "concepts": [
+        {
+          "concept": "list_mutability",
+          "source": "bundle_v2",
+          "order": 0,
+          "aliases": [
+            "append",
+            "list mutability",
+            "mutability",
+            "mutable"
+          ]
+        },
+        {
+          "concept": "tuple_immutability",
+          "source": "bundle_v2",
+          "order": 1,
+          "aliases": [
+            "immutability",
+            "immutable",
+            "read only",
+            "tuple immutability"
+          ]
+        }
+      ],
+      "question_concepts_excluded": [],
       "review_status": "external_db_required_draft_in_source"
     },
     "bundle:python.memory-management:v1": {
