@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Send, Check, X, Clock3, RotateCcw, Code2, BookOpen, Lightbulb, Terminal } from 'lucide-react';
 import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft, fetchCodingExecutionStatus, fetchCodingCoach } from '../lib/api';
-import { ASSESSMENT_HINT_CONFIRM, codingHintPayload } from '../lib/codingHint';
+import { ASSESSMENT_HINT_CONFIRM, assessmentHintConfirmRequired, codingHintPayload } from '../lib/codingHint';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 import CodeEditor from './CodeEditor';
 import './coding-workspace.css';
@@ -11,8 +11,7 @@ const json = value => value === undefined ? 'No output' : JSON.stringify(value);
 
 export default function CodingRound({ sessionId, round = 1, question = '', questionContext = {},
   configJson = {}, expiresAt = null, isScoring = false, currentScore = null, currentArtifact = null,
-  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false, submitted = null, nextBusy = false,
-  practiceMode = '' }) {
+  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false, submitted = null, nextBusy = false }) {
   const starters = questionContext.starter_codes || { python: questionContext.starter_code || '# Write your solution here\n' };
   const [language, setLanguage] = useState(configJson.language || 'python');
   const [sources, setSources] = useState(starters);
@@ -80,8 +79,7 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
   const submit = () => {
     if (!running && !isScoring && !closed && !expired && !executionDown && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
-  const requestHint = async () => {
-    if (practiceMode === 'assessment' && !window.confirm(ASSESSMENT_HINT_CONFIRM)) return;
+  const requestHint = async (confirmAssessmentHelp = false) => {
     const payload = codingHintPayload({
       sessionId,
       round,
@@ -91,11 +89,21 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
       runnerError: error,
       visible: result?.visible,
       tests,
+      confirmAssessmentHelp,
     });
     setCoachBusy(true); setError('');
-    try { setCoach(await fetchCodingCoach(payload)); }
-    catch (err) { setError(err.message); }
-    finally { setCoachBusy(false); }
+    try {
+      setCoach(await fetchCodingCoach(payload));
+      setCoachBusy(false);
+    } catch (err) {
+      if (!confirmAssessmentHelp && assessmentHintConfirmRequired(err)) {
+        setCoachBusy(false);
+        if (window.confirm(ASSESSMENT_HINT_CONFIRM)) await requestHint(true);
+        return;
+      }
+      setError(err.message);
+      setCoachBusy(false);
+    }
   };
   const totalPassed = (currentArtifact?.visible?.passed || 0) + (currentArtifact?.hidden?.passed || 0);
   const totalTests = (currentArtifact?.visible?.total || 0) + (currentArtifact?.hidden?.total || 0);

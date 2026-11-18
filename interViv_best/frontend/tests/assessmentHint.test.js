@@ -4,21 +4,22 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { ASSESSMENT_HINT_CONFIRM } from '../src/lib/codingHint.js';
+import { ASSESSMENT_HINT_CONFIRM, assessmentHintConfirmRequired } from '../src/lib/codingHint.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
-test('an assessment hint asks before the attempt stops counting toward readiness', () => {
+test('an assessment hint asks after the server requires confirmation, then resends', () => {
   assert.equal(
     ASSESSMENT_HINT_CONFIRM,
     "this attempt becomes Practised with help and won't count toward readiness",
   );
+  assert.equal(assessmentHintConfirmRequired({ status: 409, code: 'confirm_required' }), true);
+  assert.equal(assessmentHintConfirmRequired({ status: 409, code: 'other' }), false);
   const coding = read('src/components/CodingRound.jsx');
-  assert.match(coding, /practiceMode === 'assessment' && !window\.confirm\(ASSESSMENT_HINT_CONFIRM\)/);
-  const interview = read('src/pages/Interview.jsx');
-  assert.match(interview, /initState\.practice_mode \|\| initState\.practiceMode/);
-  assert.match(interview, /practiceMode,/);
-  const practice = read('src/pages/Practice.jsx');
-  assert.match(practice, /navigateToInterview\(navigate, resp, \{ practice_mode: practiceMode \}\)/);
+  assert.match(coding, /assessmentHintConfirmRequired\(err\)/);
+  assert.match(coding, /window\.confirm\(ASSESSMENT_HINT_CONFIRM\)/);
+  assert.match(coding, /await requestHint\(true\)/);
+  const hint = read('src/lib/codingHint.js');
+  assert.match(hint, /confirm_assessment_help = true/);
 });

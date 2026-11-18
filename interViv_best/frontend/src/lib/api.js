@@ -93,12 +93,14 @@ async function request(path, options = {}) {
     }
   }
   if (!response.ok) {
-    throw makeRequestError({
+    const error = makeRequestError({
       kind: kindForStatus(response.status),
       status: response.status,
       message: apiErrorMessage(data),
       detail: data.detail,
     });
+    if (data && typeof data.code === "string") error.code = data.code;
+    throw error;
   }
 
   return data;

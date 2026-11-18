@@ -32,6 +32,10 @@ export function codingHintLastError({ runnerError, visible, tests } = {}) {
   });
 }
 
+export function assessmentHintConfirmRequired(err) {
+  return Boolean(err) && err.status === 409 && err.code === 'confirm_required';
+}
+
 export function codingHintPayload({
   sessionId,
   round,
@@ -41,8 +45,9 @@ export function codingHintPayload({
   runnerError,
   visible,
   tests,
+  confirmAssessmentHelp = false,
 }) {
-  return {
+  const body = {
     session_id: sessionId,
     round,
     level,
@@ -50,4 +55,6 @@ export function codingHintPayload({
     language: language || '',
     last_error: codingHintLastError({ runnerError, visible, tests }),
   };
+  if (confirmAssessmentHelp) body.confirm_assessment_help = true;
+  return body;
 }

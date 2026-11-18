@@ -51,11 +51,14 @@ def _seed(user_id: str, *, round_status: str, session_status: str = "active", sc
     return session_id
 
 
-def _post(client: TestClient, token: str, session_id: str):
+def _post(client: TestClient, token: str, session_id: str, *, confirm: bool = False):
+    body = {"session_id": session_id, "round": 1, "level": 1, "language": "python", "source": "x = 1\n"}
+    if confirm:
+        body["confirm_assessment_help"] = True
     return client.post(
         "/problems/coach/hint",
         headers={"Authorization": f"Bearer {token}"},
-        json={"session_id": session_id, "round": 1, "level": 1, "language": "python", "source": "x = 1\n"},
+        json=body,
     )
 
 
@@ -78,7 +81,7 @@ def test_open_round_hint_waits_on_the_submit_lock(monkeypatch) -> None:
     result: dict = {}
 
     def caller() -> None:
-        result["resp"] = _post(client, user["token"], session_id)
+        result["resp"] = _post(client, user["token"], session_id, confirm=True)
 
     caller_thread = threading.Thread(target=caller)
     caller_thread.start()
@@ -109,6 +112,40 @@ def test_submitted_and_closed_rounds_reject_hints(monkeypatch) -> None:
     assert "closed" in denied_expired.json()["detail"]
     after = list(get_database()["assistance_events"].find({"user_id": user["id"]}))
     assert after == before
+
+
+def _events(user_id: str) -> list[dict]:
+    return list(get_database()["assistance_events"].find({"user_id": user_id}))
+
+
+def test_assessment_hint_requires_confirmation_before_any_exposure(monkeypatch) -> None:
+    monkeypatch.setattr(coding_coach, "_ollama_hint", lambda **_: "Name the invariant.")
+    user = _user()
+    session_id = _seed(user["id"], round_status="in_progress")
+    client = TestClient(app)
+    denied = _post(client, user["token"], session_id)
+    assert denied.status_code == 409
+    assert denied.json() == {"code": "confirm_required"}
+    assert _events(user["id"]) == []
+    allowed = _post(client, user["token"], session_id, confirm=True)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["hint"]
+    assert _events(user["id"])
+
+
+def test_coached_practice_hint_does_not_ask_for_confirmation(monkeypatch) -> None:
+    monkeypatch.setattr(coding_coach, "_ollama_hint", lambda **_: "Name the invariant.")
+    user = _user()
+    session_id = _seed(user["id"], round_status="in_progress")
+    get_database()["sessions"].update_one(
+        {"session_id": session_id},
+        {"$set": {"practice_mode": "coached_practice"}},
+    )
+    client = TestClient(app)
+    allowed = _post(client, user["token"], session_id)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["hint"]
+    assert _events(user["id"])
 
 
 def test_session_resume_does_not_add_a_practice_mode_field() -> None:

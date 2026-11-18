@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.coding_coach import build_hint, coach_status
@@ -37,6 +38,7 @@ class CodingCoachHintRequest(BaseModel):
     source: str | None = None
     language: str | None = None
     last_error: str | None = None
+    confirm_assessment_help: bool = False
 
 
 @router.get("")
@@ -148,6 +150,11 @@ def _coding_hint_locked(db, body: CodingCoachHintRequest, *, user_id: str, round
     )
     if blocked:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=blocked)
+    # Assessment mode is stored on the session. A refresh can lose the client
+    # copy, so the server asks before any hint or exposure is produced.
+    mode = str(session.get("practice_mode") or "").strip().lower()
+    if mode == "assessment" and not body.confirm_assessment_help:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"code": "confirm_required"})
     problem_id = str(
         (target.get("config_json") or {}).get("problem_id")
         or target.get("problem_id")
