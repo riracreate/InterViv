@@ -1013,9 +1013,11 @@ def _build_prompt_b_messages(
         "5. keywords: 4-7 concise technical domain terms.\n"
         "6. required_concepts (3-4 items) and optional_concepts (1-2 items): "
         "never put exact numbers or rules of thumb in required_concepts (put them in reference_answer instead). Each has:\n"
-        "   - id: short snake_case identifier (e.g. 'mutex_ownership')\n"
+        "   - id: short snake_case identifier (e.g. 'mutex_ownership') whose words do not appear in the question\n"
         "   - descriptor: clear 6-10 word factual sentence stating the concept using standard technical terms\n"
-        "   - aliases: 2-4 concise 1-3 word synonymous surface terms or noun phrases a candidate literally writes in an answer (never full clauses)\n"
+        "   - aliases: 2-4 concise 1-3 word synonymous surface terms or noun phrases a candidate literally writes in an answer (never full clauses). "
+        "Aliases must not be words from the question (singular or plural): an answer that only repeats the question must not mention any alias. "
+        "Aliases only help locate a concept; they never count as evidence that the concept was explained\n"
         "   - expected_propositions: CRITICAL RULE FOR AUTOMATED CONCEPT SCORING: "
         "each expected_proposition MUST be a short complete affirmative claim of 4-10 words containing a verb "
         "(for example \"an outlier pulls the mean toward it\", \"extreme outliers shift the arithmetic average\", "
@@ -1172,7 +1174,7 @@ def _build_regeneration_messages(
         "misconception_hits": hit_misc,
         "audit_diagnosis": audit_diagnosis,
         "repair_rules": [
-            "Write 3-5 expected_propositions per concept as short complete affirmative claims of 4-10 words with a verb (e.g. \"an outlier pulls the mean toward it\"), using varied singular/plural and active/passive wordings matching how a strong engineer writes. Use 4-6 high-frequency words from blind_answer_excerpt in each 4-10 word proposition (with a verb) and put 1-3 word surface phrases from blind_answer_excerpt into aliases so the automated matcher recognizes the concept. No proposition may be under 3 words or restate only words from the question. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
+            "Write 3-5 expected_propositions per concept as short complete affirmative claims of 4-10 words with a verb (e.g. \"an outlier pulls the mean toward it\"), using varied singular/plural and active/passive wordings matching how a strong engineer writes. Use 4-6 high-frequency words from blind_answer_excerpt in each 4-10 word proposition (with a verb). Aliases never count as support and must not be words from the question. No proposition may be under 3 words or restate only words from the question. Every expected_proposition must contain at least one term specific to its own concept, such that a vague or off-topic answer would not contain it. No proposition may consist only of generic words (for example \"the code\", \"an error occurs\", \"returns true\"). No proposition may repeat across concepts.",
             "Ensure the question explicitly asks for every required concept in STRICTLY 1 or 2 sentences (never 3 sentences, and at most 40 words) so a knowledgeable engineer does not omit one, without leaking prompt instructions or word limits.",
             "Ensure misconception descriptions and candidate_patterns represent genuinely FALSE statements absent from a correct answer.",
             "Keep calibration_examples targets: author_level=3 expected_band='Good' (at most 35 words, <= 35 words) and author_level=0 expected_band='Poor' (at least 90 words, >= 90 words).",
@@ -1466,7 +1468,8 @@ def _generate_validated_doc(
                 f"{exc}\n"
                 f"Previous question was: {prev_q!r}\n"
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, no parenthetical length notes); "
-                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question."
+                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
+                "(3) no concept id or alias may be a word or phrase from the question."
             )
     raise BundleGenerationError(
         f"Bundle failed Step E.1 validation after retry: {last_err}"
@@ -2080,7 +2083,8 @@ def _run_step_e_for_version(
                 f"{exc}\n"
                 f"Previous question was: {prev_q!r}\n"
                 "Fix required: (1) keep question to 1 or 2 sentences and 15-30 words (never 3 sentences, never put parenthetical length limits like max/words in question or followups); "
-                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question."
+                "(2) ensure EVERY expected_proposition is 4-10 words with a verb and contains at least 2 specific technical words that do NOT appear anywhere in the question; "
+                "(3) no concept id or alias may be a word or phrase from the question."
             )
     if regen_doc is None:
         raise BundleGenerationError(

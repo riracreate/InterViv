@@ -249,12 +249,74 @@ _LEAK_SCHEMA_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+# Same token and term splitting as concept_evaluator_v2 term matching.
+_TERM_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+(?:'[A-Za-z]+)?")
+_TERM_PART_SPLIT_RE = re.compile(r"[\s_/.-]+")
+
+
+def _fold_plural(token: str) -> str:
+    """Crude singular form so 'tuples'/'tuple' and 'queries'/'query' compare equal."""
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _question_term_tokens(question: str) -> list[str]:
+    return [_fold_plural(m.group(0).casefold()) for m in _TERM_TOKEN_RE.finditer(question or "")]
+
+
+def _term_in_question(term: str, q_tokens: list[str]) -> bool:
+    """True when ``term`` occurs in the question as a whole-token sequence.
+
+    Terms split exactly as the concept evaluator splits concept ids and
+    aliases (whitespace, underscore, slash, dot, hyphen), with plural folding.
+    """
+    parts: list[str] = []
+    for piece in _TERM_PART_SPLIT_RE.split(str(term or "").casefold()):
+        parts.extend(_fold_plural(m.group(0)) for m in _TERM_TOKEN_RE.finditer(piece))
+    if not parts or len(parts) > len(q_tokens):
+        return False
+    n = len(parts)
+    return any(q_tokens[i : i + n] == parts for i in range(len(q_tokens) - n + 1))
+
+
+def alias_question_overlap(content: dict[str, Any]) -> list[tuple[str, str]]:
+    """``(concept_id, term)`` pairs whose id or alias appears in the question.
+
+    The concept evaluator matches a concept's id and aliases as terms, so a
+    term that is already a question word is credited to any answer that
+    merely repeats the question.
+    """
+    q_tokens = _question_term_tokens(str(content.get("question") or ""))
+    hits: list[tuple[str, str]] = []
+    if not q_tokens:
+        return hits
+    for field_name in ("required_concepts", "optional_concepts"):
+        for concept in content.get(field_name) or []:
+            if not isinstance(concept, dict):
+                continue
+            cid = str(concept.get("id") or "").strip()
+            terms = [cid, *[str(a) for a in (concept.get("aliases") or [])]]
+            for term in terms:
+                if term.strip() and _term_in_question(term, q_tokens):
+                    hits.append((cid, term.strip()))
+    return hits
 
 
 def validate_generated_bundle_text_quality(content: dict[str, Any]) -> None:
     """Reject brittle propositions, instruction leakage, and repeated sentences in Step E.1."""
     question_text = str(content.get("question") or "")
     q_words = set(re.findall(r"[a-z0-9_]+", question_text.casefold()))
+
+    overlap = alias_question_overlap(content)
+    if overlap:
+        listed = ", ".join(f"{term!r} (concept {cid!r})" for cid, term in overlap)
+        raise BundleContentError(
+            "aliases must not be words from the question; concept id or alias "
+            f"found in the question: {listed}"
+        )
 
     seen_props: dict[str, str] = {}
     for field_name in ("required_concepts", "optional_concepts"):

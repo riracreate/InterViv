@@ -254,3 +254,105 @@ def test_proposition_backed_blind_answer_passes_and_records_strict_version(memor
     assert verdict["evaluator_version"] == STRICT_VERSION
     assert res["blind_eval"]["evaluator_version"] == STRICT_VERSION
 
+
+# ─── 0.A.2: aliases must not be question words ───────────────────────────────
+
+
+def _assemble(payload: dict) -> dict:
+    doc, _ = bundle_generator._assemble_and_validate_doc(
+        raw_payload=payload,
+        bundle_id="statistics.mean-vs-median-easy",
+        version=1,
+        canonical_skill="Statistics",
+        canonical_topic="mean vs median",
+        difficulty="easy",
+        model="test-model",
+        provider="test",
+        role=None,
+    )
+    return doc
+
+
+def test_validator_accepts_aliases_that_are_not_question_words(memory_store) -> None:
+    from modules.question_bundles import alias_question_overlap
+
+    assert alias_question_overlap(_payload()) == []
+    assert _assemble(_payload())["question"]
+
+
+@pytest.mark.parametrize(
+    "concept_index, alias",
+    [
+        (0, "salary"),            # single question word
+        (0, "salaries"),          # plural of a question word
+        (1, "summary statistic"),  # multi-word phrase from the question
+        (2, "typical-employee"),   # hyphen splits like the evaluator does
+    ],
+)
+def test_validator_rejects_alias_found_in_question(memory_store, concept_index, alias) -> None:
+    from modules.question_bundles import BundleContentError
+
+    payload = _payload()
+    payload["required_concepts"][concept_index]["aliases"].append(alias)
+    with pytest.raises(BundleContentError, match="aliases must not be words from the question"):
+        _assemble(payload)
+
+
+def test_validator_rejects_concept_id_found_in_question(memory_store) -> None:
+    from modules.question_bundles import BundleContentError
+
+    payload = _payload()
+    payload["optional_concepts"][0]["id"] = "extreme_high_earners"
+    for followup in payload["followups"]:
+        assert followup["targets_concept"] != "extreme_high_earners"
+    with pytest.raises(BundleContentError, match="extreme_high_earners"):
+        _assemble(payload)
+
+
+def test_alias_in_question_triggers_one_writer_retry_with_feedback(memory_store) -> None:
+    sent: list[str] = []
+
+    def _fake(purpose: str, model: str, messages: list[dict], **kwargs):
+        if purpose == "bundle_generation":
+            sent.append(messages[1]["content"])
+            payload = _payload()
+            if len(sent) == 1:
+                payload["required_concepts"][1]["aliases"] = ["typical employee"]
+            return {"content": json.dumps(payload), "usage": {"total_tokens": 100}}
+        if purpose == "bundle_blind_answer":
+            return {"content": PROPOSITION_ANSWER, "usage": {"total_tokens": 40}}
+        raise AssertionError(purpose)
+
+    bundle_generator.set_bundle_llm_override(_fake)
+    res = bundle_generator.generate_and_check_bundle(
+        skill="Statistics", topic="mean vs median", difficulty="easy"
+    )
+    assert res["status"] == "auto_checked"
+    assert len(sent) == 2
+    assert "aliases must not be words from the question" in sent[1]
+    assert "'typical employee'" in sent[1]
+
+
+def test_prompts_state_the_alias_rule() -> None:
+    prompt_b = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_prompt_b_messages(
+            skill="Statistics", topic="mean vs median", difficulty="easy"
+        )
+    )
+    assert "Aliases must not be words from the question" in prompt_b
+    assert "never count as evidence" in prompt_b
+    regen = "\n".join(
+        m["content"]
+        for m in bundle_generator._build_regeneration_messages(
+            skill="Statistics",
+            topic="mean vs median",
+            difficulty="easy",
+            previous_content=_payload(),
+            blind_answer=ALIAS_ONLY_ANSWER,
+            eval_res={"concepts": [], "misconceptions": []},
+            audit_diagnosis={},
+        )
+    )
+    assert "into aliases so the automated matcher" not in regen
+    assert "Aliases never count as support" in regen
