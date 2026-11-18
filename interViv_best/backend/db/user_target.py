@@ -13,14 +13,21 @@ from backend.db.company_seed import company_db_id_to_slug, company_slug_to_db_id
 
 
 def get_user_target(user: dict | None) -> dict[str, str | None]:
-    """Company and role slugs for this user, or None when unset."""
+    """Company and role slugs for this user, or None when unset.
+
+    A role-only target (``blueprint:<id>:<level>``) is not a company role,
+    so company consumers see no target for it. ``get_role_target`` reads it.
+    """
     if not user or not user.get("id"):
         return {"company_id": None, "role_id": None}
     from backend.db import get_database
+    from modules.role_interview import decode_role_target
 
     context = get_database()["target_contexts"].find_one({"user_id": str(user["id"])}) or {}
     company = context.get("company_id")
     role = context.get("role_id")
+    if decode_role_target(role) is not None:
+        return {"company_id": None, "role_id": None}
     if company or role:
         return {
             "company_id": str(company) if company else None,
@@ -35,6 +42,17 @@ def get_user_target(user: dict | None) -> dict[str, str | None]:
         "company_id": str(company) if company else None,
         "role_id": str(role) if role else None,
     }
+
+
+def get_role_target(user: dict | None) -> dict[str, Any] | None:
+    """The user's saved role-only target (role, level, title), or None."""
+    if not user or not user.get("id"):
+        return None
+    from backend.db import get_database
+    from modules.role_interview import role_target_view
+
+    context = get_database()["target_contexts"].find_one({"user_id": str(user["id"])}) or {}
+    return role_target_view(context.get("role_id"))
 
 
 def storage_target_id(slug: str | None, kind: str) -> Any:
