@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import json
+
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from backend.db import get_database
@@ -25,7 +28,9 @@ from modules.guidance_coach import (
     build_coach_plan,
     cap_practice_skills,
 )
+from modules import coach_chat
 from modules.jobs_explorer import build_practice_start_payload
+from modules.roadmap_plans import ensure_plan
 
 
 router = APIRouter(prefix="/coach", tags=["coach"], dependencies=[Depends(require_authenticated)])
@@ -239,6 +244,91 @@ def send_message(
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return result
+
+
+class ToolConfirmRequest(BaseModel):
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/conversations/{conversation_id}/messages/stream")
+def send_message_stream(
+    conversation_id: str,
+    body: ConversationMessageRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Generate and validate the full reply first, then stream only it."""
+    user = require_user(authorization)
+    try:
+        result = post_message(
+            conversation_id,
+            owner=owner_key(str(user["id"])),
+            user_id=str(user["id"]),
+            text=body.text,
+            action=body.action,
+            action_payload=body.action_payload,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    reply = result.get("reply") or {}
+
+    def events():
+        for chunk in coach_chat.chunk_text(str(reply.get("message") or "")):
+            yield f"event: token\ndata: {json.dumps({'text': chunk})}\n\n"
+        if reply.get("tool_proposal"):
+            yield f"event: tool_proposal\ndata: {json.dumps(reply['tool_proposal'])}\n\n"
+        yield (
+            "event: done\n"
+            f"data: {json.dumps({'mode': reply.get('mode'), 'provider_rejected': bool(reply.get('provider_rejected')), 'refusal': bool(reply.get('refusal')), 'conversation_id': conversation_id})}\n\n"
+        )
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/conversations/{conversation_id}/tools/confirm")
+def confirm_tool(
+    conversation_id: str,
+    body: ToolConfirmRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Run a proposed tool only after the user confirms its action card."""
+    user = require_user(authorization)
+    doc = get_conversation(conversation_id, owner=owner_key(str(user["id"])))
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    goals = doc.get("goals") or {}
+    args = body.args or {}
+    if body.tool == "update_plan":
+        plan = ensure_plan(
+            str(user["id"]),
+            role_id=goals.get("role_id") or doc.get("role_id"),
+            days=30,
+            hours_per_week=args.get("hours_per_week") or goals.get("hours_per_week"),
+            confirmed_goal=args.get("goal") or goals.get("confirmed_goal"),
+            planning_context_skills=args.get("skills") or goals.get("planning_context_skills"),
+            regenerate=True,
+        )
+        return {"tool": body.tool, "plan": plan}
+    if body.tool == "start_practice":
+        return {
+            "tool": body.tool,
+            **coach_start_practice(
+                CoachStartPracticeRequest(
+                    skills=list(args.get("skills") or []),
+                    practice_mode=args.get("practice_mode") or "coached_practice",
+                    flow_preset=args.get("flow_preset") or "legacy",
+                ),
+                authorization=authorization,
+            ),
+        }
+    if body.tool == "explain_last_interview":
+        explanation = coach_chat.explain_last_interview(
+            get_database(), str(user["id"]), args.get("session_id")
+        )
+        return {"tool": body.tool, "explanation": explanation, "note": coach_chat.EXPLAIN_24H_NOTE}
+    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown tool.")
 
 
 @router.delete("/conversations/{conversation_id}")

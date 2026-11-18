@@ -475,6 +475,25 @@ def enforce_outbound_policy(*, purpose: str, model: str, personal_text: bool = F
         raise PrivacyViolation("Personal text is not permitted in the content lane.")
 
 
+COACH_CHAT_PURPOSE = "coach_chat"
+
+
+def enforce_coach_chat_outbound(*, model: str, provider: str = "openrouter") -> None:
+    """Coach-chat conversation lane only: Haiku on OpenRouter, nothing else.
+
+    Separate from the interview lanes so content/check routing is untouched.
+    TODO(gemini_paid): allow gemini-2.5-flash-lite here only when the
+    provider is gemini_paid and GEMINI_PAID_TIER_CONFIRMED is exactly true,
+    per docs/design/coach_chat_v1.md. Not built tonight.
+    """
+    if provider == "gemini_paid":
+        raise PrivacyViolation("gemini_paid is not built for coach chat; Haiku only.")
+    if provider != "openrouter" or not isinstance(model, str) or model.casefold().endswith(":free"):
+        raise PrivacyViolation("Coach chat requires the paid Claude Haiku 4.5 allowlist.")
+    if model != PAID_CONVERSATION_MODEL:
+        raise PrivacyViolation("Coach chat requires the paid Claude Haiku 4.5 allowlist.")
+
+
 def _gate(consumer: str, *, offline_override: bool) -> None:
     if not enabled():
         raise RoutingError("AI interview routing is disabled.")

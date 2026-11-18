@@ -332,6 +332,7 @@ def get_or_create_conversation(
             "adzuna_context": None,
         },
         "messages": [],
+        "rolling_summary": "",
         "created_at": _now().isoformat(),
         "updated_at": _now().isoformat(),
     }
@@ -512,6 +513,33 @@ def post_message(
         goals=goals,
         evidence_digest=(plan or {}).get("evidence_digest"),
     )
+    # Coach chat v1: refusals apply to free-text turns before any provider
+    # call; the LLM helper runs only when COACH_CHAT_LLM_ENABLED is on.
+    # Explicit app actions keep the deterministic path above.
+    from modules import coach_chat
+
+    if not action:
+        try:
+            from backend.db import get_database
+
+            chat_sessions = list(get_database()["sessions"].find({"user_id": user_id}))
+        except Exception:
+            chat_sessions = []
+        if coach_chat.refusal_reason(chat_sessions, user_text):
+            reply = coach_chat.refusal_reply()
+        elif coach_chat.coach_chat_enabled():
+            context_block = coach_chat.build_context_block(
+                user={"id": user_id}, user_id=user_id, conversation=doc,
+                user_text=user_text, plan=plan, sessions=chat_sessions,
+            )
+            reply = coach_chat.generate_coach_reply(
+                user_id=user_id, user_text=user_text, context_block=context_block,
+                deterministic=deterministic, plan=plan, sessions=chat_sessions,
+            )
+            if reply.get("mode") == "provider":
+                doc["rolling_summary"] = coach_chat.updated_rolling_summary(
+                    doc.get("rolling_summary"), reply.get("message") or ""
+                )
 
     messages = list(doc.get("messages") or [])
     if user_text or action:
@@ -533,6 +561,7 @@ def post_message(
             "mode": reply.get("mode"),
             "clarifying_questions": reply.get("clarifying_questions") or [],
             "actions": reply.get("actions") or [],
+            "tool_proposal": reply.get("tool_proposal"),
             "created_at": _now().isoformat(),
         }
     )

@@ -12,7 +12,13 @@ import {
   createCoachConversation,
   postCoachMessage,
   patchCoachGoals,
+  fetchCoachConversation,
+  confirmCoachTool,
+  streamCoachMessage,
 } from '../lib/api';
+import CoachToolCard from '../components/CoachToolCard';
+import CoachSuggestionChips from '../components/CoachSuggestionChips';
+import { buildSuggestionChips, confirmRequest } from '../lib/coachChat';
 import { mapCoachPlan } from '../lib/coachMapping';
 import AppNav from '../components/AppNav';
 import AccountGate from '../components/AccountGate';
@@ -37,6 +43,9 @@ export default function Coach() {
   const [hoursPerWeek, setHoursPerWeek] = useState(6);
   const [replyActions, setReplyActions] = useState([]);
   const [statusNote, setStatusNote] = useState('');
+  const [toolProposal, setToolProposal] = useState(null);
+  const [streamingText, setStreamingText] = useState('');
+  const [explanation, setExplanation] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,20 +139,55 @@ export default function Coach() {
     }
   };
 
-  const sendChat = async (action = null, actionPayload = {}) => {
+  const sendChat = async (action = null, actionPayload = {}, textOverride = null) => {
     if (!conversationId) return;
     setBusy(true);
     setError('');
     setStatusNote('');
     try {
+      if (!action) {
+        // Stream only text the server already validated in full.
+        let streamed = '';
+        let proposal = null;
+        let doneMeta = null;
+        await streamCoachMessage(
+          conversationId,
+          { text: textOverride ?? chatInput, action: null, action_payload: {} },
+          ({ event, data }) => {
+            if (event === 'token') {
+              streamed += data?.text || '';
+              setStreamingText(streamed);
+            }
+            if (event === 'tool_proposal') proposal = data;
+            if (event === 'done') doneMeta = data;
+          }
+        );
+        const fresh = await fetchCoachConversation(conversationId);
+        const convo = fresh.conversation || {};
+        setMessages(convo.messages || []);
+        const lastAssistant = [...(convo.messages || [])].reverse().find((m) => m.role === 'assistant');
+        setReplyActions(lastAssistant?.actions || []);
+        setToolProposal(proposal || lastAssistant?.tool_proposal || null);
+        setChatInput('');
+        setStreamingText('');
+        setStatusNote(
+          doneMeta?.provider_rejected
+            ? 'Provider output rejected — showing deterministic reply.'
+            : doneMeta?.refusal
+              ? 'That request was refused while an assessment is open.'
+              : ''
+        );
+        return;
+      }
       const turn = await postCoachMessage(conversationId, {
-        text: chatInput,
+        text: textOverride ?? chatInput,
         action,
         action_payload: actionPayload,
       });
       setMessages(turn.conversation?.messages || []);
       setStudyPlan(turn.plan || studyPlan);
       setReplyActions(turn.reply?.actions || []);
+      setToolProposal(turn.reply?.tool_proposal || null);
       setChatInput('');
       setStatusNote(
         turn.reply?.provider_rejected
@@ -154,6 +198,47 @@ export default function Coach() {
       );
     } catch (err) {
       setError(err.message || 'Could not send message.');
+      setStreamingText('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmTool = async (proposal) => {
+    const request = confirmRequest(proposal);
+    if (!request || !conversationId) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await confirmCoachTool(conversationId, request);
+      setToolProposal(null);
+      if (result.tool === 'update_plan' && result.plan) setStudyPlan(result.plan);
+      if (result.tool === 'explain_last_interview') setExplanation(result.explanation || null);
+      if (result.tool === 'start_practice' && result.session_id) {
+        const skills = request.args.skills || [];
+        const state = {
+          candidateId: result.candidate_id,
+          practice_mode: request.args.practice_mode || 'coached_practice',
+          skill: skills[0],
+          allSkills: skills,
+          sessionId: result.session_id,
+          question: result.question,
+          difficulty: result.difficulty,
+          round_type: result.round_type || 'technical_short_answer',
+          block_category: result.block_category || null,
+          question_context: result.question_context || {},
+          config_json: result.config_json || {},
+          expires_at: result.expires_at || null,
+          round: result.round || 1,
+          elo: result.elo || 1200,
+          totalRounds: result.total_rounds || 1,
+          roundsPerSkill: 1,
+        };
+        saveInterviewState(state);
+        navigate(result.navigate || `/interview/${result.session_id}`, { state });
+      }
+    } catch (err) {
+      setError(err.message || 'Could not run that action.');
     } finally {
       setBusy(false);
     }
@@ -458,25 +543,43 @@ export default function Coach() {
                 <span>{m.text}</span>
               </div>
             ))}
+            {streamingText && (
+              <div className="text-sm">
+                <span className="font-semibold">Coach: </span>
+                <span>{streamingText}</span>
+              </div>
+            )}
           </div>
           {statusNote && (
             <p className="mt-2 text-xs text-[var(--color-ink-muted)]" data-testid="coach-status">
               {statusNote}
             </p>
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {replyActions.map((action) => (
-              <button
-                key={`${action.type}-${action.task_id || action.label}`}
-                type="button"
-                disabled={busy}
-                className="rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
-                onClick={() => runAction(action)}
-              >
-                {action.label || action.type}
-              </button>
-            ))}
-          </div>
+          <CoachSuggestionChips
+            chips={buildSuggestionChips({ actions: replyActions }, Boolean(studyPlan))}
+            busy={busy}
+            onChip={(chip) => {
+              if (chip.type === 'why_this_task') sendChat(null, {}, 'Why this task?');
+              else if (chip.action) runAction(chip.action);
+            }}
+          />
+          <CoachToolCard
+            proposal={toolProposal}
+            busy={busy}
+            onConfirm={confirmTool}
+            onCancel={() => setToolProposal(null)}
+          />
+          {explanation?.available && (
+            <div className="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] p-4" data-testid="coach-explanation">
+              <p className="text-sm font-semibold">Last interview — missed concepts</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--color-ink-muted)]">
+                {(explanation.rounds || []).flatMap((round) =>
+                  (round.missed || []).map((concept) => <li key={`${round.round}-${concept}`}>{concept}</li>)
+                )}
+              </ul>
+              <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{explanation.note}</p>
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
             <input
               className="grow rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2 text-sm"
