@@ -171,7 +171,10 @@ export default function Coach() {
       }
       setBusy(true);
       try {
-        const data = await fetchCoachStartPractice({ skills });
+        const data = await fetchCoachStartPractice({
+          skills,
+          ...(action.type === 'assess_independently' ? { practice_mode: 'assessment' } : {}),
+        });
         const sessionId = data.session_id;
         if (!sessionId) throw new Error('Practice start did not return a session.');
         const state = {
