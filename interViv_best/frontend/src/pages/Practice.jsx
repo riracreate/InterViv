@@ -620,7 +620,7 @@ export default function Practice() {
         }
       }
       const resp = await startSession(body);
-      navigateToInterview(navigate, resp);
+      navigateToInterview(navigate, resp, { practice_mode: practiceMode });
     } catch (err) {
       reportStartIssue(err);
     } finally {

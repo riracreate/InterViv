@@ -179,6 +179,7 @@ export default function Coach() {
         if (!sessionId) throw new Error('Practice start did not return a session.');
         const state = {
           candidateId: data.candidate_id,
+          practice_mode: action.type === 'assess_independently' ? 'assessment' : 'coached_practice',
           skill: skills[0],
           allSkills: skills,
           sessionId,

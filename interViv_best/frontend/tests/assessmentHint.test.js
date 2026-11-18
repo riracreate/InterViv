@@ -17,6 +17,8 @@ test('an assessment hint asks before the attempt stops counting toward readiness
   const coding = read('src/components/CodingRound.jsx');
   assert.match(coding, /practiceMode === 'assessment' && !window\.confirm\(ASSESSMENT_HINT_CONFIRM\)/);
   const interview = read('src/pages/Interview.jsx');
-  assert.match(interview, /data\.practice_mode\) setPracticeMode\(data\.practice_mode\)/);
+  assert.match(interview, /initState\.practice_mode \|\| initState\.practiceMode/);
   assert.match(interview, /practiceMode,/);
+  const practice = read('src/pages/Practice.jsx');
+  assert.match(practice, /navigateToInterview\(navigate, resp, \{ practice_mode: practiceMode \}\)/);
 });

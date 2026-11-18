@@ -111,7 +111,9 @@ def test_submitted_and_closed_rounds_reject_hints(monkeypatch) -> None:
     assert after == before
 
 
-def test_session_resume_includes_practice_mode() -> None:
+def test_session_resume_does_not_add_a_practice_mode_field() -> None:
+    # The client already knows the mode it started with. Adding the field to
+    # GET /session changes the flag-off interview transcript capture.
     user = _user()
     session_id = _seed(user["id"], round_status="in_progress")
     resp = TestClient(app).get(
@@ -119,4 +121,4 @@ def test_session_resume_includes_practice_mode() -> None:
         headers={"Authorization": f"Bearer {user['token']}"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["practice_mode"] == "assessment"
+    assert "practice_mode" not in resp.json()

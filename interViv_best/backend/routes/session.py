@@ -2354,7 +2354,6 @@ def get_session(
         "round_history": round_history,
         "review_round": review_round,
         "pending_round": pending_round,
-        "practice_mode": session.get("practice_mode"),
     }
     if staged_session:
         meta = staged_flow_meta(session)
