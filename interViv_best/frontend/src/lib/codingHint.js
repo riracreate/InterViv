@@ -4,6 +4,9 @@
  * Hidden tests are never included.
  */
 
+export const ASSESSMENT_HINT_CONFIRM =
+  "this attempt becomes Practised with help and won't count toward readiness";
+
 const RUNNER_ERRORS = new Set(['compile', 'timeout', 'runtime']);
 
 export function codingHintLastError({ runnerError, visible, tests } = {}) {

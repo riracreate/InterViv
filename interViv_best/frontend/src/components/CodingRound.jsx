@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Send, Check, X, Clock3, RotateCcw, Code2, BookOpen, Lightbulb, Terminal } from 'lucide-react';
 import { runCodingPreview, saveAnswerDraft, fetchAnswerDraft, fetchCodingExecutionStatus, fetchCodingCoach } from '../lib/api';
-import { codingHintPayload } from '../lib/codingHint';
+import { ASSESSMENT_HINT_CONFIRM, codingHintPayload } from '../lib/codingHint';
 import { computeSecondsRemaining } from '../lib/roundContractHelpers';
 import CodeEditor from './CodeEditor';
 import './coding-workspace.css';
@@ -11,7 +11,8 @@ const json = value => value === undefined ? 'No output' : JSON.stringify(value);
 
 export default function CodingRound({ sessionId, round = 1, question = '', questionContext = {},
   configJson = {}, expiresAt = null, isScoring = false, currentScore = null, currentArtifact = null,
-  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false, submitted = null, nextBusy = false }) {
+  currentFeedback = '', onSubmit, onNextRound, sessionComplete = false, submitted = null, nextBusy = false,
+  practiceMode = '' }) {
   const starters = questionContext.starter_codes || { python: questionContext.starter_code || '# Write your solution here\n' };
   const [language, setLanguage] = useState(configJson.language || 'python');
   const [sources, setSources] = useState(starters);
@@ -80,6 +81,7 @@ export default function CodingRound({ sessionId, round = 1, question = '', quest
     if (!running && !isScoring && !closed && !expired && !executionDown && draftReady && source.trim()) onSubmit({ answer_text: source, language });
   };
   const requestHint = async () => {
+    if (practiceMode === 'assessment' && !window.confirm(ASSESSMENT_HINT_CONFIRM)) return;
     const payload = codingHintPayload({
       sessionId,
       round,
