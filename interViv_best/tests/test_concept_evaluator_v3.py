@@ -127,6 +127,7 @@ def test_match_type_alias_whole_term_and_precedence() -> None:
     assert _concept_by_id(non_match, "GIL")["match_type"] is None
 
 
+@pytest.mark.requires_semantic_model
 def test_match_type_semantic_with_sentence_and_score() -> None:
     bundle = _sample_bundle()
     answer = (
@@ -187,6 +188,7 @@ def test_negation_on_alias_blocks_tier2_and_tier3_on_negated_sentence() -> None:
     assert _concept_by_id(cross_res, "consistency")["match_type"] == "alias"
 
 
+@pytest.mark.requires_semantic_model
 def test_leave_one_out_exclude_examples() -> None:
     isolated_bundle = {
         "required_concepts": [
@@ -236,6 +238,7 @@ def test_leave_one_out_exclude_examples() -> None:
     assert _concept_by_id(loo_map, "custom_streaming")["match_type"] is None
 
 
+@pytest.mark.requires_semantic_model
 def test_output_shape_parity_with_v2_misconceptions_and_optional() -> None:
     bundle = _sample_bundle(with_optional=True)
     answer = (

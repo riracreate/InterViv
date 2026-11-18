@@ -130,6 +130,20 @@ def isolated_test_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         )
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Real MiniLM checks skip on a cold cache. CI is offline and has no weights."""
+    from tests.test_semantic import _find_semantic_snapshot
+
+    if _find_semantic_snapshot() is not None:
+        return
+    skip = pytest.mark.skip(
+        reason="all-MiniLM-L6-v2 not in the local cache — real-model assertions cannot run offline",
+    )
+    for item in items:
+        if item.get_closest_marker("requires_semantic_model"):
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def isolated_auth_rate_limits(monkeypatch):
     # TestClient instances reuse the same client address across independent

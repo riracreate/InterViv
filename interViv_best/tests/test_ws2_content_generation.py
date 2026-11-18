@@ -208,6 +208,7 @@ def test_resume_parser_hyphen_boundaries() -> None:
     assert "Python" in matched
 
 
+@pytest.mark.requires_semantic_model
 def test_role_skills_identity_minilm_sanitization_cache_and_offline(ws2_memory) -> None:
     assert role_skills.resolve_skill_identity("python") == ("Python", "exact")
     assert role_skills.resolve_skill_identity("golang") == ("Go", "alias")

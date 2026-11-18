@@ -96,6 +96,7 @@ def _http_error(url: str, code: int, body: dict[str, Any] | str) -> urllib.error
     )
 
 
+@pytest.mark.requires_semantic_model
 def test_hard_pairs_raw_minilm_scores_are_reproducible(clean_skill_env) -> None:
     model = _get_model()
     assert model is not None
@@ -222,6 +223,7 @@ def test_should_merge_pairs_merge_symmetrically(
     assert d1 == d2 == second
 
 
+@pytest.mark.requires_semantic_model
 def test_original_paraphrases_and_distinct_non_tech_skills_still_pass(clean_skill_env) -> None:
     paraphrases = [
         ("PostgreSQL Databases", "PostgreSQL"),
@@ -494,6 +496,7 @@ def test_dial_prompt_a_ollama_done_reason_length_not_parsed_and_logged(
     assert events[0]["total_tokens"] == 755
 
 
+@pytest.mark.requires_semantic_model
 def test_new_canonical_skill_registration_logs_memory_and_jsonl_without_duplicates(
     clean_skill_env, monkeypatch: pytest.MonkeyPatch, tmp_path, caplog
 ) -> None:

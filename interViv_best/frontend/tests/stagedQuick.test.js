@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +84,8 @@ test('server resume retains deadlines and counts submitted null-score rounds wit
 
 test('real offline backend Quick journey resumes every turn, including inline follow-up, with no feedback call', async () => {
   const appRoot = path.resolve(root, '..');
-  const fixtures = JSON.parse(execFileSync(path.join(appRoot, '.venv/bin/python'),
+  const localPython = path.join(appRoot, '.venv/bin/python');
+  const fixtures = JSON.parse(execFileSync(existsSync(localPython) ? localPython : 'python3',
     [path.join(root, 'tests/helpers/emit_staged_quick_payloads.py')], {
       cwd: appRoot, encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, maxBuffer: 16 * 1024 * 1024,
     }));

@@ -65,6 +65,7 @@ def test_capture_integrity_and_runtime_pin():
         assert hashlib.sha256((ROOT/name).read_bytes()).hexdigest() == GOLDEN['capture']['source_sha256'][name]
 
 
+@pytest.mark.requires_semantic_model
 @pytest.mark.parametrize('case', GOLDEN['cases'], ids=lambda c:c['id'])
 def test_frozen_outputs_and_concept_invariants(case, monkeypatch, loaded_revision_audit):
     for k, v in GOLDEN['capture']['flags'].items():

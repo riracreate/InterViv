@@ -1186,6 +1186,7 @@ def test_demoted_concept_exports_jsonl_to_demoted_bundles_audit_path(
     assert row["audit"]["issue_type"] == "over_specific_concept"
 
 
+@pytest.mark.requires_semantic_model
 def test_pregenerate_pilot_metrics_and_export_bundles_review_csv(
     batch_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

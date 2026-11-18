@@ -561,6 +561,7 @@ def test_bundle_and_role_dispatch_honor_consumer_denial_including_overrides(env,
     assert calls == []
 
 
+@pytest.mark.requires_semantic_model
 def test_flag_off_transcript_matches_pre_step1_capture(monkeypatch, tmp_path):
     from tests.ai_routing_harness import capture
     expected = json.loads(Path(__file__).with_name("fixtures").joinpath("ai_routing_flag_off.json").read_text())

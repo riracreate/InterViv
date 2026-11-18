@@ -50,6 +50,7 @@ def test_v4_fixture_extends_v3_cases(fixture: dict) -> None:
     assert len(fixture["items"]) == 16
 
 
+@pytest.mark.requires_semantic_model
 def test_v4_new_cases_behave(fixture: dict) -> None:
     by_id = {item["id"]: item for item in fixture["items"]}
 
